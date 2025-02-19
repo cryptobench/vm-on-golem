@@ -1,0 +1,84 @@
+import aiohttp
+from typing import Dict, Optional
+from pathlib import Path
+
+class ProviderClient:
+    def __init__(self, provider_url: str):
+        self.provider_url = provider_url
+        self.session = None
+
+    async def __aenter__(self):
+        self.session = aiohttp.ClientSession()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self.session:
+            await self.session.close()
+
+    async def create_vm(
+        self,
+        name: str,
+        cpu: int,
+        memory: int,
+        storage: int,
+        ssh_key: str
+    ) -> Dict:
+        """Create a VM on the provider."""
+        async with self.session.post(
+            f"{self.provider_url}/api/v1/vms",
+            json={
+                "name": name,
+                "resources": {
+                    "cpu": cpu,
+                    "memory": memory,
+                    "storage": storage
+                },
+                "ssh_key": ssh_key
+            }
+        ) as response:
+            if not response.ok:
+                error_text = await response.text()
+                raise Exception(f"Failed to create VM: {error_text}")
+            return await response.json()
+
+    async def add_ssh_key(self, vm_id: str, key: str) -> None:
+        """Add SSH key to VM."""
+        async with self.session.post(
+            f"{self.provider_url}/vms/{vm_id}/ssh-keys",
+            json={
+                "key": key,
+                "name": "default"
+            }
+        ) as response:
+            if not response.ok:
+                error_text = await response.text()
+                raise Exception(f"Failed to add SSH key: {error_text}")
+
+    async def start_vm(self, vm_id: str) -> Dict:
+        """Start a VM."""
+        async with self.session.post(
+            f"{self.provider_url}/vms/{vm_id}/start"
+        ) as response:
+            if not response.ok:
+                error_text = await response.text()
+                raise Exception(f"Failed to start VM: {error_text}")
+            return await response.json()
+
+    async def stop_vm(self, vm_id: str) -> Dict:
+        """Stop a VM."""
+        async with self.session.post(
+            f"{self.provider_url}/vms/{vm_id}/stop"
+        ) as response:
+            if not response.ok:
+                error_text = await response.text()
+                raise Exception(f"Failed to stop VM: {error_text}")
+            return await response.json()
+
+    async def destroy_vm(self, vm_id: str) -> None:
+        """Destroy a VM."""
+        async with self.session.delete(
+            f"{self.provider_url}/vms/{vm_id}"
+        ) as response:
+            if not response.ok:
+                error_text = await response.text()
+                raise Exception(f"Failed to destroy VM: {error_text}")

@@ -1,162 +1,102 @@
 import asyncio
 import logging
-import time
-from fastapi import FastAPI, Request, Depends
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from contextlib import asynccontextmanager
-import uvicorn
+from fastapi import FastAPI
 from typing import Optional
 
 from .config import settings
-from .vm.multipass import MultipassProvider
+from .discovery.resource_tracker import ResourceTracker
 from .discovery.advertiser import ResourceAdvertiser
-from .api.routes import router, get_vm_provider
-from .vm.models import VMProvider
+from .vm.multipass import MultipassProvider
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO if not settings.DEBUG else logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
 logger = logging.getLogger(__name__)
 
-# Global provider instance
-vm_provider: Optional[VMProvider] = None
-resource_advertiser: Optional[ResourceAdvertiser] = None
+app = FastAPI(title="VM on Golem Provider")
 
-# Create FastAPI app
-logger.info("Creating FastAPI app...")
-app = FastAPI(
-    title=settings.PROJECT_NAME,
-    openapi_url=f"{settings.API_V1_PREFIX}/openapi.json"
-)
-logger.info("FastAPI app created")
+async def setup_provider() -> None:
+    """Setup and initialize the provider components."""
+    try:
+        # Create resource tracker
+        logger.info("Initializing resource tracker...")
+        resource_tracker = ResourceTracker()
+        app.state.resource_tracker = resource_tracker
+        
+        # Create provider with resource tracker
+        logger.info("Initializing VM provider...")
+        provider = MultipassProvider(resource_tracker)
+        try:
+            await asyncio.wait_for(provider.initialize(), timeout=30)
+            app.state.provider = provider
+        except asyncio.TimeoutError:
+            logger.error("Provider initialization timed out")
+            raise
+        except Exception as e:
+            logger.error(f"Failed to initialize provider: {e}")
+            raise
+        
+        # Create and start advertiser in background
+        logger.info("Starting resource advertiser...")
+        advertiser = ResourceAdvertiser(
+            resource_tracker=resource_tracker,
+            discovery_url=settings.DISCOVERY_URL,
+            provider_id=settings.PROVIDER_ID
+        )
+        
+        # Start advertiser in background task
+        app.state.advertiser_task = asyncio.create_task(advertiser.start())
+        app.state.advertiser = advertiser
+        
+        logger.info("Provider setup complete")
+    except Exception as e:
+        logger.error(f"Failed to setup provider: {e}")
+        # Attempt cleanup of any initialized components
+        await cleanup_provider()
+        raise
+
+async def cleanup_provider() -> None:
+    """Cleanup provider components."""
+    cleanup_errors = []
+    
+    # Stop advertiser
+    if hasattr(app.state, "advertiser"):
+        try:
+            await app.state.advertiser.stop()
+            if hasattr(app.state, "advertiser_task"):
+                app.state.advertiser_task.cancel()
+                try:
+                    await app.state.advertiser_task
+                except asyncio.CancelledError:
+                    pass
+        except Exception as e:
+            cleanup_errors.append(f"Failed to stop advertiser: {e}")
+    
+    # Cleanup provider
+    if hasattr(app.state, "provider"):
+        try:
+            await asyncio.wait_for(app.state.provider.cleanup(), timeout=30)
+        except asyncio.TimeoutError:
+            cleanup_errors.append("Provider cleanup timed out")
+        except Exception as e:
+            cleanup_errors.append(f"Failed to cleanup provider: {e}")
+    
+    if cleanup_errors:
+        error_msg = "\n".join(cleanup_errors)
+        logger.error(f"Errors during cleanup:\n{error_msg}")
+    else:
+        logger.info("Provider cleanup complete")
 
 @app.on_event("startup")
 async def startup_event():
-    """Handle startup event."""
-    try:
-        # Initialize VM provider
-        global vm_provider, resource_advertiser
-        logger.info("Creating VM provider...")
-        vm_provider = MultipassProvider(settings.MULTIPASS_PATH)
-        logger.info("Initializing VM provider...")
-        await vm_provider.initialize()  # Initialize the provider
-        logger.info("VM provider initialized successfully")
-        
-        # Initialize and start resource advertiser
-        logger.info("Creating resource advertiser...")
-        resource_advertiser = ResourceAdvertiser(
-            discovery_url=settings.DISCOVERY_URL,
-            provider_id=settings.PROVIDER_ID,
-            update_interval=settings.ADVERTISEMENT_INTERVAL
-        )
-        logger.info("Starting resource advertiser...")
-        asyncio.create_task(resource_advertiser.start())
-        logger.info("Resource advertiser started successfully")
-        
-        logger.info("Provider node initialized successfully")
-    except Exception as e:
-        logger.error(f"Failed to initialize provider node: {e}")
-        vm_provider = None  # Reset provider on failure
-        raise
+    """Handle application startup."""
+    await setup_provider()
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    """Handle shutdown event."""
-    try:
-        if resource_advertiser:
-            logger.info("Stopping resource advertiser...")
-            await resource_advertiser.stop()
-        if vm_provider:
-            logger.info("Cleaning up VM provider...")
-            await vm_provider.cleanup()  # Cleanup provider resources
-        logger.info("Provider node shut down successfully")
-    except Exception as e:
-        logger.error(f"Failed to shut down provider node: {e}")
+    """Handle application shutdown."""
+    await cleanup_provider()
 
-# Log app configuration
-logger.info(f"Project Name: {settings.PROJECT_NAME}")
-logger.info(f"API Prefix: {settings.API_V1_PREFIX}")
-logger.info(f"Debug Mode: {settings.DEBUG}")
-logger.info(f"Host: {settings.HOST}")
-logger.info(f"Port: {settings.PORT}")
-logger.info(f"Multipass Path: {settings.MULTIPASS_PATH}")
+# Import routes after app creation to avoid circular imports
+from .api import routes
+app.include_router(routes.router, prefix="/api/v1")
 
-# Add CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # TODO: Configure for production
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Rate limiting middleware
-class RateLimitMiddleware:
-    def __init__(self, app):
-        self.app = app
-        self.requests = {}
-
-    async def __call__(self, scope, receive, send):
-        if scope["type"] != "http":
-            return await self.app(scope, receive, send)
-
-        # Get client IP
-        client_ip = scope.get("client")[0] if scope.get("client") else None
-        if not client_ip:
-            return await self.app(scope, receive, send)
-
-        # Check rate limit
-        current_time = time.time()
-        if client_ip in self.requests:
-            requests = [t for t in self.requests[client_ip] 
-                       if current_time - t < 60]  # Last minute
-            if len(requests) >= settings.RATE_LIMIT_PER_MINUTE:
-                response = JSONResponse(
-                    status_code=429,
-                    content={
-                        "code": "RATE_LIMIT_EXCEEDED",
-                        "message": "Too many requests"
-                    }
-                )
-                await response(scope, receive, send)
-                return
-            self.requests[client_ip] = requests + [current_time]
-        else:
-            self.requests[client_ip] = [current_time]
-
-        await self.app(scope, receive, send)
-
-# Add rate limiting
-app.add_middleware(RateLimitMiddleware)
-
-# Override get_vm_provider dependency
-async def get_vm_provider_override() -> VMProvider:
-    """Get the VM provider instance."""
-    if vm_provider is None:
-        raise RuntimeError("VM provider not initialized")
-    return vm_provider
-
-app.dependency_overrides[get_vm_provider] = get_vm_provider_override
-
-# Include API routes
-app.include_router(router)
-
-# Health check endpoint
-@app.get("/health")
-async def health_check():
-    """Health check endpoint."""
-    return {
-        "status": "healthy",
-        "version": "0.1.0"
-    }
-
-if __name__ == "__main__":
-    uvicorn.run(
-        "provider.main:app",
-        host=settings.HOST,
-        port=settings.PORT,
-        reload=settings.DEBUG
-    )
+# Export app for uvicorn
+__all__ = ["app"]
