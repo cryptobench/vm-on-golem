@@ -1,313 +1,277 @@
-import asyncio
+import os
 import json
 import logging
-import re
-import uuid
+import subprocess
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Optional, Dict, List
+from datetime import datetime
 
 from ..config import settings
-from .models import (
-    VMConfig,
-    VMInfo,
-    VMStatus,
-    VMResources,
-    SSHKey,
-    VMCreateError,
-    VMNotFoundError,
-    VMStateError,
-    VMProvider,
-    VMError,
-    ResourceError,
-)
+from .models import VMInfo, VMStatus, VMCreateRequest, VMConfig, VMProvider, VMError, VMCreateError, VMResources
+from .cloud_init import generate_cloud_init, cleanup_cloud_init
+from .nginx_manager import NginxManager
 
 logger = logging.getLogger(__name__)
 
+class MultipassError(VMError):
+    """Raised when multipass operations fail."""
+    pass
 
 class MultipassProvider(VMProvider):
-    def __init__(
-        self,
-        resource_tracker: 'ResourceTracker',
-        multipass_path: Optional[str] = None
-    ):
-        self.multipass_path = multipass_path or settings.MULTIPASS_PATH
-        self.vms: Dict[str, VMInfo] = {}
+    """Manages VMs using Multipass."""
+    
+    def __init__(self, resource_tracker: "ResourceTracker"):
+        """Initialize the multipass provider.
+        
+        Args:
+            resource_tracker: Resource tracker instance
+        """
         self.resource_tracker = resource_tracker
-
+        self.multipass_path = settings.MULTIPASS_PATH
+        self.vm_data_dir = Path(settings.VM_DATA_DIR)
+        self.vm_data_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Initialize nginx manager
+        self.nginx = NginxManager(
+            nginx_dir=settings.NGINX_DIR,
+            config_dir=settings.NGINX_CONFIG_DIR
+        )
+    
     async def initialize(self) -> None:
         """Initialize the provider."""
-        try:
-            # Verify multipass is installed and working
-            stdout, _, _ = await self._run_command("version")
-            logger.info(f"Multipass version: {stdout}")
-
-            # List existing VMs and add them to our state
-            stdout, _, _ = await self._run_command("list", "--format", "json")
-            vms = json.loads(stdout)
-            if "list" in vms:  # Check if list key exists
-                for vm in vms["list"]:
-                    vm_id = str(uuid.uuid4())
-                    resources = VMResources(
-                        cpu=vm.get("cpu", 1),
-                        memory=vm.get("memory", 1),
-                        storage=vm.get("disk", 10)
-                    )
-                    # Allocate resources for existing VMs
-                    if not await self.resource_tracker.allocate(resources):
-                        logger.warning(
-                            f"Could not allocate resources for existing VM {vm['name']}"
-                        )
-                        continue
-
-                    self.vms[vm_id] = VMInfo(
-                        id=vm_id,
-                        name=vm["name"],
-                        status=VMStatus.RUNNING if vm["state"] == "Running" else VMStatus.STOPPED,
-                        resources=resources,
-                        ip_address=vm.get("ipv4", [])[
-                            0] if vm.get("ipv4") else None,
-                        ssh_port=22
-                    )
-            logger.info("Provider initialization complete")
-        except Exception as e:
-            logger.error(f"Failed to initialize provider: {e}")
-            raise
-
+        self._verify_installation()
+        
+        # Create SSH key directory
+        ssh_key_dir = Path(settings.SSH_KEY_DIR)
+        ssh_key_dir.mkdir(parents=True, exist_ok=True)
+    
     async def cleanup(self) -> None:
-        """Cleanup provider resources."""
+        """Clean up all VMs and configurations."""
         try:
-            # Stop all running VMs
-            for vm_id, vm_info in self.vms.items():
-                if vm_info.status == VMStatus.RUNNING:
-                    try:
-                        await self.stop_vm(vm_id)
-                    except Exception as e:
-                        logger.error(f"Failed to stop VM {vm_id}: {e}")
-                # Deallocate resources
-                await self.resource_tracker.deallocate(vm_info.resources)
+            # Get list of Golem VMs
+            result = self._run_multipass(["list", "--format", "json"])
+            data = json.loads(result.stdout)
+            
+            for vm in data.get("list", []):
+                vm_id = vm.get("name")
+                if vm_id and vm_id.startswith("golem-"):
+                    await self.delete_vm(vm_id)
+            
+            # Clean up nginx configs
+            self.nginx.cleanup()
+            
         except Exception as e:
-            logger.error(f"Failed to cleanup provider: {e}")
-            raise
-
-    async def _run_command(
-        self,
-        *args: str,
-        check: bool = True,
-        timeout: int = 30
-    ) -> Tuple[str, str, int]:
-        """Run a multipass command with timeout."""
-        cmd = [self.multipass_path, *args]
+            logger.error(f"Error during cleanup: {e}")
+    
+    def _verify_installation(self) -> None:
+        """Verify multipass is installed and get version."""
         try:
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+            result = subprocess.run(
+                [self.multipass_path, "version"],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            logger.info(f"Multipass version: {result.stdout}")
+        except subprocess.CalledProcessError as e:
+            raise MultipassError(f"Failed to verify multipass installation: {e.stderr}")
+        except FileNotFoundError:
+            raise MultipassError(f"Multipass not found at {self.multipass_path}")
+    
+    def _run_multipass(self, args: List[str], check: bool = True) -> subprocess.CompletedProcess:
+        """Run a multipass command.
+        
+        Args:
+            args: Command arguments
+            check: Whether to check return code
+            
+        Returns:
+            CompletedProcess instance
+        """
+        try:
+            return subprocess.run(
+                [self.multipass_path, *args],
+                capture_output=True,
+                text=True,
+                check=check
+            )
+        except subprocess.CalledProcessError as e:
+            raise MultipassError(f"Multipass command failed: {e.stderr}")
+    
+    def _get_vm_info(self, vm_id: str) -> Dict:
+        """Get detailed information about a VM.
+        
+        Args:
+            vm_id: VM identifier
+            
+        Returns:
+            Dictionary with VM information
+        """
+        result = self._run_multipass(["info", vm_id, "--format", "json"])
+        try:
+            info = json.loads(result.stdout)
+            return info["info"][vm_id]
+        except (json.JSONDecodeError, KeyError) as e:
+            raise MultipassError(f"Failed to parse VM info: {e}")
+    
+    def _get_vm_ip(self, vm_id: str) -> Optional[str]:
+        """Get IP address of a VM.
+        
+        Args:
+            vm_id: VM identifier
+            
+        Returns:
+            IP address or None if not found
+        """
+        try:
+            info = self._get_vm_info(vm_id)
+            return info.get("ipv4", [None])[0]
+        except Exception:
+            return None
+    
+    async def create_vm(self, config: VMConfig) -> VMInfo:
+        """Create a new VM.
+        
+        Args:
+            config: VM configuration
+            
+        Returns:
+            Information about the created VM
+        """
+        vm_id = f"golem-{config.name}-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+        
+        # Generate cloud-init config with requestor's public key
+        cloud_init_path = generate_cloud_init(
+            hostname=config.name,
+            ssh_key=config.ssh_key
+        )
+        
+        try:
+            # Launch VM
+            self._run_multipass([
+                "launch",
+                config.image,
+                "--name", vm_id,
+                "--cloud-init", cloud_init_path,
+                "--cpus", str(config.resources.cpu),
+                "--memory", f"{config.resources.memory}G",
+                "--disk", f"{config.resources.storage}G"
+            ])
+            
+            # Get VM IP
+            ip_address = self._get_vm_ip(vm_id)
+            if not ip_address:
+                raise MultipassError("Failed to get VM IP address")
+            
+            # Configure nginx proxy
+            ssh_port = self.nginx.add_vm(vm_id, ip_address)
+            if not ssh_port:
+                raise MultipassError("Failed to configure nginx proxy")
+            
+            # Create VM info
+            vm_info = VMInfo(
+                id=vm_id,
+                name=config.name,
+                status=VMStatus.RUNNING,
+                resources=config.resources,
+                ip_address=ip_address,
+                ssh_port=ssh_port
             )
             
-            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
-            stdout_str = stdout.decode().strip()
-            stderr_str = stderr.decode().strip()
-
-            if check and process.returncode != 0:
-                raise VMError(
-                    f"Multipass command failed: {stderr_str}",
-                    vm_id=args[1] if len(args) > 1 else None
-                )
-
-            return stdout_str, stderr_str, process.returncode
-        except asyncio.TimeoutError:
-            try:
-                process.kill()
-            except:
-                pass
-            raise VMError(f"Command timed out after {timeout} seconds: {' '.join(cmd)}")
-        except Exception as e:
-            try:
-                process.kill()
-            except:
-                pass
-            raise VMError(f"Command failed: {str(e)}")
-
-    async def _get_vm_ip(self, name: str) -> Optional[str]:
-        """Get VM IP address."""
-        try:
-            stdout, _, _ = await self._run_command("info", name, "--format", "json")
-            info = json.loads(stdout)
-            return info["info"][name]["ipv4"][0]
-        except Exception as e:
-            logger.error(f"Failed to get VM IP: {e}")
-            return None
-
-    async def create_vm(self, config: VMConfig) -> VMInfo:
-        """Create a new VM using Multipass."""
-        # First try to allocate resources
-        if not await self.resource_tracker.allocate(config.resources):
-            raise ResourceError("Insufficient resources available")
-
-        vm_id = str(uuid.uuid4())
-        vm_info = VMInfo(
-            id=vm_id,
-            name=config.name,
-            status=VMStatus.CREATING,
-            resources=config.resources
-        )
-        self.vms[vm_id] = vm_info
-
-        try:
-            # Create cloud-init config
-            from .cloud_init import CloudInitManager
-            cloud_init = CloudInitManager.create_config(config.ssh_key)
-
-            # Launch VM with cloud-init
-            await self._run_command(
-                "launch",
-                "--name", config.name,
-                "--cpus", str(config.resources.cpu),
-                "--memory", f"{config.resources.memory}GB",
-                "--disk", f"{config.resources.storage}GB",
-                "--cloud-init", str(cloud_init),
-                config.image
-            )
-
-            # Get VM IP
-            ip_address = await self._get_vm_ip(config.name)
-            if not ip_address:
-                raise VMCreateError("Failed to get VM IP address")
-
-            # Update VM info
-            vm_info.status = VMStatus.RUNNING
-            vm_info.ip_address = ip_address
-            vm_info.ssh_port = 22
-            self.vms[vm_id] = vm_info
-
             return vm_info
-
+            
         except Exception as e:
-            # Deallocate resources on failure
-            await self.resource_tracker.deallocate(config.resources)
-            vm_info.status = VMStatus.ERROR
-            vm_info.error_message = str(e)
-            self.vms[vm_id] = vm_info
-            raise VMCreateError(str(e), vm_id=vm_id)
+            # Cleanup on failure
+            await self.delete_vm(vm_id)
+            raise VMCreateError(f"Failed to create VM: {str(e)}", vm_id=vm_id)
+        
         finally:
-            # Clean up cloud-init file
-            if 'cloud_init' in locals():
-                cloud_init.unlink()
-
+            # Cleanup cloud-init file
+            cleanup_cloud_init(cloud_init_path)
+    
     async def delete_vm(self, vm_id: str) -> None:
-        """Delete a VM."""
-        vm_info = self.vms.get(vm_id)
-        if not vm_info:
-            raise VMNotFoundError(f"VM {vm_id} not found")
-
+        """Delete a VM.
+        
+        Args:
+            vm_id: VM identifier
+        """
         try:
-            await self._run_command("delete", vm_info.name)
-            vm_info.status = VMStatus.DELETED
-            self.vms[vm_id] = vm_info
-            # Deallocate resources
-            await self.resource_tracker.deallocate(vm_info.resources)
+            # Remove nginx proxy config
+            self.nginx.remove_vm(vm_id)
+            
+            # Delete VM
+            self._run_multipass(["delete", vm_id, "--purge"], check=False)
+            
         except Exception as e:
-            raise VMError(f"Failed to delete VM: {e}", vm_id=vm_id)
-
+            logger.error(f"Error deleting VM {vm_id}: {e}")
+    
     async def start_vm(self, vm_id: str) -> VMInfo:
-        """Start a VM."""
-        vm_info = self.vms.get(vm_id)
-        if not vm_info:
-            raise VMNotFoundError(f"VM {vm_id} not found")
-
-        if vm_info.status == VMStatus.RUNNING:
-            return vm_info
-
-        if vm_info.status not in [VMStatus.STOPPED, VMStatus.ERROR]:
-            raise VMStateError(
-                f"Cannot start VM in {vm_info.status} state",
-                vm_id=vm_id
-            )
-
-        try:
-            await self._run_command("start", vm_info.name)
-
-            # Get VM IP
-            ip_address = await self._get_vm_ip(vm_info.name)
-            if not ip_address:
-                raise VMError("Failed to get VM IP address")
-
-            vm_info.status = VMStatus.RUNNING
-            vm_info.ip_address = ip_address
-            self.vms[vm_id] = vm_info
-            return vm_info
-
-        except Exception as e:
-            vm_info.status = VMStatus.ERROR
-            vm_info.error_message = str(e)
-            self.vms[vm_id] = vm_info
-            raise VMError(f"Failed to start VM: {e}", vm_id=vm_id)
-
+        """Start a VM.
+        
+        Args:
+            vm_id: VM identifier
+            
+        Returns:
+            Updated VM information
+        """
+        self._run_multipass(["start", vm_id])
+        return await self.get_vm_status(vm_id)
+    
     async def stop_vm(self, vm_id: str) -> VMInfo:
-        """Stop a VM."""
-        vm_info = self.vms.get(vm_id)
-        if not vm_info:
-            raise VMNotFoundError(f"VM {vm_id} not found")
-
-        if vm_info.status == VMStatus.STOPPED:
-            return vm_info
-
-        if vm_info.status != VMStatus.RUNNING:
-            raise VMStateError(
-                f"Cannot stop VM in {vm_info.status} state",
-                vm_id=vm_id
-            )
-
-        try:
-            vm_info.status = VMStatus.STOPPING
-            self.vms[vm_id] = vm_info
-
-            await self._run_command("stop", vm_info.name)
-
-            vm_info.status = VMStatus.STOPPED
-            vm_info.ip_address = None
-            self.vms[vm_id] = vm_info
-            return vm_info
-
-        except Exception as e:
-            vm_info.status = VMStatus.ERROR
-            vm_info.error_message = str(e)
-            self.vms[vm_id] = vm_info
-            raise VMError(f"Failed to stop VM: {e}", vm_id=vm_id)
-
+        """Stop a VM.
+        
+        Args:
+            vm_id: VM identifier
+            
+        Returns:
+            Updated VM information
+        """
+        self._run_multipass(["stop", vm_id])
+        return await self.get_vm_status(vm_id)
+    
     async def get_vm_status(self, vm_id: str) -> VMInfo:
-        """Get VM status."""
-        vm_info = self.vms.get(vm_id)
-        if not vm_info:
-            raise VMNotFoundError(f"VM {vm_id} not found")
-
+        """Get current status of a VM.
+        
+        Args:
+            vm_id: VM identifier
+            
+        Returns:
+            VM status information
+        """
         try:
-            stdout, _, _ = await self._run_command(
-                "info",
-                vm_info.name,
-                "--format",
-                "json"
+            info = self._get_vm_info(vm_id)
+            
+            # Extract name from VM ID
+            name = vm_id.split("-")[1]
+            
+            return VMInfo(
+                id=vm_id,
+                name=name,
+                status=VMStatus(info.get("state", "unknown").lower()),
+                resources=VMResources(
+                    cpu=int(info.get("cpu_count", 1)),
+                    memory=int(info.get("memory_total", 1024) / 1024),
+                    storage=int(info.get("disk_total", 10 * 1024) / 1024)
+                ),
+                ip_address=info.get("ipv4", [None])[0],
+                ssh_port=self.nginx.get_port(vm_id)
             )
-            info = json.loads(stdout)
-            state = info["info"][vm_info.name]["state"]
-
-            # Map Multipass state to our VMStatus
-            status_map = {
-                "Running": VMStatus.RUNNING,
-                "Stopped": VMStatus.STOPPED,
-                "Starting": VMStatus.CREATING,
-                "Stopping": VMStatus.STOPPING
-            }
-
-            vm_info.status = status_map.get(state, VMStatus.ERROR)
-            if vm_info.status == VMStatus.RUNNING:
-                vm_info.ip_address = info["info"][vm_info.name]["ipv4"][0]
-
-            self.vms[vm_id] = vm_info
-            return vm_info
-
         except Exception as e:
-            vm_info.status = VMStatus.ERROR
-            vm_info.error_message = str(e)
-            self.vms[vm_id] = vm_info
-            raise VMError(f"Failed to get VM status: {e}", vm_id=vm_id)
+            logger.error(f"Error getting VM status: {e}")
+            return VMInfo(
+                id=vm_id,
+                name=vm_id,
+                status=VMStatus.ERROR,
+                resources=VMResources(cpu=1, memory=1, storage=10),
+                error_message=str(e)
+            )
+    
+    async def add_ssh_key(self, vm_id: str, key: str) -> None:
+        """Add SSH key to VM.
+        
+        Args:
+            vm_id: VM identifier
+            key: SSH key to add
+        """
+        # Not implemented - we use cloud-init for SSH key setup
+        pass

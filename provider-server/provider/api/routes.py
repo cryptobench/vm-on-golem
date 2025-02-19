@@ -1,132 +1,109 @@
-from fastapi import APIRouter, Depends, HTTPException
+import logging
 from typing import List
+from pathlib import Path
+from fastapi import APIRouter, HTTPException
 
-from ..vm.models import (
-    VMConfig,
-    VMInfo,
-    VMCreateError,
-    VMNotFoundError,
-    VMStateError,
-    ResourceError
-)
-from ..vm.multipass import MultipassProvider
+from ..config import settings
+from ..vm.models import VMCreateRequest, VMInfo, VMStatus, VMAccessInfo, VMConfig, VMResources
+from ..vm.multipass import MultipassProvider, MultipassError
 from ..discovery.resource_tracker import ResourceTracker
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
-def get_provider() -> MultipassProvider:
-    """Get VM provider from app state."""
-    from ..main import app
-    return app.state.provider
-
-def get_resource_tracker() -> ResourceTracker:
-    """Get resource tracker from app state."""
-    from ..main import app
-    return app.state.resource_tracker
+# Initialize resource tracker and VM provider
+resource_tracker = ResourceTracker()
+provider = MultipassProvider(resource_tracker)
 
 @router.post("/vms", response_model=VMInfo)
-async def create_vm(
-    config: VMConfig,
-    provider: MultipassProvider = Depends(get_provider),
-    resource_tracker: ResourceTracker = Depends(get_resource_tracker)
-):
+async def create_vm(request: VMCreateRequest) -> VMInfo:
     """Create a new VM."""
     try:
-        # Resource check is now handled by provider
+        # Determine resources based on size or explicit values
+        if request.size:
+            resources = VMResources.from_size(request.size)
+        else:
+            # Use explicit values or defaults
+            cpu = request.cpu_cores or settings.MIN_CPU_CORES
+            memory = request.memory_gb or settings.MIN_MEMORY_GB
+            storage = request.storage_gb or settings.MIN_STORAGE_GB
+            
+            # Validate resource requirements
+            if cpu < settings.MIN_CPU_CORES:
+                raise HTTPException(400, f"Minimum CPU cores required: {settings.MIN_CPU_CORES}")
+            if memory < settings.MIN_MEMORY_GB:
+                raise HTTPException(400, f"Minimum memory required: {settings.MIN_MEMORY_GB}GB")
+            if storage < settings.MIN_STORAGE_GB:
+                raise HTTPException(400, f"Minimum storage required: {settings.MIN_STORAGE_GB}GB")
+            
+            resources = VMResources(
+                cpu=cpu,
+                memory=memory,
+                storage=storage
+            )
+        
+        # Create VM config
+        config = VMConfig(
+            name=request.name,
+            image=request.image or settings.DEFAULT_VM_IMAGE,
+            resources=resources,
+            ssh_key=request.ssh_key
+        )
+        
+        # Create VM
         vm_info = await provider.create_vm(config)
         return vm_info
-    except ResourceError as e:
-        raise HTTPException(
-            status_code=503,
-            detail={"code": "RESOURCE_UNAVAILABLE", "message": str(e)}
-        )
-    except VMCreateError as e:
-        raise HTTPException(
-            status_code=400,
-            detail={"code": "VM_CREATE_ERROR", "message": str(e)}
-        )
+        
+    except MultipassError as e:
+        logger.error(f"Failed to create VM: {e}")
+        raise HTTPException(500, str(e))
 
 @router.get("/vms", response_model=List[VMInfo])
-async def list_vms(
-    provider: MultipassProvider = Depends(get_provider)
-):
+async def list_vms() -> List[VMInfo]:
     """List all VMs."""
-    return list(provider.vms.values())
+    try:
+        vms = []
+        for vm_id in resource_tracker.get_allocated_vms():
+            vm_info = await provider.get_vm_status(vm_id)
+            vms.append(vm_info)
+        return vms
+    except MultipassError as e:
+        logger.error(f"Failed to list VMs: {e}")
+        raise HTTPException(500, str(e))
 
 @router.get("/vms/{vm_id}", response_model=VMInfo)
-async def get_vm(
-    vm_id: str,
-    provider: MultipassProvider = Depends(get_provider)
-):
+async def get_vm_status(vm_id: str) -> VMInfo:
     """Get VM status."""
     try:
         return await provider.get_vm_status(vm_id)
-    except VMNotFoundError:
-        raise HTTPException(
-            status_code=404,
-            detail={"code": "VM_NOT_FOUND", "message": f"VM {vm_id} not found"}
-        )
+    except MultipassError as e:
+        logger.error(f"Failed to get VM status: {e}")
+        raise HTTPException(500, str(e))
 
-@router.post("/vms/{vm_id}/start", response_model=VMInfo)
-async def start_vm(
-    vm_id: str,
-    provider: MultipassProvider = Depends(get_provider)
-):
-    """Start a VM."""
+@router.get("/vms/{vm_id}/access", response_model=VMAccessInfo)
+async def get_vm_access(vm_id: str) -> VMAccessInfo:
+    """Get VM access information."""
     try:
-        return await provider.start_vm(vm_id)
-    except VMNotFoundError:
-        raise HTTPException(
-            status_code=404,
-            detail={"code": "VM_NOT_FOUND", "message": f"VM {vm_id} not found"}
+        # Get VM info
+        vm = await provider.get_vm_status(vm_id)
+        if not vm:
+            raise HTTPException(404, "VM not found")
+        
+        # Return access info
+        return VMAccessInfo(
+            ssh_host=settings.PUBLIC_IP or "localhost",
+            ssh_port=vm.ssh_port or 22
         )
-    except VMStateError as e:
-        raise HTTPException(
-            status_code=400,
-            detail={"code": "VM_STATE_ERROR", "message": str(e)}
-        )
-
-@router.post("/vms/{vm_id}/stop", response_model=VMInfo)
-async def stop_vm(
-    vm_id: str,
-    provider: MultipassProvider = Depends(get_provider)
-):
-    """Stop a VM."""
-    try:
-        return await provider.stop_vm(vm_id)
-    except VMNotFoundError:
-        raise HTTPException(
-            status_code=404,
-            detail={"code": "VM_NOT_FOUND", "message": f"VM {vm_id} not found"}
-        )
-    except VMStateError as e:
-        raise HTTPException(
-            status_code=400,
-            detail={"code": "VM_STATE_ERROR", "message": str(e)}
-        )
+        
+    except MultipassError as e:
+        logger.error(f"Failed to get VM access info: {e}")
+        raise HTTPException(500, str(e))
 
 @router.delete("/vms/{vm_id}")
-async def delete_vm(
-    vm_id: str,
-    provider: MultipassProvider = Depends(get_provider)
-):
+async def delete_vm(vm_id: str) -> None:
     """Delete a VM."""
     try:
         await provider.delete_vm(vm_id)
-        return {"status": "success"}
-    except VMNotFoundError:
-        raise HTTPException(
-            status_code=404,
-            detail={"code": "VM_NOT_FOUND", "message": f"VM {vm_id} not found"}
-        )
-
-@router.get("/resources")
-async def get_resources(
-    resource_tracker: ResourceTracker = Depends(get_resource_tracker)
-):
-    """Get current resource availability."""
-    return {
-        "total": resource_tracker.total_resources,
-        "allocated": resource_tracker.allocated_resources,
-        "available": resource_tracker.get_available_resources()
-    }
+    except MultipassError as e:
+        logger.error(f"Failed to delete VM: {e}")
+        raise HTTPException(500, str(e))

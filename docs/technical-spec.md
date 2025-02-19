@@ -594,7 +594,7 @@ class SSHManager:
         self,
         vm_id: str,
         key: SSHKeyPair,
-        username: str = "root"
+        username: str = "ubuntu"
     ) -> None:
         """Provision SSH key to VM."""
         async with asyncssh.connect(

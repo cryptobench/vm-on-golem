@@ -1,5 +1,4 @@
-"""SSH key management module."""
+"""SSH management module for VM on Golem requestor."""
+from .manager import SSHKeyManager
 
-from .manager import SSHKeyManager, SSHKeyPair
-
-__all__ = ['SSHKeyManager', 'SSHKeyPair']
+__all__ = ['SSHKeyManager']

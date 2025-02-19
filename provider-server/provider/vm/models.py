@@ -50,6 +50,37 @@ class VMResources(BaseModel):
         }
         return cls(**sizes[size])
 
+class VMCreateRequest(BaseModel):
+    """Request to create a new VM."""
+    name: str = Field(..., min_length=3, max_length=64, regex="^[a-z0-9][a-z0-9-]*[a-z0-9]$")
+    size: Optional[VMSize] = None
+    cpu_cores: Optional[int] = None
+    memory_gb: Optional[int] = None
+    storage_gb: Optional[int] = None
+    image: Optional[str] = Field(default="20.04")  # Ubuntu 20.04 LTS
+    ssh_key: str = Field(..., regex="^(ssh-rsa|ssh-ed25519) ", description="SSH public key for VM access")
+
+    @validator("name")
+    def validate_name(cls, v: str) -> str:
+        """Validate VM name."""
+        if "--" in v:
+            raise ValueError("VM name cannot contain consecutive hyphens")
+        return v
+
+    @validator("cpu_cores")
+    def validate_cpu(cls, v: Optional[int]) -> Optional[int]:
+        """Validate CPU cores."""
+        if v is not None and v not in [1, 2, 4, 8, 16]:
+            raise ValueError("CPU cores must be 1, 2, 4, 8, or 16")
+        return v
+
+    @validator("memory_gb")
+    def validate_memory(cls, v: Optional[int]) -> Optional[int]:
+        """Validate memory."""
+        if v is not None and v not in [1, 2, 4, 8, 16, 32, 64]:
+            raise ValueError("Memory must be 1, 2, 4, 8, 16, 32, or 64 GB")
+        return v
+
 class VMConfig(BaseModel):
     """VM configuration."""
     name: str = Field(..., min_length=3, max_length=64, regex="^[a-z0-9][a-z0-9-]*[a-z0-9]$")
@@ -87,6 +118,11 @@ class SSHKey(BaseModel):
     name: str = Field(..., min_length=1, max_length=64)
     public_key: str = Field(..., regex="^(ssh-rsa|ssh-ed25519) ")
     fingerprint: Optional[str] = None
+
+class VMAccessInfo(BaseModel):
+    """VM access information."""
+    ssh_host: str
+    ssh_port: int
 
 class VMProvider:
     """Base interface for VM providers."""

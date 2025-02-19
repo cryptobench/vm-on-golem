@@ -171,7 +171,7 @@ async def create(name: str, size: str, country: Optional[str] = None):
     click.echo(f"""
 ✅ VM '{name}' created successfully!
 -------------------------------------------------------------
-SSH Access       : ssh root@{provider['ip_address']}
+SSH Access       : ssh ubuntu@{provider['ip_address']}
 IP Address      : {provider['ip_address']}
 Port            : 22
 VM Status       : running
@@ -194,7 +194,7 @@ async def ssh(name: str):
     cmd = [
         "ssh",
         "-i", config.ssh_key_path,
-        f"root@{vm['ip_address']}"
+        f"ubuntu@{vm['ip_address']}"
     ]
     await asyncio.create_subprocess_exec(*cmd)
 ```
