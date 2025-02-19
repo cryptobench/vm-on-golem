@@ -42,69 +42,48 @@ class ResourceMonitor:
         """Get storage usage percentage."""
         return psutil.disk_usage("/").percent
 
-    @classmethod
-    def can_accept_resources(
-        cls,
-        cpu: int,
-        memory: int,
-        storage: int
-    ) -> bool:
-        """Check if system can accept requested resources."""
-        # Check CPU cores
-        if cpu > cls.get_cpu_count():
-            return False
-
-        # Check memory (with threshold)
-        available_memory = cls.get_memory_gb()
-        if memory > available_memory or cls.get_memory_percent() > settings.MEMORY_THRESHOLD:
-            return False
-
-        # Check storage (with threshold)
-        available_storage = cls.get_storage_gb()
-        if storage > available_storage or cls.get_storage_percent() > settings.STORAGE_THRESHOLD:
-            return False
-
-        # Check CPU usage
-        if cls.get_cpu_percent() > settings.CPU_THRESHOLD:
-            return False
-
-        return True
-
-    @classmethod
-    def get_available_resources(cls) -> Dict[str, int]:
-        """Get available system resources."""
-        return {
-            "cpu": cls.get_cpu_count(),
-            "memory": cls.get_memory_gb(),
-            "storage": cls.get_storage_gb()
-        }
-
 class ResourceAdvertiser:
     """Advertise available resources to discovery service."""
     
     def __init__(
         self,
+        resource_tracker: 'ResourceTracker',
         discovery_url: Optional[str] = None,
         provider_id: Optional[str] = None,
         update_interval: Optional[int] = None
     ):
+        self.resource_tracker = resource_tracker
         self.discovery_url = discovery_url or settings.DISCOVERY_URL
         self.provider_id = provider_id or settings.PROVIDER_ID
         self.update_interval = update_interval or settings.ADVERTISEMENT_INTERVAL
         self.session: Optional[aiohttp.ClientSession] = None
-        self.monitor = ResourceMonitor()
         self._stop_event = asyncio.Event()
 
     async def start(self):
         """Start advertising resources."""
-        self.session = aiohttp.ClientSession()
+        self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10))
+        # Register for resource updates
+        self.resource_tracker.on_update(self._post_advertisement)
+        
+        # Test discovery service connection
+        try:
+            async with self.session.get(f"{self.discovery_url}/health") as response:
+                if not response.ok:
+                    logger.warning("Discovery service health check failed, continuing without advertising")
+                    return
+        except Exception as e:
+            logger.warning(f"Could not connect to discovery service, continuing without advertising: {e}")
+            return
+            
         try:
             while not self._stop_event.is_set():
                 try:
                     await self._post_advertisement()
+                except aiohttp.ClientError as e:
+                    logger.error(f"Network error posting advertisement: {e}")
+                    await asyncio.sleep(min(60, self.update_interval))
                 except Exception as e:
                     logger.error(f"Failed to post advertisement: {e}")
-                    # Shorter interval for retries
                     await asyncio.sleep(min(60, self.update_interval))
                 else:
                     await asyncio.sleep(self.update_interval)
@@ -123,39 +102,55 @@ class ResourceAdvertiser:
         if not self.session:
             raise RuntimeError("Session not initialized")
 
-        resources = self.monitor.get_available_resources()
+        resources = self.resource_tracker.get_available_resources()
         
         # Don't advertise if resources are too low
-        if not self.monitor.can_accept_resources(
-            cpu=settings.MIN_CPU_CORES,
-            memory=settings.MIN_MEMORY_GB,
-            storage=settings.MIN_STORAGE_GB
-        ):
+        if not self.resource_tracker._meets_minimum_requirements(resources):
             logger.warning("Resources too low, skipping advertisement")
             return
 
-        async with self.session.post(
-            f"{self.discovery_url}/api/v1/advertisements",
-            headers={
-                "X-Provider-ID": self.provider_id,
-                "X-Provider-Signature": "signature",  # TODO: Implement signing
-                "Content-Type": "application/json"
-            },
-            json={
-                "ip_address": await self._get_public_ip(),
-                "country": settings.COUNTRY,
-                "resources": resources
-            }
-        ) as response:
-            if not response.ok:
-                error_text = await response.text()
-                raise Exception(
-                    f"Failed to post advertisement: {response.status} - {error_text}"
+        # Get public IP with retries
+        ip_address = None
+        for _ in range(3):  # Try 3 times
+            try:
+                ip_address = await self._get_public_ip()
+                if ip_address:
+                    break
+            except Exception as e:
+                logger.warning(f"Failed to get public IP, retrying: {e}")
+                await asyncio.sleep(1)
+        
+        if not ip_address:
+            logger.error("Could not get public IP after retries")
+            return
+
+        try:
+            async with self.session.post(
+                f"{self.discovery_url}/api/v1/advertisements",
+                headers={
+                    "X-Provider-ID": self.provider_id,
+                    "X-Provider-Signature": "signature",  # TODO: Implement signing
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "ip_address": ip_address,
+                    "country": settings.COUNTRY,
+                    "resources": resources
+                },
+                timeout=aiohttp.ClientTimeout(total=5)  # 5 second timeout for advertisement
+            ) as response:
+                if not response.ok:
+                    error_text = await response.text()
+                    raise Exception(
+                        f"Failed to post advertisement: {response.status} - {error_text}"
+                    )
+                logger.info(
+                    f"Posted advertisement with resources: CPU={resources['cpu']}, "
+                    f"Memory={resources['memory']}GB, Storage={resources['storage']}GB"
                 )
-            logger.info(
-                f"Posted advertisement with resources: CPU={resources['cpu']}, "
-                f"Memory={resources['memory']}GB, Storage={resources['storage']}GB"
-            )
+        except asyncio.TimeoutError:
+            logger.error("Advertisement request timed out")
+            raise
 
     async def _get_public_ip(self) -> str:
         """Get public IP address."""

@@ -18,22 +18,29 @@ from .models import (
     VMStateError,
     VMProvider,
     VMError,
+    ResourceError,
 )
 
 logger = logging.getLogger(__name__)
 
+
 class MultipassProvider(VMProvider):
-    def __init__(self, multipass_path: Optional[str] = None):
+    def __init__(
+        self,
+        resource_tracker: 'ResourceTracker',
+        multipass_path: Optional[str] = None
+    ):
         self.multipass_path = multipass_path or settings.MULTIPASS_PATH
         self.vms: Dict[str, VMInfo] = {}
-        
+        self.resource_tracker = resource_tracker
+
     async def initialize(self) -> None:
         """Initialize the provider."""
         try:
             # Verify multipass is installed and working
             stdout, _, _ = await self._run_command("version")
             logger.info(f"Multipass version: {stdout}")
-            
+
             # List existing VMs and add them to our state
             stdout, _, _ = await self._run_command("list", "--format", "json")
             vms = json.loads(stdout)
@@ -45,12 +52,20 @@ class MultipassProvider(VMProvider):
                         memory=vm.get("memory", 1),
                         storage=vm.get("disk", 10)
                     )
+                    # Allocate resources for existing VMs
+                    if not await self.resource_tracker.allocate(resources):
+                        logger.warning(
+                            f"Could not allocate resources for existing VM {vm['name']}"
+                        )
+                        continue
+
                     self.vms[vm_id] = VMInfo(
                         id=vm_id,
                         name=vm["name"],
                         status=VMStatus.RUNNING if vm["state"] == "Running" else VMStatus.STOPPED,
                         resources=resources,
-                        ip_address=vm.get("ipv4", [])[0] if vm.get("ipv4") else None,
+                        ip_address=vm.get("ipv4", [])[
+                            0] if vm.get("ipv4") else None,
                         ssh_port=22
                     )
             logger.info("Provider initialization complete")
@@ -68,6 +83,8 @@ class MultipassProvider(VMProvider):
                         await self.stop_vm(vm_id)
                     except Exception as e:
                         logger.error(f"Failed to stop VM {vm_id}: {e}")
+                # Deallocate resources
+                await self.resource_tracker.deallocate(vm_info.resources)
         except Exception as e:
             logger.error(f"Failed to cleanup provider: {e}")
             raise
@@ -75,27 +92,41 @@ class MultipassProvider(VMProvider):
     async def _run_command(
         self,
         *args: str,
-        check: bool = True
+        check: bool = True,
+        timeout: int = 30
     ) -> Tuple[str, str, int]:
-        """Run a multipass command."""
+        """Run a multipass command with timeout."""
         cmd = [self.multipass_path, *args]
-        process = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        
-        stdout, stderr = await process.communicate()
-        stdout_str = stdout.decode().strip()
-        stderr_str = stderr.decode().strip()
-        
-        if check and process.returncode != 0:
-            raise VMError(
-                f"Multipass command failed: {stderr_str}",
-                vm_id=args[1] if len(args) > 1 else None
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
             )
             
-        return stdout_str, stderr_str, process.returncode
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
+            stdout_str = stdout.decode().strip()
+            stderr_str = stderr.decode().strip()
+
+            if check and process.returncode != 0:
+                raise VMError(
+                    f"Multipass command failed: {stderr_str}",
+                    vm_id=args[1] if len(args) > 1 else None
+                )
+
+            return stdout_str, stderr_str, process.returncode
+        except asyncio.TimeoutError:
+            try:
+                process.kill()
+            except:
+                pass
+            raise VMError(f"Command timed out after {timeout} seconds: {' '.join(cmd)}")
+        except Exception as e:
+            try:
+                process.kill()
+            except:
+                pass
+            raise VMError(f"Command failed: {str(e)}")
 
     async def _get_vm_ip(self, name: str) -> Optional[str]:
         """Get VM IP address."""
@@ -109,6 +140,10 @@ class MultipassProvider(VMProvider):
 
     async def create_vm(self, config: VMConfig) -> VMInfo:
         """Create a new VM using Multipass."""
+        # First try to allocate resources
+        if not await self.resource_tracker.allocate(config.resources):
+            raise ResourceError("Insufficient resources available")
+
         vm_id = str(uuid.uuid4())
         vm_info = VMInfo(
             id=vm_id,
@@ -148,6 +183,8 @@ class MultipassProvider(VMProvider):
             return vm_info
 
         except Exception as e:
+            # Deallocate resources on failure
+            await self.resource_tracker.deallocate(config.resources)
             vm_info.status = VMStatus.ERROR
             vm_info.error_message = str(e)
             self.vms[vm_id] = vm_info
@@ -167,6 +204,8 @@ class MultipassProvider(VMProvider):
             await self._run_command("delete", vm_info.name)
             vm_info.status = VMStatus.DELETED
             self.vms[vm_id] = vm_info
+            # Deallocate resources
+            await self.resource_tracker.deallocate(vm_info.resources)
         except Exception as e:
             raise VMError(f"Failed to delete VM: {e}", vm_id=vm_id)
 
@@ -187,7 +226,7 @@ class MultipassProvider(VMProvider):
 
         try:
             await self._run_command("start", vm_info.name)
-            
+
             # Get VM IP
             ip_address = await self._get_vm_ip(vm_info.name)
             if not ip_address:
@@ -222,9 +261,9 @@ class MultipassProvider(VMProvider):
         try:
             vm_info.status = VMStatus.STOPPING
             self.vms[vm_id] = vm_info
-            
+
             await self._run_command("stop", vm_info.name)
-            
+
             vm_info.status = VMStatus.STOPPED
             vm_info.ip_address = None
             self.vms[vm_id] = vm_info
@@ -251,7 +290,7 @@ class MultipassProvider(VMProvider):
             )
             info = json.loads(stdout)
             state = info["info"][vm_info.name]["state"]
-            
+
             # Map Multipass state to our VMStatus
             status_map = {
                 "Running": VMStatus.RUNNING,
@@ -259,11 +298,11 @@ class MultipassProvider(VMProvider):
                 "Starting": VMStatus.CREATING,
                 "Stopping": VMStatus.STOPPING
             }
-            
+
             vm_info.status = status_map.get(state, VMStatus.ERROR)
             if vm_info.status == VMStatus.RUNNING:
                 vm_info.ip_address = info["info"][vm_info.name]["ipv4"][0]
-            
+
             self.vms[vm_id] = vm_info
             return vm_info
 

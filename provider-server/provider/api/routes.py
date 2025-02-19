@@ -1,140 +1,114 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
-from typing import List, Optional
-import logging
+from fastapi import APIRouter, Depends, HTTPException
+from typing import List
 
-from ..config import settings
-from ..vm.models import VMProvider, VMError, VMNotFoundError, VMStateError
-from ..discovery.advertiser import ResourceMonitor
-from .models import (
-    CreateVMRequest,
-    VMResponse,
-    AddSSHKeyRequest,
-    ErrorResponse,
-    ListVMsResponse,
-    ProviderStatusResponse
+from ..vm.models import (
+    VMConfig,
+    VMInfo,
+    VMCreateError,
+    VMNotFoundError,
+    VMStateError,
+    ResourceError
 )
+from ..vm.multipass import MultipassProvider
+from ..discovery.resource_tracker import ResourceTracker
 
-logger = logging.getLogger(__name__)
-router = APIRouter(prefix=settings.API_V1_PREFIX)
+router = APIRouter()
 
-async def get_vm_provider() -> VMProvider:
-    """Dependency for getting VM provider."""
-    # This will be initialized in the main application
-    raise NotImplementedError()
+def get_provider() -> MultipassProvider:
+    """Get VM provider from app state."""
+    from ..main import app
+    return app.state.provider
 
-@router.post(
-    "/vms",
-    response_model=VMResponse,
-    responses={
-        400: {"model": ErrorResponse},
-        503: {"model": ErrorResponse}
-    }
-)
+def get_resource_tracker() -> ResourceTracker:
+    """Get resource tracker from app state."""
+    from ..main import app
+    return app.state.resource_tracker
+
+@router.post("/vms", response_model=VMInfo)
 async def create_vm(
-    request: CreateVMRequest,
-    provider: VMProvider = Depends(get_vm_provider)
+    config: VMConfig,
+    provider: MultipassProvider = Depends(get_provider),
+    resource_tracker: ResourceTracker = Depends(get_resource_tracker)
 ):
     """Create a new VM."""
     try:
-        # Check if we can accept the resources
-        if not ResourceMonitor.can_accept_resources(
-            cpu=request.resources.cpu,
-            memory=request.resources.memory,
-            storage=request.resources.storage
-        ):
-            raise HTTPException(
-                status_code=503,
-                detail={
-                    "code": "RESOURCE_UNAVAILABLE",
-                    "message": "Insufficient resources available"
-                }
-            )
-
-        vm_info = await provider.create_vm(request)
-        return VMResponse(**vm_info.dict())
-    except VMError as e:
+        # Resource check is now handled by provider
+        vm_info = await provider.create_vm(config)
+        return vm_info
+    except ResourceError as e:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "RESOURCE_UNAVAILABLE", "message": str(e)}
+        )
+    except VMCreateError as e:
         raise HTTPException(
             status_code=400,
-            detail={
-                "code": "VM_CREATE_ERROR",
-                "message": str(e),
-                "details": {"vm_id": e.vm_id} if e.vm_id else None
-            }
+            detail={"code": "VM_CREATE_ERROR", "message": str(e)}
         )
 
-@router.get(
-    "/vms",
-    response_model=ListVMsResponse,
-    responses={
-        400: {"model": ErrorResponse}
-    }
-)
+@router.get("/vms", response_model=List[VMInfo])
 async def list_vms(
-    status: Optional[str] = None,
-    provider: VMProvider = Depends(get_vm_provider)
+    provider: MultipassProvider = Depends(get_provider)
 ):
     """List all VMs."""
-    try:
-        vms = []
-        total = 0
-        for vm_id in provider.vms:
-            vm_info = await provider.get_vm_status(vm_id)
-            if status is None or vm_info.status == status:
-                vms.append(VMResponse(**vm_info.dict()))
-                total += 1
-        return ListVMsResponse(vms=vms, total=total)
-    except Exception as e:
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "code": "LIST_VMS_ERROR",
-                "message": str(e)
-            }
-        )
+    return list(provider.vms.values())
 
-@router.get(
-    "/vms/{vm_id}",
-    response_model=VMResponse,
-    responses={
-        404: {"model": ErrorResponse},
-        400: {"model": ErrorResponse}
-    }
-)
+@router.get("/vms/{vm_id}", response_model=VMInfo)
 async def get_vm(
     vm_id: str,
-    provider: VMProvider = Depends(get_vm_provider)
+    provider: MultipassProvider = Depends(get_provider)
 ):
     """Get VM status."""
     try:
-        vm_info = await provider.get_vm_status(vm_id)
-        return VMResponse(**vm_info.dict())
+        return await provider.get_vm_status(vm_id)
     except VMNotFoundError:
         raise HTTPException(
             status_code=404,
-            detail={
-                "code": "VM_NOT_FOUND",
-                "message": f"VM {vm_id} not found"
-            }
-        )
-    except VMError as e:
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "code": "VM_STATUS_ERROR",
-                "message": str(e)
-            }
+            detail={"code": "VM_NOT_FOUND", "message": f"VM {vm_id} not found"}
         )
 
-@router.delete(
-    "/vms/{vm_id}",
-    responses={
-        404: {"model": ErrorResponse},
-        400: {"model": ErrorResponse}
-    }
-)
+@router.post("/vms/{vm_id}/start", response_model=VMInfo)
+async def start_vm(
+    vm_id: str,
+    provider: MultipassProvider = Depends(get_provider)
+):
+    """Start a VM."""
+    try:
+        return await provider.start_vm(vm_id)
+    except VMNotFoundError:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "VM_NOT_FOUND", "message": f"VM {vm_id} not found"}
+        )
+    except VMStateError as e:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "VM_STATE_ERROR", "message": str(e)}
+        )
+
+@router.post("/vms/{vm_id}/stop", response_model=VMInfo)
+async def stop_vm(
+    vm_id: str,
+    provider: MultipassProvider = Depends(get_provider)
+):
+    """Stop a VM."""
+    try:
+        return await provider.stop_vm(vm_id)
+    except VMNotFoundError:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "VM_NOT_FOUND", "message": f"VM {vm_id} not found"}
+        )
+    except VMStateError as e:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "VM_STATE_ERROR", "message": str(e)}
+        )
+
+@router.delete("/vms/{vm_id}")
 async def delete_vm(
     vm_id: str,
-    provider: VMProvider = Depends(get_vm_provider)
+    provider: MultipassProvider = Depends(get_provider)
 ):
     """Delete a VM."""
     try:
@@ -143,114 +117,16 @@ async def delete_vm(
     except VMNotFoundError:
         raise HTTPException(
             status_code=404,
-            detail={
-                "code": "VM_NOT_FOUND",
-                "message": f"VM {vm_id} not found"
-            }
-        )
-    except VMError as e:
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "code": "VM_DELETE_ERROR",
-                "message": str(e)
-            }
+            detail={"code": "VM_NOT_FOUND", "message": f"VM {vm_id} not found"}
         )
 
-@router.post(
-    "/vms/{vm_id}/start",
-    response_model=VMResponse,
-    responses={
-        404: {"model": ErrorResponse},
-        400: {"model": ErrorResponse}
+@router.get("/resources")
+async def get_resources(
+    resource_tracker: ResourceTracker = Depends(get_resource_tracker)
+):
+    """Get current resource availability."""
+    return {
+        "total": resource_tracker.total_resources,
+        "allocated": resource_tracker.allocated_resources,
+        "available": resource_tracker.get_available_resources()
     }
-)
-async def start_vm(
-    vm_id: str,
-    provider: VMProvider = Depends(get_vm_provider)
-):
-    """Start a VM."""
-    try:
-        vm_info = await provider.start_vm(vm_id)
-        return VMResponse(**vm_info.dict())
-    except VMNotFoundError:
-        raise HTTPException(
-            status_code=404,
-            detail={
-                "code": "VM_NOT_FOUND",
-                "message": f"VM {vm_id} not found"
-            }
-        )
-    except VMStateError as e:
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "code": "VM_STATE_ERROR",
-                "message": str(e)
-            }
-        )
-    except VMError as e:
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "code": "VM_START_ERROR",
-                "message": str(e)
-            }
-        )
-
-@router.post(
-    "/vms/{vm_id}/stop",
-    response_model=VMResponse,
-    responses={
-        404: {"model": ErrorResponse},
-        400: {"model": ErrorResponse}
-    }
-)
-async def stop_vm(
-    vm_id: str,
-    provider: VMProvider = Depends(get_vm_provider)
-):
-    """Stop a VM."""
-    try:
-        vm_info = await provider.stop_vm(vm_id)
-        return VMResponse(**vm_info.dict())
-    except VMNotFoundError:
-        raise HTTPException(
-            status_code=404,
-            detail={
-                "code": "VM_NOT_FOUND",
-                "message": f"VM {vm_id} not found"
-            }
-        )
-    except VMStateError as e:
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "code": "VM_STATE_ERROR",
-                "message": str(e)
-            }
-        )
-    except VMError as e:
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "code": "VM_STOP_ERROR",
-                "message": str(e)
-            }
-        )
-
-
-@router.get(
-    "/status",
-    response_model=ProviderStatusResponse
-)
-async def get_status(
-    provider: VMProvider = Depends(get_vm_provider)
-):
-    """Get provider status."""
-    monitor = ResourceMonitor()
-    return ProviderStatusResponse(
-        resources=monitor.get_available_resources(),
-        vm_count=len(provider.vms),
-        max_vms=settings.MAX_VMS
-    )
