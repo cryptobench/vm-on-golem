@@ -82,3 +82,13 @@ class ProviderClient:
             if not response.ok:
                 error_text = await response.text()
                 raise Exception(f"Failed to destroy VM: {error_text}")
+
+    async def get_vm_access(self, vm_id: str) -> Dict:
+        """Get VM access information."""
+        async with self.session.get(
+            f"{self.provider_url}/api/v1/vms/{vm_id}/access"
+        ) as response:
+            if not response.ok:
+                error_text = await response.text()
+                raise Exception(f"Failed to get VM access info: {error_text}")
+            return await response.json()

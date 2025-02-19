@@ -134,7 +134,7 @@ class ResourceAdvertiser:
                 },
                 json={
                     "ip_address": ip_address,
-                    "country": settings.COUNTRY,
+                    "country": settings.PROVIDER_COUNTRY,
                     "resources": resources
                 },
                 timeout=aiohttp.ClientTimeout(total=5)  # 5 second timeout for advertisement

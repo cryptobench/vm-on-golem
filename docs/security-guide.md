@@ -130,7 +130,7 @@ class VMKeyProvisioner:
         self,
         vm_id: str,
         key: SSHKeyPair,
-        username: str = "root"
+        username: str = "ubuntu"
     ) -> None:
         """Provision SSH key to VM."""
         # Connect without storing host key (first connection)

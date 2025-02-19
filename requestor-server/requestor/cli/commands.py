@@ -95,6 +95,11 @@ async def list_providers(cpu: Optional[int], memory: Optional[int], storage: Opt
 async def create_vm(name: str, provider_id: str, cpu: int, memory: int, storage: int):
     """Create a new VM on a specific provider."""
     try:
+        # Check if VM with this name already exists
+        existing_vm = await db.get_vm(name)
+        if existing_vm:
+            raise RequestorError(f"VM with name '{name}' already exists")
+
         # Find provider
         async with aiohttp.ClientSession() as session:
             async with session.get(
@@ -133,21 +138,29 @@ async def create_vm(name: str, provider_id: str, cpu: int, memory: int, storage:
                 ssh_key=ssh_key
             )
 
+            # Get VM access info
+            access_info = await client.get_vm_access(vm['id'])
+
             # Save VM details
             await db.save_vm(
                 name=name,
                 provider_ip='localhost',  # Always use localhost
                 vm_id=vm['id'],
-                config={'cpu': cpu, 'memory': memory, 'storage': storage},
+                config={
+                    'cpu': cpu, 
+                    'memory': memory, 
+                    'storage': storage,
+                    'ssh_port': access_info['ssh_port']
+                },
                 ssh_key_name=name
             )
 
         click.echo(f"""
 ✅ VM '{name}' created successfully!
 -------------------------------------------------------------
-SSH Access       : ssh -i {key_pair.private_key} root@localhost
+SSH Access       : ssh -i {key_pair.private_key.absolute()} -p {access_info['ssh_port']} ubuntu@localhost
 IP Address      : localhost
-Port            : 22
+Port            : {access_info['ssh_port']}
 VM Status       : running
 Resources       : {cpu} CPU, {memory}GB RAM, {storage}GB Storage
 -------------------------------------------------------------
@@ -171,14 +184,20 @@ async def ssh_vm(name: str):
 
         # Get SSH key
         ssh_manager = SSHKeyManager(config.ssh_key_dir)
-        key_pair = ssh_manager.get_key_pair(vm['ssh_key_name'])
+        key_pair = await ssh_manager.get_key_pair(vm['ssh_key_name'])
         if not key_pair:
             raise RequestorError("SSH key not found")
+
+        # Get VM access info
+        provider_url = config.get_provider_url(vm['provider_ip'])
+        async with ProviderClient(provider_url) as client:
+            access_info = await client.get_vm_access(vm['vm_id'])
 
         # Execute SSH command
         cmd = [
             "ssh",
-            "-i", str(key_pair.private_key),
+            "-i", str(key_pair.private_key.absolute()),
+            "-p", str(access_info['ssh_port']),
             "-o", "StrictHostKeyChecking=no",
             "-o", "UserKnownHostsFile=/dev/null",
             f"root@{vm['provider_ip']}"
@@ -275,13 +294,14 @@ async def list_vms():
             click.echo("No VMs found")
             return
 
-        headers = ["Name", "Status", "IP Address", "CPU", "Memory (GB)", "Storage (GB)", "Created"]
+        headers = ["Name", "Status", "IP Address", "SSH Port", "CPU", "Memory (GB)", "Storage (GB)", "Created"]
         rows = []
         for vm in vms:
             rows.append([
                 vm['name'],
                 vm['status'],
                 vm['provider_ip'],
+                vm['config'].get('ssh_port', 'N/A'),
                 vm['config']['cpu'],
                 vm['config']['memory'],
                 vm['config']['storage'],
