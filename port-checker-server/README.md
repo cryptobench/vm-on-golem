@@ -163,6 +163,8 @@ Common error codes:
 
 ## Running the Server
 
+### Manual Start
+
 ```bash
 # Start the server
 poetry run python run.py
@@ -172,6 +174,53 @@ poetry run python run.py
 # - Health Check: http://localhost:9000/health
 # - OpenAPI Docs: http://localhost:9000/docs
 ```
+
+### Running as a Systemd Service
+
+The port checker can run as a systemd service for automatic startup and restart:
+
+1. Install the service file:
+```bash
+sudo cp golem-port-checker.service /etc/systemd/system/
+sudo systemctl daemon-reload
+```
+
+2. (Optional) Configure environment variables:
+```bash
+# Create environment file if you need custom settings
+sudo mkdir -p /etc/golem
+sudo nano /etc/golem/port-checker.env
+
+# Example environment variables:
+PORT_CHECKER_HOST=0.0.0.0
+PORT_CHECKER_PORT=9000
+PORT_CHECKER_DEBUG=false
+```
+
+3. Enable and start the service:
+```bash
+sudo systemctl enable golem-port-checker
+sudo systemctl start golem-port-checker
+```
+
+4. Check service status:
+```bash
+sudo systemctl status golem-port-checker
+```
+
+5. View service logs:
+```bash
+# View all logs
+sudo journalctl -u golem-port-checker
+
+# Follow new logs
+sudo journalctl -u golem-port-checker -f
+```
+
+The service is configured to:
+- Start automatically on system boot
+- Restart automatically if it crashes
+- Log output to systemd journal
 
 ## Contributing
 

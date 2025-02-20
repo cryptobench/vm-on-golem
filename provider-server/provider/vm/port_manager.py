@@ -1,5 +1,6 @@
 import os
 import json
+import socket
 import logging
 import asyncio
 from pathlib import Path
@@ -172,7 +173,23 @@ class PortManager:
             if vm_id in self._used_ports:
                 port = self._used_ports[vm_id]
                 if port in self.verified_ports:
-                    return port
+                    # Quick check if port is still available
+                    try:
+                        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                        sock.settimeout(1)
+                        result = sock.connect_ex(('127.0.0.1', port))
+                        sock.close()
+                        
+                        if result != 0:  # Port is available
+                            return port
+                        else:
+                            # Port is in use, remove from verified ports
+                            self.verified_ports.remove(port)
+                            self._used_ports.pop(vm_id)
+                    except Exception as e:
+                        logger.debug(f"Failed to check port {port}: {e}")
+                        # Keep the port if check fails, let proxy setup handle any issues
+                        return port
                 else:
                     # Previously allocated port is no longer verified
                     self._used_ports.pop(vm_id)
@@ -182,10 +199,24 @@ class PortManager:
             # Find first available verified port
             for port in sorted(self.verified_ports):
                 if port not in used_ports:
-                    self._used_ports[vm_id] = port
-                    self._save_state()
-                    logger.info(f"Allocated verified port {port} for VM {vm_id}")
-                    return port
+                    # Quick check if port is actually available
+                    try:
+                        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                        sock.settimeout(1)
+                        result = sock.connect_ex(('127.0.0.1', port))
+                        sock.close()
+                        
+                        if result != 0:  # Port is available
+                            self._used_ports[vm_id] = port
+                            self._save_state()
+                            logger.info(f"Allocated verified port {port} for VM {vm_id}")
+                            return port
+                        else:
+                            # Port is in use, remove from verified ports
+                            self.verified_ports.remove(port)
+                    except Exception as e:
+                        logger.debug(f"Failed to check port {port}: {e}")
+                        continue
             
             logger.error("No verified ports available for allocation")
             return None

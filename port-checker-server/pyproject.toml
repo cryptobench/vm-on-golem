@@ -21,6 +21,12 @@ packages = [
     { include = "port_checker" }
 ]
 
+[tool.poetry.package-data]
+port_checker = ["../golem-port-checker.service"]
+
+[tool.poetry.data-files]
+"systemd/system" = ["golem-port-checker.service"]
+
 [tool.poetry.scripts]
 port-checker = "port_checker.main:start"
 

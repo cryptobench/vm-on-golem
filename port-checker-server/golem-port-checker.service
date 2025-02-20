@@ -1,0 +1,16 @@
+[Unit]
+Description=Golem Port Checker Service
+After=network.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/env port-checker
+Restart=always
+RestartSec=1
+StandardOutput=journal
+StandardError=journal
+EnvironmentFile=-/etc/golem/port-checker.env
+
+[Install]
+WantedBy=multi-user.target
