@@ -9,6 +9,62 @@ The Provider Node is responsible for:
 3. Exposing a REST API for VM operations
 4. Handling secure SSH key provisioning
 5. Monitoring and enforcing resource thresholds
+6. Verifying port accessibility and connectivity
+
+## Port Verification
+
+The Provider Node implements a comprehensive port verification system that ensures proper connectivity before startup. This system:
+
+1. Verifies both local and external port accessibility
+2. Checks critical ports:
+   - Discovery port (7466) for network registration
+   - SSH ports (50800-50900) for VM access
+3. Provides real-time verification status with:
+   - Visual progress indicators
+   - Detailed port status information
+   - Critical issues detection
+   - Actionable troubleshooting steps
+
+### Implementation Details
+
+The port verification system consists of three main components:
+
+1. **Port Verifier**: Handles the actual port verification logic
+   - Verifies local port binding
+   - Checks external accessibility using multiple verification servers
+   - Provides detailed verification results
+
+2. **Port Manager**: Manages verified ports throughout the provider lifecycle
+   - Maintains list of verified ports
+   - Allocates ports for new VMs
+   - Handles port release when VMs are destroyed
+
+3. **Port Display**: Provides user-friendly status output
+   - Animated progress indicators
+   - Clear status badges
+   - Critical issues detection
+   - Quick fix guide with documentation links
+
+### Startup Process
+
+Port verification is integrated into the provider startup process:
+
+1. Before the main server starts, the system:
+   - Verifies local port availability
+   - Checks external accessibility
+   - Displays verification progress
+   - Shows critical issues if any are found
+
+2. The provider only starts if:
+   - Discovery port (7466) is accessible
+   - At least one SSH port in range 50800-50900 is available
+   - All verified ports are both locally and externally accessible
+
+3. If verification fails, the system provides:
+   - Specific error messages
+   - Impact assessment
+   - Required actions to fix issues
+   - Links to relevant documentation
 
 ## Implementation Details
 
@@ -258,6 +314,15 @@ class Settings(BaseSettings):
     MEMORY_THRESHOLD: int = 85
     STORAGE_THRESHOLD: int = 90
 
+    # Port Settings
+    DISCOVERY_PORT: int = 7466
+    SSH_PORT_RANGE_START: int = 50800
+    SSH_PORT_RANGE_END: int = 50900
+    PORT_CHECK_SERVERS: List[str] = [
+        "https://ports1.golem.network",
+        "https://ports2.golem.network"
+    ]
+
     class Config:
         env_prefix = "GOLEM_PROVIDER_"
 ```
@@ -296,6 +361,53 @@ python -m provider.main
     - Start advertising resources every 4 minutes
     - Handle VM lifecycle operations via REST API
     - Monitor and enforce resource thresholds
+
+### Port Verification Example
+
+When starting the provider, you'll see detailed port verification status:
+
+```bash
+🌟 Port Verification Status
+==========================
+
+📡 Discovery Service (Required)
+--------------------------
+[✅ Running] Port 7466
+└─ Access: External ✓ | Internal ✓
+└─ Verified By: ports1.golem.network
+
+🔒 SSH Access Ports (Required)
+-------------------------
+[████████████████████████████████] 100%
+Available Ports: 50800, 50801, 50802
+Required: At least 1 port in range 50800-50900
+
+🎯 Current Status: Provider Ready
+└─ Available: 3 SSH ports (50800, 50801, 50802)
+└─ Capacity: Can handle up to 3 concurrent VMs
+```
+
+If port verification fails, you'll receive clear guidance:
+
+```bash
+🚨 Critical Issues
+---------------
+1. Discovery port 7466 is not accessible
+   ↳ This will prevent provider registration
+   ↳ Action: Configure port forwarding for port 7466
+
+💡 Quick Fix Guide
+---------------
+1. Check your router's port forwarding settings
+   ↳ Forward ports 50800-50900 to this machine
+   ↳ Tutorial: docs.golem.network/port-forwarding
+
+2. Verify firewall rules
+   ↳ Allow incoming TCP connections on ports:
+     • 7466 (Discovery)
+     • 50800-50900 (SSH)
+   ↳ Tutorial: docs.golem.network/firewall-setup
+```
 
 ## Error Types
 

@@ -1,115 +1,182 @@
-# Golem Port Checker Service
+# VM on Golem Port Checker Server
 
-A service that verifies port accessibility for Golem providers. This service is used to ensure that providers have the necessary ports open and accessible before they can advertise their services on the Golem Network.
+The Port Checker Server provides a critical network verification service for the Golem Network, ensuring providers have proper port accessibility before joining the network. It verifies both local and external port accessibility through a simple REST API.
 
-## Features
+## System Architecture
 
-- Verifies port accessibility through TCP connection attempts
-- Concurrent port checking for faster results
-- Simple REST API interface
-- Health check endpoint
-- Configurable through environment variables
+```mermaid
+graph TB
+    subgraph Port Checker
+        API[FastAPI Service]
+        Check[Port Checker]
+        Rate[Rate Limiter]
+    end
+    
+    subgraph Providers
+        P1[Provider 1]
+        P2[Provider 2]
+    end
+    
+    P1 & P2 -->|Verify Ports| API
+    API --> Check
+    Rate -->|Protect| API
+```
+
+## How It Works
+
+### Port Verification Flow
+
+```mermaid
+sequenceDiagram
+    participant P as Provider
+    participant PC as Port Checker
+    
+    P->>PC: Request Port Check
+    PC->>PC: Verify Local Binding
+    PC->>PC: Test External Access
+    PC-->>P: Verification Results
+    Note over PC: Multiple retries with delay
+```
+
+The port checker service verifies port accessibility through:
+1. TCP connection attempts to specified ports
+2. Retry mechanism with configurable attempts
+3. Detailed error reporting
+4. Concurrent port checking
 
 ## Installation
 
-1. Install Poetry (if not already installed):
 ```bash
-curl -sSL https://install.python-poetry.org | python3 -
-```
+# Clone the repository
+git clone https://github.com/golem/vm-on-golem.git
+cd vm-on-golem/port-checker-server
 
-2. Install dependencies:
-```bash
+# Install dependencies
 poetry install
 ```
 
 ## Configuration
 
-The service can be configured using environment variables or a `.env` file:
+The server can be configured through environment variables:
 
-```env
-PORT_CHECKER_HOST=0.0.0.0      # Host to bind to
-PORT_CHECKER_PORT=7466         # Port to listen on
-PORT_CHECKER_DEBUG=false       # Enable debug mode
-```
-
-## Running the Service
-
-1. Start the service:
 ```bash
-poetry run python run.py
+# Server Settings
+PORT_CHECKER_HOST="0.0.0.0"
+PORT_CHECKER_PORT=9000
+PORT_CHECKER_DEBUG=false
+
+# Port Check Settings
+PORT_CHECK_RETRIES=3
+PORT_CHECK_RETRY_DELAY=1.0
+PORT_CHECK_TIMEOUT=5.0
 ```
 
-2. The service will start on the configured host and port (default: http://0.0.0.0:7466)
-
-## API Endpoints
+## API Reference
 
 ### Check Ports
 
-`POST /check-ports`
+```bash
+POST /check-ports
+```
 
-Check accessibility of specified ports for a provider.
-
-Request body:
+Request:
 ```json
 {
-  "provider_ip": "192.168.1.100",
-  "ports": [7466, 50800, 50801]
+    "provider_ip": "192.168.1.100",
+    "ports": [7466, 50800, 50801]
 }
 ```
 
 Response:
 ```json
 {
-  "success": true,
-  "results": {
-    "7466": {
-      "accessible": true,
-      "error": null
+    "success": true,
+    "results": {
+        "7466": {
+            "accessible": true,
+            "error": null
+        },
+        "50800": {
+            "accessible": true,
+            "error": null
+        },
+        "50801": {
+            "accessible": false,
+            "error": "Connection refused"
+        }
     },
-    "50800": {
-      "accessible": true,
-      "error": null
-    },
-    "50801": {
-      "accessible": false,
-      "error": "Connection refused"
-    }
-  },
-  "message": "Successfully verified 2 out of 3 ports"
+    "message": "Successfully verified 2 out of 3 ports"
 }
 ```
 
 ### Health Check
 
-`GET /health`
-
-Check if the service is running.
+```bash
+GET /health
+```
 
 Response:
 ```json
 {
-  "status": "ok"
+    "status": "ok"
 }
 ```
 
-## Development
+## Technical Details
 
-1. Enable debug mode for auto-reload:
-```bash
-PORT_CHECKER_DEBUG=true poetry run python run.py
+### Port Verification Process
+
+1. **Request Validation**
+   - Valid IP address format
+   - Port numbers within range (1-65535)
+   - Maximum ports per request
+
+2. **Verification Steps**
+   - TCP connection attempt
+   - Configurable timeout
+   - Multiple retry attempts
+   - Delay between retries
+
+3. **Response Details**
+   - Per-port accessibility status
+   - Detailed error messages
+   - Overall success indicator
+   - Summary message
+
+### Error Handling
+
+The API uses standardized error responses:
+
+```json
+{
+    "detail": {
+        "code": "ERROR_CODE",
+        "message": "Human readable message"
+    }
+}
 ```
 
-2. Run tests:
+Common error codes:
+- `INVALID_IP`: Invalid IP address format
+- `INVALID_PORT`: Port number out of range
+- `CHECK_FAILED`: Port check operation failed
+
+## Running the Server
+
 ```bash
-poetry run pytest
+# Start the server
+poetry run python run.py
+
+# The server will be available at:
+# - API: http://localhost:9000
+# - Health Check: http://localhost:9000/health
+# - OpenAPI Docs: http://localhost:9000/docs
 ```
 
-## Integration with Golem Provider
+## Contributing
 
-The port checker service is used by Golem providers to verify their port accessibility before advertising on the network. Providers will:
-
-1. Try to bind to required ports locally (7466 and range 50800-50900)
-2. Use this service to verify external accessibility of successfully bound ports
-3. Only advertise and use ports that are verified as accessible
-
-This ensures that providers only advertise ports that are truly accessible from the internet, preventing connection issues for requestors.
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Run the tests
+5. Submit a pull request
