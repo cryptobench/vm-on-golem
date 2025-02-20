@@ -59,42 +59,12 @@ async def startup_animation():
         live.console.print("[dim]Press Ctrl+C to stop the server[/dim]")
 
 async def vm_creation_animation(vm_name: str):
-    """Display VM creation animation.
+    """Display VM creation success message.
     
     Args:
         vm_name: Name of the VM being created
     """
-    stages = [
-        ("Allocating resources", "Preparing system resources"),
-        ("Configuring VM", "Setting up environment"),
-        ("Starting services", "Finalizing setup")
-    ]
-    
-    with Live(refresh_per_second=8) as live:
-        live.console.print(Panel(
-            Text.from_markup(f"[bold yellow]🔨 Creating Virtual Machine[/bold yellow]\n[blue]{vm_name}[/blue]"),
-            style=Style(color="yellow")
-        ))
-        
-        for stage, detail in stages:
-            for frame in SPINNER_FRAMES:
-                live.update(Panel(
-                    Text.from_markup(
-                        f"[bold blue]{frame}[/bold blue] {stage}\n[dim]{detail}[/dim]"
-                    ),
-                    style=Style(color="blue")
-                ))
-                await asyncio.sleep(0.1)
-            live.console.print(Panel(
-                Text.from_markup(f"[bold green]✓[/bold green] {stage}\n[dim]{detail} - Complete[/dim]"),
-                style=Style(color="green")
-            ))
-        
-        # Success message
-        live.console.print(Panel(
-            Text.from_markup(f"[bold green]✨ Success![/bold green]\n[blue]VM '{vm_name}' is ready for use[/blue]"),
-            style=Style(color="green", bold=True)
-        ))
+    console.print(f"[bold green]✨ VM '{vm_name}' is now being rented. Access information has been forwarded to the requestor.[/bold green]")
 
 def vm_status_change(vm_id: str, status: str, details: str = ""):
     """Display VM status change.
@@ -104,17 +74,6 @@ def vm_status_change(vm_id: str, status: str, details: str = ""):
         status: New status
         details: Additional details (optional)
     """
-    status_colors = {
-        "running": "green",
-        "starting": "yellow",
-        "stopping": "yellow",
-        "stopped": "red",
-        "error": "red"
-    }
-    color = status_colors.get(status.lower(), "blue")
-    
-    message = f"VM {vm_id}: [{color}]{status}[/{color}]"
-    if details:
-        message += f" - {details}"
-    
-    console.print(message)
+    # Only show final status
+    if status.lower() == "running":
+        console.print(f"[green]✓[/green] VM {vm_id} is {status.lower()}")
