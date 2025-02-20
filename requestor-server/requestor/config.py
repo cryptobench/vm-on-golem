@@ -22,7 +22,7 @@ class RequestorConfig(BaseSettings):
     
     # Discovery Service
     discovery_url: str = Field(
-        default="http://195.201.39.101:7465",
+        default="http://195.201.39.101:9001",
         description="URL of the discovery service"
     )
     

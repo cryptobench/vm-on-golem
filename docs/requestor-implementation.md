@@ -3,6 +3,7 @@
 ## Overview
 
 The Requestor Node is responsible for:
+
 1. Discovering available providers through the discovery service
 2. Creating and managing VMs on chosen providers
 3. Providing a simple CLI interface for VM operations
@@ -39,7 +40,7 @@ class DiscoveryClient:
                 'country': country
             }.items() if v is not None
         }
-        
+
         async with self.session.get(
             f"{self.discovery_url}/api/v1/advertisements",
             params=params
@@ -156,7 +157,7 @@ async def create(name: str, size: str, country: Optional[str] = None):
 
     # Use first available provider
     provider = providers[0]
-    client = ProviderClient(f"http://{provider['ip_address']}:7465")
+    client = ProviderClient(f"http://{provider['ip_address']}:9001")
 
     # Create VM
     vm = await client.create_vm(
@@ -207,9 +208,9 @@ from pydantic import BaseSettings
 from pathlib import Path
 
 class RequestorConfig(BaseSettings):
-    discovery_url: str = "http://discovery.golem.network:7465"
+    discovery_url: str = "http://discovery.golem.network:9001"
     ssh_key_path: Path = Path.home() / ".ssh" / "golem_key"
-    
+
     class Config:
         env_prefix = "GOLEM_REQUESTOR_"
 ```
@@ -270,11 +271,13 @@ class Database:
 ## Usage Example
 
 1. Create a new VM:
+
 ```bash
 golem vm create my-webserver --size medium --country SE
 ```
 
 2. SSH into the VM:
+
 ```bash
 golem vm ssh my-webserver
 ```
@@ -297,6 +300,7 @@ class ProviderError(RequestorError):
 ```
 
 This implementation focuses on:
+
 1. Simple provider discovery through the discovery service
 2. Direct communication with providers
 3. Easy-to-use CLI interface

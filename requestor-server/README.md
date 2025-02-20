@@ -12,14 +12,14 @@ graph TB
         SSH[SSH Manager]
         PC[Provider Client]
     end
-    
+
     subgraph Provider
         API[Provider API]
         VM[VM Manager]
         Proxy[SSH Proxy]
         RT[Resource Tracker]
     end
-    
+
     CLI --> PC
     PC --> API
     SSH --> Proxy
@@ -37,7 +37,7 @@ sequenceDiagram
     participant SSH
     participant Provider
     participant VM
-    
+
     User->>CLI: Create VM Command
     CLI->>SSH: Generate SSH Key
     SSH-->>CLI: Key Pair
@@ -50,6 +50,7 @@ sequenceDiagram
 ```
 
 When you create a VM:
+
 1. The requestor generates an SSH key pair or uses your system's existing keys
 2. The provider receives the public key and injects it during VM creation via cloud-init
 3. The provider allocates a dedicated port and configures SSH forwarding
@@ -64,7 +65,7 @@ sequenceDiagram
     participant DB
     participant Proxy
     participant VM
-    
+
     User->>CLI: SSH Command
     CLI->>DB: Get VM Details
     DB-->>CLI: Connection Info
@@ -74,6 +75,7 @@ sequenceDiagram
 ```
 
 The SSH connection process:
+
 1. The CLI retrieves stored VM details from the local database
 2. The provider's proxy system forwards your SSH connection to the VM
 3. All traffic is securely routed through the allocated port
@@ -101,6 +103,7 @@ golem vm providers
 ```
 
 Example output:
+
 ```
 ────────────────────────────────────────────────
   🌍 Available Providers (3 total)
@@ -119,6 +122,7 @@ golem vm create my-webserver --provider-id provider-1 --cpu 2 --memory 4 --stora
 ```
 
 The system will:
+
 1. Verify provider availability
 2. Check resource requirements
 3. Set up SSH access
@@ -126,6 +130,7 @@ The system will:
 5. Save connection details locally
 
 Example output:
+
 ```
 ────────────────────────────────────────────────
   🎉 VM Deployed Successfully!
@@ -151,11 +156,13 @@ Example output:
 ### Managing VMs
 
 List your VMs:
+
 ```bash
 golem vm list
 ```
 
 Example output:
+
 ```
 ────────────────────────────────────────────────
   📋 Your VMs (2 total)
@@ -167,6 +174,7 @@ my-database   ● stopped     192.168.1.101   4 CPU, 8GB RAM
 ```
 
 Other commands:
+
 ```bash
 # SSH into a VM
 golem vm ssh my-webserver
@@ -186,9 +194,10 @@ golem vm destroy my-webserver
 The requestor uses a hierarchical configuration system:
 
 1. Environment Variables:
+
 ```bash
 # Discovery Service
-export GOLEM_REQUESTOR_DISCOVERY_URL="http://discovery.golem.network:7465"
+export GOLEM_REQUESTOR_DISCOVERY_URL="http://discovery.golem.network:9001"
 
 # Base Directory (default: ~/.golem)
 export GOLEM_REQUESTOR_BASE_DIR="/path/to/golem/dir"
@@ -203,6 +212,7 @@ export GOLEM_REQUESTOR_FORCE_LOCALHOST="true"    # Optional: Force localhost in 
 ```
 
 2. Directory Structure:
+
 ```
 ~/.golem/
   ├── ssh/              # SSH keys
@@ -216,6 +226,7 @@ export GOLEM_REQUESTOR_FORCE_LOCALHOST="true"    # Optional: Force localhost in 
 ### SSH Key Management
 
 The system intelligently handles SSH keys:
+
 1. Uses existing system SSH keys if available
 2. Generates and manages Golem-specific keys if needed
 3. Ensures proper key permissions (0600 for private, 0644 for public)
@@ -224,14 +235,16 @@ The system intelligently handles SSH keys:
 ### State Management
 
 Local state is maintained in SQLite:
-- VM details and configuration
-- Provider information
-- Connection parameters
-- VM status tracking
+
+-   VM details and configuration
+-   Provider information
+-   Connection parameters
+-   VM status tracking
 
 ### Provider Integration
 
 The requestor communicates with providers through:
+
 1. Discovery service for provider location
 2. Direct API calls for VM management
 3. SSH proxy system for secure access

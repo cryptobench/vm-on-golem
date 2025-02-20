@@ -13,7 +13,7 @@ The Discovery Service acts as a simple advertisement board where providers can p
 
 ### Base URL
 ```
-http://discovery.golem.network:7465
+http://discovery.golem.network:9001
 ```
 
 ### Endpoints
@@ -93,7 +93,7 @@ Each provider exposes a REST API for VM management operations.
 
 ### Base URL
 ```
-http://{provider_ip}:7465
+http://{provider_ip}:9001
 ```
 
 ### Endpoints

@@ -17,7 +17,7 @@ golem-discovery
 ```
 
 The server will start with the following default configuration:
-- Listen on all interfaces (0.0.0.0) port 7465
+- Listen on all interfaces (0.0.0.0) port 9001
 - Store data in SQLite at ~/.golem/discovery/discovery.db
 - Rate limit to 100 requests per minute per IP
 - Clean up expired advertisements every minute
@@ -45,7 +45,7 @@ GOLEM_DISCOVERY_DATABASE_DIR="/custom/path"
 | Setting | Default | Environment Variable | Description |
 |---------|---------|---------------------|-------------|
 | Host | 0.0.0.0 | GOLEM_DISCOVERY_HOST | Listen interface |
-| Port | 7465 | GOLEM_DISCOVERY_PORT | Listen port |
+| Port | 9001 | GOLEM_DISCOVERY_PORT | Listen port |
 | Debug | false | GOLEM_DISCOVERY_DEBUG | Enable debug mode |
 | Database Dir | ~/.golem/discovery | GOLEM_DISCOVERY_DATABASE_DIR | Database directory |
 | Database Name | discovery.db | GOLEM_DISCOVERY_DATABASE_NAME | Database filename |
@@ -66,7 +66,7 @@ All settings can be configured through environment variables:
 | Variable | Description | Default |
 |----------|-------------|---------|
 | GOLEM_DISCOVERY_HOST | Server host | 0.0.0.0 |
-| GOLEM_DISCOVERY_PORT | Server port | 7465 |
+| GOLEM_DISCOVERY_PORT | Server port | 9001 |
 | GOLEM_DISCOVERY_DEBUG | Enable debug mode | false |
 | GOLEM_DISCOVERY_DATABASE_DIR | Database directory | ~/.golem/discovery |
 | GOLEM_DISCOVERY_DATABASE_NAME | Database filename | discovery.db |
