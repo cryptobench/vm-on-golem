@@ -15,6 +15,7 @@ from ..errors import RequestorError
 # Initialize components
 db = Database(config.db_path)
 
+
 def async_command(f):
     """Decorator to run async commands."""
     async def wrapper(*args, **kwargs):
@@ -23,15 +24,18 @@ def async_command(f):
         return await f(*args, **kwargs)
     return lambda *args, **kwargs: asyncio.run(wrapper(*args, **kwargs))
 
+
 @click.group()
 def cli():
     """VM on Golem management CLI"""
     pass
 
+
 @cli.group()
 def vm():
     """VM management commands"""
     pass
+
 
 @vm.command(name='providers')
 @click.option('--cpu', type=int, help='Minimum CPU cores required')
@@ -65,12 +69,20 @@ async def list_providers(cpu: Optional[int], memory: Optional[int], storage: Opt
             return
 
         # Format provider information
-        headers = ["Provider ID", "IP Address", "Country", "CPU", "Memory (GB)", "Storage (GB)", "Updated"]
+        headers = ["Provider ID", "IP Address", "Country",
+                   "CPU", "Memory (GB)", "Storage (GB)", "Updated"]
         rows = []
         for p in providers:
+            # Get provider IP based on environment
+            provider_ip = 'localhost' if config.environment == "development" else p.get(
+                'ip_address')
+            if not provider_ip and config.environment == "production":
+                click.echo(
+                    f"Warning: Provider {p['provider_id']} has no IP address", err=True)
+                provider_ip = 'N/A'
             rows.append([
                 p['provider_id'],
-                'localhost',  # Always show localhost
+                provider_ip,
                 p['country'],
                 p['resources']['cpu'],
                 p['resources']['memory'],
@@ -84,6 +96,7 @@ async def list_providers(cpu: Optional[int], memory: Optional[int], storage: Opt
     except Exception as e:
         click.echo(f"Error: {str(e)}", err=True)
         raise click.Abort()
+
 
 @vm.command(name='create')
 @click.argument('name')
@@ -109,26 +122,35 @@ async def create_vm(name: str, provider_id: str, cpu: int, memory: int, storage:
                     raise RequestorError("Failed to query discovery service")
                 providers = await response.json()
 
-        provider = next((p for p in providers if p['provider_id'] == provider_id), None)
+        provider = next(
+            (p for p in providers if p['provider_id'] == provider_id), None)
         if not provider:
             raise RequestorError(f"Provider {provider_id} not found")
 
         # Verify resources
-        if (cpu > provider['resources']['cpu'] or 
-            memory > provider['resources']['memory'] or 
-            storage > provider['resources']['storage']):
-            raise RequestorError("Requested resources exceed provider capacity")
+        if (cpu > provider['resources']['cpu'] or
+            memory > provider['resources']['memory'] or
+                storage > provider['resources']['storage']):
+            raise RequestorError(
+                "Requested resources exceed provider capacity")
 
         # Generate SSH key pair
         ssh_manager = SSHKeyManager(config.ssh_key_dir)
         key_pair = await ssh_manager.generate_key_pair(name)
 
+        # Get provider IP based on environment
+        provider_ip = 'localhost' if config.environment == "development" else provider.get(
+            'ip_address')
+        if not provider_ip and config.environment == "production":
+            raise RequestorError(
+                "Provider IP address not found in advertisement")
+
         # Create VM
-        provider_url = config.get_provider_url('localhost')  # Always use localhost
+        provider_url = config.get_provider_url(provider_ip)
         async with ProviderClient(provider_url) as client:
             # Read public key
             ssh_key = key_pair.public_key.read_text().strip()
-            
+
             # Create VM with SSH key
             vm = await client.create_vm(
                 name=name,
@@ -144,11 +166,11 @@ async def create_vm(name: str, provider_id: str, cpu: int, memory: int, storage:
             # Save VM details
             await db.save_vm(
                 name=name,
-                provider_ip='localhost',  # Always use localhost
+                provider_ip=provider_ip,
                 vm_id=vm['id'],
                 config={
-                    'cpu': cpu, 
-                    'memory': memory, 
+                    'cpu': cpu,
+                    'memory': memory,
                     'storage': storage,
                     'ssh_port': access_info['ssh_port']
                 },
@@ -158,8 +180,8 @@ async def create_vm(name: str, provider_id: str, cpu: int, memory: int, storage:
         click.echo(f"""
 ✅ VM '{name}' created successfully!
 -------------------------------------------------------------
-SSH Access       : ssh -i {key_pair.private_key.absolute()} -p {access_info['ssh_port']} ubuntu@localhost
-IP Address      : localhost
+SSH Access       : ssh -i {key_pair.private_key.absolute()} -p {access_info['ssh_port']} ubuntu@{provider_ip}
+IP Address      : {provider_ip}
 Port            : {access_info['ssh_port']}
 VM Status       : running
 Resources       : {cpu} CPU, {memory}GB RAM, {storage}GB Storage
@@ -170,6 +192,7 @@ Note: Remember to change your SSH password upon first login.
     except Exception as e:
         click.echo(f"Error: {str(e)}", err=True)
         raise click.Abort()
+
 
 @vm.command(name='ssh')
 @click.argument('name')
@@ -200,13 +223,14 @@ async def ssh_vm(name: str):
             "-p", str(access_info['ssh_port']),
             "-o", "StrictHostKeyChecking=no",
             "-o", "UserKnownHostsFile=/dev/null",
-            f"root@{vm['provider_ip']}"
+            f"ubuntu@{vm['provider_ip']}"
         ]
         subprocess.run(cmd)
 
     except Exception as e:
         click.echo(f"Error: {str(e)}", err=True)
         raise click.Abort()
+
 
 @vm.command(name='destroy')
 @click.argument('name')
@@ -238,6 +262,7 @@ async def destroy_vm(name: str):
         click.echo(f"Error: {str(e)}", err=True)
         raise click.Abort()
 
+
 @vm.command(name='start')
 @click.argument('name')
 @async_command
@@ -260,6 +285,7 @@ async def start_vm(name: str):
     except Exception as e:
         click.echo(f"Error: {str(e)}", err=True)
         raise click.Abort()
+
 
 @vm.command(name='stop')
 @click.argument('name')
@@ -284,6 +310,7 @@ async def stop_vm(name: str):
         click.echo(f"Error: {str(e)}", err=True)
         raise click.Abort()
 
+
 @vm.command(name='list')
 @async_command
 async def list_vms():
@@ -294,7 +321,8 @@ async def list_vms():
             click.echo("No VMs found")
             return
 
-        headers = ["Name", "Status", "IP Address", "SSH Port", "CPU", "Memory (GB)", "Storage (GB)", "Created"]
+        headers = ["Name", "Status", "IP Address", "SSH Port",
+                   "CPU", "Memory (GB)", "Storage (GB)", "Created"]
         rows = []
         for vm in vms:
             rows.append([
@@ -315,9 +343,11 @@ async def list_vms():
         click.echo(f"Error: {str(e)}", err=True)
         raise click.Abort()
 
+
 def main():
     """Entry point for the CLI."""
     cli()
+
 
 if __name__ == '__main__':
     main()
