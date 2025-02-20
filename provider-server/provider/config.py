@@ -57,26 +57,72 @@ class Settings(BaseSettings):
     VM_DATA_DIR: str = ""
     SSH_KEY_DIR: str = ""
     CLOUD_INIT_DIR: str = ""
+    CLOUD_INIT_FALLBACK_DIR: str = ""  # Will be set to a temp directory if needed
 
     @validator("CLOUD_INIT_DIR", pre=True)
     def resolve_cloud_init_dir(cls, v: str) -> str:
         """Resolve and create cloud-init directory path."""
-        if not v:
-            path = Path.home() / ".golem" / "provider" / "cloud-init"
-        else:
+        import platform
+        import tempfile
+        
+        def verify_dir_permissions(path: Path) -> bool:
+            """Verify directory has correct permissions and is accessible."""
+            try:
+                # Create test file
+                test_file = path / "permission_test"
+                test_file.write_text("test")
+                test_file.unlink()
+                return True
+            except Exception:
+                return False
+
+        if v:
             path = Path(v)
             if not path.is_absolute():
                 path = Path.home() / path
-        
+        else:
+            system = platform.system().lower()
+            # Try OS-specific paths first
+            if system == "linux" and Path("/snap/bin/multipass").exists():
+                # Linux with snap
+                path = Path("/var/snap/multipass/common/cloud-init")
+            elif system == "linux":
+                # Linux without snap
+                path = Path("/var/lib/multipass/cloud-init")
+            elif system == "darwin":
+                # macOS
+                path = Path("/Library/Application Support/multipass/cloud-init")
+            elif system == "windows":
+                # Windows
+                path = Path(os.path.expandvars("%ProgramData%\\Multipass\\cloud-init"))
+            else:
+                path = Path.home() / ".golem" / "provider" / "cloud-init"
+
         try:
+            # Try to create and verify the directory
             path.mkdir(parents=True, exist_ok=True)
-            path.chmod(0o755)  # Readable and executable by owner and others, writable by owner
-            logger.debug(f"Created cloud-init directory at {path}")
+            if platform.system().lower() != "windows":
+                path.chmod(0o755)  # Readable and executable by owner and others, writable by owner
+
+            if verify_dir_permissions(path):
+                logger.debug(f"Created cloud-init directory at {path}")
+                return str(path)
+            
+            # If verification fails, fall back to temp directory
+            fallback_path = Path(tempfile.gettempdir()) / "golem" / "cloud-init"
+            fallback_path.mkdir(parents=True, exist_ok=True)
+            if platform.system().lower() != "windows":
+                fallback_path.chmod(0o755)
+            
+            if verify_dir_permissions(fallback_path):
+                logger.warning(f"Using fallback cloud-init directory at {fallback_path}")
+                return str(fallback_path)
+            
+            raise ValueError("Could not create a writable cloud-init directory")
+            
         except Exception as e:
             logger.error(f"Failed to create cloud-init directory at {path}: {e}")
             raise ValueError(f"Failed to create cloud-init directory: {e}")
-            
-        return str(path)
 
     @validator("VM_DATA_DIR", pre=True)
     def resolve_vm_data_dir(cls, v: str) -> str:

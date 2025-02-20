@@ -1,5 +1,6 @@
 import yaml
 import os
+import subprocess
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional, Tuple
@@ -8,6 +9,29 @@ from ..config import settings
 from ..utils.logging import setup_logger
 
 logger = setup_logger(__name__)
+
+def validate_cloud_init(content: str) -> bool:
+    """Validate cloud-init configuration content.
+    
+    Args:
+        content: YAML content to validate
+        
+    Returns:
+        True if valid, False otherwise
+    """
+    try:
+        # First validate YAML syntax
+        yaml.safe_load(content)
+        
+        # Check for required #cloud-config header
+        if not content.startswith("#cloud-config\n"):
+            logger.error("Cloud-init config missing #cloud-config header")
+            return False
+            
+        return True
+    except Exception as e:
+        logger.error(f"Cloud-init validation failed: {e}")
+        return False
 
 def generate_cloud_init(
     hostname: str,
@@ -32,10 +56,15 @@ def generate_cloud_init(
     
     logger.info(f"Generating cloud-init configuration {config_id}")
     try:
+        # Start with required #cloud-config header
+        yaml_content = "#cloud-config\n"
+        
         config = {
+            "version": 1,
             "hostname": hostname,
             "package_update": True,
             "package_upgrade": True,
+            "preserve_hostname": False,
             "ssh_authorized_keys": [ssh_key],
             "users": [{
                 "name": "root",
@@ -60,16 +89,21 @@ def generate_cloud_init(
         if runcmd:
             config["runcmd"].extend(runcmd)
 
-        # Validate YAML before writing
-        yaml_content = yaml.safe_dump(config)
-        yaml.safe_load(yaml_content)  # Validate by parsing
+        # Add config to YAML content with document markers
+        yaml_content += "---\n"
+        yaml_content += yaml.safe_dump(config, default_flow_style=False, sort_keys=False)
+
+        # Validate the configuration
+        if not validate_cloud_init(yaml_content):
+            raise Exception("Cloud-init configuration validation failed")
 
         # Write to file in our managed directory
         with open(config_path, 'w') as f:
             f.write(yaml_content)
         
         # Set proper permissions
-        config_path.chmod(0o644)  # World readable but only owner writable
+        if os.name != 'nt':  # Skip on Windows
+            config_path.chmod(0o644)  # World readable but only owner writable
         
         logger.debug(f"Cloud-init configuration written to {config_path}")
         logger.debug(f"Cloud-init configuration content:\n{yaml_content}")
@@ -82,6 +116,11 @@ def generate_cloud_init(
         # Don't cleanup on error - keep file for debugging
         if config_path.exists():
             logger.info(f"Failed config preserved at {config_path} for debugging")
+            # Log the file contents for debugging
+            try:
+                logger.debug(f"Failed config contents:\n{config_path.read_text()}")
+            except Exception as read_error:
+                logger.error(f"Could not read failed config: {read_error}")
         raise Exception(error_msg)
 
 def cleanup_cloud_init(path: str, config_id: str) -> None:
