@@ -10,8 +10,14 @@ class RequestorConfig(BaseSettings):
     
     # Environment
     environment: str = Field(
-        default="development",
+        default="production",
         description="Environment mode: 'development' or 'production'"
+    )
+    
+    # Development Settings
+    force_localhost: bool = Field(
+        default=False,
+        description="Force localhost for provider URLs in development mode"
     )
     
     # Discovery Service
@@ -52,16 +58,13 @@ class RequestorConfig(BaseSettings):
         """Get provider API URL.
         
         Args:
-            ip_address: The IP address of the provider. In development mode, this is ignored
-                       and localhost is always used.
+            ip_address: The IP address of the provider.
         
         Returns:
             The complete provider URL with protocol and port.
         """
-        # In development mode, always use localhost regardless of the ip_address parameter
-        if self.environment == "development":
+        if self.environment == "development" and self.force_localhost:
             return "http://localhost:7466"
-        # In production mode, use the actual provider IP address
         return f"http://{ip_address}:7466"
 
 config = RequestorConfig()

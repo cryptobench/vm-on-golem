@@ -146,7 +146,7 @@ class PythonProxyManager:
     
     def __init__(
         self,
-        port_manager: Optional[PortManager] = None,
+        port_manager: PortManager,
         state_file: Optional[str] = None
     ):
         """Initialize the proxy manager.
@@ -155,7 +155,7 @@ class PythonProxyManager:
             port_manager: Port allocation manager
             state_file: Path to persist proxy state
         """
-        self.port_manager = port_manager or PortManager()
+        self.port_manager = port_manager
         self.state_file = state_file or os.path.expanduser("~/.golem/provider/proxy_state.json")
         self._proxies: Dict[str, ProxyServer] = {}  # vm_id -> ProxyServer
         self._load_state()

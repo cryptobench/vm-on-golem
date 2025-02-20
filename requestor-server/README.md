@@ -197,8 +197,9 @@ export GOLEM_REQUESTOR_BASE_DIR="/path/to/golem/dir"
 export GOLEM_REQUESTOR_SSH_KEY_DIR="/path/to/keys"
 export GOLEM_REQUESTOR_DB_PATH="/path/to/database.db"
 
-# Environment Mode
-export GOLEM_REQUESTOR_ENVIRONMENT="production"  # or "development"
+# Environment Mode (defaults to "production")
+export GOLEM_REQUESTOR_ENVIRONMENT="development"  # Optional: Switch to development mode
+export GOLEM_REQUESTOR_FORCE_LOCALHOST="true"    # Optional: Force localhost in development mode
 ```
 
 2. Directory Structure:
@@ -258,4 +259,3 @@ Solution: The VM may have been manually removed. Use 'golem vm list' to see avai
 3. Make your changes
 4. Run the tests
 5. Submit a pull request
-
