@@ -1,22 +1,14 @@
 #!/usr/bin/env python3
 import os
 import sys
-import logging
 import uvicorn
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler('provider.log')
-    ]
-)
+from provider.utils.logging import setup_logger
 
-logger = logging.getLogger(__name__)
+# Configure logging with debug mode
+logger = setup_logger(__name__, debug=True)
 
 def check_requirements():
     """Check if all requirements are met."""
@@ -79,7 +71,7 @@ def main():
         log_config["formatters"]["access"]["fmt"] = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
         
         # Run server
-        logger.info(f"Starting provider server on {settings.HOST}:{settings.PORT}")
+        logger.process(f"🚀 Starting provider server on {settings.HOST}:{settings.PORT}")
         uvicorn.run(
             "provider:app",
             host=settings.HOST,
