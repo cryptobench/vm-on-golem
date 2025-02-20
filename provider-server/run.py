@@ -35,11 +35,18 @@ def check_requirements():
         'GOLEM_PROVIDER_SSH_KEY_DIR',
         str(Path.home() / '.golem' / 'provider' / 'ssh')
     )
+    proxy_state_dir = os.environ.get(
+        'GOLEM_PROVIDER_PROXY_STATE_DIR',
+        str(Path.home() / '.golem' / 'provider' / 'proxy')
+    )
     
     try:
-        Path(vm_data_dir).mkdir(parents=True, exist_ok=True)
-        Path(ssh_key_dir).mkdir(parents=True, exist_ok=True)
-        Path(ssh_key_dir).chmod(0o700)  # Secure permissions for SSH keys
+        # Create and secure directories
+        for directory in [vm_data_dir, ssh_key_dir, proxy_state_dir]:
+            path = Path(directory)
+            path.mkdir(parents=True, exist_ok=True)
+            if directory == ssh_key_dir:
+                path.chmod(0o700)  # Secure permissions for SSH keys
     except Exception as e:
         logger.error(f"Failed to create required directories: {e}")
         return False
@@ -84,16 +91,7 @@ def main():
             limit_concurrency=100,  # Limit concurrent connections
         )
     except Exception as e:
-        error_msg = str(e)
-        if "nginx.conf" in error_msg:
-            logger.error(
-                "Failed to start provider server: nginx configuration not found. "
-                "Please ensure nginx is installed and properly configured, or set "
-                "GOLEM_PROVIDER_NGINX_DIR to point to your nginx configuration directory "
-                "containing nginx.conf"
-            )
-        else:
-            logger.error(f"Failed to start provider server: {e}")
+        logger.error(f"Failed to start provider server: {e}")
         sys.exit(1)
 
 if __name__ == "__main__":
