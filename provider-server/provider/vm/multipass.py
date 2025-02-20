@@ -141,6 +141,10 @@ class MultipassProvider(VMProvider):
         """
         vm_id = f"golem-{config.name}-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
 
+        # Verify resources are properly allocated
+        if not self.resource_tracker.can_accept_resources(config.resources):
+            raise VMCreateError("Resources not properly allocated or insufficient")
+
         # Generate cloud-init config with requestor's public key
         cloud_init_path = generate_cloud_init(
             hostname=config.name,
@@ -173,7 +177,7 @@ class MultipassProvider(VMProvider):
                 raise MultipassError("Failed to get VM IP address")
             logger.success(f"✨ VM IP address acquired: {ip_address}")
 
-            # Configure proxy
+            # Configure proxy and create VM info
             try:
                 logger.process("🔄 Configuring network proxy...")
                 ssh_port = await self.proxy_manager.add_vm(vm_id, ip_address)
@@ -181,7 +185,7 @@ class MultipassProvider(VMProvider):
                     raise MultipassError("Failed to configure proxy")
                 logger.success(f"✨ Network proxy configured - SSH port: {ssh_port}")
 
-                # Create VM info
+                # Create VM info and register with resource tracker
                 vm_info = VMInfo(
                     id=vm_id,
                     name=config.name,
@@ -191,11 +195,15 @@ class MultipassProvider(VMProvider):
                     ssh_port=ssh_port
                 )
 
+                # Update resource tracker with VM ID
+                await self.resource_tracker.allocate(config.resources, vm_id)
+
                 return vm_info
 
             except Exception as e:
-                # If proxy configuration fails, ensure we cleanup the VM
+                # If proxy configuration fails, ensure we cleanup the VM and resources
                 self._run_multipass(["delete", vm_id, "--purge"], check=False)
+                await self.resource_tracker.deallocate(config.resources, vm_id)
                 raise VMCreateError(
                     f"Failed to configure VM networking: {str(e)}", vm_id=vm_id)
 
@@ -205,6 +213,8 @@ class MultipassProvider(VMProvider):
                 await self.delete_vm(vm_id)
             except Exception as cleanup_error:
                 logger.error(f"Error during VM cleanup: {cleanup_error}")
+            # Ensure resources are deallocated even if delete_vm fails
+            await self.resource_tracker.deallocate(config.resources, vm_id)
             raise VMCreateError(f"Failed to create VM: {str(e)}", vm_id=vm_id)
 
         finally:
@@ -218,6 +228,14 @@ class MultipassProvider(VMProvider):
             vm_id: VM identifier
         """
         logger.process(f"🗑️  Initiating deletion of VM {vm_id}")
+        
+        # Get VM info for resource deallocation
+        try:
+            vm_info = await self.get_vm_status(vm_id)
+        except Exception as e:
+            logger.error(f"Failed to get VM info for cleanup: {e}")
+            vm_info = None
+        
         # First try to delete the VM itself
         try:
             logger.info("🔄 Removing VM instance...")
@@ -233,6 +251,15 @@ class MultipassProvider(VMProvider):
             logger.success("✨ Network proxy configuration cleaned up")
         except Exception as e:
             logger.error(f"Error removing proxy config for VM {vm_id}: {e}")
+            
+        # Finally, deallocate resources if we have VM info
+        if vm_info and vm_info.resources:
+            try:
+                logger.info("🔄 Deallocating resources...")
+                await self.resource_tracker.deallocate(vm_info.resources, vm_id)
+                logger.success("✨ Resources deallocated")
+            except Exception as e:
+                logger.error(f"Error deallocating resources: {e}")
 
     async def start_vm(self, vm_id: str) -> VMInfo:
         """Start a VM.
