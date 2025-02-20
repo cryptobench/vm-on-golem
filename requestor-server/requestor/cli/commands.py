@@ -226,11 +226,15 @@ async def create_vm(name: str, provider_id: str, cpu: int, memory: int, storage:
         # Create and configure VM
         provider_url = config.get_provider_url(provider_ip)
         async with ProviderClient(provider_url) as client:
+            # Create VM and get full VM ID
             vm = await deploy_vm(client, name, cpu, memory, storage, key_pair.public_key_content)
             access_info = await get_vm_access(client, vm['id'])
             
+            # Store the full VM ID from access info
+            full_vm_id = access_info['vm_id']
+            
             await save_vm_config(
-                db, name, provider_ip, vm['id'],
+                db, name, provider_ip, full_vm_id,
                 {
                     'cpu': cpu,
                     'memory': memory,
@@ -340,13 +344,21 @@ async def destroy_vm(name: str):
         if not vm:
             raise click.BadParameter(f"VM '{name}' not found")
 
-        # Connect to provider
-        logger.process("Requesting VM termination")
-        provider_url = config.get_provider_url(vm['provider_ip'])
-        async with ProviderClient(provider_url) as client:
-            await client.destroy_vm(vm['vm_id'])
+        try:
+            # Connect to provider using full VM ID
+            logger.process("Requesting VM termination")
+            provider_url = config.get_provider_url(vm['provider_ip'])
+            async with ProviderClient(provider_url) as client:
+                await client.destroy_vm(vm['vm_id'])
+                logger.success("VM terminated on provider")
+        except Exception as e:
+            error_msg = str(e)
+            if "Not Found" in error_msg:
+                logger.warning("VM already removed from provider")
+            else:
+                raise
 
-        # Remove from database
+        # Always remove from database
         logger.process("Cleaning up VM records")
         await db.delete_vm(name)
         
@@ -370,6 +382,106 @@ async def destroy_vm(name: str):
         elif "Not Found" in error_msg:
             error_msg = "VM not found on provider (it may have been manually removed)"
         logger.error(f"Failed to destroy VM: {error_msg}")
+        raise click.Abort()
+
+
+@vm.command(name='purge')
+@click.option('--force', is_flag=True, help='Force purge even if errors occur')
+@click.confirmation_option(prompt='Are you sure you want to purge all VMs?')
+@async_command
+async def purge_vms(force: bool):
+    """Purge all VMs and clean up local database."""
+    try:
+        logger.command("🌪️  Purging all VMs")
+        
+        # Get all VMs
+        logger.process("Retrieving all VM details")
+        vms = await db.list_vms()
+        if not vms:
+            logger.warning("No VMs found to purge")
+            return
+
+        # Track results
+        results = {
+            'success': [],
+            'failed': []
+        }
+
+        # Process each VM
+        for vm in vms:
+            try:
+                logger.process(f"Purging VM '{vm['name']}'")
+                
+                try:
+                    # Try to destroy on provider using full VM ID
+                    provider_url = config.get_provider_url(vm['provider_ip'])
+                    async with ProviderClient(provider_url) as client:
+                        # Get latest VM access info to ensure we have the correct ID
+                        try:
+                            access_info = await client.get_vm_access(vm['vm_id'])
+                            full_vm_id = access_info['vm_id']
+                        except Exception:
+                            # If we can't get access info, use stored VM ID
+                            full_vm_id = vm['vm_id']
+                        
+                        await client.destroy_vm(full_vm_id)
+                    results['success'].append((vm['name'], 'Destroyed successfully'))
+                except Exception as e:
+                    error_msg = str(e)
+                    if "Not Found" in error_msg:
+                        results['success'].append((vm['name'], 'Already removed from provider'))
+                    else:
+                        if not force:
+                            raise
+                        results['failed'].append((vm['name'], f"Provider error: {error_msg}"))
+
+                # Always remove from local database
+                await db.delete_vm(vm['name'])
+                
+            except Exception as e:
+                if not force:
+                    raise
+                results['failed'].append((vm['name'], str(e)))
+
+        # Show results
+        click.echo("\n" + "─" * 60)
+        click.echo(click.style("  🌪️  VM Purge Complete", fg="blue", bold=True))
+        click.echo("─" * 60 + "\n")
+
+        # Success section
+        if results['success']:
+            click.echo(click.style("  ✅ Successfully Purged", fg="green", bold=True))
+            click.echo("  " + "┈" * 25)
+            for name, msg in results['success']:
+                click.echo(f"  • {click.style(name, fg='cyan')}: {click.style(msg, fg='green')}")
+            click.echo()
+
+        # Failures section
+        if results['failed']:
+            click.echo(click.style("  ❌ Failed to Purge", fg="red", bold=True))
+            click.echo("  " + "┈" * 25)
+            for name, error in results['failed']:
+                click.echo(f"  • {click.style(name, fg='cyan')}: {click.style(error, fg='red')}")
+            click.echo()
+
+        # Summary
+        total = len(results['success']) + len(results['failed'])
+        success_rate = (len(results['success']) / total) * 100 if total > 0 else 0
+        
+        click.echo(click.style("  📊 Summary", fg="blue", bold=True))
+        click.echo("  " + "┈" * 25)
+        click.echo(f"  📈 Success Rate : {click.style(f'{success_rate:.1f}%', fg='cyan')}")
+        click.echo(f"  ✅ Successful   : {click.style(str(len(results['success'])), fg='green')}")
+        click.echo(f"  ❌ Failed       : {click.style(str(len(results['failed'])), fg='red')}")
+        click.echo(f"  📋 Total VMs    : {click.style(str(total), fg='cyan')}")
+        
+        click.echo("\n" + "─" * 60)
+
+    except Exception as e:
+        error_msg = str(e)
+        if "database" in error_msg.lower():
+            error_msg = "Failed to access local database"
+        logger.error(f"Purge operation failed: {error_msg}")
         raise click.Abort()
 
 
