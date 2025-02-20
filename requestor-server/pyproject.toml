@@ -1,8 +1,22 @@
 [tool.poetry]
-name = "golem-requestor"
+name = "request-vm-on-golem"
 version = "0.1.0"
-description = "VM on Golem Requestor CLI"
-authors = ["Golem Team"]
+description = "VM on Golem Requestor CLI - Create and manage virtual machines on the Golem Network"
+authors = ["Phillip Jensen <phillip+vm-on-golem@golemgrid.com>"]
+readme = "README.md"
+homepage = "https://github.com/cryptobench/vm-on-golem"
+repository = "https://github.com/cryptobench/vm-on-golem"
+keywords = ["golem", "vm", "cloud", "decentralized", "cli"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3.9",
+    "Topic :: System :: Distributed Computing",
+    "Topic :: System :: Systems Administration"
+]
 packages = [
     { include = "requestor" }
 ]

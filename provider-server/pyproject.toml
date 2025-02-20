@@ -1,11 +1,26 @@
 [tool.poetry]
 name = "golem-vm-provider"
 version = "0.1.0"
-description = "VM on Golem Provider Node"
-authors = ["Golem Factory <contact@golem.network>"]
+description = "VM on Golem Provider Node - Run your own provider node to offer VMs on the Golem Network"
+authors = ["Phillip Jensen <phillip+vm-on-golem@golemgrid.com>"]
+readme = "README.md"
+homepage = "https://github.com/cryptobench/vm-on-golem"
+repository = "https://github.com/cryptobench/vm-on-golem"
+keywords = ["golem", "vm", "provider", "cloud", "decentralized"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: System Administrators",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3.9",
+    "Topic :: System :: Distributed Computing"
+]
 packages = [
     { include = "provider" }
 ]
+
+[tool.poetry.scripts]
+golem-provider = "provider.main:start"
 
 [tool.poetry.dependencies]
 python = "^3.9"
