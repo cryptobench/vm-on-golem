@@ -29,8 +29,8 @@ It's that simple. No complex protocols, no specialized knowledge needed - just s
 ### ✅ Network Enhancement (Completed)
 
 -   [x] Port Verification System
-    -   Validates provider port accessibility (50800-50900)
-    -   Ensures discovery port (7466) availability
+    -   Validates VM access port accessibility ({start_port}-{end_port})
+    -   Ensures provider port ({provider_port}) availability
     -   Real-time verification status display
     -   Proactive network diagnostics
     -   Temporary port check servers (to be replaced by verifier nodes)
@@ -261,8 +261,8 @@ The system consists of three main components, each built with simplicity in mind
 The system includes a robust port verification system:
 
 1. **Provider Startup**
-   - Verifies discovery port (7466) accessibility
-   - Checks SSH port range (50800-50900)
+   - Verifies provider port ({provider_port}) accessibility
+   - Checks VM access port range ({start_port}-{end_port})
    - Real-time verification status display
    - Actionable troubleshooting guidance
 
