@@ -57,22 +57,18 @@ async def create_vm(request: CreateVMRequest) -> VMInfo:
                 ssh_key=request.ssh_key
             )
             
-            # Show VM creation animation
-            await vm_creation_animation(request.name)
-            
             # Create VM
             logger.process(f"🔄 Creating VM with config: {config}")
             vm_info = await provider.create_vm(config)
+
+            # Show success message
+            await vm_creation_animation(request.name)
+            return vm_info
         except Exception as e:
             # If VM creation fails, deallocate resources
             logger.warning("⚠️ VM creation failed, deallocating resources")
             await resource_tracker.deallocate(resources)
             raise
-        
-        # Show status change
-        vm_status_change(vm_info.id, "RUNNING", f"SSH port: {vm_info.ssh_port}")
-        logger.success(f"✨ Successfully created VM '{vm_info.name}' (ID: {vm_info.id})")
-        return vm_info
         
     except MultipassError as e:
         logger.error(f"Failed to create VM: {e}")
@@ -108,19 +104,16 @@ async def get_vm_status(vm_id: str) -> VMInfo:
 async def get_vm_access(vm_id: str) -> VMAccessInfo:
     """Get VM access information."""
     try:
-        logger.process(f"📤 Preparing access credentials for requestor - VM {vm_id}")
         # Get VM info
         vm = await provider.get_vm_status(vm_id)
         if not vm:
             raise HTTPException(404, "VM not found")
         
         # Return access info
-        access_info = VMAccessInfo(
+        return VMAccessInfo(
             ssh_host=settings.PUBLIC_IP or "localhost",
             ssh_port=vm.ssh_port or 22
         )
-        logger.success(f"✨ Access credentials sent to requestor - VM {vm_id}")
-        return access_info
         
     except MultipassError as e:
         logger.error(f"Failed to get VM access info: {e}")

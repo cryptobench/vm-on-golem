@@ -152,11 +152,8 @@ class MultipassProvider(VMProvider):
         )
 
         try:
-            logger.process(f"🚀 Launching VM {vm_id}")
-            logger.info(f"📦 Image: {config.image}")
-            logger.info(f"💻 Resources: {config.resources.cpu} CPU, {config.resources.memory}GB RAM, {config.resources.storage}GB storage")
-            
             # Launch VM
+            logger.process(f"🚀 Launching VM {vm_id}")
             launch_cmd = [
                 "launch",
                 config.image,
@@ -166,24 +163,18 @@ class MultipassProvider(VMProvider):
                 "--memory", f"{config.resources.memory}G",
                 "--disk", f"{config.resources.storage}G"
             ]
-            logger.process("⚙️  Executing multipass launch command...")
             self._run_multipass(launch_cmd)
-            logger.success("✨ VM instance launched successfully")
 
             # Get VM IP
-            logger.process("🔍 Getting VM IP address...")
             ip_address = self._get_vm_ip(vm_id)
             if not ip_address:
                 raise MultipassError("Failed to get VM IP address")
-            logger.success(f"✨ VM IP address acquired: {ip_address}")
 
             # Configure proxy and create VM info
             try:
-                logger.process("🔄 Configuring network proxy...")
                 ssh_port = await self.proxy_manager.add_vm(vm_id, ip_address)
                 if not ssh_port:
                     raise MultipassError("Failed to configure proxy")
-                logger.success(f"✨ Network proxy configured - SSH port: {ssh_port}")
 
                 # Create VM info and register with resource tracker
                 vm_info = VMInfo(
