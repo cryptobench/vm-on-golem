@@ -209,48 +209,87 @@ The central hub connecting providers and requestors:
 
 ## Getting Started
 
-### As a Requestor
+### Choose Your Role
 
-1. Install the CLI:
+VM on Golem offers different components based on your needs:
 
-```bash
-pip install golem-vm-requestor
-```
-
-2. Find a provider:
+### 1. For Users Wanting to Rent VMs (Requestors)
 
 ```bash
+# Install the requestor CLI
+pip install request-vm-on-golem
+
+# List available providers
 golem vm providers
-```
 
-3. Create your VM:
-
-```bash
+# Create a VM
 golem vm create my-webserver --cpu 2 --memory 4 --storage 20
+
+# SSH into your VM
+golem vm ssh my-webserver
+
+# List your VMs
+golem vm list
+
+# Stop a VM
+golem vm stop my-webserver
+
+# Remove a VM
+golem vm destroy my-webserver
 ```
 
-### As a Provider
-
-1. Install the provider software:
+### 2. For Users Offering Computing Power (Providers)
 
 ```bash
+# Install the provider software
 pip install golem-vm-provider
-```
 
-2. Configure your resources:
-
-```bash
-# Edit .env file with your settings
+# Configure your resources in .env
 GOLEM_PROVIDER_MAX_VMS=10
 GOLEM_PROVIDER_MIN_CPU_CORES=1
 GOLEM_PROVIDER_MIN_MEMORY_GB=1
-```
+GOLEM_PROVIDER_MIN_STORAGE_GB=10
 
-3. Start the provider:
-
-```bash
+# Start earning by sharing your resources
 golem-provider start
 ```
+
+### 3. For Running a Discovery Server
+
+```bash
+# Install the discovery service
+pip install golem-vm-discovery
+
+# Configure in .env
+DISCOVERY_HOST="0.0.0.0"
+DISCOVERY_PORT=7465
+DISCOVERY_DB_URL="sqlite:///discovery.db"
+
+# Start the discovery service
+golem-discovery start
+```
+
+### 4. For Running a Port Checker Server
+
+```bash
+# Install the port checker
+pip install golem-port-checker
+
+# Configure in .env
+PORT_CHECKER_HOST="0.0.0.0"
+PORT_CHECKER_PORT=9000
+
+# Start the port checker service
+port-checker start
+```
+
+Each component is independently installable and configurable. Install only what you need based on your role in the network.
+
+For detailed configuration and usage instructions, see each component's documentation:
+- [Requestor CLI Documentation](requestor-server/README.md)
+- [Provider Node Documentation](provider-server/README.md)
+- [Discovery Service Documentation](discovery-server/README.md)
+- [Port Checker Documentation](port-checker-server/README.md)
 
 ## Technical Details
 
@@ -316,5 +355,8 @@ Each component has its own README with detailed development instructions:
 
 Remember: Keep it simple. If you can't explain your change to a 12-year-old, it's probably too complex.
 
+## Publishing
+
+For instructions on publishing new versions of the packages to PyPI, see [PUBLISHING.md](PUBLISHING.md).
 
 >
