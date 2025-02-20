@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "golem-port-checker"
-version = "0.1.7"
+version = "0.1.8"
 description = "Port checking service for VM on Golem - Verify network connectivity for Golem providers"
 authors = ["Phillip Jensen <phillip+vm-on-golem@golemgrid.com>"]
 readme = "README.md"
@@ -18,14 +18,9 @@ classifiers = [
     "Topic :: System :: Networking :: Monitoring"
 ]
 packages = [
-    { include = "port_checker" }
+    { include = "port_checker" },
+    { include = "golem-port-checker.service" }
 ]
-
-[tool.poetry.package-data]
-port_checker = ["../golem-port-checker.service"]
-
-[tool.poetry.data-files]
-"systemd/system" = ["golem-port-checker.service"]
 
 [tool.poetry.scripts]
 port-checker = "port_checker.main:start"
