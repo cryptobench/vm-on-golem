@@ -1,100 +1,87 @@
 name: Publish to PyPI
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'provider-server/**'
-      - 'requestor-server/**'
-      - 'port-checker-server/**'
-      - 'discovery-server/**'
+    push:
+        branches:
+            - main
 
 jobs:
-  publish-provider:
-    name: Publish Provider Package
-    if: contains(github.event.head_commit.modified, 'provider-server/') || contains(github.event.head_commit.added, 'provider-server/') || contains(github.event.head_commit.removed, 'provider-server/')
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.9"
-      - name: Install Poetry
-        run: |
-          curl -sSL https://install.python-poetry.org | python3 -
-      - name: Configure Poetry
-        run: |
-          poetry config pypi-token.pypi ${{ secrets.PYPI_TOKEN }}
-      - name: Build and publish
-        working-directory: ./provider-server
-        run: |
-          poetry build
-          poetry publish
+    publish-provider:
+        name: Publish Provider Package
+        if: contains(join(github.event.commits.*.modified, ','), 'provider-server/') || contains(join(github.event.commits.*.added, ','), 'provider-server/') || contains(join(github.event.commits.*.removed, ','), 'provider-server/')
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v3
+            - name: Set up Python
+              uses: actions/setup-python@v4
+              with:
+                  python-version: "3.9"
+            - name: Install Poetry
+              run: curl -sSL https://install.python-poetry.org | python3 -
+            - name: Configure Poetry
+              run: poetry config pypi-token.pypi ${{ secrets.PYPI_TOKEN }}
+            - name: Build and publish
+              working-directory: ./provider-server
+              run: |
+                  poetry build
+                  poetry publish
 
-  publish-requestor:
-    name: Publish Requestor Package
-    if: contains(github.event.head_commit.modified, 'requestor-server/') || contains(github.event.head_commit.added, 'requestor-server/') || contains(github.event.head_commit.removed, 'requestor-server/')
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.9"
-      - name: Install Poetry
-        run: |
-          curl -sSL https://install.python-poetry.org | python3 -
-      - name: Configure Poetry
-        run: |
-          poetry config pypi-token.pypi ${{ secrets.PYPI_TOKEN }}
-      - name: Build and publish
-        working-directory: ./requestor-server
-        run: |
-          poetry build
-          poetry publish
+    publish-requestor:
+        name: Publish Requestor Package
+        if: contains(join(github.event.commits.*.modified, ','), 'requestor-server/') || contains(join(github.event.commits.*.added, ','), 'requestor-server/') || contains(join(github.event.commits.*.removed, ','), 'requestor-server/')
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v3
+            - name: Set up Python
+              uses: actions/setup-python@v4
+              with:
+                  python-version: "3.9"
+            - name: Install Poetry
+              run: curl -sSL https://install.python-poetry.org | python3 -
+            - name: Configure Poetry
+              run: poetry config pypi-token.pypi ${{ secrets.PYPI_TOKEN }}
+            - name: Build and publish
+              working-directory: ./requestor-server
+              run: |
+                  poetry build
+                  poetry publish
 
-  publish-port-checker:
-    name: Publish Port Checker Package
-    if: contains(github.event.head_commit.modified, 'port-checker-server/') || contains(github.event.head_commit.added, 'port-checker-server/') || contains(github.event.head_commit.removed, 'port-checker-server/')
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.9"
-      - name: Install Poetry
-        run: |
-          curl -sSL https://install.python-poetry.org | python3 -
-      - name: Configure Poetry
-        run: |
-          poetry config pypi-token.pypi ${{ secrets.PYPI_TOKEN }}
-      - name: Build and publish
-        working-directory: ./port-checker-server
-        run: |
-          poetry build
-          poetry publish
+    publish-port-checker:
+        name: Publish Port Checker Package
+        if: contains(join(github.event.commits.*.modified, ','), 'port-checker-server/') || contains(join(github.event.commits.*.added, ','), 'port-checker-server/') || contains(join(github.event.commits.*.removed, ','), 'port-checker-server/')
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v3
+            - name: Set up Python
+              uses: actions/setup-python@v4
+              with:
+                  python-version: "3.9"
+            - name: Install Poetry
+              run: curl -sSL https://install.python-poetry.org | python3 -
+            - name: Configure Poetry
+              run: poetry config pypi-token.pypi ${{ secrets.PYPI_TOKEN }}
+            - name: Build and publish
+              working-directory: ./port-checker-server
+              run: |
+                  poetry build
+                  poetry publish
 
-  publish-discovery:
-    name: Publish Discovery Package
-    if: contains(github.event.head_commit.modified, 'discovery-server/') || contains(github.event.head_commit.added, 'discovery-server/') || contains(github.event.head_commit.removed, 'discovery-server/')
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.9"
-      - name: Install Poetry
-        run: |
-          curl -sSL https://install.python-poetry.org | python3 -
-      - name: Configure Poetry
-        run: |
-          poetry config pypi-token.pypi ${{ secrets.PYPI_TOKEN }}
-      - name: Build and publish
-        working-directory: ./discovery-server
-        run: |
-          poetry build
-          poetry publish
+    publish-discovery:
+        name: Publish Discovery Package
+        if: contains(join(github.event.commits.*.modified, ','), 'discovery-server/') || contains(join(github.event.commits.*.added, ','), 'discovery-server/') || contains(join(github.event.commits.*.removed, ','), 'discovery-server/')
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v3
+            - name: Set up Python
+              uses: actions/setup-python@v4
+              with:
+                  python-version: "3.9"
+            - name: Install Poetry
+              run: curl -sSL https://install.python-poetry.org | python3 -
+            - name: Configure Poetry
+              run: poetry config pypi-token.pypi ${{ secrets.PYPI_TOKEN }}
+            - name: Build and publish
+              working-directory: ./discovery-server
+              run: |
+                  poetry build
+                  poetry publish
