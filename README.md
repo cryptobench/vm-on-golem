@@ -2,7 +2,11 @@
 
 Rent computing power as easily as ordering a pizza. VM on Golem makes it simple to either rent out your spare computing resources or get the computing power you need, when you need it.
 
+> **8 years of development vs 24 hours of simplicity**: Sometimes the simplest solution is the best solution. This MVP was built in a single day using standard tools and protocols - because renting computing power shouldn't be rocket science. No custom protocols, no specialized knowledge, no complex SDKs. Just VMs that work.
+
 https://github.com/user-attachments/assets/4ab118f6-fa00-4612-8033-dea7b352deae
+
+
 
 ## What is VM on Golem?
 
@@ -11,8 +15,6 @@ Think of VM on Golem as the Airbnb for computing power:
 - **Requestors** are like guests, renting computing power when they need it
 
 It's that simple. No complex protocols, no specialized knowledge needed - just straightforward virtual machines that work exactly like any cloud provider you're used to.
-
-> Sometimes the simplest solution is the best solution. This MVP was built in 24 hours using standard tools and protocols - because renting computing power shouldn't be rocket science.
 
 ## System Overview
 
@@ -79,7 +81,11 @@ Traditional cloud platforms are complex and centralized. VM on Golem brings:
 - **Freedom**: Run anything you want, it's your VM
 - **Decentralization**: Connect directly with providers worldwide
 
-No SDKs to learn. No custom protocols. No complex configuration. Just VMs that work.
+Built in 24 hours with:
+- Standard SSH for access (not a custom protocol in sight)
+- Multipass for VM management (because why reinvent the wheel?)
+- FastAPI for simple APIs (no complex frameworks needed)
+- SQLite for storage (sometimes a file is all you need)
 
 ## Components
 
@@ -188,12 +194,6 @@ Each component has its own README with detailed development instructions:
 - [Provider Node Documentation](provider-server/README.md)
 - [Discovery Service Documentation](discovery-server/README.md)
 
-Built with standard tools and protocols:
-- FastAPI for APIs
-- SQLite for storage
-- Multipass for VM management
-- Standard SSH for access
-
 ## Contributing
 
 1. Fork the repository
@@ -207,3 +207,6 @@ Remember: Keep it simple. If you can't explain your change to a 12-year-old, it'
 ## License
 
 This project is part of the Golem Network and is licensed under the GPL-3.0 license.
+
+---
+> Built in 24 hours because sometimes that's all you need. No committees, no complex protocols, no "enterprise-grade solutions" - just a simple idea executed well.
