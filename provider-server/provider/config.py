@@ -3,7 +3,10 @@ from pathlib import Path
 from typing import Optional
 import uuid
 
-from pydantic import BaseSettings, validator
+from pydantic import BaseSettings, validator, Field
+from .utils.logging import setup_logger
+
+logger = setup_logger(__name__)
 
 
 class Settings(BaseSettings):
@@ -88,9 +91,12 @@ class Settings(BaseSettings):
     RATE_LIMIT_PER_MINUTE: int = 100
 
     # Multipass Settings
-    MULTIPASS_BINARY_PATH: str = ""
+    MULTIPASS_BINARY_PATH: str = Field(
+        default="",
+        description="Path to multipass binary"
+    )
 
-    @validator("MULTIPASS_BINARY_PATH", pre=True)
+    @validator("MULTIPASS_BINARY_PATH")
     def detect_multipass_path(cls, v: str) -> str:
         """Detect and validate Multipass binary path."""
         import platform
@@ -100,17 +106,22 @@ class Settings(BaseSettings):
             """Validate that a path exists and is executable."""
             return os.path.isfile(path) and os.access(path, os.X_OK)
 
-        # If path provided via environment variable, validate it directly
+        # If path provided via environment variable, ONLY validate that path
         if v:
-            if validate_path(v):
-                return v
-            raise ValueError(f"Multipass binary not found or not executable at: {v}")
+            logger.debug(f"Using provided multipass path: {v}")
+            if not validate_path(v):
+                logger.error(f"Provided path {v} is invalid or not executable")
+                raise ValueError(f"Invalid multipass binary path: {v}")
+            return v
 
+        logger.debug("No multipass path provided, attempting auto-detection")
         system = platform.system().lower()
+        logger.debug(f"Detected OS: {system}")
         binary_name = "multipass.exe" if system == "windows" else "multipass"
         
         # Try to find multipass based on OS
         if system == "linux":
+            logger.debug("Checking for snap installation on Linux")
             # First try to find snap and check if multipass is installed
             try:
                 # Check if snap exists
@@ -121,6 +132,7 @@ class Settings(BaseSettings):
                     check=True
                 )
                 if snap_result.returncode == 0:
+                    logger.debug("Found snap, checking for multipass installation")
                     # Check if multipass is installed via snap
                     try:
                         snap_list = subprocess.run(
@@ -132,12 +144,13 @@ class Settings(BaseSettings):
                         if snap_list.returncode == 0:
                             snap_path = "/snap/bin/multipass"
                             if validate_path(snap_path):
+                                logger.debug(f"Found multipass via snap at {snap_path}")
                                 return snap_path
                     except subprocess.CalledProcessError:
-                        # Multipass not installed via snap
+                        logger.debug("Multipass not installed via snap")
                         pass
             except subprocess.CalledProcessError:
-                # Snap not found
+                logger.debug("Snap not found")
                 pass
                 
             # Common Linux paths if snap installation not found
@@ -146,6 +159,7 @@ class Settings(BaseSettings):
                 "/usr/bin",
                 "/snap/bin"
             ]
+            logger.debug(f"Checking common Linux paths: {search_paths}")
                 
         elif system == "darwin":  # macOS
             search_paths = [
@@ -153,6 +167,7 @@ class Settings(BaseSettings):
                 "/usr/local/bin",       # Intel Mac
                 "/opt/local/bin"        # MacPorts
             ]
+            logger.debug(f"Checking macOS paths: {search_paths}")
                 
         elif system == "windows":
             search_paths = [
@@ -160,15 +175,21 @@ class Settings(BaseSettings):
                 os.path.expandvars(r"%ProgramFiles(x86)%\Multipass"),
                 os.path.expandvars(r"%LocalAppData%\Multipass")
             ]
+            logger.debug(f"Checking Windows paths: {search_paths}")
                 
         else:
             search_paths = ["/usr/local/bin", "/usr/bin"]
+            logger.debug(f"Checking default paths: {search_paths}")
 
         # Search for multipass binary in OS-specific paths
         for directory in search_paths:
             path = os.path.join(directory, binary_name)
+            logger.debug(f"Checking path: {path}")
             if validate_path(path):
+                logger.debug(f"Found valid multipass binary at: {path}")
                 return path
+            else:
+                logger.debug(f"No valid multipass binary at: {path}")
 
         # OS-specific installation instructions
         if system == "linux":
