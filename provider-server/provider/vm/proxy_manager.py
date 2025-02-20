@@ -147,17 +147,20 @@ class PythonProxyManager:
     def __init__(
         self,
         port_manager: PortManager,
+        name_mapper: "VMNameMapper",
         state_file: Optional[str] = None
     ):
         """Initialize the proxy manager.
         
         Args:
             port_manager: Port allocation manager
+            name_mapper: VM name mapping manager
             state_file: Path to persist proxy state
         """
         self.port_manager = port_manager
+        self.name_mapper = name_mapper
         self.state_file = state_file or os.path.expanduser("~/.golem/provider/proxy_state.json")
-        self._proxies: Dict[str, ProxyServer] = {}  # vm_id -> ProxyServer
+        self._proxies: Dict[str, ProxyServer] = {}  # multipass_name -> ProxyServer
         # Note: _load_state is now async and will be called explicitly during provider setup
     
     async def _load_state(self) -> None:
@@ -169,14 +172,19 @@ class PythonProxyManager:
                     state = json.load(f)
                     # Restore proxy servers from saved state
                     restore_tasks = []
-                    for vm_id, proxy_info in state.items():
-                        # Create task to restore proxy
-                        task = self.add_vm(
-                            vm_id=vm_id,
-                            vm_ip=proxy_info['target'],
-                            port=proxy_info['port']
-                        )
-                        restore_tasks.append(task)
+                    for requestor_name, proxy_info in state.items():
+                        # Get current multipass name for the requestor's VM
+                        multipass_name = await self.name_mapper.get_multipass_name(requestor_name)
+                        if multipass_name:
+                            # Create task to restore proxy
+                            task = self.add_vm(
+                                vm_id=multipass_name,  # Use multipass name for internal tracking
+                                vm_ip=proxy_info['target'],
+                                port=proxy_info['port']
+                            )
+                            restore_tasks.append(task)
+                        else:
+                            logger.warning(f"No multipass name found for requestor VM {requestor_name}")
                     
                     # Wait for all proxies to be restored
                     if restore_tasks:
@@ -186,16 +194,17 @@ class PythonProxyManager:
         except Exception as e:
             logger.error(f"Failed to load proxy state: {e}")
     
-    def _save_state(self) -> None:
-        """Save current proxy state to file."""
+    async def _save_state(self) -> None:
+        """Save current proxy state to file using requestor names."""
         try:
-            state = {
-                vm_id: {
-                    'port': proxy.listen_port,
-                    'target': proxy.target_host
-                }
-                for vm_id, proxy in self._proxies.items()
-            }
+            state = {}
+            for multipass_name, proxy in self._proxies.items():
+                requestor_name = await self.name_mapper.get_requestor_name(multipass_name)
+                if requestor_name:
+                    state[requestor_name] = {
+                        'port': proxy.listen_port,
+                        'target': proxy.target_host
+                    }
             os.makedirs(os.path.dirname(self.state_file), exist_ok=True)
             with open(self.state_file, 'w') as f:
                 json.dump(state, f)
@@ -206,7 +215,7 @@ class PythonProxyManager:
         """Add proxy configuration for a new VM.
         
         Args:
-            vm_id: Unique identifier for the VM
+            vm_id: Unique identifier for the VM (multipass name)
             vm_ip: IP address of the VM
             port: Optional specific port to use, if not provided one will be allocated
             
@@ -226,7 +235,7 @@ class PythonProxyManager:
             await proxy.start()
             
             self._proxies[vm_id] = proxy
-            self._save_state()
+            await self._save_state()
             
             logger.info(f"Started proxy for VM {vm_id} on port {port}")
             return True
@@ -242,14 +251,14 @@ class PythonProxyManager:
         """Remove proxy configuration for a VM.
         
         Args:
-            vm_id: Unique identifier for the VM
+            vm_id: Unique identifier for the VM (multipass name)
         """
         try:
             if vm_id in self._proxies:
                 proxy = self._proxies.pop(vm_id)
                 await proxy.stop()
                 self.port_manager.deallocate_port(vm_id)
-                self._save_state()
+                await self._save_state()
                 logger.info(f"Removed proxy for VM {vm_id}")
         except Exception as e:
             logger.error(f"Failed to remove proxy for VM {vm_id}: {e}")
@@ -270,7 +279,7 @@ class PythonProxyManager:
                 cleanup_errors.append(f"Failed to remove proxy for VM {vm_id}: {e}")
         
         try:
-            self._save_state()
+            await self._save_state()
         except Exception as e:
             cleanup_errors.append(f"Failed to save state: {e}")
             

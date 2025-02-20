@@ -37,8 +37,11 @@ class MultipassProvider(VMProvider):
         self.vm_data_dir.mkdir(parents=True, exist_ok=True)
 
         # Initialize managers
-        self.proxy_manager = PythonProxyManager(port_manager=port_manager)
         self.name_mapper = VMNameMapper(self.vm_data_dir / "vm_names.json")
+        self.proxy_manager = PythonProxyManager(
+            port_manager=port_manager,
+            name_mapper=self.name_mapper
+        )
 
     def _verify_installation(self) -> None:
         """Verify multipass is installed and get version."""
