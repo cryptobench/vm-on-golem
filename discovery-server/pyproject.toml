@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "golem-vm-discovery"
-version = "0.1.4"
+version = "0.1.5"
 description = "VM on Golem Discovery Service - Central hub for provider discovery and resource matching"
 authors = ["Phillip Jensen <phillip+vm-on-golem@golemgrid.com>"]
 readme = "README.md"
