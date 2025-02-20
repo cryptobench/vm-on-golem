@@ -14,9 +14,34 @@ class Settings(BaseSettings):
     PORT: int = 7466
     
     # Provider Settings
-    PROVIDER_ID: str = str(uuid.uuid4())  # Default to random UUID if not set
+    PROVIDER_ID: str = ""  # Will be set from Ethereum identity
     PROVIDER_NAME: str = "golem-provider"
     PROVIDER_COUNTRY: str = "SE"
+    ETHEREUM_KEY_DIR: str = ""
+
+    @validator("ETHEREUM_KEY_DIR", pre=True)
+    def resolve_key_dir(cls, v: str) -> str:
+        """Resolve Ethereum key directory path."""
+        if not v:
+            return str(Path.home() / ".golem" / "provider" / "keys")
+        path = Path(v)
+        if not path.is_absolute():
+            path = Path.home() / path
+        return str(path)
+
+    @validator("PROVIDER_ID", always=True)
+    def get_or_create_provider_id(cls, v: str, values: dict) -> str:
+        """Get or create provider ID from Ethereum identity."""
+        from provider.security.ethereum import EthereumIdentity
+        
+        # If ID provided in env, use it
+        if v:
+            return v
+            
+        # Get ID from Ethereum identity
+        key_dir = values.get("ETHEREUM_KEY_DIR")
+        identity = EthereumIdentity(key_dir)
+        return identity.get_or_create_identity()
     
     # Discovery Service Settings
     DISCOVERY_URL: str = "http://localhost:7465"
@@ -25,8 +50,18 @@ class Settings(BaseSettings):
     # VM Settings
     MAX_VMS: int = 10
     DEFAULT_VM_IMAGE: str = "ubuntu:20.04"
-    VM_DATA_DIR: str = str(Path.home() / ".golem" / "provider" / "vms")
-    SSH_KEY_DIR: str = str(Path.home() / ".golem" / "provider" / "ssh")
+    VM_DATA_DIR: str = ""
+    SSH_KEY_DIR: str = ""
+    
+    @validator("VM_DATA_DIR", "SSH_KEY_DIR", pre=True)
+    def resolve_path(cls, v: str) -> str:
+        """Resolve path relative to home directory if not absolute."""
+        if not v:
+            raise ValueError("Path cannot be empty")
+        path = Path(v)
+        if not path.is_absolute():
+            path = Path.home() / path
+        return str(path)
     
     # Resource Settings
     MIN_MEMORY_GB: int = 1
@@ -42,21 +77,94 @@ class Settings(BaseSettings):
     RATE_LIMIT_PER_MINUTE: int = 100
     
     # Multipass Settings
-    MULTIPASS_PATH: str = "/usr/local/bin/multipass"
+    MULTIPASS_BINARY_PATH: str = ""
+    
+    @validator("MULTIPASS_BINARY_PATH", pre=True)
+    def detect_multipass_path(cls, v: str) -> str:
+        """Detect and validate Multipass binary path."""
+        if v:
+            path = v
+        else:
+            # Common Multipass binary locations
+            binary_name = "multipass"
+            search_paths = [
+                "/usr/local/bin",          # Common Unix/Linux
+                "/usr/bin",                # Linux
+                "/opt/homebrew/bin",       # macOS M1 (Homebrew)
+                "/snap/bin",               # Linux (Snap)
+            ]
+            
+            # Search for multipass binary
+            for directory in search_paths:
+                path = os.path.join(directory, binary_name)
+                if os.path.isfile(path) and os.access(path, os.X_OK):
+                    return path
+                    
+            raise ValueError(
+                "Multipass binary not found. Please install Multipass or set "
+                "GOLEM_PROVIDER_MULTIPASS_BINARY_PATH to your Multipass binary path."
+            )
+        
+        # Validate the path
+        if not os.path.isfile(path):
+            raise ValueError(f"Multipass binary not found at: {path}")
+        if not os.access(path, os.X_OK):
+            raise ValueError(f"Multipass binary at {path} is not executable")
+        return path
     
     # Nginx Settings
-    NGINX_DIR: str = "/opt/homebrew/etc/nginx"
+    NGINX_DIR: str = ""
     NGINX_CONFIG_DIR: Optional[str] = None
     PORT_RANGE_START: int = 50800
     PORT_RANGE_END: int = 50900
     PUBLIC_IP: Optional[str] = None
     
+    @validator("NGINX_DIR", pre=True)
+    def detect_nginx_dir(cls, v: str) -> str:
+        """Detect nginx configuration directory based on system."""
+        def is_valid_nginx_dir(path: str) -> bool:
+            """Check if directory contains a valid nginx configuration."""
+            if not os.path.isdir(path):
+                return False
+            # Check for nginx.conf file
+            nginx_conf = os.path.join(path, "nginx.conf")
+            return os.path.isfile(nginx_conf)
+            
+        if v:
+            if not is_valid_nginx_dir(v):
+                raise ValueError(
+                    f"Invalid nginx configuration directory: {v}. "
+                    "Directory must exist and contain nginx.conf file."
+                )
+            return v
+            
+        # Common nginx config locations
+        nginx_paths = [
+            "/etc/nginx",                  # Linux default
+            "/usr/local/etc/nginx",        # macOS (Homebrew)
+            "/opt/homebrew/etc/nginx",     # macOS M1 (Homebrew)
+            "/usr/local/nginx/conf",       # Custom install
+        ]
+        
+        for path in nginx_paths:
+            if is_valid_nginx_dir(path):
+                return path
+                
+        raise ValueError(
+            "No valid nginx configuration directory found. Please install nginx or set "
+            "GOLEM_PROVIDER_NGINX_DIR to your nginx configuration directory path. "
+            "The directory must contain a valid nginx.conf file."
+        )
+    
     @validator("NGINX_CONFIG_DIR", pre=True, always=True)
     def set_nginx_config_dir(cls, v: Optional[str], values: dict) -> str:
         """Set nginx config directory if not provided."""
-        if v is None:
-            return os.path.join(values["NGINX_DIR"], "golem.d")
-        return v
+        if v:
+            return v
+        nginx_dir = values.get("NGINX_DIR")
+        if not nginx_dir:
+            raise ValueError("NGINX_DIR must be set before NGINX_CONFIG_DIR")
+        return os.path.join(nginx_dir, "golem.d")
     
     @validator("PUBLIC_IP", pre=True)
     def get_public_ip(cls, v: Optional[str]) -> Optional[str]:

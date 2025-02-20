@@ -21,9 +21,9 @@ logger = logging.getLogger(__name__)
 def check_requirements():
     """Check if all requirements are met."""
     # Check if multipass is installed
-    multipass_path = os.environ.get('GOLEM_PROVIDER_MULTIPASS_PATH', '/usr/local/bin/multipass')
+    multipass_path = os.environ.get('GOLEM_PROVIDER_MULTIPASS_BINARY_PATH', '/usr/local/bin/multipass')
     if not Path(multipass_path).exists():
-        logger.error(f"Multipass not found at {multipass_path}")
+        logger.error(f"Multipass binary not found at {multipass_path}")
         return False
         
     # Check required directories
@@ -84,7 +84,16 @@ def main():
             limit_concurrency=100,  # Limit concurrent connections
         )
     except Exception as e:
-        logger.error(f"Failed to start provider server: {e}")
+        error_msg = str(e)
+        if "nginx.conf" in error_msg:
+            logger.error(
+                "Failed to start provider server: nginx configuration not found. "
+                "Please ensure nginx is installed and properly configured, or set "
+                "GOLEM_PROVIDER_NGINX_DIR to point to your nginx configuration directory "
+                "containing nginx.conf"
+            )
+        else:
+            logger.error(f"Failed to start provider server: {e}")
         sys.exit(1)
 
 if __name__ == "__main__":
