@@ -24,6 +24,7 @@ class ResourceTracker:
         }
         self._lock = asyncio.Lock()
         self._update_callbacks: List[Callable] = []
+        self._allocated_vms: Dict[str, VMResources] = {}
 
     def _can_allocate(self, resources: VMResources) -> bool:
         """Check if resources can be allocated."""
@@ -42,7 +43,7 @@ class ResourceTracker:
             resources["storage"] >= settings.MIN_STORAGE_GB
         )
 
-    async def allocate(self, resources: VMResources) -> bool:
+    async def allocate(self, resources: VMResources, vm_id: Optional[str] = None) -> bool:
         """Allocate resources for a VM."""
         async with self._lock:
             if not self._can_allocate(resources):
@@ -52,6 +53,9 @@ class ResourceTracker:
             self.allocated_resources["memory"] += resources.memory
             self.allocated_resources["storage"] += resources.storage
             
+            if vm_id:
+                self._allocated_vms[vm_id] = resources
+            
             logger.info(
                 f"Allocated resources: CPU={resources.cpu}, "
                 f"Memory={resources.memory}GB, Storage={resources.storage}GB"
@@ -60,7 +64,7 @@ class ResourceTracker:
             await self._notify_update()
             return True
 
-    async def deallocate(self, resources: VMResources) -> None:
+    async def deallocate(self, resources: VMResources, vm_id: Optional[str] = None) -> None:
         """Deallocate resources from a VM."""
         async with self._lock:
             self.allocated_resources["cpu"] = max(
@@ -73,12 +77,19 @@ class ResourceTracker:
                 0, self.allocated_resources["storage"] - resources.storage
             )
             
+            if vm_id and vm_id in self._allocated_vms:
+                del self._allocated_vms[vm_id]
+            
             logger.info(
                 f"Deallocated resources: CPU={resources.cpu}, "
                 f"Memory={resources.memory}GB, Storage={resources.storage}GB"
             )
             
             await self._notify_update()
+
+    def get_allocated_vms(self) -> List[str]:
+        """Get list of allocated VM IDs."""
+        return list(self._allocated_vms.keys())
 
     def get_available_resources(self) -> Dict[str, int]:
         """Get currently available resources."""

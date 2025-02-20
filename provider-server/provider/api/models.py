@@ -2,7 +2,10 @@ from pydantic import BaseModel, Field, validator
 from typing import Dict, Optional, List, Any
 from datetime import datetime
 
+from ..utils.logging import setup_logger
 from ..vm.models import VMSize, VMResources, VMStatus
+
+logger = setup_logger(__name__)
 
 class CreateVMRequest(BaseModel):
     """Request model for creating a VM."""
@@ -12,15 +15,6 @@ class CreateVMRequest(BaseModel):
     image: str = Field(default="20.04")  # Ubuntu 20.04 LTS
     ssh_key: str = Field(..., regex="^(ssh-rsa|ssh-ed25519) ", description="SSH public key for VM access")
 
-    @validator("resources", pre=True, always=True)
-    def set_resources_from_size(cls, v: Optional[VMResources], values: Dict[str, Any]) -> VMResources:
-        """Set resources from size if not provided."""
-        if v is not None:
-            return v
-        if "size" in values and values["size"] is not None:
-            return VMResources.from_size(values["size"])
-        return VMResources(cpu=1, memory=1, storage=10)  # Default small size
-
     @validator("name")
     def validate_name(cls, v: str) -> str:
         """Validate VM name."""
@@ -28,14 +22,39 @@ class CreateVMRequest(BaseModel):
             raise ValueError("VM name cannot contain consecutive hyphens")
         return v
 
-    @validator("resources", pre=True, always=True)
-    def validate_resources(cls, v: Optional[VMResources], values: Dict) -> VMResources:
-        """Validate resources, using size if resources not provided."""
-        if v is not None:
-            return v
-        if values.get("size") is not None:
-            return VMResources.from_size(values["size"])
-        return VMResources(cpu=1, memory=1, storage=10)  # Default small size
+    @validator("resources", pre=True)
+    def validate_resources(cls, v: Optional[Dict[str, Any]], values: Dict[str, Any]) -> VMResources:
+        """Validate and set resources."""
+        logger.debug(f"Validating resources input: {v}")
+        
+        try:
+            # If resources directly provided as dict
+            if isinstance(v, dict):
+                result = VMResources(**v)
+                logger.debug(f"Created resources from dict: {result}")
+                return result
+                
+            # If VMResources instance provided
+            if isinstance(v, VMResources):
+                logger.debug(f"Using provided VMResources: {v}")
+                return v
+                
+            # If size provided, use that
+            if "size" in values and values["size"] is not None:
+                result = VMResources.from_size(values["size"])
+                logger.debug(f"Created resources from size {values['size']}: {result}")
+                return result
+                
+            # Only use defaults if nothing provided
+            result = VMResources(cpu=1, memory=1, storage=10)
+            logger.debug(f"Using default resources: {result}")
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error validating resources: {e}")
+            logger.error(f"Input value: {v}")
+            logger.error(f"Values dict: {values}")
+            raise ValueError(f"Invalid resource configuration: {str(e)}")
 
 class VMResponse(BaseModel):
     """Response model for VM operations."""
