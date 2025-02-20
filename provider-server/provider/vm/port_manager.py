@@ -63,48 +63,34 @@ class PortManager:
         display.print_header()
         
         # Verify all ports together (discovery port and SSH ports)
-        display.print_section("Discovery Service")
         all_ports = [self.discovery_port] + list(range(self.start_port, self.end_port))
         logger.info(f"Verifying all ports: discovery port {self.discovery_port} and SSH ports {self.start_port}-{self.end_port}...")
         
         results = await self.port_verifier.verify_ports(all_ports)
         
-        # First display discovery port results
+        # Display discovery port status with animation
         discovery_result = results[self.discovery_port]
-        display.print_port_status(
-            self.discovery_port,
-            "success" if discovery_result.accessible else "failed",
-            discovery_result.error,
-            discovery_result.verified_by,
-            discovery_result.attempts
-        )
+        await display.print_discovery_status(discovery_result)
         
         if not discovery_result.accessible:
             logger.error(f"Failed to verify discovery port: {discovery_result.error}")
-            display.print_summary(1, 0)
+            # Print summary before returning
+            display.print_summary(discovery_result, {})
             return False
             
-        # Then display SSH port results
-        display.print_section("SSH Access")
+        # Display SSH ports status with animation
         ssh_results = {port: result for port, result in results.items() if port != self.discovery_port}
+        await display.print_ssh_status(ssh_results)
         
-        # Store verified ports and display results
-        self.verified_ports = set()
-        for port, result in sorted(ssh_results.items()):
-            display.print_port_status(
-                port,
-                "success" if result.accessible else "failed",
-                result.error,
-                result.verified_by,
-                result.attempts
-            )
-            if result.accessible:
-                self.verified_ports.add(port)
+        # Store verified ports
+        self.verified_ports = {port for port, result in ssh_results.items() if result.accessible}
         
-        # Print summary
-        total_ports = len(ssh_results) + 1  # +1 for discovery port
-        success_ports = len(self.verified_ports) + 1  # +1 for discovery port if we got here
-        display.print_summary(total_ports, success_ports)
+        # Display critical issues and quick fix guide
+        display.print_critical_issues(discovery_result, ssh_results)
+        display.print_quick_fix()
+        
+        # Print precise summary of current status
+        display.print_summary(discovery_result, ssh_results)
         
         if not self.verified_ports:
             logger.error("No SSH ports were verified as accessible")
