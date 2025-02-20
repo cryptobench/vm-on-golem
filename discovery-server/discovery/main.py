@@ -117,11 +117,16 @@ async def health_check():
     """Health check endpoint."""
     return {"status": "healthy"}
 
-if __name__ == "__main__":
+def start():
+    """Entry point for the discovery service."""
     import uvicorn
     uvicorn.run(
-        "discovery.main:app",
+        "discovery:app",
         host=settings.HOST,
         port=settings.PORT,
-        reload=settings.DEBUG
+        reload=settings.DEBUG,
+        log_level="info" if settings.DEBUG else "warning"
     )
+
+if __name__ == "__main__":
+    start()
