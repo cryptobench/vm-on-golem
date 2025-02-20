@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
 import sys
+import asyncio
 import uvicorn
 from pathlib import Path
 from dotenv import load_dotenv
@@ -9,6 +10,34 @@ from provider.utils.logging import setup_logger
 
 # Configure logging with debug mode
 logger = setup_logger(__name__, debug=True)
+
+async def verify_provider_port(port: int) -> bool:
+    """Verify that the provider port is available for binding.
+    
+    Args:
+        port: The port to verify
+        
+    Returns:
+        bool: True if the port is available, False otherwise
+    """
+    try:
+        # Try to create a temporary listener
+        server = await asyncio.start_server(
+            lambda r, w: None,  # Empty callback
+            '0.0.0.0',
+            port
+        )
+        server.close()
+        await server.wait_closed()
+        logger.info(f"✅ Provider port {port} is available")
+        return True
+    except Exception as e:
+        logger.error(f"❌ Provider port {port} is not available: {e}")
+        logger.error("Please ensure:")
+        logger.error(f"1. Port {port} is not in use by another application")
+        logger.error("2. You have permission to bind to this port")
+        logger.error("3. Your firewall allows binding to this port")
+        return False
 
 def check_requirements():
     """Check if all requirements are met."""
@@ -19,38 +48,6 @@ def check_requirements():
     except Exception as e:
         logger.error(f"Requirements check failed: {e}")
         return False
-
-async def verify_ports():
-    """Verify port accessibility before starting server."""
-    from provider.vm.port_manager import PortManager
-    from provider.utils.port_display import PortVerificationDisplay
-
-    # Import settings after loading environment variables
-    from provider.config import settings
-    
-    display = PortVerificationDisplay(
-        provider_port=settings.PORT,
-        port_range_start=settings.PORT_RANGE_START,
-        port_range_end=settings.PORT_RANGE_END
-    )
-    display.print_header()
-
-    # Initialize port manager
-    logger.process("🔄 Verifying port accessibility...")
-    port_manager = PortManager(
-        start_port=settings.PORT_RANGE_START,
-        end_port=settings.PORT_RANGE_END,
-        discovery_port=settings.PORT
-    )
-    if not await port_manager.initialize():
-        logger.error("Port verification failed. Please ensure:")
-        logger.error(f"1. Port {settings.PORT} is accessible for provider access")
-        logger.error(f"2. Some ports in range {settings.PORT_RANGE_START}-{settings.PORT_RANGE_END} are accessible for VM access")
-        logger.error("3. Your firewall/router is properly configured")
-        return False
-    
-    logger.success(f"✅ Port verification successful - {len(port_manager.verified_ports)} ports available")
-    return True
 
 def main():
     """Run the provider server."""
@@ -72,6 +69,11 @@ def main():
 
         # Import settings after loading environment variables
         from provider.config import settings
+
+        # Verify provider port is available
+        if not asyncio.run(verify_provider_port(settings.PORT)):
+            logger.error(f"Provider port {settings.PORT} is not available")
+            sys.exit(1)
 
         # Configure uvicorn logging
         log_config = uvicorn.config.LOGGING_CONFIG

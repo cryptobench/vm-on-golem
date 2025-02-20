@@ -18,27 +18,43 @@ app = FastAPI(title="VM on Golem Provider")
 async def setup_provider() -> None:
     """Setup and initialize the provider components."""
     try:
-        # Port manager is already initialized and verified in startup_event
-        port_manager = app.state.port_manager
-        
-        # Create resource tracker
+        # Create resource tracker first
         logger.process("🔄 Initializing resource tracker...")
         resource_tracker = ResourceTracker()
         app.state.resource_tracker = resource_tracker
-        
-        # Create provider with resource tracker and port manager
+
+        # Create provider with resource tracker and temporary port manager
         logger.process("🔄 Initializing VM provider...")
-        provider = MultipassProvider(resource_tracker, port_manager=port_manager)
+        provider = MultipassProvider(resource_tracker, port_manager=None)  # Will be set later
+        
         try:
+            # Initialize provider (without port operations)
             await asyncio.wait_for(provider.initialize(), timeout=30)
             
-            # Store provider and proxy manager references
+            # Store provider reference
             app.state.provider = provider
             app.state.proxy_manager = provider.proxy_manager
             
-            # Restore proxy configurations
+            # Restore proxy configurations first
             logger.process("🔄 Restoring proxy configurations...")
             await app.state.proxy_manager._load_state()
+            
+            # Now initialize port manager with knowledge of restored proxies
+            logger.process("🔄 Initializing port manager...")
+            port_manager = PortManager(
+                start_port=settings.PORT_RANGE_START,
+                end_port=settings.PORT_RANGE_END,
+                discovery_port=settings.PORT,
+                existing_ports=app.state.proxy_manager.get_active_ports()
+            )
+            
+            if not await port_manager.initialize():
+                raise RuntimeError("Port verification failed")
+            
+            # Update provider and proxy manager with verified port manager
+            app.state.port_manager = port_manager
+            provider.port_manager = port_manager
+            app.state.proxy_manager.port_manager = port_manager
             
         except asyncio.TimeoutError:
             logger.error("Provider initialization timed out")
