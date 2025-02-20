@@ -96,25 +96,83 @@ class Settings(BaseSettings):
         if v:
             path = v
         else:
-            # Common Multipass binary locations
-            binary_name = "multipass"
-            search_paths = [
-                "/usr/local/bin",          # Common Unix/Linux
-                "/usr/bin",                # Linux
-                "/opt/homebrew/bin",       # macOS M1 (Homebrew)
-                "/snap/bin",               # Linux (Snap)
-            ]
+            import platform
+            import subprocess
+            
+            system = platform.system().lower()
+            binary_name = "multipass.exe" if system == "windows" else "multipass"
+            
+            # Try to find multipass based on OS
+            if system == "linux":
+                # First try to find snap
+                try:
+                    snap_result = subprocess.run(
+                        ["which", "snap"],
+                        capture_output=True,
+                        text=True
+                    )
+                    if snap_result.returncode == 0:
+                        # If snap exists, check if multipass is installed
+                        snap_path = "/snap/bin/multipass"
+                        if os.path.isfile(snap_path) and os.access(snap_path, os.X_OK):
+                            return snap_path
+                except subprocess.SubprocessError:
+                    pass
+                
+                # Common Linux paths
+                search_paths = [
+                    "/usr/local/bin",
+                    "/usr/bin",
+                    "/snap/bin"
+                ]
+                
+            elif system == "darwin":  # macOS
+                search_paths = [
+                    "/opt/homebrew/bin",    # M1 Mac
+                    "/usr/local/bin",       # Intel Mac
+                    "/opt/local/bin"        # MacPorts
+                ]
+                
+            elif system == "windows":
+                search_paths = [
+                    os.path.expandvars(r"%ProgramFiles%\Multipass"),
+                    os.path.expandvars(r"%ProgramFiles(x86)%\Multipass"),
+                    os.path.expandvars(r"%LocalAppData%\Multipass")
+                ]
+                
+            else:
+                search_paths = ["/usr/local/bin", "/usr/bin"]
 
-            # Search for multipass binary
+            # Search for multipass binary in OS-specific paths
             for directory in search_paths:
                 path = os.path.join(directory, binary_name)
                 if os.path.isfile(path) and os.access(path, os.X_OK):
                     return path
 
-            raise ValueError(
-                "Multipass binary not found. Please install Multipass or set "
-                "GOLEM_PROVIDER_MULTIPASS_BINARY_PATH to your Multipass binary path."
-            )
+            # OS-specific installation instructions
+            if system == "linux":
+                raise ValueError(
+                    "Multipass binary not found. Please install using:\n"
+                    "sudo snap install multipass\n"
+                    "Or set GOLEM_PROVIDER_MULTIPASS_BINARY_PATH to your Multipass binary path."
+                )
+            elif system == "darwin":
+                raise ValueError(
+                    "Multipass binary not found. Please install using:\n"
+                    "brew install multipass\n"
+                    "Or set GOLEM_PROVIDER_MULTIPASS_BINARY_PATH to your Multipass binary path."
+                )
+            elif system == "windows":
+                raise ValueError(
+                    "Multipass binary not found. Please install from:\n"
+                    "Microsoft Store or https://multipass.run/download/windows\n"
+                    "Or set GOLEM_PROVIDER_MULTIPASS_BINARY_PATH to your Multipass binary path."
+                )
+            else:
+                raise ValueError(
+                    "Multipass binary not found. Please install Multipass or set "
+                    "GOLEM_PROVIDER_MULTIPASS_BINARY_PATH to your Multipass binary path."
+                )
 
         # Validate the path
         if not os.path.isfile(path):
