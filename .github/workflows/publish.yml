@@ -4,11 +4,16 @@ on:
   push:
     branches:
       - main
+    paths:
+      - 'provider-server/**'
+      - 'requestor-server/**'
+      - 'port-checker-server/**'
+      - 'discovery-server/**'
 
 jobs:
   publish-provider:
     name: Publish Provider Package
-    if: contains(github.event.head_commit.modified[*], 'provider-server/')
+    if: contains(github.event.head_commit.modified, 'provider-server/') || contains(github.event.head_commit.added, 'provider-server/') || contains(github.event.head_commit.removed, 'provider-server/')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -30,7 +35,7 @@ jobs:
 
   publish-requestor:
     name: Publish Requestor Package
-    if: contains(github.event.head_commit.modified[*], 'requestor-server/')
+    if: contains(github.event.head_commit.modified, 'requestor-server/') || contains(github.event.head_commit.added, 'requestor-server/') || contains(github.event.head_commit.removed, 'requestor-server/')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -52,7 +57,7 @@ jobs:
 
   publish-port-checker:
     name: Publish Port Checker Package
-    if: contains(github.event.head_commit.modified[*], 'port-checker-server/')
+    if: contains(github.event.head_commit.modified, 'port-checker-server/') || contains(github.event.head_commit.added, 'port-checker-server/') || contains(github.event.head_commit.removed, 'port-checker-server/')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -74,7 +79,7 @@ jobs:
 
   publish-discovery:
     name: Publish Discovery Package
-    if: contains(github.event.head_commit.modified[*], 'discovery-server/')
+    if: contains(github.event.head_commit.modified, 'discovery-server/') || contains(github.event.head_commit.added, 'discovery-server/') || contains(github.event.head_commit.removed, 'discovery-server/')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
