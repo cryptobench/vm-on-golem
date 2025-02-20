@@ -23,13 +23,15 @@ class MultipassError(VMError):
 class MultipassProvider(VMProvider):
     """Manages VMs using Multipass."""
 
-    def __init__(self, resource_tracker: "ResourceTracker"):
+    def __init__(self, resource_tracker: "ResourceTracker", port_manager: "PortManager"):
         """Initialize the multipass provider.
 
         Args:
             resource_tracker: Resource tracker instance
+            port_manager: Port manager instance for SSH port allocation
         """
         self.resource_tracker = resource_tracker
+        self.port_manager = port_manager
         self.multipass_path = settings.MULTIPASS_BINARY_PATH
         self.vm_data_dir = Path(settings.VM_DATA_DIR)
         self.vm_data_dir.mkdir(parents=True, exist_ok=True)
@@ -186,10 +188,18 @@ class MultipassProvider(VMProvider):
             if not ip_address:
                 raise MultipassError("Failed to get VM IP address")
 
-            # Configure proxy and create VM info
+            # Allocate port and configure proxy
             try:
-                ssh_port = await self.proxy_manager.add_vm(multipass_name, ip_address)
+                # First allocate a verified port
+                ssh_port = self.port_manager.allocate_port(multipass_name)
                 if not ssh_port:
+                    raise MultipassError("Failed to allocate verified SSH port")
+
+                # Then configure proxy with allocated port
+                success = await self.proxy_manager.add_vm(multipass_name, ip_address, port=ssh_port)
+                if not success:
+                    # Clean up allocated port if proxy fails
+                    self.port_manager.deallocate_port(multipass_name)
                     raise MultipassError("Failed to configure proxy")
 
                 # Create VM info and register with resource tracker
@@ -295,13 +305,14 @@ class MultipassProvider(VMProvider):
                 logger.error(f"Error deleting VM {multipass_name} from multipass: {e}")
                 raise
 
-        # Clean up proxy config
+        # Clean up proxy config and port allocation
         try:
-            logger.info("🔄 Cleaning up network proxy configuration...")
+            logger.info("🔄 Cleaning up network configuration...")
             await self.proxy_manager.remove_vm(multipass_name)
-            logger.success("✨ Network proxy configuration cleaned up")
+            self.port_manager.deallocate_port(multipass_name)
+            logger.success("✨ Network configuration cleaned up")
         except Exception as e:
-            logger.error(f"Error removing proxy config for VM {multipass_name}: {e}")
+            logger.error(f"Error cleaning up network configuration for VM {multipass_name}: {e}")
             
         # Deallocate resources
         if vm_info and vm_info.resources:

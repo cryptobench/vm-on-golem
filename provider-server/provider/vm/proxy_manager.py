@@ -172,22 +172,24 @@ class PythonProxyManager:
         except Exception as e:
             logger.error(f"Failed to save proxy state: {e}")
     
-    async def add_vm(self, vm_id: str, vm_ip: str) -> Optional[int]:
+    async def add_vm(self, vm_id: str, vm_ip: str, port: Optional[int] = None) -> bool:
         """Add proxy configuration for a new VM.
         
         Args:
             vm_id: Unique identifier for the VM
             vm_ip: IP address of the VM
+            port: Optional specific port to use, if not provided one will be allocated
             
         Returns:
-            Allocated port number or None if configuration failed
+            True if proxy configuration was successful, False otherwise
         """
         try:
-            # Allocate port
-            port = self.port_manager.allocate_port(vm_id)
+            # Use provided port or allocate one
             if port is None:
-                logger.error(f"Failed to allocate port for VM {vm_id}")
-                return None
+                port = self.port_manager.allocate_port(vm_id)
+                if port is None:
+                    logger.error(f"Failed to allocate port for VM {vm_id}")
+                    return False
             
             # Create and start proxy server
             proxy = ProxyServer(port, vm_ip)
@@ -197,13 +199,14 @@ class PythonProxyManager:
             self._save_state()
             
             logger.info(f"Started proxy for VM {vm_id} on port {port}")
-            return port
+            return True
             
         except Exception as e:
             logger.error(f"Failed to configure proxy for VM {vm_id}: {e}")
-            if port is not None:
+            # Only deallocate if we allocated the port ourselves
+            if port is None and 'port' in locals():
                 self.port_manager.deallocate_port(vm_id)
-            return None
+            return False
     
     async def remove_vm(self, vm_id: str) -> None:
         """Remove proxy configuration for a VM.

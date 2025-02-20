@@ -1,20 +1,27 @@
 import os
 import json
 import logging
+import asyncio
 from pathlib import Path
-from typing import Optional, Set
+from typing import Optional, Set, List, Dict
 from threading import Lock
+
+from ..config import settings
+from ..network.port_verifier import PortVerifier, PortVerificationResult
+from ..utils.port_display import PortVerificationDisplay
 
 logger = logging.getLogger(__name__)
 
 class PortManager:
-    """Manages port allocation for VM SSH proxying."""
+    """Manages port allocation and verification for VM SSH proxying."""
     
     def __init__(
         self,
         start_port: int = 50800,
         end_port: int = 50900,
-        state_file: Optional[str] = None
+        state_file: Optional[str] = None,
+        port_check_servers: Optional[List[str]] = None,
+        discovery_port: Optional[int] = None
     ):
         """Initialize the port manager.
         
@@ -22,14 +29,90 @@ class PortManager:
             start_port: Beginning of port range
             end_port: End of port range (exclusive)
             state_file: Path to persist port assignments
+            port_check_servers: List of URLs for port checking services
         """
         self.start_port = start_port
         self.end_port = end_port
         self.state_file = state_file or os.path.expanduser("~/.golem/provider/ports.json")
         self.lock = Lock()
         self._used_ports: dict[str, int] = {}  # vm_id -> port
+        self.verified_ports: Set[int] = set()
+        
+        # Initialize port verifier with default servers
+        self.port_check_servers = port_check_servers or [
+            "http://portcheck1.golem.network:7466",
+            "http://portcheck2.golem.network:7466",
+            "http://portcheck3.golem.network:7466",
+            "http://localhost:9000"  # Fallback for local development
+        ]
+        self.discovery_port = discovery_port or settings.PORT
+        self.port_verifier = PortVerifier(
+            self.port_check_servers,
+            discovery_port=self.discovery_port
+        )
+        
         self._load_state()
     
+    async def initialize(self) -> bool:
+        """Initialize port manager with verification.
+        
+        Returns:
+            bool: True if required ports were verified successfully
+        """
+        display = PortVerificationDisplay()
+        display.print_header()
+        
+        # Verify all ports together (discovery port and SSH ports)
+        display.print_section("Discovery Service")
+        all_ports = [self.discovery_port] + list(range(self.start_port, self.end_port))
+        logger.info(f"Verifying all ports: discovery port {self.discovery_port} and SSH ports {self.start_port}-{self.end_port}...")
+        
+        results = await self.port_verifier.verify_ports(all_ports)
+        
+        # First display discovery port results
+        discovery_result = results[self.discovery_port]
+        display.print_port_status(
+            self.discovery_port,
+            "success" if discovery_result.accessible else "failed",
+            discovery_result.error,
+            discovery_result.verified_by,
+            discovery_result.attempts
+        )
+        
+        if not discovery_result.accessible:
+            logger.error(f"Failed to verify discovery port: {discovery_result.error}")
+            display.print_summary(1, 0)
+            return False
+            
+        # Then display SSH port results
+        display.print_section("SSH Access")
+        ssh_results = {port: result for port, result in results.items() if port != self.discovery_port}
+        
+        # Store verified ports and display results
+        self.verified_ports = set()
+        for port, result in sorted(ssh_results.items()):
+            display.print_port_status(
+                port,
+                "success" if result.accessible else "failed",
+                result.error,
+                result.verified_by,
+                result.attempts
+            )
+            if result.accessible:
+                self.verified_ports.add(port)
+        
+        # Print summary
+        total_ports = len(ssh_results) + 1  # +1 for discovery port
+        success_ports = len(self.verified_ports) + 1  # +1 for discovery port if we got here
+        display.print_summary(total_ports, success_ports)
+        
+        if not self.verified_ports:
+            logger.error("No SSH ports were verified as accessible")
+            return False
+            
+        logger.info(f"Successfully verified {len(self.verified_ports)} SSH ports")
+        return True
+        
     def _load_state(self) -> None:
         """Load port assignments from state file."""
         try:
@@ -58,7 +141,7 @@ class PortManager:
         return set(self._used_ports.values())
     
     def allocate_port(self, vm_id: str) -> Optional[int]:
-        """Allocate a port for a VM.
+        """Allocate a verified port for a VM.
         
         Args:
             vm_id: Unique identifier for the VM
@@ -69,19 +152,24 @@ class PortManager:
         with self.lock:
             # Check if VM already has a port
             if vm_id in self._used_ports:
-                return self._used_ports[vm_id]
+                port = self._used_ports[vm_id]
+                if port in self.verified_ports:
+                    return port
+                else:
+                    # Previously allocated port is no longer verified
+                    self._used_ports.pop(vm_id)
             
             used_ports = self._get_used_ports()
             
-            # Find first available port
-            for port in range(self.start_port, self.end_port):
+            # Find first available verified port
+            for port in sorted(self.verified_ports):
                 if port not in used_ports:
                     self._used_ports[vm_id] = port
                     self._save_state()
-                    logger.info(f"Allocated port {port} for VM {vm_id}")
+                    logger.info(f"Allocated verified port {port} for VM {vm_id}")
                     return port
             
-            logger.error(f"No available ports in range {self.start_port}-{self.end_port}")
+            logger.error("No verified ports available for allocation")
             return None
     
     def deallocate_port(self, vm_id: str) -> None:
