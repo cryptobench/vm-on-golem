@@ -40,9 +40,9 @@ class PortManager:
         
         # Initialize port verifier with default servers
         self.port_check_servers = port_check_servers or [
-            "http://portcheck1.golem.network:7466",
-            "http://portcheck2.golem.network:7466",
-            "http://portcheck3.golem.network:7466",
+            # "http://portcheck1.golem.network:7466",
+            # "http://portcheck2.golem.network:7466",
+            # "http://portcheck3.golem.network:7466",
             "http://localhost:9000"  # Fallback for local development
         ]
         self.discovery_port = discovery_port or settings.PORT

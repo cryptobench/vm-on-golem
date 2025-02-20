@@ -73,19 +73,28 @@ class PortVerifier:
                         logger.debug(f"Failed to create temporary listener for discovery port {port}: {e}")
                         continue
                 
-                # For other ports, just try to bind
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                sock.bind(('0.0.0.0', port))
-                sock.close()
-                available_ports.add(port)
-                logger.debug(f"Successfully bound to port {port}")
+                # For other ports, create a TCP listener
+                try:
+                    server = await asyncio.start_server(
+                        lambda r, w: None,  # Empty callback since we just need to listen
+                        '0.0.0.0', 
+                        port
+                    )
+                    temp_listeners.append(server)
+                    available_ports.add(port)
+                    logger.debug(f"Created temporary listener on port {port}")
+                except Exception as e:
+                    if isinstance(e, OSError) and e.errno == 98:  # Address already in use
+                        logger.debug(f"Port {port} is already in use")
+                    else:
+                        logger.debug(f"Failed to bind to port {port}: {e}")
+                    continue
             except Exception as e:
                 logger.debug(f"Failed to bind to port {port}: {e}")
                 continue
         
         try:
-            # Keep temporary listeners active during verification
+            # Keep all temporary listeners active during verification
             yield available_ports
         finally:
             # Cleanup temporary listeners
@@ -263,34 +272,16 @@ class PortVerifier:
                     for port in ports
                 }
             
-            # Create temporary listeners for non-discovery ports
-            temp_servers = []
-            for port in local_available:
-                if port != self.discovery_port:
-                    server = await self._create_temp_listener(port)
-                    if server:
-                        temp_servers.append(server)
-                        logger.debug(f"Created temporary listener on port {port}")
-
-            try:
-                # Verify external access
-                logger.info("Starting external port verification...")
-                results = await self.verify_external_access(local_available)
-                
-                # Log detailed results for discovery port
-                if discovery_port_included and self.discovery_port in results:
-                    result = results[self.discovery_port]
-                    if result.accessible:
-                        logger.info(f"Discovery port {self.discovery_port} verified successfully by {result.verified_by}")
-                    else:
-                        logger.error(f"Discovery port {self.discovery_port} verification failed: {result.error}")
-                
-                return results
-                
-            finally:
-                # Clean up temporary listeners
-                for server in temp_servers:
-                    server.close()
-                    await server.wait_closed()
-                if temp_servers:
-                    logger.debug(f"Closed {len(temp_servers)} temporary listeners")
+            # Verify external access while listeners are active
+            logger.info("Starting external port verification...")
+            results = await self.verify_external_access(local_available)
+            
+            # Log detailed results for discovery port
+            if discovery_port_included and self.discovery_port in results:
+                result = results[self.discovery_port]
+                if result.accessible:
+                    logger.info(f"Discovery port {self.discovery_port} verified successfully by {result.verified_by}")
+                else:
+                    logger.error(f"Discovery port {self.discovery_port} verification failed: {result.error}")
+            
+            return results
