@@ -59,24 +59,32 @@ The following predefined VM sizes are available:
 
 ## Configuration
 
-The requestor uses the following configuration files and directories:
+The requestor uses the following configuration files and directories, which can be customized through environment variables:
 
-- SSH Keys: `~/.golem/ssh/`
-- Database: `~/.golem/vms.db`
-- Config Directory: `~/.golem/`
+### Base Directory
+By default, all Golem files are stored in `~/.golem/`. You can change this with:
+```bash
+export GOLEM_REQUESTOR_BASE_DIR="/path/to/golem/dir"
+```
 
-Environment variables can be used to override default settings:
+### Default Directory Structure
+- SSH Keys: `{BASE_DIR}/ssh/`
+- Database: `{BASE_DIR}/vms.db`
 
+### Individual Path Configuration
+You can also configure paths independently:
 ```bash
 # Discovery service URL
 export GOLEM_REQUESTOR_DISCOVERY_URL="http://discovery.golem.network:7465"
 
-# Custom SSH key directory
+# Custom SSH key directory (overrides BASE_DIR/ssh)
 export GOLEM_REQUESTOR_SSH_KEY_DIR="/path/to/keys"
 
-# Custom database path
+# Custom database path (overrides BASE_DIR/vms.db)
 export GOLEM_REQUESTOR_DB_PATH="/path/to/database.db"
 ```
+
+All paths can be either absolute or relative. Relative paths will be resolved from the user's home directory.
 
 ## Development
 

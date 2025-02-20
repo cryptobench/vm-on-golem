@@ -27,7 +27,7 @@ class MultipassProvider(VMProvider):
             resource_tracker: Resource tracker instance
         """
         self.resource_tracker = resource_tracker
-        self.multipass_path = settings.MULTIPASS_PATH
+        self.multipass_path = settings.MULTIPASS_BINARY_PATH
         self.vm_data_dir = Path(settings.VM_DATA_DIR)
         self.vm_data_dir.mkdir(parents=True, exist_ok=True)
         

@@ -36,12 +36,13 @@ class SSHKeyManager:
     
     def __init__(self, golem_dir: Union[str, Path] = None):
         if golem_dir is None:
-            golem_dir = Path.home() / '.golem'
+            from ..config import config
+            self.ssh_dir = config.ssh_key_dir
         elif isinstance(golem_dir, str):
-            golem_dir = Path(golem_dir)
+            self.ssh_dir = Path(golem_dir)
+        else:
+            self.ssh_dir = golem_dir
             
-        self.golem_dir = golem_dir
-        self.ssh_dir = self.golem_dir / 'ssh'
         self.system_key_path = Path.home() / '.ssh' / 'id_rsa'
         self.golem_key_path = self.ssh_dir / 'id_rsa'
         
