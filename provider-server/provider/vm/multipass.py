@@ -158,20 +158,22 @@ class MultipassProvider(VMProvider):
         """
         multipass_name = f"golem-{config.name}-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
         await self.name_mapper.add_mapping(config.name, multipass_name)
+        cloud_init_path = None
+        config_id = None
 
         # Verify resources are properly allocated
         if not self.resource_tracker.can_accept_resources(config.resources):
             raise VMCreateError("Resources not properly allocated or insufficient")
 
-        # Generate cloud-init config with requestor's public key
-        cloud_init_path = generate_cloud_init(
-            hostname=config.name,
-            ssh_key=config.ssh_key
-        )
-
         try:
+            # Generate cloud-init config with requestor's public key
+            cloud_init_path, config_id = generate_cloud_init(
+                hostname=config.name,
+                ssh_key=config.ssh_key
+            )
+
             # Launch VM
-            logger.process(f"🚀 Launching VM {multipass_name}")
+            logger.process(f"🚀 Launching VM {multipass_name} with config {config_id}")
             launch_cmd = [
                 "launch",
                 config.image,
@@ -237,7 +239,8 @@ class MultipassProvider(VMProvider):
 
         finally:
             # Cleanup cloud-init file
-            cleanup_cloud_init(cloud_init_path)
+            if cloud_init_path and config_id:
+                cleanup_cloud_init(cloud_init_path, config_id)
 
     def _verify_vm_exists(self, vm_id: str) -> bool:
         """Check if VM exists in multipass.

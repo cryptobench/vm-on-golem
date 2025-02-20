@@ -56,6 +56,27 @@ class Settings(BaseSettings):
     DEFAULT_VM_IMAGE: str = "ubuntu:24.04"
     VM_DATA_DIR: str = ""
     SSH_KEY_DIR: str = ""
+    CLOUD_INIT_DIR: str = ""
+
+    @validator("CLOUD_INIT_DIR", pre=True)
+    def resolve_cloud_init_dir(cls, v: str) -> str:
+        """Resolve and create cloud-init directory path."""
+        if not v:
+            path = Path.home() / ".golem" / "provider" / "cloud-init"
+        else:
+            path = Path(v)
+            if not path.is_absolute():
+                path = Path.home() / path
+        
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+            path.chmod(0o755)  # Readable and executable by owner and others, writable by owner
+            logger.debug(f"Created cloud-init directory at {path}")
+        except Exception as e:
+            logger.error(f"Failed to create cloud-init directory at {path}: {e}")
+            raise ValueError(f"Failed to create cloud-init directory: {e}")
+            
+        return str(path)
 
     @validator("VM_DATA_DIR", pre=True)
     def resolve_vm_data_dir(cls, v: str) -> str:
