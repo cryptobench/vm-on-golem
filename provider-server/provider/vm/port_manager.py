@@ -59,7 +59,13 @@ class PortManager:
         Returns:
             bool: True if required ports were verified successfully
         """
-        display = PortVerificationDisplay()
+        from ..config import settings
+        
+        display = PortVerificationDisplay(
+            provider_port=self.discovery_port,
+            port_range_start=self.start_port,
+            port_range_end=self.end_port
+        )
         display.print_header()
         
         # Verify all ports together (discovery port and SSH ports)
@@ -85,9 +91,10 @@ class PortManager:
         # Store verified ports
         self.verified_ports = {port for port, result in ssh_results.items() if result.accessible}
         
-        # Display critical issues and quick fix guide
-        display.print_critical_issues(discovery_result, ssh_results)
-        display.print_quick_fix()
+        # Only show critical issues and quick fix if there are problems
+        if not discovery_result.accessible or not self.verified_ports:
+            display.print_critical_issues(discovery_result, ssh_results)
+            display.print_quick_fix(discovery_result, ssh_results)
         
         # Print precise summary of current status
         display.print_summary(discovery_result, ssh_results)

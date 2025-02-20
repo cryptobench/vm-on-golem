@@ -10,8 +10,17 @@ class PortVerificationDisplay:
     
     SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
     
-    def __init__(self):
-        """Initialize the display."""
+    def __init__(self, provider_port: int, port_range_start: int, port_range_end: int):
+        """Initialize the display.
+        
+        Args:
+            provider_port: Port used for provider access
+            port_range_start: Start of VM access port range
+            port_range_end: End of VM access port range
+        """
+        self.provider_port = provider_port
+        self.port_range_start = port_range_start
+        self.port_range_end = port_range_end
         self.spinner_idx = 0
     
     def _update_spinner(self):
@@ -46,20 +55,22 @@ class PortVerificationDisplay:
         Args:
             result: Verification result for discovery port
         """
-        print("\n📡 Discovery Service (Required)")
-        print("--------------------------")
+        print("\n📡 Provider Accessibility (Required)")
+        print("--------------------------------")
         
-        await self.animate_verification("Checking discovery service...")
+        await self.animate_verification("Checking provider accessibility...")
         
-        status_badge = "✅ Running" if result.accessible else "❌ Not Running"
-        print(f"[{status_badge}] Port 7466")
-        print(f"└─ Status: {'Running' if result.accessible else 'Not Running'}")
+        status_badge = "✅ Accessible" if result.accessible else "❌ Not Accessible"
+        print(f"[{status_badge}] Port {self.provider_port}")
+        print(f"└─ Status: {'Accessible' if result.accessible else 'Not Accessible'}")
         
         # Show external/internal access
         if result.accessible:
             print("└─ Access: External ✓ | Internal ✓")
+            print("└─ Requestors can discover and connect to your provider")
         else:
             print("└─ Access: External ✗ | Internal ✗")
+            print("└─ Requestors cannot discover or connect to your provider")
             
         # Show verification server if successful
         if result.verified_by:
@@ -71,10 +82,10 @@ class PortVerificationDisplay:
         Args:
             results: Dictionary mapping ports to their verification results
         """
-        print("\n🔒 SSH Access Ports (Required)")
+        print("\n🔒 VM Access Ports (Required)")
         print("-------------------------")
         
-        await self.animate_verification("Scanning SSH ports...")
+        await self.animate_verification("Scanning VM access ports...")
         
         # Calculate progress
         total_ports = len(results)
@@ -98,7 +109,7 @@ class PortVerificationDisplay:
         else:
             print("\nAvailable Ports: None")
             
-        print("Required: At least 1 port in range 50800-50900")
+        print(f"Required: At least 1 port in range {self.port_range_start}-{self.port_range_end}")
         
     def print_critical_issues(self, discovery_result: PortVerificationResult, 
                             ssh_results: Dict[int, PortVerificationResult]):
@@ -112,15 +123,15 @@ class PortVerificationDisplay:
         
         # Check discovery port
         if not discovery_result.accessible:
-            issues.append(("Discovery port 7466 is not accessible",
-                         "This will prevent provider registration",
-                         "Configure port forwarding for port 7466"))
+            issues.append((f"Port {self.provider_port} is not accessible",
+                         "Requestors cannot discover or connect to your provider",
+                         f"Configure port forwarding for port {self.provider_port}"))
             
         # Check SSH ports
         if not any(r.accessible for r in ssh_results.values()):
-            issues.append(("No SSH ports are accessible",
-                         "This will prevent VM deployments",
-                         "Configure port forwarding for range 50800-50900"))
+            issues.append(("No VM access ports are accessible",
+                         "Requestors will not be able to access their rented VMs",
+                         f"Configure port forwarding for range {self.port_range_start}-{self.port_range_end}"))
             
         if issues:
             print("\n🚨 Critical Issues")
@@ -130,22 +141,35 @@ class PortVerificationDisplay:
                 print(f"   ↳ {impact}")
                 print(f"   ↳ Action: {action}")
                 
-    def print_quick_fix(self):
-        """Print quick fix guide with tutorials."""
-        print("\n💡 Quick Fix Guide")
-        print("---------------")
+    def print_quick_fix(self, discovery_result: PortVerificationResult,
+                       ssh_results: Dict[int, PortVerificationResult]):
+        """Print quick fix guide only if there are issues.
         
-        print("1. Check your router's port forwarding settings")
-        print("   ↳ Forward ports 50800-50900 to this machine")
-        print("   ↳ Tutorial: docs.golem.network/port-forwarding")
+        Args:
+            discovery_result: Verification result for discovery port
+            ssh_results: Dictionary mapping SSH ports to their verification results
+        """
+        # Check if we have any issues
+        has_issues = (
+            not discovery_result.accessible or 
+            not any(r.accessible for r in ssh_results.values())
+        )
         
-        print("\n2. Verify firewall rules")
-        print("   ↳ Allow incoming TCP connections on ports:")
-        print("     • 7466 (Discovery)")
-        print("     • 50800-50900 (SSH)")
-        print("   ↳ Tutorial: docs.golem.network/firewall-setup")
-        
-        print("\nNeed help? Visit our troubleshooting guide: docs.golem.network/ports")
+        if has_issues:
+            print("\n💡 Quick Fix Guide")
+            print("---------------")
+            
+            print("1. Check your router's port forwarding settings")
+            print(f"   ↳ Forward ports {self.port_range_start}-{self.port_range_end} to this machine")
+            print("   ↳ Tutorial: docs.golem.network/port-forwarding")
+            
+            print("\n2. Verify firewall rules")
+            print("   ↳ Allow incoming TCP connections on ports:")
+            print(f"     • {self.provider_port} (Provider Access)")
+            print(f"     • {self.port_range_start}-{self.port_range_end} (VM Access)")
+            print("   ↳ Tutorial: docs.golem.network/firewall-setup")
+            
+            print("\nNeed help? Visit our troubleshooting guide: docs.golem.network/ports")
         
     def print_summary(self, discovery_result: PortVerificationResult,
                      ssh_results: Dict[int, PortVerificationResult]):
@@ -160,16 +184,16 @@ class PortVerificationDisplay:
         accessible_ssh_ports = [port for port, result in ssh_results.items() if result.accessible]
         
         if not discovery_result.accessible:
-            print("Provider Cannot Start")
-            print("└─ Reason: Discovery port 7466 is not accessible")
-            print("└─ Impact: Cannot register with network")
-            print("└─ Fix: Configure port forwarding for 7466")
+            print("Provider Not Discoverable")
+            print(f"└─ Reason: Port {self.provider_port} is not accessible")
+            print("└─ Impact: Requestors cannot find or connect to your provider")
+            print(f"└─ Fix: Configure port forwarding for port {self.provider_port}")
             
         elif not accessible_ssh_ports:
-            print("Provider Cannot Accept VMs")
-            print("└─ Reason: No SSH ports are accessible")
-            print("└─ Impact: Cannot deploy any VMs")
-            print("└─ Fix: Configure port forwarding for range 50800-50900")
+            print("VMs Not Accessible")
+            print("└─ Reason: No VM access ports are available")
+            print("└─ Impact: Requestors will not be able to access their rented VMs")
+            print(f"└─ Fix: Configure port forwarding for range {self.port_range_start}-{self.port_range_end}")
             
         else:
             status = "Provider Ready" if len(accessible_ssh_ports) > 5 else "Provider Ready with Limited Capacity"

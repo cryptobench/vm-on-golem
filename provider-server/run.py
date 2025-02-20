@@ -50,16 +50,27 @@ async def verify_ports():
     from provider.vm.port_manager import PortManager
     from provider.utils.port_display import PortVerificationDisplay
 
-    display = PortVerificationDisplay()
+    # Import settings after loading environment variables
+    from provider.config import settings
+    
+    display = PortVerificationDisplay(
+        provider_port=settings.PORT,
+        port_range_start=settings.PORT_RANGE_START,
+        port_range_end=settings.PORT_RANGE_END
+    )
     display.print_header()
 
     # Initialize port manager
     logger.process("🔄 Verifying port accessibility...")
-    port_manager = PortManager()
+    port_manager = PortManager(
+        start_port=settings.PORT_RANGE_START,
+        end_port=settings.PORT_RANGE_END,
+        discovery_port=settings.PORT
+    )
     if not await port_manager.initialize():
         logger.error("Port verification failed. Please ensure:")
-        logger.error("1. Port 7466 is accessible for discovery service")
-        logger.error("2. Some ports in range 50800-50900 are accessible for SSH")
+        logger.error(f"1. Port {settings.PORT} is accessible for provider access")
+        logger.error(f"2. Some ports in range {settings.PORT_RANGE_START}-{settings.PORT_RANGE_END} are accessible for VM access")
         logger.error("3. Your firewall/router is properly configured")
         return False
     

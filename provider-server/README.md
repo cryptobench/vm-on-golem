@@ -169,15 +169,15 @@ GOLEM_PROVIDER_MIN_MEMORY_GB=1
 GOLEM_PROVIDER_MIN_STORAGE_GB=10
 
 # Port Verification Settings
-GOLEM_PROVIDER_DISCOVERY_PORT=7466
+GOLEM_PROVIDER_PORT={provider_port}  # Default: 7466
 GOLEM_PROVIDER_PORT_CHECK_SERVERS=[
     "https://ports1.golem.network",
     "https://ports2.golem.network"
 ]
 
 # Network Settings
-GOLEM_PROVIDER_SSH_PORT_RANGE_START=50800
-GOLEM_PROVIDER_SSH_PORT_RANGE_END=50900
+GOLEM_PROVIDER_PORT_RANGE_START={start_port}  # Default: 50800
+GOLEM_PROVIDER_PORT_RANGE_END={end_port}      # Default: 50900
 GOLEM_PROVIDER_PUBLIC_IP="auto"
 
 # Discovery Settings
@@ -300,13 +300,13 @@ Common issues and solutions:
 
 ### Port Verification Issues
 
-1. Discovery Port (7466) Issues
+1. Provider Port ({provider_port}) Issues
    - Check if port is already in use
    - Verify port forwarding on router
    - Check firewall rules
-   - Ensure discovery service is accessible
+   - Ensure provider is accessible to requestors
 
-2. SSH Port Range Issues (50800-50900)
+2. VM Access Port Range ({start_port}-{end_port}) Issues
    - Verify port range availability
    - Check for port conflicts
    - Configure router port forwarding
@@ -331,9 +331,10 @@ Example status output:
 ```bash
 🌟 Port Verification Status
 ==========================
-[✅] Discovery Port 7466: External ✓ | Internal ✓
-[✅] SSH Ports: 3 ports available (50800-50802)
+[✅] Provider Port {provider_port}: External ✓ | Internal ✓
+[✅] VM Access Ports: 3 ports available ({start_port}-{start_port+2})
 [✅] Overall Status: Provider Ready
+└─ Can handle up to {n} concurrent VMs
 ```
 
 ### Resource Allocation Issues
