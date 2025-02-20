@@ -158,18 +158,31 @@ class PythonProxyManager:
         self.port_manager = port_manager
         self.state_file = state_file or os.path.expanduser("~/.golem/provider/proxy_state.json")
         self._proxies: Dict[str, ProxyServer] = {}  # vm_id -> ProxyServer
-        self._load_state()
+        # Note: _load_state is now async and will be called explicitly during provider setup
     
-    def _load_state(self) -> None:
-        """Load proxy state from file."""
+    async def _load_state(self) -> None:
+        """Load and restore proxy state from file."""
         try:
             state_path = Path(self.state_file)
             if state_path.exists():
                 with open(state_path, 'r') as f:
                     state = json.load(f)
-                    # We only need to restore port allocations
-                    # Actual proxy servers will be recreated as needed
-                    logger.info(f"Loaded proxy state for {len(state)} VMs")
+                    # Restore proxy servers from saved state
+                    restore_tasks = []
+                    for vm_id, proxy_info in state.items():
+                        # Create task to restore proxy
+                        task = self.add_vm(
+                            vm_id=vm_id,
+                            vm_ip=proxy_info['target'],
+                            port=proxy_info['port']
+                        )
+                        restore_tasks.append(task)
+                    
+                    # Wait for all proxies to be restored
+                    if restore_tasks:
+                        results = await asyncio.gather(*restore_tasks, return_exceptions=True)
+                        successful = sum(1 for r in results if r is True)
+                        logger.info(f"Restored {successful}/{len(state)} proxy configurations")
         except Exception as e:
             logger.error(f"Failed to load proxy state: {e}")
     

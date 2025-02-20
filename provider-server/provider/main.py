@@ -31,10 +31,14 @@ async def setup_provider() -> None:
         provider = MultipassProvider(resource_tracker, port_manager=port_manager)
         try:
             await asyncio.wait_for(provider.initialize(), timeout=30)
-            app.state.provider = provider
             
-            # Store proxy manager reference for cleanup
+            # Store provider and proxy manager references
+            app.state.provider = provider
             app.state.proxy_manager = provider.proxy_manager
+            
+            # Restore proxy configurations
+            logger.process("🔄 Restoring proxy configurations...")
+            await app.state.proxy_manager._load_state()
             
         except asyncio.TimeoutError:
             logger.error("Provider initialization timed out")
