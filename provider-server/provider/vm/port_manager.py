@@ -23,7 +23,8 @@ class PortManager:
         end_port: int = 50900,
         state_file: Optional[str] = None,
         port_check_servers: Optional[List[str]] = None,
-        discovery_port: Optional[int] = None
+        discovery_port: Optional[int] = None,
+        existing_ports: Optional[Set[int]] = None
     ):
         """Initialize the port manager.
 
@@ -32,6 +33,8 @@ class PortManager:
             end_port: End of port range (exclusive)
             state_file: Path to persist port assignments
             port_check_servers: List of URLs for port checking services
+            discovery_port: Port used for discovery service
+            existing_ports: Set of ports that should be considered in use
         """
         self.start_port = start_port
         self.end_port = end_port
@@ -40,12 +43,12 @@ class PortManager:
         self.lock = Lock()
         self._used_ports: dict[str, int] = {}  # vm_id -> port
         self.verified_ports: Set[int] = set()
+        self._existing_ports = existing_ports or set()
 
         # Initialize port verifier with default servers
         self.port_check_servers = port_check_servers or [
             "http://localhost:9000",  # Local development server
             "http://195.201.39.101:9000",  # Production servers
-
         ]
         self.discovery_port = discovery_port or settings.PORT
         self.port_verifier = PortVerifier(
@@ -53,7 +56,14 @@ class PortManager:
             discovery_port=self.discovery_port
         )
 
+        # Load state after setting existing ports
         self._load_state()
+        
+        # Mark existing ports as used and remove from verified ports
+        for port in self._existing_ports:
+            if port in self.verified_ports:
+                self.verified_ports.remove(port)
+                logger.debug(f"Marked port {port} as in use from existing ports")
 
     async def initialize(self) -> bool:
         """Initialize port manager with verification.
@@ -70,8 +80,9 @@ class PortManager:
         )
         display.print_header()
 
-        # Only verify SSH ports since provider port was already verified
-        ssh_ports = list(range(self.start_port, self.end_port))
+        # Only verify ports that aren't already marked as in use
+        available_ports = set(range(self.start_port, self.end_port)) - self._existing_ports
+        ssh_ports = list(available_ports)
         logger.info(f"Starting port verification...")
         logger.info(f"SSH ports range: {self.start_port}-{self.end_port}")
         logger.info(

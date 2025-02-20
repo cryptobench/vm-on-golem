@@ -3,7 +3,7 @@ import json
 import asyncio
 import logging
 from pathlib import Path
-from typing import Optional, Dict
+from typing import Optional, Dict, Set
 from asyncio import Task, Transport, Protocol
 
 from .port_manager import PortManager
@@ -146,14 +146,14 @@ class PythonProxyManager:
     
     def __init__(
         self,
-        port_manager: PortManager,
+        port_manager: Optional[PortManager],
         name_mapper: "VMNameMapper",
         state_file: Optional[str] = None
     ):
         """Initialize the proxy manager.
         
         Args:
-            port_manager: Port allocation manager
+            port_manager: Port allocation manager (optional during startup)
             name_mapper: VM name mapping manager
             state_file: Path to persist proxy state
         """
@@ -161,53 +161,130 @@ class PythonProxyManager:
         self.name_mapper = name_mapper
         self.state_file = state_file or os.path.expanduser("~/.golem/provider/proxy_state.json")
         self._proxies: Dict[str, ProxyServer] = {}  # multipass_name -> ProxyServer
-        # Note: _load_state is now async and will be called explicitly during provider setup
+        self._state_version = 1  # For future state schema migrations
+        self._active_ports: Dict[str, int] = {}  # multipass_name -> port
     
+    def get_active_ports(self) -> Set[int]:
+        """Get set of ports that should be considered in use.
+        
+        Returns:
+            Set of ports that are allocated to VMs
+        """
+        return set(self._active_ports.values())
+
     async def _load_state(self) -> None:
         """Load and restore proxy state from file."""
         try:
             state_path = Path(self.state_file)
-            if state_path.exists():
-                with open(state_path, 'r') as f:
-                    state = json.load(f)
-                    # Restore proxy servers from saved state
-                    restore_tasks = []
-                    for requestor_name, proxy_info in state.items():
-                        # Get current multipass name for the requestor's VM
-                        multipass_name = await self.name_mapper.get_multipass_name(requestor_name)
-                        if multipass_name:
-                            # Create task to restore proxy
-                            task = self.add_vm(
-                                vm_id=multipass_name,  # Use multipass name for internal tracking
-                                vm_ip=proxy_info['target'],
-                                port=proxy_info['port']
-                            )
-                            restore_tasks.append(task)
-                        else:
-                            logger.warning(f"No multipass name found for requestor VM {requestor_name}")
-                    
-                    # Wait for all proxies to be restored
-                    if restore_tasks:
-                        results = await asyncio.gather(*restore_tasks, return_exceptions=True)
-                        successful = sum(1 for r in results if r is True)
-                        logger.info(f"Restored {successful}/{len(state)} proxy configurations")
+            if not state_path.exists():
+                return
+
+            with open(state_path, 'r') as f:
+                state = json.load(f)
+
+            # Check state version for future migrations
+            if state.get('version', 1) != self._state_version:
+                logger.warning(f"State version mismatch: {state.get('version')} != {self._state_version}")
+
+            # First load all port allocations
+            for requestor_name, proxy_info in state.get('proxies', {}).items():
+                multipass_name = await self.name_mapper.get_multipass_name(requestor_name)
+                if multipass_name:
+                    self._active_ports[multipass_name] = proxy_info['port']
+
+            # Then attempt to restore proxies with retries
+            restore_tasks = []
+            for requestor_name, proxy_info in state.get('proxies', {}).items():
+                multipass_name = await self.name_mapper.get_multipass_name(requestor_name)
+                if multipass_name:
+                    task = self._restore_proxy_with_retry(
+                        multipass_name=multipass_name,
+                        vm_ip=proxy_info['target'],
+                        port=proxy_info['port']
+                    )
+                    restore_tasks.append(task)
+                else:
+                    logger.warning(f"No multipass name found for requestor VM {requestor_name}")
+
+            # Wait for all restore attempts
+            if restore_tasks:
+                results = await asyncio.gather(*restore_tasks, return_exceptions=True)
+                successful = sum(1 for r in results if r is True)
+                logger.info(f"Restored {successful}/{len(state.get('proxies', {}))} proxy configurations")
+
         except Exception as e:
             logger.error(f"Failed to load proxy state: {e}")
+
+    async def _restore_proxy_with_retry(
+        self,
+        multipass_name: str,
+        vm_ip: str,
+        port: int,
+        max_retries: int = 3,
+        initial_delay: float = 1.0
+    ) -> bool:
+        """Attempt to restore a proxy with exponential backoff retry.
+        
+        Args:
+            multipass_name: Multipass VM name
+            vm_ip: VM IP address
+            port: Port to use
+            max_retries: Maximum number of retry attempts
+            initial_delay: Initial delay between retries (doubles each attempt)
+            
+        Returns:
+            bool: True if restoration was successful
+        """
+        delay = initial_delay
+        for attempt in range(max_retries):
+            try:
+                if attempt > 0:
+                    logger.info(f"Retry attempt {attempt + 1} for {multipass_name} on port {port}")
+                    await asyncio.sleep(delay)
+                    delay *= 2  # Exponential backoff
+
+                # Attempt to create proxy
+                proxy = ProxyServer(port, vm_ip)
+                await proxy.start()
+                
+                self._proxies[multipass_name] = proxy
+                logger.info(f"Successfully restored proxy for {multipass_name} on port {port}")
+                return True
+
+            except Exception as e:
+                logger.warning(f"Attempt {attempt + 1} failed for {multipass_name}: {e}")
+                if attempt == max_retries - 1:
+                    logger.error(f"Failed to restore proxy for {multipass_name} after {max_retries} attempts")
+                    # Remove from active ports if all retries failed
+                    self._active_ports.pop(multipass_name, None)
+                    return False
     
     async def _save_state(self) -> None:
         """Save current proxy state to file using requestor names."""
         try:
-            state = {}
+            state = {
+                'version': self._state_version,
+                'proxies': {}
+            }
+            
             for multipass_name, proxy in self._proxies.items():
                 requestor_name = await self.name_mapper.get_requestor_name(multipass_name)
                 if requestor_name:
-                    state[requestor_name] = {
+                    state['proxies'][requestor_name] = {
                         'port': proxy.listen_port,
                         'target': proxy.target_host
                     }
+            
+            # Save to temporary file first
+            temp_file = f"{self.state_file}.tmp"
             os.makedirs(os.path.dirname(self.state_file), exist_ok=True)
-            with open(self.state_file, 'w') as f:
-                json.dump(state, f)
+            
+            with open(temp_file, 'w') as f:
+                json.dump(state, f, indent=2)
+            
+            # Atomic rename
+            os.replace(temp_file, self.state_file)
+            
         except Exception as e:
             logger.error(f"Failed to save proxy state: {e}")
     

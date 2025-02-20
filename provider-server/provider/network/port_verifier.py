@@ -198,14 +198,20 @@ class PortVerifier:
                 ))
                 logger.warning(error_msg)
         
-        # If no successful verifications, mark all ports as inaccessible
-        if not any(result.accessible for result in results.values()):
+        # If no servers were successful, fail verification
+        if not any(attempt.success for attempt in attempts):
             error_msg = (
-                "Failed to verify ports with any server. Please ensure:\n"
+                "Failed to connect to any port check servers. Please ensure:\n"
                 "1. At least one port check server is running and accessible\n"
                 "2. Your network connection is stable\n"
                 "3. The server URLs are correct"
             )
+            logger.error(error_msg)
+            raise RuntimeError(error_msg)
+
+        # If no successful verifications but servers were reachable, mark ports as inaccessible
+        if not any(result.accessible for result in results.values()):
+            error_msg = "No ports were verified as accessible"
             logger.error(error_msg)
             results = {
                 port: PortVerificationResult(
