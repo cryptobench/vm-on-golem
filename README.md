@@ -287,10 +287,5 @@ Each component has its own README with detailed development instructions:
 
 Remember: Keep it simple. If you can't explain your change to a 12-year-old, it's probably too complex.
 
-## License
-
-This project is part of the Golem Network and is licensed under the GPL-3.0 license.
-
----
 
 >
