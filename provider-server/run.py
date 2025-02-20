@@ -98,12 +98,6 @@ def main():
         # Import settings after loading environment variables
         from provider.config import settings
 
-        # Verify ports before starting server
-        import asyncio
-        if not asyncio.run(verify_ports()):
-            logger.error("Port verification failed")
-            sys.exit(1)
-
         # Configure uvicorn logging
         log_config = uvicorn.config.LOGGING_CONFIG
         log_config["formatters"]["access"]["fmt"] = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"

@@ -7,7 +7,7 @@ from typing import Optional, Set, List, Dict
 from threading import Lock
 
 from ..config import settings
-from ..network.port_verifier import PortVerifier, PortVerificationResult
+from ..network.port_verifier import PortVerifier, PortVerificationResult, ServerAttempt
 from ..utils.port_display import PortVerificationDisplay
 
 logger = logging.getLogger(__name__)
@@ -40,10 +40,10 @@ class PortManager:
         
         # Initialize port verifier with default servers
         self.port_check_servers = port_check_servers or [
-            # "http://portcheck1.golem.network:7466",
-            # "http://portcheck2.golem.network:7466",
-            # "http://portcheck3.golem.network:7466",
-            "http://localhost:9000"  # Fallback for local development
+            "http://localhost:9000",  # Local development server
+            "http://portcheck1.golem.network:7466",  # Production servers
+            "http://portcheck2.golem.network:7466",
+            "http://portcheck3.golem.network:7466"
         ]
         self.discovery_port = discovery_port or settings.PORT
         self.port_verifier = PortVerifier(
@@ -68,18 +68,43 @@ class PortManager:
         )
         display.print_header()
         
-        # Verify all ports together (discovery port and SSH ports)
-        all_ports = [self.discovery_port] + list(range(self.start_port, self.end_port))
-        logger.info(f"Verifying all ports: discovery port {self.discovery_port} and SSH ports {self.start_port}-{self.end_port}...")
+        # Only verify SSH ports since provider port was already verified
+        ssh_ports = list(range(self.start_port, self.end_port))
+        logger.info(f"Starting port verification...")
+        logger.info(f"SSH ports range: {self.start_port}-{self.end_port}")
+        logger.info(f"Using port check servers: {', '.join(self.port_check_servers)}")
         
-        results = await self.port_verifier.verify_ports(all_ports)
+        results = await self.port_verifier.verify_ports(ssh_ports)
         
+        # Add provider port as verified since we already checked it
+        results[self.discovery_port] = PortVerificationResult(
+            port=self.discovery_port,
+            accessible=True,
+            verified_by="local_verification",
+            attempts=[ServerAttempt(server="local_verification", success=True)]
+        )
+        
+        # Check if discovery port was verified
+        if self.discovery_port not in results:
+            error_msg = f"Port {self.discovery_port} verification failed"
+            logger.error(error_msg)
+            display.print_summary(
+                PortVerificationResult(
+                    port=self.discovery_port,
+                    accessible=False,
+                    error=error_msg
+                ),
+                {}
+            )
+            return False
+
         # Display discovery port status with animation
         discovery_result = results[self.discovery_port]
         await display.print_discovery_status(discovery_result)
         
         if not discovery_result.accessible:
-            logger.error(f"Failed to verify discovery port: {discovery_result.error}")
+            error_msg = discovery_result.error or f"Port {self.discovery_port} is not accessible"
+            logger.error(f"Failed to verify discovery port: {error_msg}")
             # Print summary before returning
             display.print_summary(discovery_result, {})
             return False

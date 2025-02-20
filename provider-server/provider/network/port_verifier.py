@@ -165,37 +165,53 @@ class PortVerifier:
                             attempts.append(ServerAttempt(
                                 server=server,
                                 success=False,
-                                error="Server returned unsuccessful response"
+                                error=f"Server {server} returned unsuccessful response"
                             ))
                     else:
                         attempts.append(ServerAttempt(
                             server=server,
                             success=False,
-                            error=f"Server returned status {response.status}"
+                            error=f"Server {server} returned status {response.status}"
                         ))
             except asyncio.TimeoutError:
+                error_msg = f"Connection to {server} timed out after 30 seconds"
                 attempts.append(ServerAttempt(
                     server=server,
                     success=False,
-                    error="Connection timed out"
+                    error=error_msg
                 ))
-                logger.warning(f"Timeout while verifying ports with {server}")
+                logger.warning(f"{error_msg}. Please ensure the port check server is running and accessible.")
+            except aiohttp.ClientConnectorError as e:
+                error_msg = f"Could not connect to {server}: Connection refused"
+                attempts.append(ServerAttempt(
+                    server=server,
+                    success=False,
+                    error=error_msg
+                ))
+                logger.warning(f"{error_msg}. Please ensure the port check server is running.")
             except Exception as e:
+                error_msg = f"Failed to verify ports with {server}: {str(e)}"
                 attempts.append(ServerAttempt(
                     server=server,
                     success=False,
-                    error=str(e)
+                    error=error_msg
                 ))
-                logger.warning(f"Failed to verify ports with {server}: {e}")
+                logger.warning(error_msg)
         
         # If no successful verifications, mark all ports as inaccessible
         if not any(result.accessible for result in results.values()):
-            logger.error("Failed to verify ports with any server")
+            error_msg = (
+                "Failed to verify ports with any server. Please ensure:\n"
+                "1. At least one port check server is running and accessible\n"
+                "2. Your network connection is stable\n"
+                "3. The server URLs are correct"
+            )
+            logger.error(error_msg)
             results = {
                 port: PortVerificationResult(
                     port=port,
                     accessible=False,
-                    error="Failed to verify with any port check server",
+                    error=error_msg,
                     attempts=[]  # Will be filled below
                 )
                 for port in ports
@@ -254,9 +270,11 @@ class PortVerifier:
         Returns:
             Dictionary mapping ports to their verification results
         """
-        # Separate discovery port from other ports
-        other_ports = [p for p in ports if p != self.discovery_port]
-        discovery_port_included = self.discovery_port in ports
+        # Only verify the ports provided - discovery port is handled separately
+        logger.info(f"Verifying {len(ports)} SSH ports...")
+        if not ports:
+            logger.warning("No ports to verify")
+            return {}
         
         # First verify ports with local binding
         logger.info("Checking local port availability...")
@@ -267,7 +285,7 @@ class PortVerifier:
                     port: PortVerificationResult(
                         port=port,
                         accessible=False,
-                        error="Failed to bind locally"
+                        error=f"Port {port} could not be bound locally"
                     )
                     for port in ports
                 }
@@ -276,12 +294,11 @@ class PortVerifier:
             logger.info("Starting external port verification...")
             results = await self.verify_external_access(local_available)
             
-            # Log detailed results for discovery port
-            if discovery_port_included and self.discovery_port in results:
-                result = results[self.discovery_port]
-                if result.accessible:
-                    logger.info(f"Discovery port {self.discovery_port} verified successfully by {result.verified_by}")
-                else:
-                    logger.error(f"Discovery port {self.discovery_port} verification failed: {result.error}")
+            # Log verification results
+            accessible_ports = [port for port, result in results.items() if result.accessible]
+            if accessible_ports:
+                logger.info(f"Successfully verified {len(accessible_ports)} SSH ports: {', '.join(map(str, sorted(accessible_ports)))}")
+            else:
+                logger.warning("No SSH ports were verified as accessible")
             
             return results
