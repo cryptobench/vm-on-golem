@@ -45,7 +45,7 @@ class Settings(BaseSettings):
         return identity.get_or_create_identity()
 
     # Discovery Service Settings
-    DISCOVERY_URL: str = "http://localhost:7465"
+    DISCOVERY_URL: str = "http://195.201.39.101:7465"
     ADVERTISEMENT_INTERVAL: int = 240  # seconds
 
     # VM Settings
