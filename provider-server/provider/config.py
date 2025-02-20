@@ -64,6 +64,7 @@ class Settings(BaseSettings):
         """Resolve and create cloud-init directory path."""
         import platform
         import tempfile
+        from .utils.setup import setup_cloud_init_dir, check_setup_needed, mark_setup_complete
         
         def verify_dir_permissions(path: Path) -> bool:
             """Verify directory has correct permissions and is accessible."""
@@ -86,15 +87,32 @@ class Settings(BaseSettings):
             if system == "linux" and Path("/snap/bin/multipass").exists():
                 # Linux with snap
                 path = Path("/var/snap/multipass/common/cloud-init")
+                
+                # Check if we need to set up permissions
+                if check_setup_needed():
+                    logger.info("First run detected, setting up cloud-init directory...")
+                    success, error = setup_cloud_init_dir(path)
+                    if success:
+                        logger.info("✓ Cloud-init directory setup complete")
+                        mark_setup_complete()
+                    else:
+                        logger.error(f"Failed to set up cloud-init directory: {error}")
+                        logger.error("\nTo fix this manually, run these commands:")
+                        logger.error("  sudo mkdir -p /var/snap/multipass/common/cloud-init")
+                        logger.error("  sudo chown -R $USER:$USER /var/snap/multipass/common/cloud-init")
+                        logger.error("  sudo chmod -R 755 /var/snap/multipass/common/cloud-init\n")
+                        # Fall back to user's home directory
+                        path = Path.home() / ".local" / "share" / "golem" / "provider" / "cloud-init"
+                
             elif system == "linux":
                 # Linux without snap
-                path = Path("/var/lib/multipass/cloud-init")
+                path = Path.home() / ".local" / "share" / "golem" / "provider" / "cloud-init"
             elif system == "darwin":
                 # macOS
-                path = Path("/Library/Application Support/multipass/cloud-init")
+                path = Path.home() / "Library" / "Application Support" / "golem" / "provider" / "cloud-init"
             elif system == "windows":
                 # Windows
-                path = Path(os.path.expandvars("%ProgramData%\\Multipass\\cloud-init"))
+                path = Path(os.path.expandvars("%LOCALAPPDATA%")) / "golem" / "provider" / "cloud-init"
             else:
                 path = Path.home() / ".golem" / "provider" / "cloud-init"
 
