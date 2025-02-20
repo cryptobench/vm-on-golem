@@ -58,23 +58,29 @@ class PortVerificationDisplay:
         print("\n📡 Provider Accessibility (Required)")
         print("--------------------------------")
         
-        await self.animate_verification("Checking provider accessibility...")
+        await self.animate_verification("Verifying provider port status...")
         
-        status_badge = "✅ Accessible" if result.accessible else "❌ Not Accessible"
-        print(f"[{status_badge}] Port {self.provider_port}")
-        print(f"└─ Status: {'Accessible' if result.accessible else 'Not Accessible'}")
-        
-        # Show external/internal access
-        if result.accessible:
-            print("└─ Access: External ✓ | Internal ✓")
-            print("└─ Requestors can discover and connect to your provider")
+        if result.verified_by == "local_verification":
+            print(f"[✅ Ready] Port {self.provider_port}")
+            print("└─ Status: Port available and bound")
+            print("└─ Access: Local binding successful")
+            print("└─ Provider can start and accept connections")
         else:
-            print("└─ Access: External ✗ | Internal ✗")
-            print("└─ Requestors cannot discover or connect to your provider")
+            status_badge = "✅ Accessible" if result.accessible else "❌ Not Accessible"
+            print(f"[{status_badge}] Port {self.provider_port}")
+            print(f"└─ Status: {'Accessible' if result.accessible else 'Not Accessible'}")
             
-        # Show verification server if successful
-        if result.verified_by:
-            print(f"└─ Verified By: {result.verified_by}")
+            # Show external/internal access
+            if result.accessible:
+                print("└─ Access: External ✓ | Internal ✓")
+                print("└─ Requestors can discover and connect to your provider")
+            else:
+                print("└─ Access: External ✗ | Internal ✗")
+                print("└─ Requestors cannot discover or connect to your provider")
+                
+            # Show verification server if successful
+            if result.verified_by:
+                print(f"└─ Verified By: {result.verified_by}")
             
     async def print_ssh_status(self, results: Dict[int, PortVerificationResult]):
         """Print SSH ports status with progress bar.
@@ -171,7 +177,7 @@ class PortVerificationDisplay:
             
             print("\nNeed help? Visit our troubleshooting guide: docs.golem.network/ports")
         
-    def print_summary(self, discovery_result: PortVerificationResult,
+    def print_summary(self, discovery_result: Optional[PortVerificationResult],
                      ssh_results: Dict[int, PortVerificationResult]):
         """Print a precise, actionable summary of the verification status.
         
@@ -181,17 +187,38 @@ class PortVerificationDisplay:
         """
         print("\n🎯 Current Status:", end=" ")
         
+        if discovery_result is None:
+            print("Verification Failed")
+            print(f"└─ Error: Discovery port {self.provider_port} verification failed")
+            print("└─ Impact: Provider cannot start without discovery port access")
+            print(f"└─ Fix: Ensure port {self.provider_port} is available and not in use")
+            return
+            
         accessible_ssh_ports = [port for port, result in ssh_results.items() if result.accessible]
         
         if not discovery_result.accessible:
             print("Provider Not Discoverable")
-            print(f"└─ Reason: Port {self.provider_port} is not accessible")
+            print(f"└─ Error: {discovery_result.error or f'Port {self.provider_port} is not accessible'}")
             print("└─ Impact: Requestors cannot find or connect to your provider")
             print(f"└─ Fix: Configure port forwarding for port {self.provider_port}")
+            if discovery_result.attempts:
+                print("\n📋 Verification Attempts")
+                print("--------------------")
+                for attempt in discovery_result.attempts:
+                    status = "✅" if attempt.success else "❌"
+                    print(f"{status} {attempt.server}")
+                    if not attempt.success and attempt.error:
+                        print(f"   └─ Error: {attempt.error}")
+                print("\n🔍 Troubleshooting Tips")
+                print("-------------------")
+                print("1. Check if port check servers are running")
+                print("2. Verify your network connection")
+                print("3. Ensure no firewall is blocking the connections")
+                print("\nFor detailed setup instructions, visit: docs.golem.network/provider/ports")
             
         elif not accessible_ssh_ports:
             print("VMs Not Accessible")
-            print("└─ Reason: No VM access ports are available")
+            print("└─ Error: No VM access ports are available")
             print("└─ Impact: Requestors will not be able to access their rented VMs")
             print(f"└─ Fix: Configure port forwarding for range {self.port_range_start}-{self.port_range_end}")
             
@@ -202,3 +229,5 @@ class PortVerificationDisplay:
             print(f"└─ Capacity: Can handle up to {len(accessible_ssh_ports)} concurrent VMs")
             if len(accessible_ssh_ports) <= 5:
                 print("└─ Recommendation: Open more ports for higher capacity")
+            if discovery_result.verified_by:
+                print(f"└─ Verified By: {discovery_result.verified_by}")

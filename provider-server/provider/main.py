@@ -18,10 +18,8 @@ app = FastAPI(title="VM on Golem Provider")
 async def setup_provider() -> None:
     """Setup and initialize the provider components."""
     try:
-        # Initialize port manager (verification already done in run.py)
-        logger.process("🔄 Initializing port manager...")
-        port_manager = PortManager()
-        app.state.port_manager = port_manager
+        # Port manager is already initialized and verified in startup_event
+        port_manager = app.state.port_manager
         
         # Create resource tracker
         logger.process("🔄 Initializing resource tracker...")
@@ -108,10 +106,48 @@ async def cleanup_provider() -> None:
 @app.on_event("startup")
 async def startup_event():
     """Handle application startup."""
-    # Display startup animation
-    await startup_animation()
-    # Initialize provider
-    await setup_provider()
+    try:
+        # Display startup animation
+        await startup_animation()
+
+        # Verify ports first
+        from .vm.port_manager import PortManager
+        from .utils.port_display import PortVerificationDisplay
+        from .config import settings
+
+        display = PortVerificationDisplay(
+            provider_port=settings.PORT,
+            port_range_start=settings.PORT_RANGE_START,
+            port_range_end=settings.PORT_RANGE_END
+        )
+        display.print_header()
+
+        # Initialize port manager
+        logger.process("🔄 Verifying port accessibility...")
+        port_manager = PortManager(
+            start_port=settings.PORT_RANGE_START,
+            end_port=settings.PORT_RANGE_END,
+            discovery_port=settings.PORT
+        )
+        if not await port_manager.initialize():
+            logger.error("Port verification failed. Please ensure:")
+            logger.error(f"1. Port {settings.PORT} is accessible for provider access")
+            logger.error(f"2. Some ports in range {settings.PORT_RANGE_START}-{settings.PORT_RANGE_END} are accessible for VM access")
+            logger.error("3. Your firewall/router is properly configured")
+            raise RuntimeError("Port verification failed")
+
+        logger.success(f"✅ Port verification successful - {len(port_manager.verified_ports)} ports available")
+        
+        # Store port manager in app state for later use
+        app.state.port_manager = port_manager
+
+        # Initialize provider
+        await setup_provider()
+    except Exception as e:
+        logger.error(f"Startup failed: {e}")
+        # Ensure proper cleanup
+        await cleanup_provider()
+        raise
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -163,40 +199,37 @@ def check_requirements():
         
     return True
 
-async def verify_ports():
-    """Verify port accessibility before starting server."""
-    from .vm.port_manager import PortManager
-    from .utils.port_display import PortVerificationDisplay
-    from .config import settings
+async def verify_provider_port(port: int) -> bool:
+    """Verify that the provider port is available for binding.
     
-    display = PortVerificationDisplay(
-        provider_port=settings.PORT,
-        port_range_start=settings.PORT_RANGE_START,
-        port_range_end=settings.PORT_RANGE_END
-    )
-    display.print_header()
-
-    # Initialize port manager
-    logger.process("🔄 Verifying port accessibility...")
-    port_manager = PortManager(
-        start_port=settings.PORT_RANGE_START,
-        end_port=settings.PORT_RANGE_END,
-        discovery_port=settings.PORT
-    )
-    if not await port_manager.initialize():
-        logger.error("Port verification failed. Please ensure:")
-        logger.error(f"1. Port {settings.PORT} is accessible for provider access")
-        logger.error(f"2. Some ports in range {settings.PORT_RANGE_START}-{settings.PORT_RANGE_END} are accessible for VM access")
-        logger.error("3. Your firewall/router is properly configured")
+    Args:
+        port: The port to verify
+        
+    Returns:
+        bool: True if the port is available, False otherwise
+    """
+    try:
+        # Try to create a temporary listener
+        server = await asyncio.start_server(
+            lambda r, w: None,  # Empty callback
+            '0.0.0.0',
+            port
+        )
+        server.close()
+        await server.wait_closed()
+        logger.info(f"✅ Provider port {port} is available")
+        return True
+    except Exception as e:
+        logger.error(f"❌ Provider port {port} is not available: {e}")
+        logger.error("Please ensure:")
+        logger.error(f"1. Port {port} is not in use by another application")
+        logger.error("2. You have permission to bind to this port")
+        logger.error("3. Your firewall allows binding to this port")
         return False
-    
-    logger.success(f"✅ Port verification successful - {len(port_manager.verified_ports)} ports available")
-    return True
 
 def start():
     """Start the provider server."""
     import sys
-    import asyncio
     from pathlib import Path
     from dotenv import load_dotenv
     import uvicorn
@@ -221,10 +254,10 @@ def start():
         if not check_requirements():
             logger.error("Requirements check failed")
             sys.exit(1)
-
-        # Verify ports before starting server
-        if not asyncio.run(verify_ports()):
-            logger.error("Port verification failed")
+            
+        # Verify provider port is available
+        if not asyncio.run(verify_provider_port(settings.PORT)):
+            logger.error(f"Provider port {settings.PORT} is not available")
             sys.exit(1)
         
         # Configure uvicorn logging

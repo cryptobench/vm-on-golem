@@ -58,8 +58,16 @@ class SSHProxyProtocol(Protocol):
         """Handle connection loss."""
         if exc:
             logger.error(f"Client connection lost with error: {exc}")
-        if self.target_transport and not self.target_transport.is_closing():
-            self.target_transport.close()
+        
+        # Ensure target connection is properly closed
+        if self.target_transport:
+            if not self.target_transport.is_closing():
+                self.target_transport.close()
+            self.target_transport = None
+        
+        # Clear any buffered data
+        if self.buffer:
+            self.buffer.clear()
 
 class SSHTargetProtocol(Protocol):
     """Protocol for handling target SSH connections."""
@@ -82,9 +90,12 @@ class SSHTargetProtocol(Protocol):
         """Handle connection loss."""
         if exc:
             logger.error(f"Target connection lost with error: {exc}")
-        if (self.client_protocol.transport and 
-            not self.client_protocol.transport.is_closing()):
-            self.client_protocol.transport.close()
+        
+        # Ensure client connection is properly closed
+        if self.client_protocol and self.client_protocol.transport:
+            if not self.client_protocol.transport.is_closing():
+                self.client_protocol.transport.close()
+            self.client_protocol.transport = None
 
 class ProxyServer:
     """Manages a single proxy server instance."""
@@ -120,9 +131,15 @@ class ProxyServer:
     async def stop(self) -> None:
         """Stop the proxy server."""
         if self.server:
-            self.server.close()
-            await self.server.wait_closed()
-            logger.info(f"Proxy server on port {self.listen_port} stopped")
+            try:
+                # Close the server
+                self.server.close()
+                await self.server.wait_closed()
+                logger.info(f"Proxy server on port {self.listen_port} stopped")
+            except Exception as e:
+                logger.error(f"Error stopping proxy server on port {self.listen_port}: {e}")
+            finally:
+                self.server = None
 
 class PythonProxyManager:
     """Manages proxy servers for VM SSH access."""
@@ -230,10 +247,25 @@ class PythonProxyManager:
     
     async def cleanup(self) -> None:
         """Remove all proxy configurations."""
-        try:
-            for vm_id in list(self._proxies.keys()):
+        cleanup_errors = []
+        
+        # Stop all proxy servers
+        for vm_id in list(self._proxies.keys()):
+            try:
                 await self.remove_vm(vm_id)
+            except Exception as e:
+                cleanup_errors.append(f"Failed to remove proxy for VM {vm_id}: {e}")
+        
+        try:
             self._save_state()
-            logger.info("Cleaned up all proxy configurations")
         except Exception as e:
-            logger.error(f"Failed to cleanup proxy configurations: {e}")
+            cleanup_errors.append(f"Failed to save state: {e}")
+            
+        if cleanup_errors:
+            error_msg = "\n".join(cleanup_errors)
+            logger.error(f"Errors during proxy cleanup:\n{error_msg}")
+        else:
+            logger.info("Cleaned up all proxy configurations")
+            
+        # Clear internal state
+        self._proxies.clear()
