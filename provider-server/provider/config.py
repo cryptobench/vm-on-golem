@@ -93,93 +93,107 @@ class Settings(BaseSettings):
     @validator("MULTIPASS_BINARY_PATH", pre=True)
     def detect_multipass_path(cls, v: str) -> str:
         """Detect and validate Multipass binary path."""
+        import platform
+        import subprocess
+        
+        def validate_path(path: str) -> bool:
+            """Validate that a path exists and is executable."""
+            return os.path.isfile(path) and os.access(path, os.X_OK)
+
+        # If path provided via environment variable, validate it directly
         if v:
-            path = v
+            if validate_path(v):
+                return v
+            raise ValueError(f"Multipass binary not found or not executable at: {v}")
+
+        system = platform.system().lower()
+        binary_name = "multipass.exe" if system == "windows" else "multipass"
+        
+        # Try to find multipass based on OS
+        if system == "linux":
+            # First try to find snap and check if multipass is installed
+            try:
+                # Check if snap exists
+                snap_result = subprocess.run(
+                    ["which", "snap"],
+                    capture_output=True,
+                    text=True,
+                    check=True
+                )
+                if snap_result.returncode == 0:
+                    # Check if multipass is installed via snap
+                    try:
+                        snap_list = subprocess.run(
+                            ["snap", "list", "multipass"],
+                            capture_output=True,
+                            text=True,
+                            check=True
+                        )
+                        if snap_list.returncode == 0:
+                            snap_path = "/snap/bin/multipass"
+                            if validate_path(snap_path):
+                                return snap_path
+                    except subprocess.CalledProcessError:
+                        # Multipass not installed via snap
+                        pass
+            except subprocess.CalledProcessError:
+                # Snap not found
+                pass
+                
+            # Common Linux paths if snap installation not found
+            search_paths = [
+                "/usr/local/bin",
+                "/usr/bin",
+                "/snap/bin"
+            ]
+                
+        elif system == "darwin":  # macOS
+            search_paths = [
+                "/opt/homebrew/bin",    # M1 Mac
+                "/usr/local/bin",       # Intel Mac
+                "/opt/local/bin"        # MacPorts
+            ]
+                
+        elif system == "windows":
+            search_paths = [
+                os.path.expandvars(r"%ProgramFiles%\Multipass"),
+                os.path.expandvars(r"%ProgramFiles(x86)%\Multipass"),
+                os.path.expandvars(r"%LocalAppData%\Multipass")
+            ]
+                
         else:
-            import platform
-            import subprocess
-            
-            system = platform.system().lower()
-            binary_name = "multipass.exe" if system == "windows" else "multipass"
-            
-            # Try to find multipass based on OS
-            if system == "linux":
-                # First try to find snap
-                try:
-                    snap_result = subprocess.run(
-                        ["which", "snap"],
-                        capture_output=True,
-                        text=True
-                    )
-                    if snap_result.returncode == 0:
-                        # If snap exists, check if multipass is installed
-                        snap_path = "/snap/bin/multipass"
-                        if os.path.isfile(snap_path) and os.access(snap_path, os.X_OK):
-                            return snap_path
-                except subprocess.SubprocessError:
-                    pass
-                
-                # Common Linux paths
-                search_paths = [
-                    "/usr/local/bin",
-                    "/usr/bin",
-                    "/snap/bin"
-                ]
-                
-            elif system == "darwin":  # macOS
-                search_paths = [
-                    "/opt/homebrew/bin",    # M1 Mac
-                    "/usr/local/bin",       # Intel Mac
-                    "/opt/local/bin"        # MacPorts
-                ]
-                
-            elif system == "windows":
-                search_paths = [
-                    os.path.expandvars(r"%ProgramFiles%\Multipass"),
-                    os.path.expandvars(r"%ProgramFiles(x86)%\Multipass"),
-                    os.path.expandvars(r"%LocalAppData%\Multipass")
-                ]
-                
-            else:
-                search_paths = ["/usr/local/bin", "/usr/bin"]
+            search_paths = ["/usr/local/bin", "/usr/bin"]
 
-            # Search for multipass binary in OS-specific paths
-            for directory in search_paths:
-                path = os.path.join(directory, binary_name)
-                if os.path.isfile(path) and os.access(path, os.X_OK):
-                    return path
+        # Search for multipass binary in OS-specific paths
+        for directory in search_paths:
+            path = os.path.join(directory, binary_name)
+            if validate_path(path):
+                return path
 
-            # OS-specific installation instructions
-            if system == "linux":
-                raise ValueError(
-                    "Multipass binary not found. Please install using:\n"
-                    "sudo snap install multipass\n"
-                    "Or set GOLEM_PROVIDER_MULTIPASS_BINARY_PATH to your Multipass binary path."
-                )
-            elif system == "darwin":
-                raise ValueError(
-                    "Multipass binary not found. Please install using:\n"
-                    "brew install multipass\n"
-                    "Or set GOLEM_PROVIDER_MULTIPASS_BINARY_PATH to your Multipass binary path."
-                )
-            elif system == "windows":
-                raise ValueError(
-                    "Multipass binary not found. Please install from:\n"
-                    "Microsoft Store or https://multipass.run/download/windows\n"
-                    "Or set GOLEM_PROVIDER_MULTIPASS_BINARY_PATH to your Multipass binary path."
-                )
-            else:
-                raise ValueError(
-                    "Multipass binary not found. Please install Multipass or set "
-                    "GOLEM_PROVIDER_MULTIPASS_BINARY_PATH to your Multipass binary path."
-                )
-
-        # Validate the path
-        if not os.path.isfile(path):
-            raise ValueError(f"Multipass binary not found at: {path}")
-        if not os.access(path, os.X_OK):
-            raise ValueError(f"Multipass binary at {path} is not executable")
-        return path
+        # OS-specific installation instructions
+        if system == "linux":
+            raise ValueError(
+                "Multipass binary not found. Please install using:\n"
+                "sudo snap install multipass\n"
+                "Or set GOLEM_PROVIDER_MULTIPASS_BINARY_PATH to your Multipass binary path."
+            )
+        elif system == "darwin":
+            raise ValueError(
+                "Multipass binary not found. Please install using:\n"
+                "brew install multipass\n"
+                "Or set GOLEM_PROVIDER_MULTIPASS_BINARY_PATH to your Multipass binary path."
+            )
+        elif system == "windows":
+            raise ValueError(
+                "Multipass binary not found. Please install from:\n"
+                "Microsoft Store or https://multipass.run/download/windows\n"
+                "Or set GOLEM_PROVIDER_MULTIPASS_BINARY_PATH to your Multipass binary path."
+            )
+        else:
+            raise ValueError(
+                "Multipass binary not found. Please install Multipass or set "
+                "GOLEM_PROVIDER_MULTIPASS_BINARY_PATH to your Multipass binary path."
+            )
 
     # Proxy Settings
     PORT_RANGE_START: int = 50800
