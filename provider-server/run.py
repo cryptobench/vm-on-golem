@@ -12,38 +12,13 @@ logger = setup_logger(__name__, debug=True)
 
 def check_requirements():
     """Check if all requirements are met."""
-    # Check if multipass is installed
-    multipass_path = os.environ.get('GOLEM_PROVIDER_MULTIPASS_BINARY_PATH', '/usr/local/bin/multipass')
-    if not Path(multipass_path).exists():
-        logger.error(f"Multipass binary not found at {multipass_path}")
-        return False
-        
-    # Check required directories
-    vm_data_dir = os.environ.get(
-        'GOLEM_PROVIDER_VM_DATA_DIR',
-        str(Path.home() / '.golem' / 'provider' / 'vms')
-    )
-    ssh_key_dir = os.environ.get(
-        'GOLEM_PROVIDER_SSH_KEY_DIR',
-        str(Path.home() / '.golem' / 'provider' / 'ssh')
-    )
-    proxy_state_dir = os.environ.get(
-        'GOLEM_PROVIDER_PROXY_STATE_DIR',
-        str(Path.home() / '.golem' / 'provider' / 'proxy')
-    )
-    
     try:
-        # Create and secure directories
-        for directory in [vm_data_dir, ssh_key_dir, proxy_state_dir]:
-            path = Path(directory)
-            path.mkdir(parents=True, exist_ok=True)
-            if directory == ssh_key_dir:
-                path.chmod(0o700)  # Secure permissions for SSH keys
+        # Import settings to trigger validation
+        from provider.config import settings
+        return True
     except Exception as e:
-        logger.error(f"Failed to create required directories: {e}")
+        logger.error(f"Requirements check failed: {e}")
         return False
-        
-    return True
 
 async def verify_ports():
     """Verify port accessibility before starting server."""
