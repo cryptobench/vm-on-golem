@@ -26,6 +26,10 @@ async def setup_provider() -> None:
         try:
             await asyncio.wait_for(provider.initialize(), timeout=30)
             app.state.provider = provider
+            
+            # Store proxy manager reference for cleanup
+            app.state.proxy_manager = provider.proxy_manager
+            
         except asyncio.TimeoutError:
             logger.error("Provider initialization timed out")
             raise
@@ -68,6 +72,15 @@ async def cleanup_provider() -> None:
                     pass
         except Exception as e:
             cleanup_errors.append(f"Failed to stop advertiser: {e}")
+    
+    # Cleanup proxy manager first to stop all proxy servers
+    if hasattr(app.state, "proxy_manager"):
+        try:
+            await asyncio.wait_for(app.state.proxy_manager.cleanup(), timeout=30)
+        except asyncio.TimeoutError:
+            cleanup_errors.append("Proxy manager cleanup timed out")
+        except Exception as e:
+            cleanup_errors.append(f"Failed to cleanup proxy manager: {e}")
     
     # Cleanup provider
     if hasattr(app.state, "provider"):

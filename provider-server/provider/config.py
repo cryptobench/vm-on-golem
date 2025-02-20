@@ -112,59 +112,21 @@ class Settings(BaseSettings):
             raise ValueError(f"Multipass binary at {path} is not executable")
         return path
     
-    # Nginx Settings
-    NGINX_DIR: str = ""
-    NGINX_CONFIG_DIR: Optional[str] = None
+    # Proxy Settings
     PORT_RANGE_START: int = 50800
     PORT_RANGE_END: int = 50900
+    PROXY_STATE_DIR: str = ""
     PUBLIC_IP: Optional[str] = None
     
-    @validator("NGINX_DIR", pre=True)
-    def detect_nginx_dir(cls, v: str) -> str:
-        """Detect nginx configuration directory based on system."""
-        def is_valid_nginx_dir(path: str) -> bool:
-            """Check if directory contains a valid nginx configuration."""
-            if not os.path.isdir(path):
-                return False
-            # Check for nginx.conf file
-            nginx_conf = os.path.join(path, "nginx.conf")
-            return os.path.isfile(nginx_conf)
-            
-        if v:
-            if not is_valid_nginx_dir(v):
-                raise ValueError(
-                    f"Invalid nginx configuration directory: {v}. "
-                    "Directory must exist and contain nginx.conf file."
-                )
-            return v
-            
-        # Common nginx config locations
-        nginx_paths = [
-            "/etc/nginx",                  # Linux default
-            "/usr/local/etc/nginx",        # macOS (Homebrew)
-            "/opt/homebrew/etc/nginx",     # macOS M1 (Homebrew)
-            "/usr/local/nginx/conf",       # Custom install
-        ]
-        
-        for path in nginx_paths:
-            if is_valid_nginx_dir(path):
-                return path
-                
-        raise ValueError(
-            "No valid nginx configuration directory found. Please install nginx or set "
-            "GOLEM_PROVIDER_NGINX_DIR to your nginx configuration directory path. "
-            "The directory must contain a valid nginx.conf file."
-        )
-    
-    @validator("NGINX_CONFIG_DIR", pre=True, always=True)
-    def set_nginx_config_dir(cls, v: Optional[str], values: dict) -> str:
-        """Set nginx config directory if not provided."""
-        if v:
-            return v
-        nginx_dir = values.get("NGINX_DIR")
-        if not nginx_dir:
-            raise ValueError("NGINX_DIR must be set before NGINX_CONFIG_DIR")
-        return os.path.join(nginx_dir, "golem.d")
+    @validator("PROXY_STATE_DIR", pre=True)
+    def resolve_proxy_state_dir(cls, v: str) -> str:
+        """Resolve proxy state directory path."""
+        if not v:
+            return str(Path.home() / ".golem" / "provider" / "proxy")
+        path = Path(v)
+        if not path.is_absolute():
+            path = Path.home() / path
+        return str(path)
     
     @validator("PUBLIC_IP", pre=True)
     def get_public_ip(cls, v: Optional[str]) -> Optional[str]:
