@@ -3,6 +3,7 @@ from pydantic import BaseModel, Field, validator
 from typing import Dict, Optional
 from datetime import datetime
 
+
 class VMStatus(str, Enum):
     """VM status enum."""
     CREATING = "creating"
@@ -12,12 +13,14 @@ class VMStatus(str, Enum):
     ERROR = "error"
     DELETED = "deleted"
 
+
 class VMSize(str, Enum):
     """Predefined VM sizes."""
     SMALL = "small"      # 1 CPU, 1GB RAM, 10GB storage
     MEDIUM = "medium"    # 2 CPU, 4GB RAM, 20GB storage
     LARGE = "large"      # 4 CPU, 8GB RAM, 40GB storage
     XLARGE = "xlarge"    # 8 CPU, 16GB RAM, 80GB storage
+
 
 class VMResources(BaseModel):
     """VM resource configuration."""
@@ -50,15 +53,18 @@ class VMResources(BaseModel):
         }
         return cls(**sizes[size])
 
+
 class VMCreateRequest(BaseModel):
     """Request to create a new VM."""
-    name: str = Field(..., min_length=3, max_length=64, regex="^[a-z0-9][a-z0-9-]*[a-z0-9]$")
+    name: str = Field(..., min_length=3, max_length=64,
+                      regex="^[a-z0-9][a-z0-9-]*[a-z0-9]$")
     size: Optional[VMSize] = None
     cpu_cores: Optional[int] = None
     memory_gb: Optional[int] = None
     storage_gb: Optional[int] = None
-    image: Optional[str] = Field(default="20.04")  # Ubuntu 20.04 LTS
-    ssh_key: str = Field(..., regex="^(ssh-rsa|ssh-ed25519) ", description="SSH public key for VM access")
+    image: Optional[str] = Field(default="24.04")  # Ubuntu 24.04 LTS
+    ssh_key: str = Field(..., regex="^(ssh-rsa|ssh-ed25519) ",
+                         description="SSH public key for VM access")
 
     @validator("name")
     def validate_name(cls, v: str) -> str:
@@ -81,13 +87,16 @@ class VMCreateRequest(BaseModel):
             raise ValueError("Memory must be 1, 2, 4, 8, 16, 32, or 64 GB")
         return v
 
+
 class VMConfig(BaseModel):
     """VM configuration."""
-    name: str = Field(..., min_length=3, max_length=64, regex="^[a-z0-9][a-z0-9-]*[a-z0-9]$")
+    name: str = Field(..., min_length=3, max_length=64,
+                      regex="^[a-z0-9][a-z0-9-]*[a-z0-9]$")
     resources: VMResources
-    image: str = Field(default="20.04")  # Ubuntu 20.04 LTS
+    image: str = Field(default="24.04")  # Ubuntu 24.04 LTS
     size: Optional[VMSize] = None
-    ssh_key: str = Field(..., regex="^(ssh-rsa|ssh-ed25519) ", description="SSH public key for VM access")
+    ssh_key: str = Field(..., regex="^(ssh-rsa|ssh-ed25519) ",
+                         description="SSH public key for VM access")
 
     @validator("name")
     def validate_name(cls, v: str) -> str:
@@ -95,6 +104,7 @@ class VMConfig(BaseModel):
         if "--" in v:
             raise ValueError("VM name cannot contain consecutive hyphens")
         return v
+
 
 class VMInfo(BaseModel):
     """VM information."""
@@ -113,19 +123,26 @@ class VMInfo(BaseModel):
             datetime: lambda v: v.isoformat()
         }
 
+
 class SSHKey(BaseModel):
     """SSH key information."""
     name: str = Field(..., min_length=1, max_length=64)
     public_key: str = Field(..., regex="^(ssh-rsa|ssh-ed25519) ")
     fingerprint: Optional[str] = None
 
+
 class VMAccessInfo(BaseModel):
     """VM access information."""
     ssh_host: str
     ssh_port: int
+    vm_id: str = Field(..., description="Requestor's VM name")
+    multipass_name: str = Field(...,
+                                description="Full multipass VM name with timestamp")
+
 
 class VMProvider:
     """Base interface for VM providers."""
+
     async def initialize(self) -> None:
         """Initialize the provider."""
         raise NotImplementedError()
@@ -158,24 +175,30 @@ class VMProvider:
         """Add SSH key to VM."""
         raise NotImplementedError()
 
+
 class VMError(Exception):
     """Base class for VM errors."""
+
     def __init__(self, message: str, vm_id: Optional[str] = None):
         self.message = message
         self.vm_id = vm_id
         super().__init__(message)
 
+
 class VMCreateError(VMError):
     """Error creating VM."""
     pass
+
 
 class VMNotFoundError(VMError):
     """VM not found."""
     pass
 
+
 class VMStateError(VMError):
     """Invalid VM state for operation."""
     pass
+
 
 class ResourceError(VMError):
     """Resource allocation error."""

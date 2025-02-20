@@ -120,3 +120,33 @@ class ResourceTracker:
                 await callback()
             except Exception as e:
                 logger.error(f"Error in resource update callback: {e}")
+
+    async def sync_with_multipass(self, vm_resources: Dict[str, VMResources]) -> None:
+        """Sync resource tracker state with actual multipass VM states.
+        
+        Args:
+            vm_resources: Dictionary mapping VM names to their resources
+        """
+        async with self._lock:
+            # Reset allocated resources
+            self.allocated_resources = {
+                "cpu": 0,
+                "memory": 0,
+                "storage": 0
+            }
+            self._allocated_vms.clear()
+            
+            # Add resources for each running VM
+            for vm_name, resources in vm_resources.items():
+                self.allocated_resources["cpu"] += resources.cpu
+                self.allocated_resources["memory"] += resources.memory
+                self.allocated_resources["storage"] += resources.storage
+                self._allocated_vms[vm_name] = resources
+                
+            logger.info(
+                f"Synced allocated resources: CPU={self.allocated_resources['cpu']}, "
+                f"Memory={self.allocated_resources['memory']}GB, "
+                f"Storage={self.allocated_resources['storage']}GB"
+            )
+            
+            await self._notify_update()

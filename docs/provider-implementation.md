@@ -3,6 +3,7 @@
 ## Overview
 
 The Provider Node is responsible for:
+
 1. Managing VM lifecycle using Multipass
 2. Advertising available resources to the discovery service
 3. Exposing a REST API for VM operations
@@ -90,7 +91,7 @@ class MultipassProvider:
 # provider/discovery/advertiser.py
 class ResourceMonitor:
     """Monitor system resources."""
-    
+
     @staticmethod
     def get_available_resources() -> Dict[str, int]:
         """Get available system resources."""
@@ -110,7 +111,7 @@ class ResourceMonitor:
             return False
         if cls.get_storage_percent() > settings.STORAGE_THRESHOLD:
             return False
-        
+
         # Check absolute values
         resources = cls.get_available_resources()
         return (
@@ -121,7 +122,7 @@ class ResourceMonitor:
 
 class ResourceAdvertiser:
     """Advertise available resources to discovery service."""
-    
+
     def __init__(
         self,
         discovery_url: Optional[str] = None,
@@ -244,14 +245,14 @@ class Settings(BaseSettings):
 
     # VM Settings
     MAX_VMS: int = 10
-    DEFAULT_VM_IMAGE: str = "ubuntu:20.04"
+    DEFAULT_VM_IMAGE: str = "ubuntu:24.04"
     VM_DATA_DIR: DirectoryPath
-    
+
     # Resource Settings
     MIN_MEMORY_GB: int = 1
     MIN_STORAGE_GB: int = 10
     MIN_CPU_CORES: int = 1
-    
+
     # Resource Thresholds
     CPU_THRESHOLD: int = 90
     MEMORY_THRESHOLD: int = 85
@@ -264,23 +265,26 @@ class Settings(BaseSettings):
 ## Security Considerations
 
 1. **Resource Protection**
-   - CPU, memory, and storage thresholds prevent overallocation
-   - Rate limiting protects API endpoints
-   - Resource validation before VM creation
+
+    - CPU, memory, and storage thresholds prevent overallocation
+    - Rate limiting protects API endpoints
+    - Resource validation before VM creation
 
 2. **VM Isolation**
-   - VMs are isolated using Multipass
-   - Each VM gets its own SSH key pair
-   - Proper directory permissions (700) for SSH keys
+
+    - VMs are isolated using Multipass
+    - Each VM gets its own SSH key pair
+    - Proper directory permissions (700) for SSH keys
 
 3. **Error Handling**
-   - Detailed error types for different failure scenarios
-   - Proper cleanup on failures
-   - Logging of all critical operations
+    - Detailed error types for different failure scenarios
+    - Proper cleanup on failures
+    - Logging of all critical operations
 
 ## Usage Example
 
 1. Start the provider node:
+
 ```bash
 export GOLEM_PROVIDER_ID="provider123"
 export GOLEM_PROVIDER_DISCOVERY_URL="http://localhost:7465"
@@ -288,10 +292,10 @@ python -m provider.main
 ```
 
 2. The provider will:
-   - Initialize Multipass and load existing VMs
-   - Start advertising resources every 4 minutes
-   - Handle VM lifecycle operations via REST API
-   - Monitor and enforce resource thresholds
+    - Initialize Multipass and load existing VMs
+    - Start advertising resources every 4 minutes
+    - Handle VM lifecycle operations via REST API
+    - Monitor and enforce resource thresholds
 
 ## Error Types
 
@@ -313,8 +317,9 @@ class VMStateError(VMError):
 ```
 
 This implementation provides a robust provider node with:
-- Comprehensive resource monitoring and protection
-- Proper VM lifecycle management
-- Secure SSH key handling
-- Detailed error handling
-- Clean configuration management
+
+-   Comprehensive resource monitoring and protection
+-   Proper VM lifecycle management
+-   Secure SSH key handling
+-   Detailed error handling
+-   Clean configuration management

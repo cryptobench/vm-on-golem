@@ -1,3 +1,4 @@
+import json
 from typing import List
 from pathlib import Path
 from fastapi import APIRouter, HTTPException
@@ -88,46 +89,69 @@ async def list_vms() -> List[VMInfo]:
         logger.error(f"Failed to list VMs: {e}")
         raise HTTPException(500, str(e))
 
-@router.get("/vms/{vm_id}", response_model=VMInfo)
-async def get_vm_status(vm_id: str) -> VMInfo:
+@router.get("/vms/{requestor_name}", response_model=VMInfo)
+async def get_vm_status(requestor_name: str) -> VMInfo:
     """Get VM status."""
     try:
-        logger.info(f"🔍 Getting status for VM {vm_id}")
-        status = await provider.get_vm_status(vm_id)
-        vm_status_change(vm_id, status.status.value)
+        logger.info(f"🔍 Getting status for VM '{requestor_name}'")
+        status = await provider.get_vm_status(requestor_name)
+        vm_status_change(requestor_name, status.status.value)
         return status
     except MultipassError as e:
         logger.error(f"Failed to get VM status: {e}")
         raise HTTPException(500, str(e))
 
-@router.get("/vms/{vm_id}/access", response_model=VMAccessInfo)
-async def get_vm_access(vm_id: str) -> VMAccessInfo:
+@router.get("/vms/{requestor_name}/access", response_model=VMAccessInfo)
+async def get_vm_access(requestor_name: str) -> VMAccessInfo:
     """Get VM access information."""
     try:
         # Get VM info
-        vm = await provider.get_vm_status(vm_id)
+        vm = await provider.get_vm_status(requestor_name)
         if not vm:
             raise HTTPException(404, "VM not found")
         
-        # Return access info
+        # Get multipass name from mapper
+        multipass_name = await provider.name_mapper.get_multipass_name(requestor_name)
+        if not multipass_name:
+            raise HTTPException(404, "VM mapping not found")
+        
+        # Return access info with both names
         return VMAccessInfo(
             ssh_host=settings.PUBLIC_IP or "localhost",
-            ssh_port=vm.ssh_port or 22
+            ssh_port=vm.ssh_port or 22,
+            vm_id=requestor_name,
+            multipass_name=multipass_name
         )
         
     except MultipassError as e:
         logger.error(f"Failed to get VM access info: {e}")
         raise HTTPException(500, str(e))
 
-@router.delete("/vms/{vm_id}")
-async def delete_vm(vm_id: str) -> None:
-    """Delete a VM."""
+@router.delete("/vms/{requestor_name}")
+async def delete_vm(requestor_name: str) -> None:
+    """Delete a VM.
+    
+    Args:
+        requestor_name: Name of the VM as provided by requestor
+    """
     try:
-        logger.process(f"🗑️  Deleting VM {vm_id}")
-        vm_status_change(vm_id, "STOPPING", "Cleanup in progress")
-        await provider.delete_vm(vm_id)
-        vm_status_change(vm_id, "TERMINATED", "Cleanup complete")
-        logger.success(f"✨ Successfully deleted VM {vm_id}")
-    except MultipassError as e:
+        logger.process(f"🗑️  Deleting VM '{requestor_name}'")
+        
+        # Get multipass name from mapper
+        multipass_name = await provider.name_mapper.get_multipass_name(requestor_name)
+        if not multipass_name:
+            logger.warning(f"No multipass name found for VM '{requestor_name}' (may have been already deleted)")
+            return
+            
+        try:
+            vm_status_change(requestor_name, "STOPPING", "Cleanup in progress")
+            await provider.delete_vm(requestor_name)
+            vm_status_change(requestor_name, "TERMINATED", "Cleanup complete")
+            logger.success(f"✨ Successfully deleted VM '{requestor_name}'")
+        except MultipassError as e:
+            logger.error(f"Failed to delete VM: {e}")
+            raise HTTPException(500, str(e))
+            
+    except Exception as e:
         logger.error(f"Failed to delete VM: {e}")
         raise HTTPException(500, str(e))

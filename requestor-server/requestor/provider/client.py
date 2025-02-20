@@ -44,7 +44,7 @@ class ProviderClient:
     async def add_ssh_key(self, vm_id: str, key: str) -> None:
         """Add SSH key to VM."""
         async with self.session.post(
-            f"{self.provider_url}/vms/{vm_id}/ssh-keys",
+            f"{self.provider_url}/api/v1/vms/{vm_id}/ssh-keys",
             json={
                 "key": key,
                 "name": "default"
@@ -57,7 +57,7 @@ class ProviderClient:
     async def start_vm(self, vm_id: str) -> Dict:
         """Start a VM."""
         async with self.session.post(
-            f"{self.provider_url}/vms/{vm_id}/start"
+            f"{self.provider_url}/api/v1/vms/{vm_id}/start"
         ) as response:
             if not response.ok:
                 error_text = await response.text()
@@ -67,7 +67,7 @@ class ProviderClient:
     async def stop_vm(self, vm_id: str) -> Dict:
         """Stop a VM."""
         async with self.session.post(
-            f"{self.provider_url}/vms/{vm_id}/stop"
+            f"{self.provider_url}/api/v1/vms/{vm_id}/stop"
         ) as response:
             if not response.ok:
                 error_text = await response.text()
@@ -77,7 +77,7 @@ class ProviderClient:
     async def destroy_vm(self, vm_id: str) -> None:
         """Destroy a VM."""
         async with self.session.delete(
-            f"{self.provider_url}/vms/{vm_id}"
+            f"{self.provider_url}/api/v1/vms/{vm_id}"
         ) as response:
             if not response.ok:
                 error_text = await response.text()
