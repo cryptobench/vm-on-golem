@@ -262,7 +262,7 @@ pip install golem-vm-discovery
 
 # Configure in .env
 DISCOVERY_HOST="0.0.0.0"
-DISCOVERY_PORT=7465
+DISCOVERY_PORT=9001
 DISCOVERY_DB_URL="sqlite:///discovery.db"
 
 # Start the discovery service
@@ -286,10 +286,11 @@ port-checker start
 Each component is independently installable and configurable. Install only what you need based on your role in the network.
 
 For detailed configuration and usage instructions, see each component's documentation:
-- [Requestor CLI Documentation](requestor-server/README.md)
-- [Provider Node Documentation](provider-server/README.md)
-- [Discovery Service Documentation](discovery-server/README.md)
-- [Port Checker Documentation](port-checker-server/README.md)
+
+-   [Requestor CLI Documentation](requestor-server/README.md)
+-   [Provider Node Documentation](provider-server/README.md)
+-   [Discovery Service Documentation](discovery-server/README.md)
+-   [Port Checker Documentation](port-checker-server/README.md)
 
 ## Technical Details
 
@@ -300,32 +301,35 @@ The system consists of three main components, each built with simplicity in mind
 The system includes a robust port verification system:
 
 1. **Provider Startup**
-   - Verifies provider port ({provider_port}) accessibility
-   - Checks VM access port range ({start_port}-{end_port})
-   - Real-time verification status display
-   - Actionable troubleshooting guidance
+
+    - Verifies provider port ({provider_port}) accessibility
+    - Checks VM access port range ({start_port}-{end_port})
+    - Real-time verification status display
+    - Actionable troubleshooting guidance
 
 2. **Current Implementation**
-   - Uses dedicated port check servers
-   - Verifies both local and external accessibility
-   - Provides visual progress indicators
-   - Automatic port allocation management
+
+    - Uses dedicated port check servers
+    - Verifies both local and external accessibility
+    - Provides visual progress indicators
+    - Automatic port allocation management
 
 3. **Future Enhancement**
-   - Port verification will be integrated into verifier nodes
-   - Decentralized verification through the network
-   - Consensus-based accessibility confirmation
-
+    - Port verification will be integrated into verifier nodes
+    - Decentralized verification through the network
+    - Consensus-based accessibility confirmation
 
 ### Core Components
 
 1. **Requestor CLI** (`requestor-server/`)
+
     - Command-line interface
     - Provider discovery
     - VM management
     - SSH key handling
 
 2. **Provider Node** (`provider-server/`)
+
     - VM lifecycle management using standard tools
     - Resource monitoring
     - SSH proxy system

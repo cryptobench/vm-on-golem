@@ -208,7 +208,7 @@ async def discovery_error_handler(
 
 ```bash
 # Post advertisement
-curl -X POST http://discovery.golem.network:7465/api/v1/advertisements \
+curl -X POST http://discovery.golem.network:9001/api/v1/advertisements \
   -H "X-Provider-ID: provider123" \
   -H "X-Provider-Signature: signature123" \
   -H "Content-Type: application/json" \
@@ -227,10 +227,10 @@ curl -X POST http://discovery.golem.network:7465/api/v1/advertisements \
 
 ```bash
 # Query providers with at least 2 CPU cores and 4GB memory
-curl "http://discovery.golem.network:7465/api/v1/advertisements?cpu=2&memory=4"
+curl "http://discovery.golem.network:9001/api/v1/advertisements?cpu=2&memory=4"
 
 # Query providers in Sweden
-curl "http://discovery.golem.network:7465/api/v1/advertisements?country=SE"
+curl "http://discovery.golem.network:9001/api/v1/advertisements?country=SE"
 ```
 
 ## Database Indexes

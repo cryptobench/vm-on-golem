@@ -296,7 +296,7 @@ class Settings(BaseSettings):
     COUNTRY: str = "SE"
 
     # Discovery Settings
-    DISCOVERY_URL: str = "http://discovery.golem.network:7465"
+    DISCOVERY_URL: str = "http://discovery.golem.network:9001"
     ADVERTISEMENT_INTERVAL: int = 240  # 4 minutes
 
     # VM Settings
@@ -352,7 +352,7 @@ class Settings(BaseSettings):
 
 ```bash
 export GOLEM_PROVIDER_ID="provider123"
-export GOLEM_PROVIDER_DISCOVERY_URL="http://localhost:7465"
+export GOLEM_PROVIDER_DISCOVERY_URL="http://localhost:9001"
 python -m provider.main
 ```
 

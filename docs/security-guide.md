@@ -166,7 +166,7 @@ import socket
 import asyncio
 
 class PortVerifier:
-    REQUIRED_PORTS = [22, 80, 443, 7465]  # SSH, HTTP, HTTPS, Golem
+    REQUIRED_PORTS = [22, 80, 443, 9001]  # SSH, HTTP, HTTPS, Golem
 
     async def verify_ports(self) -> dict:
         """Verify all required ports are open."""

@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "VM on Golem Discovery Service"
     DEBUG: bool = False
     HOST: str = "0.0.0.0"  # Listen on all interfaces by default
-    PORT: int = 7465       # Default Golem Discovery port
+    PORT: int = 9001       # Default Golem Discovery port
     
     # Database Settings - SQLite by default in ~/.golem/discovery
     DATABASE_DIR: str = str(Path.home() / ".golem" / "discovery")

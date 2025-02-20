@@ -44,20 +44,20 @@ sequenceDiagram
     PM-->>S: Verification Result
 ```
 
-- Comprehensive port accessibility verification
-- Real-time status display with progress indicators
-- Local and external port validation
-- Automatic port allocation management
+-   Comprehensive port accessibility verification
+-   Real-time status display with progress indicators
+-   Local and external port validation
+-   Automatic port allocation management
 
 ### Future Developments
 
 The current port verification system uses dedicated port check servers to verify external accessibility. In future releases, this functionality will be integrated into the Golem Network's verifier nodes, providing:
 
-- Decentralized port verification through the network
-- Increased reliability with multiple verification sources
-- Consensus-based verification results
-- Reduced dependency on centralized services
-- Enhanced security through the network's trust system
+-   Decentralized port verification through the network
+-   Increased reliability with multiple verification sources
+-   Consensus-based verification results
+-   Reduced dependency on centralized services
+-   Enhanced security through the network's trust system
 
 This integration aligns with Golem's vision of a fully decentralized computing platform, moving critical infrastructure services like port verification into the network itself.
 
@@ -65,10 +65,10 @@ This integration aligns with Golem's vision of a fully decentralized computing p
 
 The resource management system ensures optimal allocation and utilization of system resources:
 
-- Real-time monitoring of CPU, memory, and storage
-- Intelligent resource allocation with minimum requirement enforcement
-- Threshold-based resource protection
-- Automatic resource reclamation
+-   Real-time monitoring of CPU, memory, and storage
+-   Intelligent resource allocation with minimum requirement enforcement
+-   Threshold-based resource protection
+-   Automatic resource reclamation
 
 ```mermaid
 sequenceDiagram
@@ -76,7 +76,7 @@ sequenceDiagram
     participant RT as Resource Tracker
     participant RM as Resource Monitor
     participant AD as Advertiser
-    
+
     API->>RT: Request Resource Allocation
     RT->>RM: Check Available Resources
     RM-->>RT: Resource Status
@@ -96,7 +96,7 @@ sequenceDiagram
     participant MP as Multipass
     participant CI as Cloud Init
     participant VM as Virtual Machine
-    
+
     API->>MP: Create VM Request
     MP->>CI: Generate Config
     CI-->>MP: SSH Configuration
@@ -105,10 +105,10 @@ sequenceDiagram
     MP-->>API: VM Info
 ```
 
-- Automated VM provisioning with cloud-init
-- Secure SSH key management
-- Status monitoring and health checks
-- Automatic cleanup procedures
+-   Automated VM provisioning with cloud-init
+-   Secure SSH key management
+-   Status monitoring and health checks
+-   Automatic cleanup procedures
 
 ### Network Proxy System
 
@@ -120,7 +120,7 @@ sequenceDiagram
     participant PM as Proxy Manager
     participant P as Proxy
     participant VM as Virtual Machine
-    
+
     C->>PM: SSH Connection
     PM->>P: Create Proxy
     P->>VM: Forward Connection
@@ -128,29 +128,31 @@ sequenceDiagram
     P-->>C: Forward Response
 ```
 
-- Dynamic port allocation and management
-- Connection state persistence
-- Clean connection handling
-- Automatic proxy cleanup
+-   Dynamic port allocation and management
+-   Connection state persistence
+-   Clean connection handling
+-   Automatic proxy cleanup
 
 ## Installation
 
 1. Prerequisites:
-   - Python 3.9+
-   - Multipass
-   - Poetry
+
+    - Python 3.9+
+    - Multipass
+    - Poetry
 
 2. Install dependencies:
-   ```bash
-   cd provider-server
-   poetry install
-   ```
+
+    ```bash
+    cd provider-server
+    poetry install
+    ```
 
 3. Configure environment:
-   ```bash
-   cp .env.example .env
-   # Edit .env with your settings
-   ```
+    ```bash
+    cp .env.example .env
+    # Edit .env with your settings
+    ```
 
 ## Configuration
 
@@ -181,7 +183,7 @@ GOLEM_PROVIDER_PORT_RANGE_END={end_port}      # Default: 50900
 GOLEM_PROVIDER_PUBLIC_IP="auto"
 
 # Discovery Settings
-GOLEM_PROVIDER_DISCOVERY_URL="http://discovery.golem.network:7465"
+GOLEM_PROVIDER_DISCOVERY_URL="http://discovery.golem.network:9001"
 GOLEM_PROVIDER_ADVERTISEMENT_INTERVAL=240
 ```
 
@@ -194,6 +196,7 @@ POST /api/v1/vms
 ```
 
 Request:
+
 ```json
 {
     "name": "my-webserver",
@@ -204,6 +207,7 @@ Request:
 ```
 
 Response:
+
 ```json
 {
     "id": "golem-my-webserver-20250219-130424",
@@ -221,10 +225,10 @@ Response:
 
 ### VM Operations
 
-- List VMs: `GET /api/v1/vms`
-- Get VM Status: `GET /api/v1/vms/{vm_id}`
-- Delete VM: `DELETE /api/v1/vms/{vm_id}`
-- Get Access Info: `GET /api/v1/vms/{vm_id}/access`
+-   List VMs: `GET /api/v1/vms`
+-   Get VM Status: `GET /api/v1/vms/{vm_id}`
+-   Delete VM: `DELETE /api/v1/vms/{vm_id}`
+-   Get Access Info: `GET /api/v1/vms/{vm_id}/access`
 
 ## Operations
 
@@ -235,10 +239,11 @@ poetry run python run.py
 ```
 
 The provider will:
+
 1. Verify port accessibility
-   - Check discovery port (7466)
-   - Verify SSH ports (50800-50900)
-   - Display verification progress
+    - Check discovery port (7466)
+    - Verify SSH ports (50800-50900)
+    - Display verification progress
 2. Initialize resource monitoring
 3. Start the proxy manager
 4. Begin resource advertisement
@@ -252,7 +257,7 @@ sequenceDiagram
     participant RT as Resource Tracker
     participant AD as Advertiser
     participant DS as Discovery Service
-    
+
     P->>RT: Initialize
     RT->>AD: Register Callback
     loop Every 4 minutes
@@ -266,33 +271,34 @@ sequenceDiagram
 ### Monitoring
 
 The provider includes comprehensive logging:
-- Resource allocation events
-- VM lifecycle changes
-- Network proxy operations
-- Discovery service interactions
+
+-   Resource allocation events
+-   VM lifecycle changes
+-   Network proxy operations
+-   Discovery service interactions
 
 ## Technical Details
 
 ### Security
 
-- Resource isolation through Multipass
-- Secure SSH key provisioning
-- Connection proxying for network isolation
-- Rate limiting on API endpoints
+-   Resource isolation through Multipass
+-   Secure SSH key provisioning
+-   Connection proxying for network isolation
+-   Rate limiting on API endpoints
 
 ### Performance
 
-- Asynchronous operations with FastAPI
-- Efficient resource tracking
-- Connection pooling for proxy servers
-- Optimized VM provisioning
+-   Asynchronous operations with FastAPI
+-   Efficient resource tracking
+-   Connection pooling for proxy servers
+-   Optimized VM provisioning
 
 ### Resource Protection
 
-- CPU threshold: 90%
-- Memory threshold: 85%
-- Storage threshold: 90%
-- Minimum resource guarantees
+-   CPU threshold: 90%
+-   Memory threshold: 85%
+-   Storage threshold: 90%
+-   Minimum resource guarantees
 
 ## Troubleshooting
 
@@ -301,33 +307,37 @@ Common issues and solutions:
 ### Port Verification Issues
 
 1. Provider Port ({provider_port}) Issues
-   - Check if port is already in use
-   - Verify port forwarding on router
-   - Check firewall rules
-   - Ensure provider is accessible to requestors
+
+    - Check if port is already in use
+    - Verify port forwarding on router
+    - Check firewall rules
+    - Ensure provider is accessible to requestors
 
 2. VM Access Port Range ({start_port}-{end_port}) Issues
-   - Verify port range availability
-   - Check for port conflicts
-   - Configure router port forwarding
-   - Review firewall settings for range
+
+    - Verify port range availability
+    - Check for port conflicts
+    - Configure router port forwarding
+    - Review firewall settings for range
 
 3. External Access Issues
-   - Verify internet connectivity
-   - Check port check servers are accessible
-   - Review router NAT/firewall settings
-   - Consider using alternative port check servers
+    - Verify internet connectivity
+    - Check port check servers are accessible
+    - Review router NAT/firewall settings
+    - Consider using alternative port check servers
 
 ### Port Verification Monitoring
 
 The provider includes real-time port verification status:
-- Visual progress indicators
-- Port accessibility status
-- Critical issues detection
-- Quick fix suggestions
-- Links to troubleshooting documentation
+
+-   Visual progress indicators
+-   Port accessibility status
+-   Critical issues detection
+-   Quick fix suggestions
+-   Links to troubleshooting documentation
 
 Example status output:
+
 ```bash
 🌟 Port Verification Status
 ==========================
@@ -338,17 +348,19 @@ Example status output:
 ```
 
 ### Resource Allocation Issues
-- Check system resource availability
-- Verify minimum requirements
-- Monitor resource thresholds
-- Review resource allocation logs
+
+-   Check system resource availability
+-   Verify minimum requirements
+-   Monitor resource thresholds
+-   Review resource allocation logs
 
 ### Discovery Service Issues
-- Check network connectivity
-- Verify discovery service URL
-- Check advertisement interval
-- Monitor advertisement responses
-- Verify provider registration status
+
+-   Check network connectivity
+-   Verify discovery service URL
+-   Check advertisement interval
+-   Monitor advertisement responses
+-   Verify provider registration status
 
 ## Contributing
 
