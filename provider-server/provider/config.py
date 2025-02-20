@@ -59,22 +59,41 @@ class Settings(BaseSettings):
 
     @validator("VM_DATA_DIR", pre=True)
     def resolve_vm_data_dir(cls, v: str) -> str:
-        """Resolve VM data directory path."""
+        """Resolve and create VM data directory path."""
         if not v:
-            return str(Path.home() / ".golem" / "provider" / "vms")
-        path = Path(v)
-        if not path.is_absolute():
-            path = Path.home() / path
+            path = Path.home() / ".golem" / "provider" / "vms"
+        else:
+            path = Path(v)
+            if not path.is_absolute():
+                path = Path.home() / path
+        
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+            logger.debug(f"Created VM data directory at {path}")
+        except Exception as e:
+            logger.error(f"Failed to create VM data directory at {path}: {e}")
+            raise ValueError(f"Failed to create VM data directory: {e}")
+            
         return str(path)
 
     @validator("SSH_KEY_DIR", pre=True)
     def resolve_ssh_key_dir(cls, v: str) -> str:
-        """Resolve SSH key directory path."""
+        """Resolve and create SSH key directory path with secure permissions."""
         if not v:
-            return str(Path.home() / ".golem" / "provider" / "ssh")
-        path = Path(v)
-        if not path.is_absolute():
-            path = Path.home() / path
+            path = Path.home() / ".golem" / "provider" / "ssh"
+        else:
+            path = Path(v)
+            if not path.is_absolute():
+                path = Path.home() / path
+        
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+            path.chmod(0o700)  # Secure permissions for SSH keys
+            logger.debug(f"Created SSH key directory at {path} with secure permissions")
+        except Exception as e:
+            logger.error(f"Failed to create SSH key directory at {path}: {e}")
+            raise ValueError(f"Failed to create SSH key directory: {e}")
+            
         return str(path)
 
     # Resource Settings
@@ -108,20 +127,22 @@ class Settings(BaseSettings):
 
         # If path provided via environment variable, ONLY validate that path
         if v:
-            logger.debug(f"Using provided multipass path: {v}")
+            logger.info(f"Checking multipass binary at: {v}")
             if not validate_path(v):
-                logger.error(f"Provided path {v} is invalid or not executable")
-                raise ValueError(f"Invalid multipass binary path: {v}")
+                msg = f"Invalid multipass binary path: {v} (not found or not executable)"
+                logger.error(msg)
+                raise ValueError(msg)
+            logger.info(f"✓ Found valid multipass binary at: {v}")
             return v
 
-        logger.debug("No multipass path provided, attempting auto-detection")
+        logger.info("No multipass path provided, attempting auto-detection...")
         system = platform.system().lower()
-        logger.debug(f"Detected OS: {system}")
+        logger.info(f"Detected OS: {system}")
         binary_name = "multipass.exe" if system == "windows" else "multipass"
         
         # Try to find multipass based on OS
         if system == "linux":
-            logger.debug("Checking for snap installation on Linux")
+            logger.info("Checking for snap installation...")
             # First try to find snap and check if multipass is installed
             try:
                 # Check if snap exists
@@ -132,7 +153,7 @@ class Settings(BaseSettings):
                     check=True
                 )
                 if snap_result.returncode == 0:
-                    logger.debug("Found snap, checking for multipass installation")
+                    logger.info("✓ Found snap, checking for multipass installation...")
                     # Check if multipass is installed via snap
                     try:
                         snap_list = subprocess.run(
@@ -144,13 +165,13 @@ class Settings(BaseSettings):
                         if snap_list.returncode == 0:
                             snap_path = "/snap/bin/multipass"
                             if validate_path(snap_path):
-                                logger.debug(f"Found multipass via snap at {snap_path}")
+                                logger.info(f"✓ Found multipass via snap at {snap_path}")
                                 return snap_path
                     except subprocess.CalledProcessError:
-                        logger.debug("Multipass not installed via snap")
+                        logger.info("✗ Multipass not installed via snap")
                         pass
             except subprocess.CalledProcessError:
-                logger.debug("Snap not found")
+                logger.info("✗ Snap not found")
                 pass
                 
             # Common Linux paths if snap installation not found
@@ -159,7 +180,7 @@ class Settings(BaseSettings):
                 "/usr/bin",
                 "/snap/bin"
             ]
-            logger.debug(f"Checking common Linux paths: {search_paths}")
+            logger.info(f"Checking common Linux paths: {', '.join(search_paths)}")
                 
         elif system == "darwin":  # macOS
             search_paths = [
@@ -167,7 +188,7 @@ class Settings(BaseSettings):
                 "/usr/local/bin",       # Intel Mac
                 "/opt/local/bin"        # MacPorts
             ]
-            logger.debug(f"Checking macOS paths: {search_paths}")
+            logger.info(f"Checking macOS paths: {', '.join(search_paths)}")
                 
         elif system == "windows":
             search_paths = [
@@ -175,21 +196,18 @@ class Settings(BaseSettings):
                 os.path.expandvars(r"%ProgramFiles(x86)%\Multipass"),
                 os.path.expandvars(r"%LocalAppData%\Multipass")
             ]
-            logger.debug(f"Checking Windows paths: {search_paths}")
+            logger.info(f"Checking Windows paths: {', '.join(search_paths)}")
                 
         else:
             search_paths = ["/usr/local/bin", "/usr/bin"]
-            logger.debug(f"Checking default paths: {search_paths}")
+            logger.info(f"Checking default paths: {', '.join(search_paths)}")
 
         # Search for multipass binary in OS-specific paths
         for directory in search_paths:
             path = os.path.join(directory, binary_name)
-            logger.debug(f"Checking path: {path}")
             if validate_path(path):
-                logger.debug(f"Found valid multipass binary at: {path}")
+                logger.info(f"✓ Found valid multipass binary at: {path}")
                 return path
-            else:
-                logger.debug(f"No valid multipass binary at: {path}")
 
         # OS-specific installation instructions
         if system == "linux":
@@ -224,12 +242,21 @@ class Settings(BaseSettings):
 
     @validator("PROXY_STATE_DIR", pre=True)
     def resolve_proxy_state_dir(cls, v: str) -> str:
-        """Resolve proxy state directory path."""
+        """Resolve and create proxy state directory path."""
         if not v:
-            return str(Path.home() / ".golem" / "provider" / "proxy")
-        path = Path(v)
-        if not path.is_absolute():
-            path = Path.home() / path
+            path = Path.home() / ".golem" / "provider" / "proxy"
+        else:
+            path = Path(v)
+            if not path.is_absolute():
+                path = Path.home() / path
+        
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+            logger.debug(f"Created proxy state directory at {path}")
+        except Exception as e:
+            logger.error(f"Failed to create proxy state directory at {path}: {e}")
+            raise ValueError(f"Failed to create proxy state directory: {e}")
+            
         return str(path)
 
     @validator("PUBLIC_IP", pre=True)
