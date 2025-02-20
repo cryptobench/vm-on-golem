@@ -8,6 +8,7 @@ from .utils.ascii_art import startup_animation
 from .discovery.resource_tracker import ResourceTracker
 from .discovery.advertiser import ResourceAdvertiser
 from .vm.multipass import MultipassProvider
+from .vm.port_manager import PortManager
 
 logger = setup_logger(__name__)
 
@@ -16,14 +17,19 @@ app = FastAPI(title="VM on Golem Provider")
 async def setup_provider() -> None:
     """Setup and initialize the provider components."""
     try:
+        # Initialize port manager (verification already done in run.py)
+        logger.process("🔄 Initializing port manager...")
+        port_manager = PortManager()
+        app.state.port_manager = port_manager
+        
         # Create resource tracker
         logger.process("🔄 Initializing resource tracker...")
         resource_tracker = ResourceTracker()
         app.state.resource_tracker = resource_tracker
         
-        # Create provider with resource tracker
+        # Create provider with resource tracker and port manager
         logger.process("🔄 Initializing VM provider...")
-        provider = MultipassProvider(resource_tracker)
+        provider = MultipassProvider(resource_tracker, port_manager=port_manager)
         try:
             await asyncio.wait_for(provider.initialize(), timeout=30)
             app.state.provider = provider

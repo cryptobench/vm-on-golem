@@ -10,13 +10,15 @@ from ..vm.models import VMInfo, VMStatus, VMAccessInfo, VMConfig, VMResources
 from .models import CreateVMRequest
 from ..vm.multipass import MultipassProvider, MultipassError
 from ..discovery.resource_tracker import ResourceTracker
+from ..vm.port_manager import PortManager
 
 logger = setup_logger(__name__)
 router = APIRouter()
 
-# Initialize resource tracker and VM provider
+# Initialize components
 resource_tracker = ResourceTracker()
-provider = MultipassProvider(resource_tracker)
+port_manager = PortManager()
+provider = MultipassProvider(resource_tracker, port_manager)
 
 @router.post("/vms", response_model=VMInfo)
 async def create_vm(request: CreateVMRequest) -> VMInfo:

@@ -45,6 +45,27 @@ def check_requirements():
         
     return True
 
+async def verify_ports():
+    """Verify port accessibility before starting server."""
+    from provider.vm.port_manager import PortManager
+    from provider.utils.port_display import PortVerificationDisplay
+
+    display = PortVerificationDisplay()
+    display.print_header()
+
+    # Initialize port manager
+    logger.process("🔄 Verifying port accessibility...")
+    port_manager = PortManager()
+    if not await port_manager.initialize():
+        logger.error("Port verification failed. Please ensure:")
+        logger.error("1. Port 7466 is accessible for discovery service")
+        logger.error("2. Some ports in range 50800-50900 are accessible for SSH")
+        logger.error("3. Your firewall/router is properly configured")
+        return False
+    
+    logger.success(f"✅ Port verification successful - {len(port_manager.verified_ports)} ports available")
+    return True
+
 def main():
     """Run the provider server."""
     try:
@@ -65,6 +86,12 @@ def main():
 
         # Import settings after loading environment variables
         from provider.config import settings
+
+        # Verify ports before starting server
+        import asyncio
+        if not asyncio.run(verify_ports()):
+            logger.error("Port verification failed")
+            sys.exit(1)
 
         # Configure uvicorn logging
         log_config = uvicorn.config.LOGGING_CONFIG
