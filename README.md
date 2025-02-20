@@ -2,9 +2,9 @@
 
 Rent computing power as easily as ordering a pizza. VM on Golem makes it simple to either rent out your spare computing resources or get the computing power you need, when you need it.
 
-[Video Placeholder: A 2-minute demonstration of VM on Golem in action]
-
 > **8 years of development vs 24 hours of simplicity**: Sometimes the simplest solution is the best solution. This MVP was built in a single day using standard tools and protocols - because renting computing power shouldn't be rocket science. No custom protocols, no specialized knowledge, no complex SDKs. Just VMs that work.
+
+https://github.com/user-attachments/assets/4ab118f6-fa00-4612-8033-dea7b352deae
 
 ## What is VM on Golem?
 
