@@ -134,9 +134,9 @@ async def create_vm(name: str, provider_id: str, cpu: int, memory: int, storage:
             raise RequestorError(
                 "Requested resources exceed provider capacity")
 
-        # Generate SSH key pair
+        # Get SSH key pair
         ssh_manager = SSHKeyManager(config.ssh_key_dir)
-        key_pair = await ssh_manager.generate_key_pair(name)
+        key_pair = await ssh_manager.get_key_pair()
 
         # Get provider IP based on environment
         provider_ip = 'localhost' if config.environment == "development" else provider.get(
@@ -148,16 +148,13 @@ async def create_vm(name: str, provider_id: str, cpu: int, memory: int, storage:
         # Create VM
         provider_url = config.get_provider_url(provider_ip)
         async with ProviderClient(provider_url) as client:
-            # Read public key
-            ssh_key = key_pair.public_key.read_text().strip()
-
             # Create VM with SSH key
             vm = await client.create_vm(
                 name=name,
                 cpu=cpu,
                 memory=memory,
                 storage=storage,
-                ssh_key=ssh_key
+                ssh_key=key_pair.public_key_content
             )
 
             # Get VM access info
@@ -173,8 +170,7 @@ async def create_vm(name: str, provider_id: str, cpu: int, memory: int, storage:
                     'memory': memory,
                     'storage': storage,
                     'ssh_port': access_info['ssh_port']
-                },
-                ssh_key_name=name
+                }
             )
 
         click.echo(f"""
@@ -207,9 +203,7 @@ async def ssh_vm(name: str):
 
         # Get SSH key
         ssh_manager = SSHKeyManager(config.ssh_key_dir)
-        key_pair = await ssh_manager.get_key_pair(vm['ssh_key_name'])
-        if not key_pair:
-            raise RequestorError("SSH key not found")
+        key_pair = await ssh_manager.get_key_pair()
 
         # Get VM access info
         provider_url = config.get_provider_url(vm['provider_ip'])
@@ -250,12 +244,6 @@ async def destroy_vm(name: str):
 
         # Remove from database
         await db.delete_vm(name)
-
-        # Remove SSH key
-        if vm['ssh_key_name']:
-            ssh_manager = SSHKeyManager(config.ssh_key_dir)
-            ssh_manager.delete_key_pair(vm['ssh_key_name'])
-
         click.echo(f"VM '{name}' destroyed successfully")
 
     except Exception as e:

@@ -9,19 +9,49 @@ class Database:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
     async def init(self):
-        """Initialize database."""
+        """Initialize database and handle migrations."""
         async with aiosqlite.connect(self.db_path) as db:
-            await db.execute("""
-                CREATE TABLE IF NOT EXISTS vms (
-                    name TEXT PRIMARY KEY,
-                    provider_ip TEXT NOT NULL,
-                    vm_id TEXT NOT NULL,
-                    config TEXT NOT NULL,
-                    status TEXT NOT NULL DEFAULT 'running',
-                    ssh_key_name TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
+            # Check if table exists
+            async with db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='vms'") as cursor:
+                table_exists = await cursor.fetchone() is not None
+
+            if not table_exists:
+                # Create new table without ssh_key_name
+                await db.execute("""
+                    CREATE TABLE vms (
+                        name TEXT PRIMARY KEY,
+                        provider_ip TEXT NOT NULL,
+                        vm_id TEXT NOT NULL,
+                        config TEXT NOT NULL,
+                        status TEXT NOT NULL DEFAULT 'running',
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+            else:
+                # Check if ssh_key_name column exists
+                async with db.execute("PRAGMA table_info(vms)") as cursor:
+                    columns = await cursor.fetchall()
+                    has_ssh_key_name = any(col[1] == 'ssh_key_name' for col in columns)
+
+                if has_ssh_key_name:
+                    # Migrate existing data
+                    await db.execute("""
+                        CREATE TABLE vms_new (
+                            name TEXT PRIMARY KEY,
+                            provider_ip TEXT NOT NULL,
+                            vm_id TEXT NOT NULL,
+                            config TEXT NOT NULL,
+                            status TEXT NOT NULL DEFAULT 'running',
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        )
+                    """)
+                    await db.execute("""
+                        INSERT INTO vms_new (name, provider_ip, vm_id, config, status, created_at)
+                        SELECT name, provider_ip, vm_id, config, status, created_at FROM vms
+                    """)
+                    await db.execute("DROP TABLE vms")
+                    await db.execute("ALTER TABLE vms_new RENAME TO vms")
+
             await db.commit()
 
     async def save_vm(
@@ -30,17 +60,16 @@ class Database:
         provider_ip: str,
         vm_id: str,
         config: Dict,
-        ssh_key_name: Optional[str] = None,
         status: str = 'running'
     ) -> None:
         """Save VM details."""
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute(
                 """
-                INSERT INTO vms (name, provider_ip, vm_id, config, ssh_key_name, status)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO vms (name, provider_ip, vm_id, config, status)
+                VALUES (?, ?, ?, ?, ?)
                 """,
-                (name, provider_ip, vm_id, json.dumps(config), ssh_key_name, status)
+                (name, provider_ip, vm_id, json.dumps(config), status)
             )
             await db.commit()
 

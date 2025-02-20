@@ -35,82 +35,85 @@ class SSHKeyManager:
     """Manages SSH keys for VM connections."""
     
     def __init__(self, golem_dir: Union[str, Path] = None):
-        if golem_dir is None:
-            from ..config import config
-            self.ssh_dir = config.ssh_key_dir
-        elif isinstance(golem_dir, str):
-            self.ssh_dir = Path(golem_dir)
-        else:
-            self.ssh_dir = golem_dir
-            
-        self.system_key_path = Path.home() / '.ssh' / 'id_rsa'
-        self.golem_key_path = self.ssh_dir / 'id_rsa'
-        
-        # Create golem ssh directory if it doesn't exist
-        self.ssh_dir.mkdir(parents=True, exist_ok=True)
-        os.chmod(self.ssh_dir, 0o700)  # Secure directory permissions
-
-    async def get_key_pair(self, force_golem_key: bool = False) -> KeyPair:
-        """Get the SSH key pair paths and contents, using system key if available or Golem key.
+        """Initialize SSH key manager.
         
         Args:
-            force_golem_key: If True, always use Golem key even if system key exists
+            golem_dir: Optional custom directory for Golem SSH keys. If None, uses default from config.
         """
-        if not force_golem_key:
-            logger.debug("Checking for system SSH key at %s", self.system_key_path)
-            if self.system_key_path.exists() and (self.system_key_path.parent / 'id_rsa.pub').exists():
-                logger.info("Using existing system SSH key")
-                private_key = self.system_key_path
-                public_key = self.system_key_path.parent / 'id_rsa.pub'
+        # Set up Golem SSH directory
+        if golem_dir is None:
+            from ..config import config
+            self.golem_dir = Path(config.ssh_key_dir)
+        else:
+            self.golem_dir = Path(golem_dir)
+
+        # Define key paths
+        self.system_key_path = Path.home() / '.ssh' / 'id_rsa'
+        self.golem_key_path = self.golem_dir / 'golem_id_rsa'  # Single reusable key
+        
+        # Create Golem directory if needed
+        self.golem_dir.mkdir(parents=True, exist_ok=True)
+        # Secure directory permissions (on Unix-like systems)
+        if os.name == 'posix':
+            os.chmod(self.golem_dir, 0o700)
+
+    async def get_key_pair(self) -> KeyPair:
+        """Get the SSH key pair to use.
+        
+        Returns system SSH key if available, otherwise returns/creates Golem key.
+        """
+        # Try to use system SSH key first
+        logger.debug("Checking for system SSH key at %s", self.system_key_path)
+        system_pub_key = self.system_key_path.parent / 'id_rsa.pub'
+        
+        if self.system_key_path.exists() and system_pub_key.exists():
+            logger.info("Using existing system SSH key")
+            try:
                 return KeyPair(
-                    private_key=private_key,
-                    public_key=public_key,
-                    private_key_content=private_key.read_text().strip(),
-                    public_key_content=public_key.read_text().strip()
+                    private_key=self.system_key_path,
+                    public_key=system_pub_key,
+                    private_key_content=self.system_key_path.read_text().strip(),
+                    public_key_content=system_pub_key.read_text().strip()
                 )
-            
+            except (PermissionError, OSError) as e:
+                logger.warning("Could not read system SSH key: %s", e)
+                # Fall through to use Golem key
+        
+        # Use/create Golem key if system key unavailable
         logger.debug("Using Golem SSH key at %s", self.golem_key_path)
         if not self.golem_key_path.exists():
             logger.info("No existing Golem SSH key found, generating new key pair")
             await self._generate_key_pair()
-            
-        private_key = self.golem_key_path
-        public_key = self.golem_key_path.parent / 'id_rsa.pub'
+        
+        golem_pub_key = Path(str(self.golem_key_path) + '.pub')
         return KeyPair(
-            private_key=private_key,
-            public_key=public_key,
-            private_key_content=private_key.read_text().strip(),
-            public_key_content=public_key.read_text().strip()
+            private_key=self.golem_key_path,
+            public_key=golem_pub_key,
+            private_key_content=self.golem_key_path.read_text().strip(),
+            public_key_content=golem_pub_key.read_text().strip()
         )
 
-    async def get_public_key_content(self, force_golem_key: bool = False) -> str:
+    async def get_public_key_content(self) -> str:
         """Get the content of the public key file."""
-        key_pair = await self.get_key_pair(force_golem_key)
+        key_pair = await self.get_key_pair()
         return key_pair.public_key_content
 
-    async def get_key_content(self, force_golem_key: bool = False) -> KeyPair:
+    async def get_key_content(self) -> KeyPair:
         """Get both the paths and contents of the key pair."""
-        print("DEBUG: Getting key content")  # Direct print for visibility
         logger.debug("Getting key content")
-        key_pair = await self.get_key_pair(force_golem_key)
-        print(f"DEBUG: Got key pair with paths: private={key_pair.private_key}, public={key_pair.public_key}")
-        logger.debug("Got key pair with paths: private=%s, public=%s", key_pair.private_key, key_pair.public_key)
+        key_pair = await self.get_key_pair()
+        logger.debug("Got key pair with paths: private=%s, public=%s", 
+                    key_pair.private_key, key_pair.public_key)
         return key_pair
 
     @classmethod
-    async def generate_key_pair(cls, golem_dir: Union[str, Path] = None) -> KeyPair:
+    async def generate_key_pair(cls) -> KeyPair:
         """Generate a new RSA key pair for Golem VMs and return their contents."""
-        print(f"DEBUG: Generating new SSH key pair with golem_dir={golem_dir}")  # Direct print
         logger.info("Generating new SSH key pair")
-        logger.debug("Creating SSHKeyManager with golem_dir=%s", golem_dir)
-        manager = cls(golem_dir)
+        manager = cls()
         await manager._generate_key_pair()
-        print("DEBUG: Key pair generated, getting content")  # Direct print
         logger.debug("Key pair generated, getting content")
-        content = await manager.get_key_content(force_golem_key=True)
-        print("DEBUG: Successfully generated and retrieved key pair content")  # Direct print
-        logger.info("Successfully generated and retrieved key pair content")
-        return content
+        return await manager.get_key_content()
 
     async def _generate_key_pair(self):
         """Generate a new RSA key pair for Golem VMs."""
@@ -132,7 +135,8 @@ class SSHKeyManager:
             )
             logger.debug("Saving private key to %s", self.golem_key_path)
             self.golem_key_path.write_bytes(private_pem)
-            os.chmod(self.golem_key_path, 0o600)  # Secure key permissions
+            if os.name == 'posix':
+                os.chmod(self.golem_key_path, 0o600)  # Secure key permissions on Unix-like systems
 
             # Save public key
             logger.debug("Generating public key")
@@ -141,10 +145,11 @@ class SSHKeyManager:
                 encoding=serialization.Encoding.OpenSSH,
                 format=serialization.PublicFormat.OpenSSH
             )
-            pub_key_path = self.golem_key_path.parent / 'id_rsa.pub'
+            pub_key_path = Path(str(self.golem_key_path) + '.pub')
             logger.debug("Saving public key to %s", pub_key_path)
             pub_key_path.write_bytes(public_pem)
-            os.chmod(pub_key_path, 0o644)  # Public key can be readable
+            if os.name == 'posix':
+                os.chmod(pub_key_path, 0o644)  # Public key can be readable on Unix-like systems
             logger.info("Successfully generated and saved SSH key pair")
         except Exception as e:
             logger.error("Failed to generate key pair: %s", str(e))
