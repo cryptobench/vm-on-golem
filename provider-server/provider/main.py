@@ -1,14 +1,15 @@
 import asyncio
-import logging
 from fastapi import FastAPI
 from typing import Optional
 
 from .config import settings
+from .utils.logging import setup_logger, PROCESS, SUCCESS
+from .utils.ascii_art import startup_animation
 from .discovery.resource_tracker import ResourceTracker
 from .discovery.advertiser import ResourceAdvertiser
 from .vm.multipass import MultipassProvider
 
-logger = logging.getLogger(__name__)
+logger = setup_logger(__name__)
 
 app = FastAPI(title="VM on Golem Provider")
 
@@ -16,12 +17,12 @@ async def setup_provider() -> None:
     """Setup and initialize the provider components."""
     try:
         # Create resource tracker
-        logger.info("Initializing resource tracker...")
+        logger.process("🔄 Initializing resource tracker...")
         resource_tracker = ResourceTracker()
         app.state.resource_tracker = resource_tracker
         
         # Create provider with resource tracker
-        logger.info("Initializing VM provider...")
+        logger.process("🔄 Initializing VM provider...")
         provider = MultipassProvider(resource_tracker)
         try:
             await asyncio.wait_for(provider.initialize(), timeout=30)
@@ -38,7 +39,7 @@ async def setup_provider() -> None:
             raise
         
         # Create and start advertiser in background
-        logger.info("Starting resource advertiser...")
+        logger.process("🔄 Starting resource advertiser...")
         advertiser = ResourceAdvertiser(
             resource_tracker=resource_tracker,
             discovery_url=settings.DISCOVERY_URL,
@@ -49,7 +50,7 @@ async def setup_provider() -> None:
         app.state.advertiser_task = asyncio.create_task(advertiser.start())
         app.state.advertiser = advertiser
         
-        logger.info("Provider setup complete")
+        logger.success("✨ Provider setup complete and ready to accept requests")
     except Exception as e:
         logger.error(f"Failed to setup provider: {e}")
         # Attempt cleanup of any initialized components
@@ -95,11 +96,14 @@ async def cleanup_provider() -> None:
         error_msg = "\n".join(cleanup_errors)
         logger.error(f"Errors during cleanup:\n{error_msg}")
     else:
-        logger.info("Provider cleanup complete")
+        logger.success("✨ Provider cleanup complete")
 
 @app.on_event("startup")
 async def startup_event():
     """Handle application startup."""
+    # Display startup animation
+    await startup_animation()
+    # Initialize provider
     await setup_provider()
 
 @app.on_event("shutdown")

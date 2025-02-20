@@ -1,17 +1,17 @@
 import os
 import json
-import logging
 import subprocess
 from pathlib import Path
 from typing import Optional, Dict, List
 from datetime import datetime
 
 from ..config import settings
+from ..utils.logging import setup_logger, PROCESS, SUCCESS
 from .models import VMInfo, VMStatus, VMCreateRequest, VMConfig, VMProvider, VMError, VMCreateError, VMResources
 from .cloud_init import generate_cloud_init, cleanup_cloud_init
 from .proxy_manager import PythonProxyManager
 
-logger = logging.getLogger(__name__)
+logger = setup_logger(__name__)
 
 
 class MultipassError(VMError):
@@ -71,7 +71,7 @@ class MultipassProvider(VMProvider):
                 text=True,
                 check=True
             )
-            logger.info(f"Multipass version: {result.stdout}")
+            logger.info(f"🔧 Using Multipass version: {result.stdout.strip()}")
         except subprocess.CalledProcessError as e:
             raise MultipassError(
                 f"Failed to verify multipass installation: {e.stderr}")
@@ -148,8 +148,12 @@ class MultipassProvider(VMProvider):
         )
 
         try:
+            logger.process(f"🚀 Launching VM {vm_id}")
+            logger.info(f"📦 Image: {config.image}")
+            logger.info(f"💻 Resources: {config.resources.cpu} CPU, {config.resources.memory}GB RAM, {config.resources.storage}GB storage")
+            
             # Launch VM
-            self._run_multipass([
+            launch_cmd = [
                 "launch",
                 config.image,
                 "--name", vm_id,
@@ -157,18 +161,25 @@ class MultipassProvider(VMProvider):
                 "--cpus", str(config.resources.cpu),
                 "--memory", f"{config.resources.memory}G",
                 "--disk", f"{config.resources.storage}G"
-            ])
+            ]
+            logger.process("⚙️  Executing multipass launch command...")
+            self._run_multipass(launch_cmd)
+            logger.success("✨ VM instance launched successfully")
 
             # Get VM IP
+            logger.process("🔍 Getting VM IP address...")
             ip_address = self._get_vm_ip(vm_id)
             if not ip_address:
                 raise MultipassError("Failed to get VM IP address")
+            logger.success(f"✨ VM IP address acquired: {ip_address}")
 
             # Configure proxy
             try:
+                logger.process("🔄 Configuring network proxy...")
                 ssh_port = await self.proxy_manager.add_vm(vm_id, ip_address)
                 if not ssh_port:
                     raise MultipassError("Failed to configure proxy")
+                logger.success(f"✨ Network proxy configured - SSH port: {ssh_port}")
 
                 # Create VM info
                 vm_info = VMInfo(
@@ -206,15 +217,20 @@ class MultipassProvider(VMProvider):
         Args:
             vm_id: VM identifier
         """
+        logger.process(f"🗑️  Initiating deletion of VM {vm_id}")
         # First try to delete the VM itself
         try:
+            logger.info("🔄 Removing VM instance...")
             self._run_multipass(["delete", vm_id, "--purge"], check=False)
+            logger.success("✨ VM instance removed")
         except Exception as e:
             logger.error(f"Error deleting VM {vm_id} from multipass: {e}")
 
         # Then try to cleanup proxy config (even if VM deletion failed)
         try:
+            logger.info("🔄 Cleaning up network proxy configuration...")
             await self.proxy_manager.remove_vm(vm_id)
+            logger.success("✨ Network proxy configuration cleaned up")
         except Exception as e:
             logger.error(f"Error removing proxy config for VM {vm_id}: {e}")
 
@@ -227,8 +243,11 @@ class MultipassProvider(VMProvider):
         Returns:
             Updated VM information
         """
+        logger.process(f"🔄 Starting VM {vm_id}")
         self._run_multipass(["start", vm_id])
-        return await self.get_vm_status(vm_id)
+        status = await self.get_vm_status(vm_id)
+        logger.success(f"✨ VM {vm_id} started successfully")
+        return status
 
     async def stop_vm(self, vm_id: str) -> VMInfo:
         """Stop a VM.
@@ -239,8 +258,11 @@ class MultipassProvider(VMProvider):
         Returns:
             Updated VM information
         """
+        logger.process(f"🔄 Stopping VM {vm_id}")
         self._run_multipass(["stop", vm_id])
-        return await self.get_vm_status(vm_id)
+        status = await self.get_vm_status(vm_id)
+        logger.success(f"✨ VM {vm_id} stopped successfully")
+        return status
 
     async def get_vm_status(self, vm_id: str) -> VMInfo:
         """Get current status of a VM.

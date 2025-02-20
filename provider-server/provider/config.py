@@ -53,11 +53,21 @@ class Settings(BaseSettings):
     VM_DATA_DIR: str = ""
     SSH_KEY_DIR: str = ""
     
-    @validator("VM_DATA_DIR", "SSH_KEY_DIR", pre=True)
-    def resolve_path(cls, v: str) -> str:
-        """Resolve path relative to home directory if not absolute."""
+    @validator("VM_DATA_DIR", pre=True)
+    def resolve_vm_data_dir(cls, v: str) -> str:
+        """Resolve VM data directory path."""
         if not v:
-            raise ValueError("Path cannot be empty")
+            return str(Path.home() / ".golem" / "provider" / "vms")
+        path = Path(v)
+        if not path.is_absolute():
+            path = Path.home() / path
+        return str(path)
+
+    @validator("SSH_KEY_DIR", pre=True)
+    def resolve_ssh_key_dir(cls, v: str) -> str:
+        """Resolve SSH key directory path."""
+        if not v:
+            return str(Path.home() / ".golem" / "provider" / "ssh")
         path = Path(v)
         if not path.is_absolute():
             path = Path.home() / path

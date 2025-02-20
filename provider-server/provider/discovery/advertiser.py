@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Dict, Optional
 
 from ..config import settings
+from ..utils.retry import async_retry
 
 logger = logging.getLogger(__name__)
 
@@ -65,14 +66,11 @@ class ResourceAdvertiser:
         # Register for resource updates
         self.resource_tracker.on_update(self._post_advertisement)
         
-        # Test discovery service connection
+        # Test discovery service connection with retries
         try:
-            async with self.session.get(f"{self.discovery_url}/health") as response:
-                if not response.ok:
-                    logger.warning("Discovery service health check failed, continuing without advertising")
-                    return
+            await self._check_discovery_health()
         except Exception as e:
-            logger.warning(f"Could not connect to discovery service, continuing without advertising: {e}")
+            logger.warning(f"Could not connect to discovery service after retries, continuing without advertising: {e}")
             return
             
         try:
@@ -97,6 +95,17 @@ class ResourceAdvertiser:
             await self.session.close()
             self.session = None
 
+    @async_retry(retries=5, delay=1.0, backoff=2.0, exceptions=(aiohttp.ClientError, asyncio.TimeoutError))
+    async def _check_discovery_health(self):
+        """Check discovery service health with retries."""
+        if not self.session:
+            raise RuntimeError("Session not initialized")
+            
+        async with self.session.get(f"{self.discovery_url}/health") as response:
+            if not response.ok:
+                raise Exception(f"Discovery service health check failed: {response.status}")
+
+    @async_retry(retries=3, delay=1.0, backoff=2.0, exceptions=(aiohttp.ClientError, asyncio.TimeoutError))
     async def _post_advertisement(self):
         """Post resource advertisement to discovery service."""
         if not self.session:
@@ -110,18 +119,10 @@ class ResourceAdvertiser:
             return
 
         # Get public IP with retries
-        ip_address = None
-        for _ in range(3):  # Try 3 times
-            try:
-                ip_address = await self._get_public_ip()
-                if ip_address:
-                    break
-            except Exception as e:
-                logger.warning(f"Failed to get public IP, retrying: {e}")
-                await asyncio.sleep(1)
-        
-        if not ip_address:
-            logger.error("Could not get public IP after retries")
+        try:
+            ip_address = await self._get_public_ip()
+        except Exception as e:
+            logger.error(f"Could not get public IP after retries: {e}")
             return
 
         try:
@@ -152,8 +153,9 @@ class ResourceAdvertiser:
             logger.error("Advertisement request timed out")
             raise
 
+    @async_retry(retries=3, delay=1.0, backoff=2.0, exceptions=(aiohttp.ClientError, asyncio.TimeoutError))
     async def _get_public_ip(self) -> str:
-        """Get public IP address."""
+        """Get public IP address with retries."""
         if not self.session:
             raise RuntimeError("Session not initialized")
 
@@ -164,13 +166,14 @@ class ResourceAdvertiser:
             "https://api.my-ip.io/ip"
         ]
 
+        errors = []
         for service in services:
             try:
                 async with self.session.get(service) as response:
                     if response.ok:
                         return (await response.text()).strip()
             except Exception as e:
-                logger.warning(f"Failed to get IP from {service}: {e}")
+                errors.append(f"{service}: {str(e)}")
                 continue
 
-        raise Exception("Failed to get public IP address")
+        raise Exception(f"Failed to get public IP address from all services: {'; '.join(errors)}")

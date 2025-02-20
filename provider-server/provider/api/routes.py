@@ -1,14 +1,15 @@
-import logging
 from typing import List
 from pathlib import Path
 from fastapi import APIRouter, HTTPException
 
 from ..config import settings
+from ..utils.logging import setup_logger, PROCESS, SUCCESS
+from ..utils.ascii_art import vm_creation_animation, vm_status_change
 from ..vm.models import VMCreateRequest, VMInfo, VMStatus, VMAccessInfo, VMConfig, VMResources
 from ..vm.multipass import MultipassProvider, MultipassError
 from ..discovery.resource_tracker import ResourceTracker
 
-logger = logging.getLogger(__name__)
+logger = setup_logger(__name__)
 router = APIRouter()
 
 # Initialize resource tracker and VM provider
@@ -19,8 +20,11 @@ provider = MultipassProvider(resource_tracker)
 async def create_vm(request: VMCreateRequest) -> VMInfo:
     """Create a new VM."""
     try:
+        logger.info(f"📥 Received VM creation request for '{request.name}'")
+        
         # Determine resources based on size or explicit values
         if request.size:
+            logger.process(f"🔄 Using predefined size: {request.size}")
             resources = VMResources.from_size(request.size)
         else:
             # Use explicit values or defaults
@@ -36,6 +40,7 @@ async def create_vm(request: VMCreateRequest) -> VMInfo:
             if storage < settings.MIN_STORAGE_GB:
                 raise HTTPException(400, f"Minimum storage required: {settings.MIN_STORAGE_GB}GB")
             
+            logger.process(f"🔄 Using custom resources: {cpu} CPU, {memory}GB RAM, {storage}GB storage")
             resources = VMResources(
                 cpu=cpu,
                 memory=memory,
@@ -50,8 +55,16 @@ async def create_vm(request: VMCreateRequest) -> VMInfo:
             ssh_key=request.ssh_key
         )
         
+        # Show VM creation animation
+        await vm_creation_animation(request.name)
+        
         # Create VM
+        logger.process(f"🔄 Creating VM with config: {config}")
         vm_info = await provider.create_vm(config)
+        
+        # Show status change
+        vm_status_change(vm_info.id, "RUNNING", f"SSH port: {vm_info.ssh_port}")
+        logger.success(f"✨ Successfully created VM '{vm_info.name}' (ID: {vm_info.id})")
         return vm_info
         
     except MultipassError as e:
@@ -62,6 +75,7 @@ async def create_vm(request: VMCreateRequest) -> VMInfo:
 async def list_vms() -> List[VMInfo]:
     """List all VMs."""
     try:
+        logger.info("📋 Listing all VMs")
         vms = []
         for vm_id in resource_tracker.get_allocated_vms():
             vm_info = await provider.get_vm_status(vm_id)
@@ -75,7 +89,10 @@ async def list_vms() -> List[VMInfo]:
 async def get_vm_status(vm_id: str) -> VMInfo:
     """Get VM status."""
     try:
-        return await provider.get_vm_status(vm_id)
+        logger.info(f"🔍 Getting status for VM {vm_id}")
+        status = await provider.get_vm_status(vm_id)
+        vm_status_change(vm_id, status.status.value)
+        return status
     except MultipassError as e:
         logger.error(f"Failed to get VM status: {e}")
         raise HTTPException(500, str(e))
@@ -84,16 +101,19 @@ async def get_vm_status(vm_id: str) -> VMInfo:
 async def get_vm_access(vm_id: str) -> VMAccessInfo:
     """Get VM access information."""
     try:
+        logger.process(f"📤 Preparing access credentials for requestor - VM {vm_id}")
         # Get VM info
         vm = await provider.get_vm_status(vm_id)
         if not vm:
             raise HTTPException(404, "VM not found")
         
         # Return access info
-        return VMAccessInfo(
+        access_info = VMAccessInfo(
             ssh_host=settings.PUBLIC_IP or "localhost",
             ssh_port=vm.ssh_port or 22
         )
+        logger.success(f"✨ Access credentials sent to requestor - VM {vm_id}")
+        return access_info
         
     except MultipassError as e:
         logger.error(f"Failed to get VM access info: {e}")
@@ -103,7 +123,11 @@ async def get_vm_access(vm_id: str) -> VMAccessInfo:
 async def delete_vm(vm_id: str) -> None:
     """Delete a VM."""
     try:
+        logger.process(f"🗑️  Deleting VM {vm_id}")
+        vm_status_change(vm_id, "STOPPING", "Cleanup in progress")
         await provider.delete_vm(vm_id)
+        vm_status_change(vm_id, "TERMINATED", "Cleanup complete")
+        logger.success(f"✨ Successfully deleted VM {vm_id}")
     except MultipassError as e:
         logger.error(f"Failed to delete VM: {e}")
         raise HTTPException(500, str(e))
