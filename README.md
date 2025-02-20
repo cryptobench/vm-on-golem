@@ -12,6 +12,8 @@ Think of VM on Golem as the Airbnb for computing power:
 
 It's that simple. No complex protocols, no specialized knowledge needed - just straightforward virtual machines that work exactly like any cloud provider you're used to.
 
+> Sometimes the simplest solution is the best solution. This MVP was built in 24 hours using standard tools and protocols - because renting computing power shouldn't be rocket science.
+
 ## System Overview
 
 ```mermaid
@@ -76,6 +78,8 @@ Traditional cloud platforms are complex and centralized. VM on Golem brings:
 - **Familiarity**: Works just like any VM you're used to
 - **Freedom**: Run anything you want, it's your VM
 - **Decentralization**: Connect directly with providers worldwide
+
+No SDKs to learn. No custom protocols. No complex configuration. Just VMs that work.
 
 ## Components
 
@@ -157,7 +161,7 @@ golem-provider start
 
 ## Technical Details
 
-The system consists of three main components:
+The system consists of three main components, each built with simplicity in mind:
 
 1. **Requestor CLI** (`requestor-server/`)
    - Command-line interface
@@ -166,7 +170,7 @@ The system consists of three main components:
    - SSH key handling
 
 2. **Provider Node** (`provider-server/`)
-   - VM lifecycle management
+   - VM lifecycle management using standard tools
    - Resource monitoring
    - SSH proxy system
    - Advertisement management
@@ -184,6 +188,12 @@ Each component has its own README with detailed development instructions:
 - [Provider Node Documentation](provider-server/README.md)
 - [Discovery Service Documentation](discovery-server/README.md)
 
+Built with standard tools and protocols:
+- FastAPI for APIs
+- SQLite for storage
+- Multipass for VM management
+- Standard SSH for access
+
 ## Contributing
 
 1. Fork the repository
@@ -191,3 +201,9 @@ Each component has its own README with detailed development instructions:
 3. Make your changes
 4. Run the tests
 5. Submit a pull request
+
+Remember: Keep it simple. If you can't explain your change to a 12-year-old, it's probably too complex.
+
+## License
+
+This project is part of the Golem Network and is licensed under the GPL-3.0 license.
