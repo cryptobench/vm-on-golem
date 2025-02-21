@@ -243,6 +243,13 @@ class PythonProxyManager:
                     await asyncio.sleep(delay)
                     delay *= 2  # Exponential backoff
 
+                # Check if port is verified before restoring
+                if not self.port_manager or port not in self.port_manager.verified_ports:
+                    logger.warning(f"Port {port} is not verified, skipping proxy restoration for {multipass_name}")
+                    # Remove from active ports since we can't restore it
+                    self._active_ports.pop(multipass_name, None)
+                    return False
+
                 # Attempt to create proxy
                 proxy = ProxyServer(port, vm_ip)
                 await proxy.start()

@@ -35,26 +35,25 @@ async def setup_provider() -> None:
             app.state.provider = provider
             app.state.proxy_manager = provider.proxy_manager
             
-            # Restore proxy configurations first
-            logger.process("🔄 Restoring proxy configurations...")
-            await app.state.proxy_manager._load_state()
-            
-            # Now initialize port manager with knowledge of restored proxies
+            # Initialize port manager first to verify all ports
             logger.process("🔄 Initializing port manager...")
             port_manager = PortManager(
                 start_port=settings.PORT_RANGE_START,
                 end_port=settings.PORT_RANGE_END,
-                discovery_port=settings.PORT,
-                existing_ports=app.state.proxy_manager.get_active_ports()
+                discovery_port=settings.PORT
             )
             
             if not await port_manager.initialize():
                 raise RuntimeError("Port verification failed")
             
-            # Update provider and proxy manager with verified port manager
+            # Store port manager references
             app.state.port_manager = port_manager
             provider.port_manager = port_manager
             app.state.proxy_manager.port_manager = port_manager
+            
+            # Now restore proxy configurations using only verified ports
+            logger.process("🔄 Restoring proxy configurations...")
+            await app.state.proxy_manager._load_state()
             
         except asyncio.TimeoutError:
             logger.error("Provider initialization timed out")
