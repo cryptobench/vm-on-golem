@@ -1,4 +1,5 @@
 import os
+import platform
 from pathlib import Path
 from typing import Optional
 import uuid
@@ -62,19 +63,22 @@ class Settings(BaseSettings):
     @validator("CLOUD_INIT_DIR", pre=True)
     def resolve_cloud_init_dir(cls, v: str) -> str:
         """Resolve and create cloud-init directory path."""
-        import platform
         import tempfile
         from .utils.setup import setup_cloud_init_dir, check_setup_needed, mark_setup_complete
         
         def verify_dir_permissions(path: Path) -> bool:
             """Verify directory has correct permissions and is accessible."""
             try:
-                # Create test file
-                test_file = path / "permission_test"
-                test_file.write_text("test")
+                # Only verify if directory exists and is writable
+                if not path.exists():
+                    path.mkdir(parents=True, exist_ok=True)
+                # Try to create a test file in our own directory
+                test_file = path / f".permission_test_{uuid.uuid4()}"
+                test_file.touch()
                 test_file.unlink()
                 return True
-            except Exception:
+            except Exception as e:
+                logger.debug(f"Permission verification failed for {path}: {e}")
                 return False
 
         if v:
@@ -82,61 +86,32 @@ class Settings(BaseSettings):
             if not path.is_absolute():
                 path = Path.home() / path
         else:
-            system = platform.system().lower()
-            # Try OS-specific paths first
-            if system == "linux" and Path("/snap/bin/multipass").exists():
-                # Linux with snap
-                path = Path("/var/snap/multipass/common/cloud-init")
-                
-                # Check if we need to set up permissions
-                if check_setup_needed():
-                    logger.info("First run detected, setting up cloud-init directory...")
-                    success, error = setup_cloud_init_dir(path)
-                    if success:
-                        logger.info("✓ Cloud-init directory setup complete")
-                        mark_setup_complete()
-                    else:
-                        logger.error(f"Failed to set up cloud-init directory: {error}")
-                        logger.error("\nTo fix this manually, run these commands:")
-                        logger.error("  sudo mkdir -p /var/snap/multipass/common/cloud-init")
-                        logger.error("  sudo chown -R $USER:$USER /var/snap/multipass/common/cloud-init")
-                        logger.error("  sudo chmod -R 755 /var/snap/multipass/common/cloud-init\n")
-                        # Fall back to user's home directory
-                        path = Path.home() / ".local" / "share" / "golem" / "provider" / "cloud-init"
-                
-            elif system == "linux":
-                # Linux without snap
-                path = Path.home() / ".local" / "share" / "golem" / "provider" / "cloud-init"
-            elif system == "darwin":
-                # macOS
-                path = Path.home() / "Library" / "Application Support" / "golem" / "provider" / "cloud-init"
-            elif system == "windows":
-                # Windows
-                path = Path(os.path.expandvars("%LOCALAPPDATA%")) / "golem" / "provider" / "cloud-init"
-            else:
-                path = Path.home() / ".golem" / "provider" / "cloud-init"
+            # Use a consistent path structure across all platforms
+            path = Path.home() / ".golem" / "provider" / "cloud-init"
 
         try:
-            # Try to create and verify the directory
-            path.mkdir(parents=True, exist_ok=True)
-            if platform.system().lower() != "windows":
-                path.chmod(0o755)  # Readable and executable by owner and others, writable by owner
+            # Create and verify the directory
+            try:
+                path.mkdir(parents=True, exist_ok=True)
+                if platform.system().lower() != "windows":
+                    path.chmod(0o755)  # Readable and executable by owner and others, writable by owner
 
-            if verify_dir_permissions(path):
-                logger.debug(f"Created cloud-init directory at {path}")
-                return str(path)
-            
-            # If verification fails, fall back to temp directory
-            fallback_path = Path(tempfile.gettempdir()) / "golem" / "cloud-init"
-            fallback_path.mkdir(parents=True, exist_ok=True)
-            if platform.system().lower() != "windows":
-                fallback_path.chmod(0o755)
-            
-            if verify_dir_permissions(fallback_path):
-                logger.warning(f"Using fallback cloud-init directory at {fallback_path}")
-                return str(fallback_path)
-            
-            raise ValueError("Could not create a writable cloud-init directory")
+                if verify_dir_permissions(path):
+                    logger.debug(f"Created cloud-init directory at {path}")
+                    return str(path)
+                
+                # If verification fails, use a temporary directory as fallback
+                fallback_path = Path(tempfile.gettempdir()) / "golem" / "cloud-init"
+                fallback_path.mkdir(parents=True, exist_ok=True)
+                
+                if verify_dir_permissions(fallback_path):
+                    logger.warning(f"Using fallback cloud-init directory at {fallback_path}")
+                    return str(fallback_path)
+                
+                raise ValueError("Could not create a writable cloud-init directory")
+            except Exception as e:
+                logger.error(f"Failed to set up cloud-init directory: {e}")
+                raise ValueError(f"Failed to create cloud-init directory: {e}")
             
         except Exception as e:
             logger.error(f"Failed to create cloud-init directory at {path}: {e}")
@@ -153,13 +128,21 @@ class Settings(BaseSettings):
                 path = Path.home() / path
         
         try:
+            # Create directory with appropriate permissions
             path.mkdir(parents=True, exist_ok=True)
+            if platform.system().lower() != "windows":
+                path.chmod(0o755)  # Standard directory permissions
+            
+            # Verify we can write to the directory
+            test_file = path / f".permission_test_{uuid.uuid4()}"
+            test_file.touch()
+            test_file.unlink()
+            
             logger.debug(f"Created VM data directory at {path}")
+            return str(path)
         except Exception as e:
             logger.error(f"Failed to create VM data directory at {path}: {e}")
             raise ValueError(f"Failed to create VM data directory: {e}")
-            
-        return str(path)
 
     @validator("SSH_KEY_DIR", pre=True)
     def resolve_ssh_key_dir(cls, v: str) -> str:
@@ -172,14 +155,21 @@ class Settings(BaseSettings):
                 path = Path.home() / path
         
         try:
+            # Create directory with secure permissions for SSH keys
             path.mkdir(parents=True, exist_ok=True)
-            path.chmod(0o700)  # Secure permissions for SSH keys
+            if platform.system().lower() != "windows":
+                path.chmod(0o700)  # Secure permissions for SSH keys
+            
+            # Verify we can write to the directory
+            test_file = path / f".permission_test_{uuid.uuid4()}"
+            test_file.touch()
+            test_file.unlink()
+            
             logger.debug(f"Created SSH key directory at {path} with secure permissions")
+            return str(path)
         except Exception as e:
             logger.error(f"Failed to create SSH key directory at {path}: {e}")
             raise ValueError(f"Failed to create SSH key directory: {e}")
-            
-        return str(path)
 
     # Resource Settings
     MIN_MEMORY_GB: int = 1
@@ -336,13 +326,21 @@ class Settings(BaseSettings):
                 path = Path.home() / path
         
         try:
+            # Create directory with appropriate permissions
             path.mkdir(parents=True, exist_ok=True)
+            if platform.system().lower() != "windows":
+                path.chmod(0o755)  # Standard directory permissions
+            
+            # Verify we can write to the directory
+            test_file = path / f".permission_test_{uuid.uuid4()}"
+            test_file.touch()
+            test_file.unlink()
+            
             logger.debug(f"Created proxy state directory at {path}")
+            return str(path)
         except Exception as e:
             logger.error(f"Failed to create proxy state directory at {path}: {e}")
             raise ValueError(f"Failed to create proxy state directory: {e}")
-            
-        return str(path)
 
     @validator("PUBLIC_IP", pre=True)
     def get_public_ip(cls, v: Optional[str]) -> Optional[str]:
