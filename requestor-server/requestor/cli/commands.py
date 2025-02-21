@@ -264,7 +264,7 @@ async def create_vm(name: str, provider_id: str, cpu: int, memory: int, storage:
         # Quick Connect Section
         click.echo("\n" + click.style("  Quick Connect", fg="blue", bold=True))
         click.echo("  " + "┈" * 25)
-        ssh_command = f"ssh -i {key_pair.private_key.absolute()} -p {access_info['ssh_port']} ubuntu@{provider_ip}"
+        ssh_command = f"ssh -i {key_pair.private_key.absolute()} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p {access_info['ssh_port']} ubuntu@{provider_ip}"
         click.echo(f"  🔑 SSH Command : {click.style(ssh_command, fg='yellow')}")
         
         click.echo("\n" + "─" * 60)
