@@ -10,17 +10,25 @@ class PortVerificationDisplay:
     
     SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
     
-    def __init__(self, provider_port: int, port_range_start: int, port_range_end: int):
+    def __init__(
+        self, 
+        provider_port: int, 
+        port_range_start: int, 
+        port_range_end: int,
+        skip_verification: bool = False
+    ):
         """Initialize the display.
         
         Args:
             provider_port: Port used for provider access
             port_range_start: Start of VM access port range
             port_range_end: End of VM access port range
+            skip_verification: Whether port verification is skipped (development mode)
         """
         self.provider_port = provider_port
         self.port_range_start = port_range_start
         self.port_range_end = port_range_end
+        self.skip_verification = skip_verification
         self.spinner_idx = 0
     
     def _update_spinner(self):
@@ -91,6 +99,13 @@ class PortVerificationDisplay:
         print("\n🔒 VM Access Ports (Required)")
         print("-------------------------")
         
+        if self.skip_verification:
+            print("\n✅ All ports available in development mode")
+            print(f"└─ Port Range: {self.port_range_start}-{self.port_range_end}")
+            print("└─ Status: Port verification skipped")
+            print("└─ Note: Configure ports before deploying to production")
+            return
+
         await self.animate_verification("Scanning VM access ports...")
         
         # Calculate progress
@@ -125,6 +140,9 @@ class PortVerificationDisplay:
             discovery_result: Verification result for discovery port
             ssh_results: Dictionary mapping SSH ports to their verification results
         """
+        if self.skip_verification:
+            return
+
         issues = []
         
         # Check discovery port
@@ -155,6 +173,9 @@ class PortVerificationDisplay:
             discovery_result: Verification result for discovery port
             ssh_results: Dictionary mapping SSH ports to their verification results
         """
+        if self.skip_verification:
+            return
+
         # Check if we have any issues
         has_issues = (
             not discovery_result.accessible or 
@@ -186,6 +207,13 @@ class PortVerificationDisplay:
             ssh_results: Dictionary mapping SSH ports to their verification results
         """
         print("\n🎯 Current Status:", end=" ")
+
+        if self.skip_verification:
+            print("Development Mode")
+            print("└─ Status: Port verification skipped")
+            print(f"└─ Available: All ports in range {self.port_range_start}-{self.port_range_end}")
+            print("└─ Note: This is for development only, configure ports in production")
+            return
         
         if discovery_result is None:
             print("Verification Failed")

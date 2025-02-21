@@ -24,7 +24,8 @@ class PortManager:
         state_file: Optional[str] = None,
         port_check_servers: Optional[List[str]] = None,
         discovery_port: Optional[int] = None,
-        existing_ports: Optional[Set[int]] = None
+        existing_ports: Optional[Set[int]] = None,
+        skip_verification: bool = False
     ):
         """Initialize the port manager.
 
@@ -51,6 +52,7 @@ class PortManager:
             "http://195.201.39.101:9000",  # Production servers
         ]
         self.discovery_port = discovery_port or settings.PORT
+        self.skip_verification = skip_verification
         self.port_verifier = PortVerifier(
             self.port_check_servers,
             discovery_port=self.discovery_port
@@ -76,20 +78,34 @@ class PortManager:
         display = PortVerificationDisplay(
             provider_port=self.discovery_port,
             port_range_start=self.start_port,
-            port_range_end=self.end_port
+            port_range_end=self.end_port,
+            skip_verification=self.skip_verification
         )
         display.print_header()
 
-        # Verify all ports in range, including existing ones
-        ssh_ports = list(range(self.start_port, self.end_port))
-        logger.info(f"Starting port verification...")
-        logger.info(f"SSH ports range: {self.start_port}-{self.end_port}")
-        logger.info(
-            f"Using port check servers: {', '.join(self.port_check_servers)}")
+        # If verification is skipped, mark all ports as verified
+        if self.skip_verification:
+            logger.warning("⚠️  Port verification is disabled in development mode")
+            logger.warning("   All ports will be considered available")
+            logger.warning("   This should only be used for development/testing")
+            
+            # Mark all ports as verified
+            self.verified_ports = set(range(self.start_port, self.end_port))
+            
+            # In development mode, we don't need to create any results
+            # The display will handle development mode differently
+            results = {}
+        else:
+            # Verify all ports in range, including existing ones
+            ssh_ports = list(range(self.start_port, self.end_port))
+            logger.info(f"Starting port verification...")
+            logger.info(f"SSH ports range: {self.start_port}-{self.end_port}")
+            logger.info(
+                f"Using port check servers: {', '.join(self.port_check_servers)}")
 
-        # Clear existing verified ports before verification
-        self.verified_ports.clear()
-        results = await self.port_verifier.verify_ports(ssh_ports)
+            # Clear existing verified ports before verification
+            self.verified_ports.clear()
+            results = await self.port_verifier.verify_ports(ssh_ports)
 
         # Add provider port as verified since we already checked it
         results[self.discovery_port] = PortVerificationResult(
@@ -141,13 +157,17 @@ class PortManager:
         # Print precise summary of current status
         display.print_summary(discovery_result, ssh_results)
 
-        if not self.verified_ports:
-            logger.error("No SSH ports were verified as accessible")
-            return False
+        if self.skip_verification:
+            logger.info(f"Port verification skipped - all {len(self.verified_ports)} ports marked as available")
+            return True
+        else:
+            if not self.verified_ports:
+                logger.error("No SSH ports were verified as accessible")
+                return False
 
-        logger.info(
-            f"Successfully verified {len(self.verified_ports)} SSH ports")
-        return True
+            logger.info(
+                f"Successfully verified {len(self.verified_ports)} SSH ports")
+            return True
 
     def _load_state(self) -> None:
         """Load port assignments from state file."""
