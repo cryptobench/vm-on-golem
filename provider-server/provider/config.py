@@ -16,6 +16,12 @@ class Settings(BaseSettings):
     DEBUG: bool = True
     HOST: str = "0.0.0.0"
     PORT: int = 7466
+    SKIP_PORT_VERIFICATION: bool = False
+
+    @validator("SKIP_PORT_VERIFICATION", always=True)
+    def set_skip_verification(cls, v: bool, values: dict) -> bool:
+        """Set skip verification based on debug mode."""
+        return v or values.get("DEBUG", False)
 
     # Provider Settings
     PROVIDER_ID: str = ""  # Will be set from Ethereum identity
