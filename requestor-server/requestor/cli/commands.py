@@ -1,3 +1,4 @@
+"""CLI interface for VM on Golem."""
 import click
 import asyncio
 from typing import Optional
@@ -8,24 +9,26 @@ from tabulate import tabulate
 
 from ..config import config
 from ..provider.client import ProviderClient
-from ..ssh.manager import SSHKeyManager
-from ..db.sqlite import Database
 from ..errors import RequestorError
 from ..utils.logging import setup_logger
-from ..utils.spinner import step
+from ..utils.spinner import step, Spinner
+from ..services.vm_service import VMService
+from ..services.provider_service import ProviderService
+from ..services.ssh_service import SSHService
+from ..services.database_service import DatabaseService
 
 # Initialize logger
 logger = setup_logger('golem.requestor')
 
-# Initialize components
-db = Database(config.db_path)
+# Initialize services
+db_service = DatabaseService(config.db_path)
 
 
 def async_command(f):
     """Decorator to run async commands."""
     async def wrapper(*args, **kwargs):
         # Initialize database
-        await db.init()
+        await db_service.init()
         return await f(*args, **kwargs)
     return lambda *args, **kwargs: asyncio.run(wrapper(*args, **kwargs))
 
@@ -65,66 +68,28 @@ async def list_providers(cpu: Optional[int], memory: Optional[int], storage: Opt
         
         logger.process("Querying discovery service")
         
-        params = {
-            k: v for k, v in {
-                'cpu': cpu,
-                'memory': memory,
-                'storage': storage,
-                'country': country
-            }.items() if v is not None
-        }
-
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                f"{config.discovery_url}/api/v1/advertisements",
-                params=params
-            ) as response:
-                if not response.ok:
-                    raise RequestorError("Failed to query discovery service")
-                providers = await response.json()
+        # Initialize provider service
+        provider_service = ProviderService(config.discovery_url)
+        async with provider_service:
+            providers = await provider_service.find_providers(
+                cpu=cpu,
+                memory=memory,
+                storage=storage,
+                country=country
+            )
 
         if not providers:
             logger.warning("No providers found matching criteria")
             return
 
-        # Format provider information
-        headers = ["Provider ID", "IP Address", "Country",
-                   "CPU", "Memory (GB)", "Storage (GB)", "Updated"]
-        rows = []
-        for p in providers:
-            # Get provider IP based on environment
-            provider_ip = 'localhost' if config.environment == "development" else p.get(
-                'ip_address')
-            if not provider_ip and config.environment == "production":
-                logger.warning(f"Provider {p['provider_id']} has no IP address")
-                provider_ip = 'N/A'
-            rows.append([
-                p['provider_id'],
-                provider_ip,
-                p['country'],
-                p['resources']['cpu'],
-                p['resources']['memory'],
-                p['resources']['storage'],
-                p['updated_at']
-            ])
+        # Format provider information using service with colors
+        headers = provider_service.provider_headers
+        rows = [provider_service.format_provider_row(p, colorize=True) for p in providers]
 
         # Show fancy header
         click.echo("\n" + "─" * 60)
         click.echo(click.style(f"  🌍 Available Providers ({len(providers)} total)", fg="blue", bold=True))
         click.echo("─" * 60)
-
-        # Add color and formatting to columns
-        for row in rows:
-            # Format Provider ID to be more readable
-            row[0] = click.style(row[0], fg="yellow")  # Provider ID
-            
-            # Format resources with icons and colors
-            row[3] = click.style(f"💻 {row[3]}", fg="cyan", bold=True)  # CPU
-            row[4] = click.style(f"🧠 {row[4]}", fg="cyan", bold=True)  # Memory
-            row[5] = click.style(f"💾 {row[5]}", fg="cyan", bold=True)  # Storage
-            
-            # Format location info
-            row[2] = click.style(f"🌍 {row[2]}", fg="green", bold=True)  # Country
 
         # Show table with colored headers
         click.echo("\n" + tabulate(
@@ -139,60 +104,6 @@ async def list_providers(cpu: Optional[int], memory: Optional[int], storage: Opt
         raise click.Abort()
 
 
-# Helper functions for VM creation with spinners
-@step("Checking VM name availability")
-async def check_vm_name(db, name):
-    existing_vm = await db.get_vm(name)
-    if existing_vm:
-        raise RequestorError(f"VM with name '{name}' already exists")
-
-@step("Locating provider")
-async def find_provider(discovery_url, provider_id):
-    async with aiohttp.ClientSession() as session:
-        async with session.get(f"{discovery_url}/api/v1/advertisements") as response:
-            if not response.ok:
-                raise RequestorError("Failed to query discovery service")
-            providers = await response.json()
-    
-    provider = next((p for p in providers if p['provider_id'] == provider_id), None)
-    if not provider:
-        raise RequestorError(f"Provider {provider_id} not found")
-    return provider
-
-@step("Verifying resource availability")
-async def verify_resources(provider, cpu, memory, storage):
-    if (cpu > provider['resources']['cpu'] or
-        memory > provider['resources']['memory'] or
-            storage > provider['resources']['storage']):
-        raise RequestorError("Requested resources exceed provider capacity")
-
-@step("Setting up SSH access")
-async def setup_ssh(ssh_manager):
-    return await ssh_manager.get_key_pair()
-
-@step("Deploying VM on provider")
-async def deploy_vm(client, name, cpu, memory, storage, ssh_key):
-    return await client.create_vm(
-        name=name,
-        cpu=cpu,
-        memory=memory,
-        storage=storage,
-        ssh_key=ssh_key
-    )
-
-@step("Configuring VM access")
-async def get_vm_access(client, vm_id):
-    return await client.get_vm_access(vm_id)
-
-@step("Saving VM configuration")
-async def save_vm_config(db, name, provider_ip, vm_id, config):
-    await db.save_vm(
-        name=name,
-        provider_ip=provider_ip,
-        vm_id=vm_id,
-        config=config
-    )
-
 @vm.command(name='create')
 @click.argument('name')
 @click.option('--provider-id', required=True, help='Provider ID to use')
@@ -203,45 +114,50 @@ async def save_vm_config(db, name, provider_ip, vm_id, config):
 async def create_vm(name: str, provider_id: str, cpu: int, memory: int, storage: int):
     """Create a new VM on a specific provider."""
     try:
-        logger.command(f"🚀 Creating VM '{name}'")
-        logger.detail(f"Provider: {provider_id}")
-        logger.detail(f"Resources: {cpu} CPU, {memory}GB RAM, {storage}GB Storage")
+        # Show configuration details
+        click.echo("\n" + "─" * 60)
+        click.echo(click.style("  VM Configuration", fg="blue", bold=True))
+        click.echo("─" * 60)
+        click.echo(f"  Provider   : {click.style(provider_id, fg='cyan')}")
+        click.echo(f"  Resources  : {click.style(f'{cpu} CPU, {memory}GB RAM, {storage}GB Storage', fg='cyan')}")
+        click.echo("─" * 60 + "\n")
 
-        # Check VM name
-        await check_vm_name(db, name)
+        # Now start the deployment with spinner
+        with Spinner("Deploying VM..."):
+            # Initialize services
+            provider_service = ProviderService(config.discovery_url)
+            async with provider_service:
+                # Verify provider and resources
+                provider = await provider_service.verify_provider(provider_id)
+                if not await provider_service.check_resource_availability(provider_id, cpu, memory, storage):
+                    raise RequestorError("Provider doesn't have enough resources available")
 
-        # Find and verify provider
-        provider = await find_provider(config.discovery_url, provider_id)
-        await verify_resources(provider, cpu, memory, storage)
+                # Get provider IP
+                provider_ip = 'localhost' if config.environment == "development" else provider.get('ip_address')
+                if not provider_ip and config.environment == "production":
+                    raise RequestorError("Provider IP address not found in advertisement")
 
-        # Setup SSH
-        ssh_manager = SSHKeyManager(config.ssh_key_dir)
-        key_pair = await setup_ssh(ssh_manager)
+                # Setup SSH
+                ssh_service = SSHService(config.ssh_key_dir)
+                key_pair = await ssh_service.get_key_pair()
 
-        # Get provider IP
-        provider_ip = 'localhost' if config.environment == "development" else provider.get('ip_address')
-        if not provider_ip and config.environment == "production":
-            raise RequestorError("Provider IP address not found in advertisement")
+                # Initialize VM service
+                provider_url = config.get_provider_url(provider_ip)
+                async with ProviderClient(provider_url) as client:
+                    vm_service = VMService(db_service, client)
+                    
+                    # Create VM
+                    vm = await vm_service.create_vm(
+                        name=name,
+                        cpu=cpu,
+                        memory=memory,
+                        storage=storage,
+                        provider_ip=provider_ip,
+                        ssh_key=key_pair.public_key_content
+                    )
 
-        # Create and configure VM
-        provider_url = config.get_provider_url(provider_ip)
-        async with ProviderClient(provider_url) as client:
-            # Create VM and get full VM ID
-            vm = await deploy_vm(client, name, cpu, memory, storage, key_pair.public_key_content)
-            access_info = await get_vm_access(client, vm['id'])
-            
-            # Store the full VM ID from access info
-            full_vm_id = access_info['vm_id']
-            
-            await save_vm_config(
-                db, name, provider_ip, full_vm_id,
-                {
-                    'cpu': cpu,
-                    'memory': memory,
-                    'storage': storage,
-                    'ssh_port': access_info['ssh_port']
-                }
-            )
+                    # Get access info from config
+                    ssh_port = vm['config']['ssh_port']
 
         # Create a visually appealing success message
         click.echo("\n" + "─" * 60)
@@ -259,13 +175,18 @@ async def create_vm(name: str, provider_id: str, cpu: int, memory: int, storage:
         click.echo("\n" + click.style("  Connection Details", fg="blue", bold=True))
         click.echo("  " + "┈" * 25)
         click.echo(f"  🌐 IP Address : {click.style(provider_ip, fg='cyan')}")
-        click.echo(f"  🔌 Port       : {click.style(str(access_info['ssh_port']), fg='cyan')}")
+        click.echo(f"  🔌 Port       : {click.style(str(ssh_port), fg='cyan')}")
         
         # Quick Connect Section
         click.echo("\n" + click.style("  Quick Connect", fg="blue", bold=True))
         click.echo("  " + "┈" * 25)
-        ssh_command = f"ssh -i {key_pair.private_key.absolute()} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p {access_info['ssh_port']} ubuntu@{provider_ip}"
-        click.echo(f"  🔑 SSH Command : {click.style(ssh_command, fg='yellow')}")
+        ssh_command = ssh_service.format_ssh_command(
+            host=provider_ip,
+            port=ssh_port,
+            private_key_path=key_pair.private_key.absolute(),
+            colorize=True
+        )
+        click.echo(f"  🔑 SSH Command : {ssh_command}")
         
         click.echo("\n" + "─" * 60)
 
@@ -289,34 +210,34 @@ async def ssh_vm(name: str):
     try:
         logger.command(f"🔌 Connecting to VM '{name}'")
         
-        # Get VM details
+        # Initialize services
+        ssh_service = SSHService(config.ssh_key_dir)
+        
+        # Get VM details using database service
         logger.process("Retrieving VM details")
-        vm = await db.get_vm(name)
+        vm = await db_service.get_vm(name)
         if not vm:
             raise click.BadParameter(f"VM '{name}' not found")
 
         # Get SSH key
         logger.process("Loading SSH credentials")
-        ssh_manager = SSHKeyManager(config.ssh_key_dir)
-        key_pair = await ssh_manager.get_key_pair()
+        key_pair = await ssh_service.get_key_pair()
 
-        # Get VM access info
+        # Get VM access info using service
         logger.process("Fetching connection details")
         provider_url = config.get_provider_url(vm['provider_ip'])
         async with ProviderClient(provider_url) as client:
-            access_info = await client.get_vm_access(vm['vm_id'])
+            vm_service = VMService(db_service, client)
+            vm = await vm_service.get_vm(name)  # Get fresh VM info
+            ssh_port = vm['config']['ssh_port']
 
         # Execute SSH command
-        logger.success(f"Connecting to {vm['provider_ip']}:{access_info['ssh_port']}")
-        cmd = [
-            "ssh",
-            "-i", str(key_pair.private_key.absolute()),
-            "-p", str(access_info['ssh_port']),
-            "-o", "StrictHostKeyChecking=no",
-            "-o", "UserKnownHostsFile=/dev/null",
-            f"ubuntu@{vm['provider_ip']}"
-        ]
-        subprocess.run(cmd)
+        logger.success(f"Connecting to {vm['provider_ip']}:{ssh_port}")
+        ssh_service.connect_to_vm(
+            host=vm['provider_ip'],
+            port=ssh_port,
+            private_key_path=key_pair.private_key.absolute()
+        )
 
     except Exception as e:
         error_msg = str(e)
@@ -338,29 +259,17 @@ async def destroy_vm(name: str):
     try:
         logger.command(f"💥 Destroying VM '{name}'")
 
-        # Get VM details
+        # Get VM details using database service
         logger.process("Retrieving VM details")
-        vm = await db.get_vm(name)
+        vm = await db_service.get_vm(name)
         if not vm:
             raise click.BadParameter(f"VM '{name}' not found")
 
-        try:
-            # Connect to provider using full VM ID
-            logger.process("Requesting VM termination")
-            provider_url = config.get_provider_url(vm['provider_ip'])
-            async with ProviderClient(provider_url) as client:
-                await client.destroy_vm(vm['vm_id'])
-                logger.success("VM terminated on provider")
-        except Exception as e:
-            error_msg = str(e)
-            if "Not Found" in error_msg:
-                logger.warning("VM already removed from provider")
-            else:
-                raise
-
-        # Always remove from database
-        logger.process("Cleaning up VM records")
-        await db.delete_vm(name)
+        # Initialize VM service
+        provider_url = config.get_provider_url(vm['provider_ip'])
+        async with ProviderClient(provider_url) as client:
+            vm_service = VMService(db_service, client)
+            await vm_service.destroy_vm(name)
         
         # Show fancy success message
         click.echo("\n" + "─" * 60)
@@ -394,9 +303,9 @@ async def purge_vms(force: bool):
     try:
         logger.command("🌪️  Purging all VMs")
         
-        # Get all VMs
+        # Get all VMs using database service
         logger.process("Retrieving all VM details")
-        vms = await db.list_vms()
+        vms = await db_service.list_vms()
         if not vms:
             logger.warning("No VMs found to purge")
             return
@@ -412,31 +321,23 @@ async def purge_vms(force: bool):
             try:
                 logger.process(f"Purging VM '{vm['name']}'")
                 
-                try:
-                    # Try to destroy on provider using full VM ID
-                    provider_url = config.get_provider_url(vm['provider_ip'])
-                    async with ProviderClient(provider_url) as client:
-                        # Get latest VM access info to ensure we have the correct ID
-                        try:
-                            access_info = await client.get_vm_access(vm['vm_id'])
-                            full_vm_id = access_info['vm_id']
-                        except Exception:
-                            # If we can't get access info, use stored VM ID
-                            full_vm_id = vm['vm_id']
-                        
-                        await client.destroy_vm(full_vm_id)
-                    results['success'].append((vm['name'], 'Destroyed successfully'))
-                except Exception as e:
-                    error_msg = str(e)
-                    if "Not Found" in error_msg:
-                        results['success'].append((vm['name'], 'Already removed from provider'))
-                    else:
-                        if not force:
-                            raise
-                        results['failed'].append((vm['name'], f"Provider error: {error_msg}"))
-
-                # Always remove from local database
-                await db.delete_vm(vm['name'])
+                # Initialize VM service
+                provider_url = config.get_provider_url(vm['provider_ip'])
+                async with ProviderClient(provider_url) as client:
+                    vm_service = VMService(db_service, client)
+                    try:
+                        await vm_service.destroy_vm(vm['name'])
+                        results['success'].append((vm['name'], 'Destroyed successfully'))
+                    except Exception as e:
+                        error_msg = str(e)
+                        if "Not Found" in error_msg:
+                            results['success'].append((vm['name'], 'Already removed from provider'))
+                            # Still need to clean up database
+                            await db_service.delete_vm(vm['name'])
+                        else:
+                            if not force:
+                                raise
+                            results['failed'].append((vm['name'], f"Provider error: {error_msg}"))
                 
             except Exception as e:
                 if not force:
@@ -493,18 +394,17 @@ async def start_vm(name: str):
     try:
         logger.command(f"🟢 Starting VM '{name}'")
 
-        # Get VM details
+        # Get VM details using database service
         logger.process("Retrieving VM details")
-        vm = await db.get_vm(name)
+        vm = await db_service.get_vm(name)
         if not vm:
             raise click.BadParameter(f"VM '{name}' not found")
 
-        # Connect to provider
-        logger.process("Powering up VM")
+        # Initialize VM service
         provider_url = config.get_provider_url(vm['provider_ip'])
         async with ProviderClient(provider_url) as client:
-            await client.start_vm(vm['vm_id'])
-            await db.update_vm_status(name, "running")
+            vm_service = VMService(db_service, client)
+            await vm_service.start_vm(name)
 
         # Show fancy success message
         click.echo("\n" + "─" * 60)
@@ -540,18 +440,17 @@ async def stop_vm(name: str):
     try:
         logger.command(f"🔴 Stopping VM '{name}'")
 
-        # Get VM details
+        # Get VM details using database service
         logger.process("Retrieving VM details")
-        vm = await db.get_vm(name)
+        vm = await db_service.get_vm(name)
         if not vm:
             raise click.BadParameter(f"VM '{name}' not found")
 
-        # Connect to provider
-        logger.process("Shutting down VM")
+        # Initialize VM service
         provider_url = config.get_provider_url(vm['provider_ip'])
         async with ProviderClient(provider_url) as client:
-            await client.stop_vm(vm['vm_id'])
-            await db.update_vm_status(name, "stopped")
+            vm_service = VMService(db_service, client)
+            await vm_service.stop_vm(name)
 
         # Show fancy success message
         click.echo("\n" + "─" * 60)
@@ -582,40 +481,21 @@ async def list_vms():
         logger.command("📋 Listing your VMs")
         logger.process("Fetching VM details")
         
-        vms = await db.list_vms()
+        # Initialize VM service with temporary client (not needed for listing)
+        vm_service = VMService(db_service, None)
+        vms = await vm_service.list_vms()
         if not vms:
             logger.warning("No VMs found")
             return
 
-        headers = ["Name", "Status", "IP Address", "SSH Port",
-                   "CPU", "Memory (GB)", "Storage (GB)", "Created"]
-        rows = []
-        for vm in vms:
-            rows.append([
-                vm['name'],
-                vm['status'],
-                vm['provider_ip'],
-                vm['config'].get('ssh_port', 'N/A'),
-                vm['config']['cpu'],
-                vm['config']['memory'],
-                vm['config']['storage'],
-                vm['created_at']
-            ])
+        # Format VM information using service
+        headers = vm_service.vm_headers
+        rows = [vm_service.format_vm_row(vm, colorize=True) for vm in vms]
 
         # Show fancy header
         click.echo("\n" + "─" * 60)
         click.echo(click.style(f"  📋 Your VMs ({len(vms)} total)", fg="blue", bold=True))
         click.echo("─" * 60)
-        
-        # Add color to status column (index 1)
-        for i, row in enumerate(rows):
-            status = row[1]
-            if status == "running":
-                rows[i][1] = click.style("● " + status, fg="green", bold=True)
-            elif status == "stopped":
-                rows[i][1] = click.style("● " + status, fg="yellow", bold=True)
-            else:
-                rows[i][1] = click.style("● " + status, fg="red", bold=True)
         
         # Show table with colored status
         click.echo("\n" + tabulate(
