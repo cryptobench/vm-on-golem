@@ -244,14 +244,9 @@ golem vm destroy my-webserver
 # Install the provider software
 pip install golem-vm-provider
 
-# Configure your resources in .env
-GOLEM_PROVIDER_MAX_VMS=10
-GOLEM_PROVIDER_MIN_CPU_CORES=1
-GOLEM_PROVIDER_MIN_MEMORY_GB=1
-GOLEM_PROVIDER_MIN_STORAGE_GB=10
 
 # Start earning by sharing your resources
-golem-provider start
+golem-provider
 ```
 
 ### 3. For Running a Discovery Server
@@ -260,13 +255,13 @@ golem-provider start
 # Install the discovery service
 pip install golem-vm-discovery
 
-# Configure in .env
-DISCOVERY_HOST="0.0.0.0"
-DISCOVERY_PORT=9001
-DISCOVERY_DB_URL="sqlite:///discovery.db"
+# Optional environment variables to configure
+DISCOVERY_HOST="0.0.0.0"      # Host address to bind to
+DISCOVERY_PORT=9001           # Port to listen on
+DISCOVERY_DB_URL="sqlite:///discovery.db"  # Database connection URL
 
 # Start the discovery service
-golem-discovery start
+golem-discovery
 ```
 
 ### 4. For Running a Port Checker Server
@@ -275,12 +270,9 @@ golem-discovery start
 # Install the port checker
 pip install golem-port-checker
 
-# Configure in .env
-PORT_CHECKER_HOST="0.0.0.0"
-PORT_CHECKER_PORT=9000
 
 # Start the port checker service
-port-checker start
+port-checker
 ```
 
 Each component is independently installable and configurable. Install only what you need based on your role in the network.
