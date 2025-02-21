@@ -80,14 +80,15 @@ class PortManager:
         )
         display.print_header()
 
-        # Only verify ports that aren't already marked as in use
-        available_ports = set(range(self.start_port, self.end_port)) - self._existing_ports
-        ssh_ports = list(available_ports)
+        # Verify all ports in range, including existing ones
+        ssh_ports = list(range(self.start_port, self.end_port))
         logger.info(f"Starting port verification...")
         logger.info(f"SSH ports range: {self.start_port}-{self.end_port}")
         logger.info(
             f"Using port check servers: {', '.join(self.port_check_servers)}")
 
+        # Clear existing verified ports before verification
+        self.verified_ports.clear()
         results = await self.port_verifier.verify_ports(ssh_ports)
 
         # Add provider port as verified since we already checked it
