@@ -277,9 +277,9 @@ class Settings(BaseSettings):
                 
         elif system == "windows":
             search_paths = [
-                os.path.expandvars(r"%ProgramFiles%\Multipass"),
-                os.path.expandvars(r"%ProgramFiles(x86)%\Multipass"),
-                os.path.expandvars(r"%LocalAppData%\Multipass")
+                os.path.join(os.path.expandvars(r"%ProgramFiles%"), "Multipass", "bin"),
+                os.path.join(os.path.expandvars(r"%ProgramFiles(x86)%"), "Multipass", "bin"),
+                os.path.join(os.path.expandvars(r"%LocalAppData%"), "Multipass", "bin")
             ]
             logger.info(f"Checking Windows paths: {', '.join(search_paths)}")
                 
