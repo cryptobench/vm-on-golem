@@ -1,30 +1,58 @@
 # VM on Golem
 
-Rent computing power as easily as ordering a pizza. VM on Golem makes it simple to either rent out your spare computing resources or get the computing power you need, when you need it.
+> 🎯 **Building the Future of Cloud Computing**
+> 
+> VM on Golem is revolutionizing DePIN by making decentralized cloud computing as simple as possible. Our vision is to become the AWS of Web3, setting new standards for simplicity in decentralized infrastructure.
 
-> **Want to understand our vision?** Check out our detailed vision documents:
-> - [Vision](VM-on-Golem-VISION/VISION.md) - The why and what of VM on Golem
-> - [Visual Design](VM-on-Golem-VISION/VISUALS.md) - Our design philosophy and UI direction
-> - [Project Roadmap](VM-on-Golem-VISION/ROADMAP.md) - Where we're headed and how we'll get there
+## 📚 Strategic Vision & Roadmap
 
-> **8 years of development vs 24 hours of simplicity**: Sometimes the simplest solution is the best solution. This MVP was built in a single day using standard tools and protocols - because renting computing power shouldn't be rocket science.
+### Current Phase: Smart Contract Integration 🚧
+We're building a trustless payment system and intuitive datacenter management interface.
+[View Full Roadmap →](VM-on-Golem-VISION/ROADMAP.md)
 
-https://github.com/user-attachments/assets/4ab118f6-fa00-4612-8033-dea7b352deae
+### Our Vision
+- **Simplicity First**: One command deployment, no complex protocols
+- **Zero Learning Curve**: Works exactly like traditional cloud providers
+- **Complete Freedom**: Run anything - from simple web servers to full Kubernetes clusters
+- **True Decentralization**: Direct provider connections worldwide
+[Learn More About Our Vision →](VM-on-Golem-VISION/VISION.md)
 
-## What is VM on Golem?
+### Design Philosophy
+Built with modern, sleek interfaces that work in both light and dark modes, focusing on clarity and usability.
+[Explore Our Design System →](VM-on-Golem-VISION/VISUALS.md)
 
-Think of VM on Golem as the Airbnb for computing power:
-- **Providers** are like hosts, offering their spare computing power
-- **Requestors** are like guests, renting computing power when they need it
+---
 
-It's that simple. No complex protocols, no specialized knowledge needed - just straightforward virtual machines that work exactly like any cloud provider you're used to.
-
-## How Simple? This Simple:
-
-If you need computing power:
+## 🚀 One Command to Get Started
 
 ```bash
-# Find available providers
+golem vm create my-webserver --size small
+```
+
+That's it. No complex protocols. No specialized knowledge needed.
+
+## ✨ Why VM on Golem?
+
+- **Simple** - One command to get a VM
+- **Familiar** - Works just like AWS or DigitalOcean
+- **Flexible** - Run anything - Docker, Kubernetes, web servers
+- **Decentralized** - Connect with providers worldwide
+
+Built with simplicity in mind:
+- Standard SSH for access (not a custom protocol in sight)
+- Multipass for VM management (because why reinvent the wheel?)
+- FastAPI for simple APIs (no complex frameworks needed)
+- SQLite for storage (sometimes a file is all you need)
+
+## 🏃‍♂️ Quick Start
+
+### For Users (Requestors)
+
+```bash
+# Install the requestor CLI
+pip install request-vm-on-golem
+
+# List available providers
 golem vm providers
 
 # See what's available
@@ -40,48 +68,11 @@ provider-3      🌍 DE     💻 2    🧠 4GB    💾 20GB
 # Create a VM
 golem vm create my-webserver --provider-id provider-1 --cpu 2 --memory 4 --storage 20
 
-# Connect via SSH, just like any other VM
+# Connect via SSH
 golem vm ssh my-webserver
 ```
 
-If you want to offer computing power:
-1. Install the provider software
-2. Choose how much CPU, memory, and storage to offer
-3. Start earning by sharing your resources
-
-## Why VM on Golem?
-
-Traditional cloud platforms are complex and centralized. VM on Golem brings:
-- **Simplicity**: One command to get a VM
-- **Familiarity**: Works just like any VM you're used to
-- **Freedom**: Run anything you want, it's your VM
-- **Decentralization**: Connect directly with providers worldwide
-
-Built with simplicity in mind:
-- Standard SSH for access (not a custom protocol in sight)
-- Multipass for VM management (because why reinvent the wheel?)
-- FastAPI for simple APIs (no complex frameworks needed)
-- SQLite for storage (sometimes a file is all you need)
-
-## Getting Started
-
-### For Users Wanting to Rent VMs (Requestors)
-
-```bash
-# Install the requestor CLI
-pip install request-vm-on-golem
-
-# List available providers
-golem vm providers
-
-# Create a VM
-golem vm create my-webserver --cpu 2 --memory 4 --storage 20
-
-# SSH into your VM
-golem vm ssh my-webserver
-```
-
-### For Users Offering Computing Power (Providers)
+### For Providers
 
 ```bash
 # Install the provider software
@@ -91,15 +82,16 @@ pip install golem-vm-provider
 golem-provider
 ```
 
-## Components
+## 🧩 Core Components
 
 Each component has its own detailed documentation:
-- [Requestor CLI Documentation](requestor-server/README.md)
-- [Provider Node Documentation](provider-server/README.md)
-- [Discovery Service Documentation](discovery-server/README.md)
-- [Port Checker Documentation](port-checker-server/README.md)
 
-## Contributing
+- **[Requestor CLI](requestor-server/README.md)** - Rent and manage VMs
+- **[Provider Node](provider-server/README.md)** - Share computing power
+- **[Discovery Service](discovery-server/README.md)** - Find available providers
+- **[Port Checker](port-checker-server/README.md)** - Verify network setup
+
+## 👥 Contributing
 
 1. Fork the repository
 2. Create a feature branch
