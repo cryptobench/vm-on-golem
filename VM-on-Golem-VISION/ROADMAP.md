@@ -7,17 +7,17 @@ gantt
     title VM on Golem Development Phases
     dateFormat  YYYY-MM-DD
     section Phase 1 ✅
-    Core Infrastructure    :done, p1, 2024-02-01, 1d
+    Core Infrastructure    :done, p1, 2025-02-20, 1d
     section Phase 2 ✅
-    Port Verification     :done, p2, after p1, 1d
+    Port Verification     :done, p2, 2025-02-21, 1d
     section Phase 3 🚧
-    Smart Contract Payments :active, p3, after p2, 30d
-    Provider GUI Development :active, gui1, after p2, 45d
+    Smart Contract Payments :active, p3, 2025-02-23, 30d
+    Provider GUI Development :active, gui1, 2025-02-23, 45d
     section Phase 4
-    Verifier Network      :p4, after p3, 45d
-    Requestor Web Interface :web1, after p3, 45d
+    Verifier Network      :p4, 2025-03-24, 45d
+    Requestor Web Interface :web1, 2025-03-24, 45d
     section Phase 5
-    Decentralized Discovery :p5, after p4, 30d
+    Decentralized Discovery :p5, 2025-05-08, 30d
 ```
 
 ## 2. Technical Architecture Evolution
@@ -68,7 +68,7 @@ graph TB
 
 ## 3. Detailed Phase Breakdown
 
-### Phase 1: Core Infrastructure (✅ Completed)
+### Phase 1: Core Infrastructure (✅ Completed Feb 20, 2025)
 - **Achievement**: Built in 24 hours
 - **Components**:
   - Requestor CLI with intuitive commands
@@ -78,7 +78,7 @@ graph TB
   - Resource monitoring
   - Basic provider advertisement
 
-### Phase 2: Port Verification (✅ Completed)
+### Phase 2: Port Verification (✅ Completed Feb 21, 2025)
 - **Achievement**: Completed in 24 hours
 - **Features**:
   - Automated port accessibility validation
@@ -87,7 +87,7 @@ graph TB
   - Temporary port check servers
   - Provider readiness confirmation
 
-### Phase 3: Smart Contract Payments (🚧 In Progress)
+### Phase 3: Smart Contract Payments (🚧 In Progress - Feb 23 to Mar 24, 2025)
 - **Objective**: Create a trustless payment system
 - **Key Components**:
   - Smart contract for fund management
@@ -101,7 +101,7 @@ graph TB
   - Transaction optimization
   - Gas cost efficiency
 
-### Phase 3: Provider GUI Development (🚧 In Progress)
+### Phase 3: Provider GUI Development (🚧 In Progress - Feb 23 to Apr 8, 2025)
 - **Objective**: Create an intuitive datacenter management interface
 - **Key Components**:
   - Resource Dashboard
@@ -123,7 +123,7 @@ graph TB
     - Uptime statistics
     - Current revenue per VM
 
-### Phase 4: Verifier Network (🔒 Planned)
+### Phase 4: Verifier Network (🔒 Planned - Mar 24 to May 8, 2025)
 - **Objective**: Ensure VM integrity and uptime
 - **Components**:
   - Decentralized verifier nodes
@@ -138,7 +138,7 @@ graph TB
   - Automated status updates
   - Provider reputation tracking
 
-### Phase 4: Requestor Web Interface (🚧 Planned)
+### Phase 4: Requestor Web Interface (🔒 Planned - Mar 24 to May 8, 2025)
 - **Objective**: Develop a sleek, intuitive website for VM rental and management
 - **Core Features**:
   - **Authentication**
@@ -164,7 +164,7 @@ graph TB
     - Performance monitoring
     - Cost projections
 
-### Phase 5: Decentralized Discovery (🌐 Future)
+### Phase 5: Decentralized Discovery (🌐 Future - May 8 to Jun 7, 2025)
 - **Objective**: Fully decentralized marketplace
 - **Features**:
   - On-chain provider registry
