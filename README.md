@@ -2,6 +2,8 @@
 
 Rent computing power as easily as ordering a pizza. VM on Golem makes it simple to either rent out your spare computing resources or get the computing power you need, when you need it.
 
+> **Want to understand our vision?** Check out our detailed vision documents in the [VM-on-Golem-VISION](VM-on-Golem-VISION) directory, including our core concept, visual design direction, and future roadmap.
+
 > **8 years of development vs 24 hours of simplicity**: Sometimes the simplest solution is the best solution. This MVP was built in a single day using standard tools and protocols - because renting computing power shouldn't be rocket science. No custom protocols, no specialized knowledge, no complex SDKs. Just VMs that work.
 
 https://github.com/user-attachments/assets/4ab118f6-fa00-4612-8033-dea7b352deae
@@ -92,8 +94,6 @@ graph TB
     subgraph Network
         D[Discovery Service]
         PV[Port Verifier]
-    end
-
     subgraph Providers
         P1[Provider Node]
         P2[Provider Node]
