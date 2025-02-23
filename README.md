@@ -3,7 +3,7 @@
 Rent computing power as easily as ordering a pizza. VM on Golem makes it simple to either rent out your spare computing resources or get the computing power you need, when you need it.
 
 > **Want to understand our vision?** Check out our detailed vision documents:
-> - [Core Concept](VM-on-Golem-VISION/CORE-CONCEPT.md) - The why and what of VM on Golem
+> - [Vision](VM-on-Golem-VISION/VISION.md) - The why and what of VM on Golem
 > - [Visual Design](VM-on-Golem-VISION/VISUALS.md) - Our design philosophy and UI direction
 > - [Project Roadmap](VM-on-Golem-VISION/ROADMAP.md) - Where we're headed and how we'll get there
 
