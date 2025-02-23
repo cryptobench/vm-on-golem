@@ -55,10 +55,8 @@ graph TB
 
     subgraph "Phase 5: Decentralized Discovery"
         BC[Blockchain Registry]
-        RP[Reputation System]
-        MM[Market Maker]
-        BC -->|Provider Info| MM
-        RP -->|Trust Scores| MM
+        PD[Provider Directory]
+        BC -->|Provider Info| PD
     end
 
     P --> SC
@@ -165,10 +163,14 @@ graph TB
     - Cost projections
 
 ### Phase 5: Decentralized Discovery (🌐 Future - May 8 to Jun 7, 2025)
-- **Objective**: Fully decentralized marketplace
+- **Objective**: Simple decentralized provider directory
 - **Features**:
   - On-chain provider registry
-  - Reputation system
-  - Automated matchmaking
-  - Price discovery mechanism
-  - Provider metrics
+  - Provider self-advertisement
+    - Resource specifications (CPU, RAM, etc.)
+    - Location information
+    - Pricing details
+  - Simple filtering capabilities for requestors
+    - Filter by minimum resource requirements
+    - Filter by location
+    - Filter by price range
