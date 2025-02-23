@@ -4,6 +4,10 @@
 
 Our goal is to create a **modern, sleek, and immersive UI** for the VM on Golem project, ensuring a **premium user experience** that is both **functional and visually appealing**. The design will support **both dark mode and light mode**, with a focus on **clarity, simplicity, and high usability**.
 
+![image](https://github.com/user-attachments/assets/3ca9e3ae-b443-453e-af16-f6e973fa213d)
+![image](https://github.com/user-attachments/assets/790aa0c8-28d2-4760-9c9d-3b41df146180)
+
+
 ## Visual Style Reference
 The attached images serve as a reference for the **design aesthetic and user experience** we are targeting. Below is a breakdown of these visuals to guide new team members in understanding our approach.
 
