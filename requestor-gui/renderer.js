@@ -4,332 +4,264 @@
 
 console.log('Renderer process started');
 
+// --- Configuration ---
+const discoveryUrls = {
+    prod: 'http://195.201.39.101:9001',
+    dev: 'http://127.0.0.1:9001' // Assuming local discovery runs on 9001
+};
+let currentEnvironment = 'prod'; // Default to production
+let isRequestorRunning = false;
+
 // --- UI Element References ---
-let statusMessage, rentalListDiv, providerListDiv, refreshProvidersBtn;
-let rentModal, rentModalProviderId, rentModalProviderDetails, rentModalVmNameInput, confirmRentBtn, cancelRentBtn;
-
-// --- Data Fetching & State ---
-let currentRentals = [];
-let currentProviders = [];
-let isLoadingRentals = false;
-let isLoadingProviders = false;
-
-// --- Helper Functions ---
-
-function updateStatus(message, isError = false, isLoading = false) {
-    if (statusMessage) {
-        statusMessage.textContent = message;
-        statusMessage.className = isError ? 'status-error' : (isLoading ? 'status-loading' : 'status-ok');
-    }
-    if (isError) console.error(`Status update (Error): ${message}`);
-    else console.log(`Status update: ${message}`);
-}
-
-function showLoadingIndicator(listDiv, type) {
-    listDiv.innerHTML = `<p class="loading">Loading ${type}...</p>`;
-}
-
-function clearList(listDiv) {
-    listDiv.innerHTML = ''; // Clear previous content
-}
+let envToggle, envLabel, startBtn, stopBtn, statusMessage;
+let rentalsDiv, providersDiv;
 
 // --- Data Fetching ---
 
-async function fetchRentals() {
-    if (isLoadingRentals) return;
-    isLoadingRentals = true;
-    updateStatus('Fetching rentals...', false, true);
-    showLoadingIndicator(rentalListDiv, 'rentals');
+// Fetch data and update the DOM
+async function loadData() {
+    // Clear existing lists before loading
+    clearLists();
+    setLoadingPlaceholders();
 
-    try {
-        const rentals = await window.electronAPI.getRentals();
-        console.log('Received rentals from main process:', rentals);
+    // Fetch in parallel
+    const [rentals, providers] = await Promise.all([
+        fetchRentals(),
+        fetchProviders()
+    ]);
 
-        if (rentals && rentals.error) {
-            updateStatus(`Error fetching rentals: ${rentals.error}`, true);
-            currentRentals = [];
-        } else {
-            currentRentals = Array.isArray(rentals) ? rentals : [];
-            updateStatus('Rentals loaded successfully.');
-        }
-    } catch (error) {
-        console.error('Error invoking IPC get-rentals:', error);
-        updateStatus(`Failed to fetch rentals: ${error.message}`, true);
-        currentRentals = [];
-    } finally {
-        isLoadingRentals = false;
-        updateRentalsList(); // Update UI regardless of success/failure
+    // Update UI after fetching
+    updateRentalsList(rentals);
+    updateProvidersList(providers);
+}
+
+function setLoadingPlaceholders() {
+    if (rentalsDiv && rentalsDiv.children.length <= 1) {
+         rentalsDiv.innerHTML = '<h2>Current Rentals</h2><p class="loading">Loading rentals...</p>';
+    }
+     if (providersDiv && providersDiv.children.length <= 1) {
+        providersDiv.innerHTML = '<h2>Available Providers</h2><p class="loading">Loading providers...</p>';
     }
 }
 
-async function fetchProviders(filters = {}) {
-    if (isLoadingProviders) return;
-    isLoadingProviders = true;
-    updateStatus('Fetching providers...', false, true);
-    showLoadingIndicator(providerListDiv, 'providers');
-    refreshProvidersBtn.disabled = true;
+function clearLists() {
+    if (rentalsDiv) rentalsDiv.innerHTML = '<h2>Current Rentals</h2>'; // Keep header
+    if (providersDiv) providersDiv.innerHTML = '<h2>Available Providers</h2>'; // Keep header
+}
+
+// Fetch rentals from the main process via IPC
+async function fetchRentals() {
+    console.log('Requesting rentals from main process via IPC...');
+    // Only fetch rentals if the requestor is supposed to be running or if we are using the old method
+    // For now, we always try, assuming the main process handles it.
+    // Later, this might fetch from http://127.0.0.1:8000/rentals if isRequestorRunning is true.
+    try {
+        // Use the function exposed in preload.js
+        const rentals = await window.electronAPI.getRentals();
+        console.log('Received rentals from main process:', rentals);
+
+        // Check if the main process returned an error structure
+        if (rentals && rentals.error) {
+            console.error(`Error fetching rentals from main process: ${rentals.error}`, rentals.details || '');
+            return []; // Return empty array on error
+        }
+
+        // Ensure the response is an array before returning
+        return Array.isArray(rentals) ? rentals : [];
+    } catch (error) {
+        console.error('Error invoking IPC get-rentals:', error);
+        return []; // Return empty array on IPC error
+    }
+}
+
+// Fetch providers from Discovery Server API based on current environment
+async function fetchProviders() {
+    const discoveryUrl = discoveryUrls[currentEnvironment];
+    console.log(`Fetching providers from ${currentEnvironment} Discovery Server (${discoveryUrl})...`);
+    const apiUrl = `${discoveryUrl}/api/v1/advertisements`;
 
     try {
-        const providers = await window.electronAPI.getProviders(filters);
-        console.log('Received providers from main process:', providers);
-
-        if (providers && providers.error) {
-            updateStatus(`Error fetching providers: ${providers.error}`, true);
-            currentProviders = [];
-        } else {
-            currentProviders = Array.isArray(providers) ? providers : [];
-            updateStatus('Providers loaded successfully.');
+        const response = await fetch(apiUrl);
+        if (!response.ok) {
+            console.error(`Error fetching providers: ${response.status} ${response.statusText}`);
+            try {
+                const errorData = await response.json();
+                console.error('Error details:', errorData);
+            } catch (jsonError) {
+                console.error('Could not parse error response body.');
+            }
+            return []; // Return empty array on error
         }
+        const data = await response.json();
+        console.log('Received providers:', data);
+
+        // Transform data to the format expected by the UI
+        return data.map(provider => ({
+            id: provider.provider_id,
+            offer: `CPU: ${provider.resources.cpu}, Mem: ${provider.resources.memory}GB, Disk: ${provider.resources.storage}GB (${provider.country || 'N/A'})`,
+            ip_address: provider.ip_address
+        }));
     } catch (error) {
-        console.error('Error invoking IPC get-providers:', error);
-        updateStatus(`Failed to fetch providers: ${error.message}`, true);
-        currentProviders = [];
-    } finally {
-        isLoadingProviders = false;
-        refreshProvidersBtn.disabled = false;
-        updateProvidersList(); // Update UI regardless of success/failure
+        console.error('Network or other error fetching providers:', error);
+        return []; // Return empty array on error
     }
 }
 
 // --- UI Update Functions ---
 
-function updateRentalsList() {
-    clearList(rentalListDiv);
+function updateRentalsList(rentals) {
+    if (!rentalsDiv) return;
+    rentalsDiv.innerHTML = '<h2>Current Rentals</h2>'; // Clear previous content except header
+    const rentalList = document.createElement('ul');
+    rentalList.className = 'data-list';
+    rentalsDiv.appendChild(rentalList);
 
-    if (currentRentals.length === 0 && !isLoadingRentals) {
-        rentalListDiv.innerHTML = '<p class="placeholder">No active rentals found.</p>';
-        return;
+    if (!rentals || rentals.length === 0) {
+        const li = document.createElement('li');
+        li.textContent = 'No active rentals found or requestor not running.';
+        li.className = 'list-placeholder';
+        rentalList.appendChild(li);
+    } else {
+        rentals.forEach(rental => {
+            const li = document.createElement('li');
+            li.className = 'list-item card';
+            li.innerHTML = `
+                <span class="item-id">Rental ID: ${rental.id}</span>
+                <span class="item-details">Provider: ${rental.provider}</span>
+                <span class="item-details">Status: ${rental.status || 'N/A'}</span>
+                <button class="btn btn-secondary">Details</button>
+            `;
+            rentalList.appendChild(li);
+        });
     }
-
-    currentRentals.forEach(rental => {
-        const card = document.createElement('div');
-        card.className = 'card rental-card';
-        card.innerHTML = `
-            <div class="card-body">
-                <h5 class="card-title">VM: ${rental.name || 'N/A'}</h5>
-                <p class="card-text">Status: <span class="status-${(rental.status || 'unknown').toLowerCase()}">${rental.status || 'Unknown'}</span></p>
-                <p class="card-text-small">Provider IP: ${rental.provider_ip || 'N/A'}</p>
-                <p class="card-text-small">SSH Port: ${rental.ssh_port || 'N/A'}</p>
-                <p class="card-text-small">CPU: ${rental.cpu || 'N/A'}, Mem: ${rental.memory || 'N/A'}GB, Disk: ${rental.storage || 'N/A'}GB</p>
-            </div>
-            <div class="card-actions">
-                <button class="btn btn-danger btn-small destroy-btn" data-vm-name="${rental.name}">Destroy</button>
-            </div>
-        `;
-        // Add event listener for the destroy button
-        const destroyBtn = card.querySelector('.destroy-btn');
-        if (destroyBtn) {
-            destroyBtn.addEventListener('click', handleDestroyClick);
-        }
-        rentalListDiv.appendChild(card);
-    });
 }
 
-function updateProvidersList() {
-    clearList(providerListDiv);
+function updateProvidersList(providers) {
+     if (!providersDiv) return;
+     providersDiv.innerHTML = '<h2>Available Providers</h2>'; // Clear previous content except header
+     const providerList = document.createElement('ul');
+     providerList.className = 'data-list';
+     providersDiv.appendChild(providerList);
 
-    if (currentProviders.length === 0 && !isLoadingProviders) {
-        providerListDiv.innerHTML = '<p class="placeholder">No providers found matching criteria.</p>';
-        return;
+     if (!providers || providers.length === 0) {
+        const li = document.createElement('li');
+        li.textContent = `No providers found for ${currentEnvironment} environment.`;
+        li.className = 'list-placeholder';
+        providerList.appendChild(li);
+    } else {
+        providers.forEach(provider => {
+            const li = document.createElement('li');
+            li.className = 'list-item card';
+            li.innerHTML = `
+                <span class="item-id">Provider ID: ${provider.id}</span>
+                <span class="item-details">${provider.offer}</span>
+                <button class="btn btn-primary">Rent</button>
+            `;
+            providerList.appendChild(li);
+        });
     }
-
-    currentProviders.forEach(provider => {
-        const card = document.createElement('div');
-        card.className = 'card provider-card';
-        // Ensure data exists before displaying
-        const cpu = provider.cpu || 'N/A';
-        const memory = provider.memory || 'N/A';
-        const storage = provider.storage || 'N/A';
-        const country = provider.country || 'N/A';
-        const price = provider.price ? `${provider.price} GLM/h` : 'N/A';
-
-        card.innerHTML = `
-            <div class="card-body">
-                <h5 class="card-title">Provider: ${provider.id.substring(0, 12)}...</h5>
-                 <p class="card-text">Resources: ${cpu} CPU, ${memory} GB RAM, ${storage} GB Disk</p>
-                 <p class="card-text-small">Location: ${country}</p>
-                 <p class="card-text-small">Price: ${price}</p>
-            </div>
-            <div class="card-actions">
-                <button class="btn btn-primary btn-small rent-btn" data-provider-id="${provider.id}" data-cpu="${cpu}" data-memory="${memory}" data-storage="${storage}">Rent</button>
-            </div>
-        `;
-         // Add event listener for the rent button
-        const rentBtn = card.querySelector('.rent-btn');
-        if (rentBtn) {
-            rentBtn.addEventListener('click', handleRentClick);
-        }
-        providerListDiv.appendChild(card);
-    });
 }
 
-
-// --- Modal Handling ---
-
-function openRentModal(providerId, cpu, memory, storage) {
-    if (!rentModal) return;
-    rentModalProviderId.textContent = providerId;
-    rentModalProviderDetails.textContent = `CPU: ${cpu}, Memory: ${memory}GB, Storage: ${storage}GB`;
-    rentModalVmNameInput.value = `my-vm-${Date.now().toString().slice(-5)}`; // Default VM name
-    rentModal.style.display = 'block';
-
-    // Store details needed for confirmation
-    confirmRentBtn.dataset.providerId = providerId;
-    confirmRentBtn.dataset.cpu = cpu;
-    confirmRentBtn.dataset.memory = memory;
-    confirmRentBtn.dataset.storage = storage;
-}
-
-function closeRentModal() {
-    if (rentModal) {
-        rentModal.style.display = 'none';
-        // Clear stored data
-        delete confirmRentBtn.dataset.providerId;
-        delete confirmRentBtn.dataset.cpu;
-        delete confirmRentBtn.dataset.memory;
-        delete confirmRentBtn.dataset.storage;
+function updateStatus(message, isError = false) {
+    if (statusMessage) {
+        statusMessage.textContent = `Status: ${message}`;
+        statusMessage.style.color = isError ? 'red' : '#555';
     }
+    console.log(`Status update: ${message}`);
+    if (isError) console.error(`Status update (Error): ${message}`);
 }
 
 // --- Event Handlers ---
 
-function handleRentClick(event) {
-    const button = event.currentTarget;
-    const providerId = button.dataset.providerId;
-    const cpu = button.dataset.cpu;
-    const memory = button.dataset.memory;
-    const storage = button.dataset.storage;
-    openRentModal(providerId, cpu, memory, storage);
+function handleEnvToggleChange() {
+    currentEnvironment = envToggle.checked ? 'dev' : 'prod';
+    envLabel.textContent = envToggle.checked ? 'Development' : 'Production';
+    console.log(`Environment switched to: ${currentEnvironment}`);
+    updateStatus(`Switched to ${envLabel.textContent} environment.`);
+    // Reload providers for the new environment
+    fetchProviders().then(updateProvidersList);
 }
 
-async function handleConfirmRent() {
-    const vmName = rentModalVmNameInput.value.trim();
-    const providerId = confirmRentBtn.dataset.providerId;
-    const cpu = parseInt(confirmRentBtn.dataset.cpu, 10);
-    const memory = parseInt(confirmRentBtn.dataset.memory, 10);
-    const storage = parseInt(confirmRentBtn.dataset.storage, 10);
-
-    if (!vmName) {
-        updateStatus('VM name cannot be empty.', true);
-        return;
-    }
-    if (!providerId || isNaN(cpu) || isNaN(memory) || isNaN(storage)) {
-         updateStatus('Missing provider details for renting.', true);
-         return;
-    }
-
-    closeRentModal();
-    updateStatus(`Attempting to rent VM '${vmName}' from ${providerId}...`, false, true);
+async function handleStartRequestor() {
+    console.log(`Attempting to start requestor in ${currentEnvironment} mode...`);
+    updateStatus(`Starting requestor (${currentEnvironment})...`);
+    startBtn.disabled = true;
+    envToggle.disabled = true; // Disable toggle while running
 
     try {
-        const vmDetails = { name: vmName, providerId, cpu, memory, storage };
-        console.log('Sending create-vm request:', vmDetails);
-        const result = await window.electronAPI.createVm(vmDetails);
-
-        if (result && result.error) {
-            updateStatus(`Error creating VM: ${result.error} ${result.details || ''}`, true);
-        } else if (result && result.success) {
-            updateStatus(`VM '${vmName}' created successfully! Refreshing rentals...`);
-            await fetchRentals(); // Refresh the rentals list
+        // IPC call to main process to start the server
+        const result = await window.electronAPI.startRequestor(currentEnvironment);
+        if (result && result.success) {
+            isRequestorRunning = true;
+            stopBtn.disabled = false;
+            updateStatus(`Requestor started successfully (${currentEnvironment}).`);
+            // Optionally, automatically load data after starting
+            // loadData();
         } else {
-             // Handle cases where the CLI might output success messages directly
-             // Check if the result (stdout) contains success indicators
-             if (typeof result === 'string' && result.includes("VM Deployed Successfully")) {
-                 updateStatus(`VM '${vmName}' created successfully (parsed from output)! Refreshing rentals...`);
-                 await fetchRentals(); // Refresh the rentals list
-             } else {
-                updateStatus(`Unknown outcome creating VM '${vmName}'. Check logs.`, true);
-                console.warn('Unknown response from createVm:', result);
-             }
+            console.error('Failed to start requestor:', result ? result.error : 'Unknown error');
+            updateStatus(`Failed to start requestor: ${result ? result.error : 'Unknown error'}`, true);
+            startBtn.disabled = false; // Re-enable start button on failure
+            envToggle.disabled = false; // Re-enable toggle on failure
         }
     } catch (error) {
-        console.error('Error invoking IPC create-vm:', error);
-        updateStatus(`Failed to send rent command: ${error.message}`, true);
+        console.error('Error sending start-requestor IPC message:', error);
+        updateStatus(`Error starting requestor: ${error.message}`, true);
+        startBtn.disabled = false; // Re-enable start button on error
+        envToggle.disabled = false; // Re-enable toggle on error
     }
 }
 
-async function handleDestroyClick(event) {
-    const button = event.currentTarget;
-    const vmName = button.dataset.vmName;
-
-    if (!vmName) {
-        updateStatus('Could not identify VM to destroy.', true);
-        return;
-    }
-
-    // Optional: Add a confirmation dialog here
-    // if (!confirm(`Are you sure you want to destroy VM '${vmName}'?`)) {
-    //     return;
-    // }
-
-    updateStatus(`Attempting to destroy VM '${vmName}'...`, false, true);
-    button.disabled = true; // Disable button during operation
+async function handleStopRequestor() {
+    console.log('Attempting to stop requestor...');
+    updateStatus('Stopping requestor...');
+    stopBtn.disabled = true; // Disable stop button immediately
 
     try {
-        console.log(`Sending destroy-vm request for: ${vmName}`);
-        const result = await window.electronAPI.destroyVm(vmName);
-
-        if (result && result.error) {
-            updateStatus(`Error destroying VM: ${result.error} ${result.details || ''}`, true);
-            button.disabled = false; // Re-enable on error
-        } else if (result && result.success) {
-            updateStatus(`VM '${vmName}' destroyed successfully! Refreshing rentals...`);
-            await fetchRentals(); // Refresh the rentals list
+        // IPC call to main process to stop the server
+        const result = await window.electronAPI.stopRequestor();
+         if (result && result.success) {
+            isRequestorRunning = false;
+            startBtn.disabled = false;
+            envToggle.disabled = false; // Re-enable toggle when stopped
+            updateStatus('Requestor stopped successfully.');
+            // Clear rentals list as the source is gone
+            updateRentalsList([]);
         } else {
-             // Handle cases where the CLI might output success messages directly
-             if (typeof result === 'string' && result.includes("VM Destroyed Successfully")) {
-                 updateStatus(`VM '${vmName}' destroyed successfully (parsed from output)! Refreshing rentals...`);
-                 await fetchRentals(); // Refresh the rentals list
-             } else {
-                updateStatus(`Unknown outcome destroying VM '${vmName}'. Check logs.`, true);
-                console.warn('Unknown response from destroyVm:', result);
-                button.disabled = false; // Re-enable on unknown outcome
-             }
+            console.error('Failed to stop requestor:', result ? result.error : 'Unknown error');
+            updateStatus(`Failed to stop requestor: ${result ? result.error : 'Unknown error'}`, true);
+            stopBtn.disabled = false; // Re-enable stop button on failure (might need manual intervention)
         }
     } catch (error) {
-        console.error('Error invoking IPC destroy-vm:', error);
-        updateStatus(`Failed to send destroy command: ${error.message}`, true);
-        button.disabled = false; // Re-enable on error
+        console.error('Error sending stop-requestor IPC message:', error);
+        updateStatus(`Error stopping requestor: ${error.message}`, true);
+        stopBtn.disabled = false; // Re-enable stop button on error
     }
 }
 
-function handleRefreshProviders() {
-    fetchProviders(); // Fetch providers again (no filters for now)
-}
 
 // --- Initialization ---
 window.addEventListener('DOMContentLoaded', () => {
     // Get UI elements
+    envToggle = document.getElementById('env-toggle');
+    envLabel = document.getElementById('env-label');
+    startBtn = document.getElementById('start-btn');
+    stopBtn = document.getElementById('stop-btn');
     statusMessage = document.getElementById('status-message');
-    rentalListDiv = document.getElementById('rental-list');
-    providerListDiv = document.getElementById('provider-list');
-    refreshProvidersBtn = document.getElementById('refresh-providers-btn');
+    rentalsDiv = document.getElementById('rentals');
+    providersDiv = document.getElementById('providers');
 
-    // Modal elements
-    rentModal = document.getElementById('rent-modal');
-    rentModalProviderId = document.getElementById('rent-modal-provider-id');
-    rentModalProviderDetails = document.getElementById('rent-modal-provider-details');
-    rentModalVmNameInput = document.getElementById('rent-modal-vm-name');
-    confirmRentBtn = document.getElementById('confirm-rent-btn');
-    cancelRentBtn = document.getElementById('cancel-rent-btn');
-    const closeModalBtn = document.querySelector('.modal .close');
-
+    // Set initial state
+    envToggle.checked = (currentEnvironment === 'dev');
+    envLabel.textContent = envToggle.checked ? 'Development' : 'Production';
+    startBtn.disabled = false;
+    stopBtn.disabled = true; // Can't stop if not started
+    envToggle.disabled = false; // Allow changing env when stopped
 
     // Add event listeners
-    refreshProvidersBtn.addEventListener('click', handleRefreshProviders);
-    confirmRentBtn.addEventListener('click', handleConfirmRent);
-    cancelRentBtn.addEventListener('click', closeRentModal);
-    if(closeModalBtn) closeModalBtn.addEventListener('click', closeRentModal);
-
-    // Close modal if clicking outside of it
-    window.onclick = function(event) {
-        if (event.target == rentModal) {
-            closeRentModal();
-        }
-    }
+    envToggle.addEventListener('change', handleEnvToggleChange);
+    startBtn.addEventListener('click', handleStartRequestor);
+    stopBtn.addEventListener('click', handleStopRequestor);
 
     // Initial data load
-    updateStatus('Initializing GUI...');
-    fetchRentals();
-    fetchProviders();
+    loadData();
 });
