@@ -1,5 +1,13 @@
-// See the Electron documentation for details on how to use preload scripts:
-// https://www.electronjs.org/docs/latest/tutorial/process-model#preload-scripts
+const { contextBridge, ipcRenderer } = require('electron');
+
+// Expose specific IPC functions to the renderer process for security
+contextBridge.exposeInMainWorld('electronAPI', {
+  // Function to request the list of rentals from the main process
+  getRentals: () => ipcRenderer.invoke('get-rentals')
+  // Add other IPC functions here later (e.g., createRental, manageRental)
+});
+
+console.log('Preload script loaded.');
 
 // const { contextBridge, ipcRenderer } = require('electron');
 
