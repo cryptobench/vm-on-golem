@@ -84,12 +84,24 @@ ipcMain.on('start-provider', () => {
 
     providerProcess.on('close', (code) => {
       console.log(`Provider process exited with code ${code}`);
-      const message = `Provider stopped (exit code: ${code}).`;
-      sendStatusUpdate({ type: 'status', message: message });
-      if (code !== 0 && code !== null) { // Consider non-zero exit code an error unless explicitly stopped (SIGTERM usually results in null or non-zero)
-          sendStatusUpdate({ type: 'error', message: `Provider exited unexpectedly (code: ${code}).` });
+      const wasRunning = providerProcess !== null; // Check if we thought it was running
+      providerProcess = null; // Clear the process reference immediately
+
+      if (wasRunning) { // Only send update if we weren't already stopped
+          let finalStatusMessage;
+          if (code === 0 || code === null) { // Treat null exit code (often from SIGTERM/kill) as clean stop
+              finalStatusMessage = 'Provider stopped.';
+              sendStatusUpdate({ type: 'status', message: finalStatusMessage });
+          } else {
+              // Non-zero exit code means it crashed or exited with an error
+              finalStatusMessage = `Provider stopped unexpectedly (exit code: ${code}). Check logs.`;
+              // Send as 'error' type so renderer highlights it and adds the detailed message to logs
+              sendStatusUpdate({ type: 'error', message: finalStatusMessage });
+          }
+          console.log(`Final status sent: ${finalStatusMessage}`);
+      } else {
+          console.log("Process already marked as stopped, ignoring close event.");
       }
-      providerProcess = null; // Clear the process reference
     });
 
     providerProcess.on('error', (err) => {
