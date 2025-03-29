@@ -331,6 +331,5 @@ window.addEventListener('DOMContentLoaded', () => {
     // Initial data load
     updateStatus('Initializing GUI...');
     fetchRentals();
-    // Add a small delay to allow main process IPC handlers to fully initialize
-    setTimeout(fetchProviders, 100);
+    fetchProviders();
 });
