@@ -16,7 +16,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getProviders: (filters) => ipcRenderer.invoke('get-providers', filters) // filters = { cpu, memory, storage, country } (optional)
 });
 
-console.log('Preload script loaded, exposing: getRentals, startRequestor, stopRequestor, createVm, destroyVm');
+console.log('Preload script loaded, exposing: getRentals, startRequestor, stopRequestor, createVm, destroyVm, getProviders');
 
 // const { contextBridge, ipcRenderer } = require('electron');
 
