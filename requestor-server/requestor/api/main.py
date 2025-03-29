@@ -1,6 +1,10 @@
 import logging
 from fastapi import FastAPI, HTTPException
 from contextlib import asynccontextmanager
+from fastapi import Request
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+from typing import Optional
 
 from ..services.database_service import DatabaseService
 from ..config import config
@@ -32,6 +36,47 @@ async def lifespan(app: FastAPI):
     # No explicit cleanup needed for aiosqlite connection usually
 
 app = FastAPI(lifespan=lifespan)
+# Standardized Error Response Model
+class ErrorResponse(BaseModel):
+    code: str
+    message: str
+    details: Optional[str] = None
+
+class StandardErrorResponse(BaseModel):
+    error: ErrorResponse
+
+
+# Custom Exception Handlers
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    error_code = f"HTTP_{exc.status_code}"
+    error_message = exc.detail
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "error": {
+                "code": error_code,
+                "message": error_message,
+                "details": None  # HTTPException detail is usually user-friendly enough
+            }
+        },
+    )
+
+@app.exception_handler(Exception)
+async def generic_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Unhandled exception: {exc}", exc_info=True)
+    # Use config.debug for showing details, assuming it exists
+    show_details = getattr(config, 'debug', False)
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": {
+                "code": "INTERNAL_SERVER_ERROR",
+                "message": "An unexpected error occurred on the server.",
+                "details": str(exc) if show_details else None
+            }
+        },
+    )
 
 @app.get("/vms")
 async def list_vms():
