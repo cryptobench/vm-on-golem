@@ -1,10 +1,12 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const { execFile } = require('child_process');
+const { spawn } = require('child_process');
 const util = require('util');
 
 // Promisify execFile for easier async/await usage
 const execFilePromise = util.promisify(execFile);
+let requestorProcess = null; // To hold the reference to the running requestor server process
 
 function createWindow () {
   const mainWindow = new BrowserWindow({
@@ -84,6 +86,116 @@ app.whenReady().then(() => {
       console.error('Failed to execute or parse requestor CLI:', error);
       return { error: 'Failed to execute rental list command', details: error.message };
     }
+// --- IPC Handler for start-requestor ---
+  ipcMain.handle('start-requestor', async (event, environment) => {
+    console.log(`Main process received start-requestor request for env: ${environment}`);
+    if (requestorProcess) {
+      console.log('Requestor process already running.');
+      return { success: false, error: 'Requestor already running.' };
+    }
+
+    const pythonPath = 'python3'; // Adjust if needed
+    const scriptDir = path.join(app.getAppPath(), '../requestor-server');
+    const scriptPath = path.join(scriptDir, 'requestor/run.py');
+    const args = ['server', 'start'];
+    const env = { ...process.env, GOLEM_ENV: environment }; // Set environment variable
+
+    console.log(`Starting requestor: ${pythonPath} ${scriptPath} ${args.join(' ')} in ${scriptDir} with GOLEM_ENV=${environment}`);
+
+    try {
+      requestorProcess = spawn(pythonPath, [scriptPath, ...args], {
+        cwd: scriptDir,
+        env: env,
+        stdio: ['ignore', 'pipe', 'pipe'] // Ignore stdin, pipe stdout/stderr
+      });
+
+      requestorProcess.stdout.on('data', (data) => {
+        console.log(`Requestor stdout: ${data}`);
+        // Optionally, send status updates to renderer via mainWindow.webContents.send()
+      });
+
+      requestorProcess.stderr.on('data', (data) => {
+        console.error(`Requestor stderr: ${data}`);
+        // Optionally, send error updates to renderer
+      });
+
+      requestorProcess.on('close', (code) => {
+        console.log(`Requestor process exited with code ${code}`);
+        requestorProcess = null; // Clear the reference
+        // Optionally, notify renderer that the process stopped unexpectedly
+        // mainWindow.webContents.send('requestor-stopped');
+      });
+
+      requestorProcess.on('error', (err) => {
+        console.error('Failed to start requestor process:', err);
+        requestorProcess = null; // Clear the reference on spawn error
+        // Don't return here, let the main try-catch handle it if spawn itself throws
+      });
+
+      // Give the process a moment to potentially fail on startup
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      if (requestorProcess && requestorProcess.exitCode === null && !requestorProcess.killed) {
+         console.log('Requestor process spawned successfully (PID:', requestorProcess.pid, ')');
+         return { success: true };
+      } else {
+         const exitCode = requestorProcess ? requestorProcess.exitCode : 'N/A';
+         console.error(`Requestor process failed to start or exited quickly (Exit code: ${exitCode}). Check logs.`);
+         requestorProcess = null; // Ensure it's cleared
+         return { success: false, error: `Requestor failed to start (Exit code: ${exitCode}). Check console logs.` };
+      }
+
+
+    } catch (error) {
+      console.error('Error spawning requestor process:', error);
+      requestorProcess = null; // Ensure reference is cleared on error
+      return { success: false, error: error.message };
+    }
+  });
+
+  // --- IPC Handler for stop-requestor ---
+  ipcMain.handle('stop-requestor', async () => {
+    console.log('Main process received stop-requestor request.');
+    if (!requestorProcess) {
+      console.log('Requestor process is not running.');
+      return { success: false, error: 'Requestor not running.' };
+    }
+
+    try {
+      console.log(`Attempting to kill requestor process (PID: ${requestorProcess.pid})...`);
+      const killed = requestorProcess.kill('SIGTERM'); // Send SIGTERM first
+      if (killed) {
+          console.log('Sent SIGTERM to requestor process.');
+          // Wait a short period for graceful shutdown before potentially sending SIGKILL
+          await new Promise(resolve => setTimeout(resolve, 1000));
+
+          if (requestorProcess && !requestorProcess.killed) {
+              console.log('Requestor process still running, sending SIGKILL.');
+              requestorProcess.kill('SIGKILL');
+          }
+          requestorProcess = null; // Assume killed or will be killed
+          console.log('Requestor process stopped.');
+          return { success: true };
+      } else {
+          console.error('Failed to send kill signal to requestor process.');
+          // It might have already exited
+          if (requestorProcess && requestorProcess.exitCode !== null) {
+              console.log('Process had already exited.');
+              requestorProcess = null;
+              return { success: true }; // Consider it stopped
+          }
+          return { success: false, error: 'Failed to send kill signal.' };
+      }
+    } catch (error) {
+      console.error('Error stopping requestor process:', error);
+      // Attempt to force kill if an error occurred during SIGTERM handling
+      if (requestorProcess && !requestorProcess.killed) {
+          try { requestorProcess.kill('SIGKILL'); } catch (killError) { console.error('Error sending SIGKILL:', killError); }
+      }
+      requestorProcess = null; // Clear reference on error
+      return { success: false, error: error.message };
+    }
+  });
   });
   // --- End IPC Handler ---
 
@@ -96,6 +208,18 @@ app.whenReady().then(() => {
   });
 });
 
+// Ensure requestor process is killed when the app quits
+app.on('will-quit', () => {
+  if (requestorProcess) {
+    console.log('App quitting, killing requestor process...');
+    try {
+      requestorProcess.kill('SIGKILL'); // Force kill on quit
+    } catch (error) {
+      console.error('Error killing requestor process on quit:', error);
+    }
+    requestorProcess = null;
+  }
+});
 app.on('window-all-closed', function () {
   // Quit when all windows are closed, except on macOS. There, it's common
   // for applications and their menu bar to stay active until the user quits
