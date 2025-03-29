@@ -1,0 +1,106 @@
+/* --- Style Guide Implementation --- */
+
+/* General Styles & Aesthetic */
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; /* Modern sans-serif stack */
+    background-color: #f8f9fa; /* Subtle gray background */
+    color: #212529; /* Dark text color for readability */
+    margin: 0;
+    padding: 2em; /* Generous padding */
+    line-height: 1.6;
+}
+
+/* Typography */
+h1 {
+    font-size: 2.5em; /* Large headline */
+    font-weight: 600; /* Semi-bold */
+    color: #343a40; /* Slightly softer black */
+    margin-bottom: 1em;
+}
+
+h2 {
+    font-size: 1.75em; /* Medium subheading */
+    font-weight: 600;
+    color: #495057; /* Dark gray */
+    margin-top: 1.5em;
+    margin-bottom: 0.8em;
+    border-bottom: 1px solid #dee2e6; /* Subtle separator */
+    padding-bottom: 0.3em;
+}
+
+/* Layout & Spacing */
+#controls, #status, #logs {
+    margin-bottom: 1.5em; /* Consistent spacing */
+}
+
+/* Status */
+#status {
+    font-size: 1.1em;
+    font-weight: 500; /* Medium weight */
+    padding: 0.75em 1em;
+    background-color: #e9ecef; /* Light gray background */
+    border-radius: 8px; /* Rounded corners */
+    display: inline-block; /* Fit content */
+}
+
+/* Logs Area */
+#logs {
+    background-color: #ffffff; /* White background for contrast */
+    border: 1px solid #dee2e6; /* Lighter border */
+    border-radius: 8px; /* Rounded corners */
+    padding: 1em;
+    height: 350px; /* Slightly taller */
+    overflow-y: auto; /* Use auto for scrollbar */
+    white-space: pre-wrap;
+    font-family: "SF Mono", "Consolas", "Courier New", monospace; /* Monospace for logs */
+    font-size: 0.9em;
+    line-height: 1.5;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05); /* Subtle shadow */
+}
+
+/* Error messages within logs */
+.error {
+    color: #dc3545; /* Bootstrap danger red */
+    font-weight: bold;
+}
+
+/* Interactive Elements & Buttons */
+#controls button {
+    font-size: 1em;
+    font-weight: 500;
+    color: #ffffff; /* White text */
+    background-color: #007bff; /* Primary blue */
+    border: none;
+    padding: 0.75em 1.5em; /* Generous padding */
+    margin-right: 1em;
+    border-radius: 50px; /* Pill shape */
+    cursor: pointer;
+    transition: background-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); /* Subtle shadow */
+}
+
+#controls button:hover {
+    background-color: #0056b3; /* Darker blue on hover */
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15); /* Slightly larger shadow on hover */
+}
+
+#controls button:active {
+    background-color: #004085; /* Even darker blue when active */
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1); /* Smaller shadow when active */
+}
+
+/* Specific button styling (optional, can add if needed) */
+#startBtn {
+    /* background-color: #28a745; */ /* Example: Green for start */
+}
+/* #startBtn:hover { background-color: #218838; } */
+
+#stopBtn {
+    background-color: #6c757d; /* Secondary gray for stop/less critical action */
+}
+#stopBtn:hover {
+    background-color: #5a6268;
+}
+#stopBtn:active {
+    background-color: #545b62;
+}

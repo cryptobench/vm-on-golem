@@ -3,25 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <title>Golem Provider GUI</title>
-    <!-- Basic styling -->
-    <style>
-        body { font-family: sans-serif; padding: 1em; }
-        #controls button { margin-right: 1em; padding: 0.5em 1em; }
-        #status { margin-top: 1em; font-weight: bold; }
-        #logs {
-            margin-top: 1em;
-            padding: 0.5em;
-            border: 1px solid #ccc;
-            background-color: #f9f9f9;
-            height: 300px;
-            overflow-y: scroll;
-            white-space: pre-wrap; /* Preserve whitespace and wrap lines */
-            font-family: monospace;
-        }
-        .error { color: red; }
-    </style>
-    <!-- CSP allows only local scripts and inline styles -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'">
+    <!-- Link to the external stylesheet -->
+    <link rel="stylesheet" href="style.css">
+    <!-- CSP allows local scripts and styles -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'">
 </head>
 <body>
     <h1>Golem Provider Control</h1>
