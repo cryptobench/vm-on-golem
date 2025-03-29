@@ -2,6 +2,7 @@ from .api import routes
 import asyncio
 import os
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional
 
 from .config import settings
@@ -15,6 +16,14 @@ from .vm.port_manager import PortManager
 logger = setup_logger(__name__)
 
 app = FastAPI(title="VM on Golem Provider")
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
+)
 
 
 async def setup_provider() -> None:
