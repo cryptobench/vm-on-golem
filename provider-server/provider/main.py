@@ -3,7 +3,11 @@ import asyncio
 import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi import Request, HTTPException
+from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from typing import Optional
+from pydantic import BaseModel
 
 from .config import settings
 from .utils.logging import setup_logger, PROCESS, SUCCESS
@@ -24,6 +28,50 @@ app.add_middleware(
     allow_methods=["*"],  # Allows all methods
     allow_headers=["*"],  # Allows all headers
 )
+# Standardized Error Response Model
+class ErrorResponse(BaseModel):
+    code: str
+    message: str
+    details: Optional[str] = None
+
+class StandardErrorResponse(BaseModel):
+    error: ErrorResponse
+
+
+# Custom Exception Handlers
+@app.exception_handler(HTTPException)
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    logger.info(f"--- Custom HTTPException Handler triggered for status {exc.status_code} ---")
+    error_code = f"HTTP_{exc.status_code}"
+    error_message = exc.detail
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "error": {
+                "code": error_code,
+                "message": error_message,
+                "details": None  # HTTPException detail is usually user-friendly enough
+            }
+        },
+    )
+
+@app.exception_handler(Exception)
+async def generic_exception_handler(request: Request, exc: Exception):
+    logger.info(f"--- Custom Generic Exception Handler triggered for exception: {type(exc).__name__} ---")
+    logger.error(f"Unhandled exception: {exc}", exc_info=True)
+    # Use settings.DEBUG which should be available via imported settings
+    show_details = getattr(settings, 'DEBUG', False)
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": {
+                "code": "INTERNAL_SERVER_ERROR",
+                "message": "An unexpected error occurred on the server.",
+                "details": str(exc) if show_details else None
+            }
+        },
+    )
 
 
 async def setup_provider() -> None:
