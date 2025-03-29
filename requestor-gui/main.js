@@ -50,33 +50,58 @@ app.whenReady().then(() => {
 
       console.log('Requestor CLI output:\n', stdout);
 
-      // --- Basic Parsing Logic (Needs Refinement) ---
-      // This assumes a simple table output. Adjust based on actual output format.
+      // --- Robust Parsing Logic for Tabulate Grid Format ---
       const lines = stdout.trim().split('\n');
-      if (lines.length < 2) { // Expecting header + data rows
-          console.log('No rental data found or unexpected format.');
+      const dataLines = lines.filter(line => line.startsWith('|')); // Keep only lines starting with '|'
+
+      if (dataLines.length < 2) { // Need at least header and one data row line
+          console.log('No rental data found in grid format or unexpected format.');
           return [];
       }
 
-      // Assuming header is the first line, find column indices (example)
-      const header = lines[0].toLowerCase();
-      const nameIndex = header.indexOf('name');
-      const providerIndex = header.indexOf('provider'); // Or 'provider_id' etc.
-      const statusIndex = header.indexOf('status');
+      // Extract header names
+      const headerLine = dataLines[0];
+      const headers = headerLine.split('|').map(h => h.trim().toLowerCase()).filter(h => h); // Split, trim, lowercase, remove empty
+
+      // Find column indices for required fields
+      const nameIndex = headers.indexOf('name');
+      const providerIndex = headers.indexOf('provider ip'); // Assuming header is 'Provider IP'
+      const statusIndex = headers.indexOf('status');
+      const cpuIndex = headers.indexOf('cpu');
+      const memoryIndex = headers.indexOf('memory (gb)');
+      const storageIndex = headers.indexOf('storage (gb)');
+      const sshPortIndex = headers.indexOf('ssh port');
 
       if (nameIndex === -1 || providerIndex === -1 || statusIndex === -1) {
-          console.error('Could not parse header columns from CLI output:', header);
-          return { error: 'Failed to parse rental list header' };
+          console.error('Could not find required columns (name, provider ip, status) in header:', headers.join(', '));
+          return { error: 'Failed to parse rental list header columns' };
       }
 
-      const rentals = lines.slice(1).map(line => {
-          // Basic fixed-width parsing - VERY FRAGILE, replace with better parsing
-          // if the output is structured (e.g., JSON) or use regex.
-          const name = line.substring(nameIndex, providerIndex).trim();
-          const provider = line.substring(providerIndex, statusIndex).trim();
-          const status = line.substring(statusIndex).trim(); // Assumes status is last
-          return { id: name, provider: provider, status: status }; // Use 'name' as 'id' for the UI
-      }).filter(r => r.id); // Filter out empty lines or parsing errors
+      const rentals = [];
+      // Start from the third line containing '|' (index 2), as the second is the separator '======'
+      for (let i = 2; i < dataLines.length; i++) {
+          const line = dataLines[i];
+          const columns = line.split('|').map(c => c.trim()).filter((c, idx) => idx > 0 && idx <= headers.length); // Split, trim, remove first/last empty due to leading/trailing '|'
+
+          if (columns.length === headers.length) {
+              const rental = {
+                  id: columns[nameIndex], // Use 'name' as 'id' for the UI
+                  name: columns[nameIndex],
+                  provider_ip: columns[providerIndex],
+                  status: columns[statusIndex],
+                  // Add optional fields if found
+                  cpu: cpuIndex !== -1 ? columns[cpuIndex] : 'N/A',
+                  memory: memoryIndex !== -1 ? columns[memoryIndex] : 'N/A',
+                  storage: storageIndex !== -1 ? columns[storageIndex] : 'N/A',
+                  ssh_port: sshPortIndex !== -1 ? columns[sshPortIndex] : 'N/A'
+              };
+              if (rental.id) { // Ensure we parsed a valid name/id
+                  rentals.push(rental);
+              }
+          } else {
+              console.warn(`Skipping line due to column mismatch: expected ${headers.length}, got ${columns.length}`, line);
+          }
+      }
 
       console.log('Parsed rentals:', rentals);
       return rentals;
