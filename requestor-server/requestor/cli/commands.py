@@ -201,54 +201,6 @@ async def create_vm(name: str, provider_id: str, cpu: int, memory: int, storage:
             error_msg = "Provider doesn't have enough resources available"
         logger.error(f"Failed to create VM: {error_msg}")
         raise click.Abort()
-@vm.command(name='list')
-@async_command
-async def list_vms():
-    """List all managed VMs."""
-    try:
-        logger.command("📋 Listing all managed VMs")
-
-        # Get VMs using database service
-        logger.process("Retrieving VM list from database")
-        vms = await db_service.list_vms()
-
-        if not vms:
-            logger.warning("No VMs found in the database.")
-            click.echo("\nNo VMs currently managed.")
-            return
-
-        # Format VM information
-        headers = ["Name", "Status", "Provider IP", "SSH Port", "CPU", "Memory (GB)", "Storage (GB)"]
-        rows = []
-        for vm in vms:
-            # Safely access config details
-            config_data = vm.get('config', {})
-            rows.append([
-                vm.get('name', 'N/A'),
-                vm.get('status', 'N/A'),
-                vm.get('provider_ip', 'N/A'),
-                config_data.get('ssh_port', 'N/A'),
-                config_data.get('cpu', 'N/A'),
-                config_data.get('memory', 'N/A'),
-                config_data.get('storage', 'N/A'),
-            ])
-
-        # Show fancy header
-        click.echo("\n" + "─" * 80)
-        click.echo(click.style(f"  🖥️  Managed VMs ({len(vms)} total)", fg="blue", bold=True))
-        click.echo("─" * 80)
-
-        # Show table with colored headers
-        click.echo("\n" + tabulate(
-            rows,
-            headers=[click.style(h, bold=True) for h in headers],
-            tablefmt="grid"
-        ))
-        click.echo("\n" + "─" * 80)
-
-    except Exception as e:
-        logger.error(f"Failed to list VMs: {str(e)}")
-        raise click.Abort()
 
 
 @vm.command(name='ssh')
