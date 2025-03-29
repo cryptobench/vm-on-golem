@@ -4,67 +4,57 @@
 
 console.log('Renderer process started');
 
+// --- Configuration ---
+const discoveryUrls = {
+    prod: 'http://195.201.39.101:9001',
+    dev: 'http://127.0.0.1:9001' // Assuming local discovery runs on 9001
+};
+let currentEnvironment = 'prod'; // Default to production
+let isRequestorRunning = false;
+
+// --- UI Element References ---
+let envToggle, envLabel, startBtn, stopBtn, statusMessage;
+let rentalsDiv, providersDiv;
+
+// --- Data Fetching ---
+
 // Fetch data and update the DOM
 async function loadData() {
-    // Replace with actual API calls to the requestor REST API
-    const rentals = await fetchRentals();
-    const providers = await fetchProviders();
+    // Clear existing lists before loading
+    clearLists();
+    setLoadingPlaceholders();
 
-    const rentalsDiv = document.getElementById('rentals');
-    const providersDiv = document.getElementById('providers');
+    // Fetch in parallel
+    const [rentals, providers] = await Promise.all([
+        fetchRentals(),
+        fetchProviders()
+    ]);
 
-    // Clear existing content (keeping headers)
-    const rentalList = document.createElement('ul');
-    rentalList.className = 'data-list';
-    rentalsDiv.appendChild(rentalList);
+    // Update UI after fetching
+    updateRentalsList(rentals);
+    updateProvidersList(providers);
+}
 
-    const providerList = document.createElement('ul');
-    providerList.className = 'data-list';
-    providersDiv.appendChild(providerList);
-
-
-    // Populate rentals list
-    if (rentals.length === 0) {
-        const li = document.createElement('li');
-        li.textContent = 'No active rentals.';
-        li.className = 'list-placeholder';
-        rentalList.appendChild(li);
-    } else {
-        rentals.forEach(rental => {
-            const li = document.createElement('li');
-            li.className = 'list-item card'; // Add card class for styling
-            li.innerHTML = `
-                <span class="item-id">Rental ID: ${rental.id}</span>
-                <span class="item-details">Provider: ${rental.provider}</span>
-                <button class="btn btn-secondary">Details</button>
-            `;
-            rentalList.appendChild(li);
-        });
+function setLoadingPlaceholders() {
+    if (rentalsDiv && rentalsDiv.children.length <= 1) {
+         rentalsDiv.innerHTML = '<h2>Current Rentals</h2><p class="loading">Loading rentals...</p>';
     }
-
-    // Populate providers list
-     if (providers.length === 0) {
-        const li = document.createElement('li');
-        li.textContent = 'No providers found.';
-        li.className = 'list-placeholder';
-        providerList.appendChild(li);
-    } else {
-        providers.forEach(provider => {
-            const li = document.createElement('li');
-            li.className = 'list-item card'; // Add card class for styling
-            li.innerHTML = `
-                <span class="item-id">Provider ID: ${provider.id}</span>
-                <span class="item-details">${provider.offer}</span>
-                <button class="btn btn-primary">Rent</button>
-            `;
-            providerList.appendChild(li);
-        });
+     if (providersDiv && providersDiv.children.length <= 1) {
+        providersDiv.innerHTML = '<h2>Available Providers</h2><p class="loading">Loading providers...</p>';
     }
+}
+
+function clearLists() {
+    if (rentalsDiv) rentalsDiv.innerHTML = '<h2>Current Rentals</h2>'; // Keep header
+    if (providersDiv) providersDiv.innerHTML = '<h2>Available Providers</h2>'; // Keep header
 }
 
 // Fetch rentals from the main process via IPC
 async function fetchRentals() {
     console.log('Requesting rentals from main process via IPC...');
+    // Only fetch rentals if the requestor is supposed to be running or if we are using the old method
+    // For now, we always try, assuming the main process handles it.
+    // Later, this might fetch from http://127.0.0.1:8000/rentals if isRequestorRunning is true.
     try {
         // Use the function exposed in preload.js
         const rentals = await window.electronAPI.getRentals();
@@ -84,17 +74,16 @@ async function fetchRentals() {
     }
 }
 
-// Fetch providers from Discovery Server API
+// Fetch providers from Discovery Server API based on current environment
 async function fetchProviders() {
-    console.log('Fetching providers from Discovery Server...');
-    const discoveryUrl = 'http://195.201.39.101:9001'; // TODO: Make this configurable
+    const discoveryUrl = discoveryUrls[currentEnvironment];
+    console.log(`Fetching providers from ${currentEnvironment} Discovery Server (${discoveryUrl})...`);
     const apiUrl = `${discoveryUrl}/api/v1/advertisements`;
 
     try {
         const response = await fetch(apiUrl);
         if (!response.ok) {
             console.error(`Error fetching providers: ${response.status} ${response.statusText}`);
-            // Try to get error details from response body
             try {
                 const errorData = await response.json();
                 console.error('Error details:', errorData);
@@ -110,7 +99,6 @@ async function fetchProviders() {
         return data.map(provider => ({
             id: provider.provider_id,
             offer: `CPU: ${provider.resources.cpu}, Mem: ${provider.resources.memory}GB, Disk: ${provider.resources.storage}GB (${provider.country || 'N/A'})`,
-            // Add other relevant fields if needed, e.g., ip_address
             ip_address: provider.ip_address
         }));
     } catch (error) {
@@ -119,17 +107,161 @@ async function fetchProviders() {
     }
 }
 
-// Load data when the window loads
-window.addEventListener('DOMContentLoaded', () => {
-    // Add placeholders initially
-    const rentalsDiv = document.getElementById('rentals');
-    const providersDiv = document.getElementById('providers');
-    if (rentalsDiv.children.length <= 1) { // Only add if not already populated (e.g. by HMR)
-         rentalsDiv.innerHTML = '<h2>Current Rentals</h2><p class="loading">Loading rentals...</p>';
-    }
-     if (providersDiv.children.length <= 1) {
-        providersDiv.innerHTML = '<h2>Available Providers</h2><p class="loading">Loading providers...</p>';
-    }
+// --- UI Update Functions ---
 
+function updateRentalsList(rentals) {
+    if (!rentalsDiv) return;
+    rentalsDiv.innerHTML = '<h2>Current Rentals</h2>'; // Clear previous content except header
+    const rentalList = document.createElement('ul');
+    rentalList.className = 'data-list';
+    rentalsDiv.appendChild(rentalList);
+
+    if (!rentals || rentals.length === 0) {
+        const li = document.createElement('li');
+        li.textContent = 'No active rentals found or requestor not running.';
+        li.className = 'list-placeholder';
+        rentalList.appendChild(li);
+    } else {
+        rentals.forEach(rental => {
+            const li = document.createElement('li');
+            li.className = 'list-item card';
+            li.innerHTML = `
+                <span class="item-id">Rental ID: ${rental.id}</span>
+                <span class="item-details">Provider: ${rental.provider}</span>
+                <span class="item-details">Status: ${rental.status || 'N/A'}</span>
+                <button class="btn btn-secondary">Details</button>
+            `;
+            rentalList.appendChild(li);
+        });
+    }
+}
+
+function updateProvidersList(providers) {
+     if (!providersDiv) return;
+     providersDiv.innerHTML = '<h2>Available Providers</h2>'; // Clear previous content except header
+     const providerList = document.createElement('ul');
+     providerList.className = 'data-list';
+     providersDiv.appendChild(providerList);
+
+     if (!providers || providers.length === 0) {
+        const li = document.createElement('li');
+        li.textContent = `No providers found for ${currentEnvironment} environment.`;
+        li.className = 'list-placeholder';
+        providerList.appendChild(li);
+    } else {
+        providers.forEach(provider => {
+            const li = document.createElement('li');
+            li.className = 'list-item card';
+            li.innerHTML = `
+                <span class="item-id">Provider ID: ${provider.id}</span>
+                <span class="item-details">${provider.offer}</span>
+                <button class="btn btn-primary">Rent</button>
+            `;
+            providerList.appendChild(li);
+        });
+    }
+}
+
+function updateStatus(message, isError = false) {
+    if (statusMessage) {
+        statusMessage.textContent = `Status: ${message}`;
+        statusMessage.style.color = isError ? 'red' : '#555';
+    }
+    console.log(`Status update: ${message}`);
+    if (isError) console.error(`Status update (Error): ${message}`);
+}
+
+// --- Event Handlers ---
+
+function handleEnvToggleChange() {
+    currentEnvironment = envToggle.checked ? 'dev' : 'prod';
+    envLabel.textContent = envToggle.checked ? 'Development' : 'Production';
+    console.log(`Environment switched to: ${currentEnvironment}`);
+    updateStatus(`Switched to ${envLabel.textContent} environment.`);
+    // Reload providers for the new environment
+    fetchProviders().then(updateProvidersList);
+}
+
+async function handleStartRequestor() {
+    console.log(`Attempting to start requestor in ${currentEnvironment} mode...`);
+    updateStatus(`Starting requestor (${currentEnvironment})...`);
+    startBtn.disabled = true;
+    envToggle.disabled = true; // Disable toggle while running
+
+    try {
+        // IPC call to main process to start the server
+        const result = await window.electronAPI.startRequestor(currentEnvironment);
+        if (result && result.success) {
+            isRequestorRunning = true;
+            stopBtn.disabled = false;
+            updateStatus(`Requestor started successfully (${currentEnvironment}).`);
+            // Optionally, automatically load data after starting
+            // loadData();
+        } else {
+            console.error('Failed to start requestor:', result ? result.error : 'Unknown error');
+            updateStatus(`Failed to start requestor: ${result ? result.error : 'Unknown error'}`, true);
+            startBtn.disabled = false; // Re-enable start button on failure
+            envToggle.disabled = false; // Re-enable toggle on failure
+        }
+    } catch (error) {
+        console.error('Error sending start-requestor IPC message:', error);
+        updateStatus(`Error starting requestor: ${error.message}`, true);
+        startBtn.disabled = false; // Re-enable start button on error
+        envToggle.disabled = false; // Re-enable toggle on error
+    }
+}
+
+async function handleStopRequestor() {
+    console.log('Attempting to stop requestor...');
+    updateStatus('Stopping requestor...');
+    stopBtn.disabled = true; // Disable stop button immediately
+
+    try {
+        // IPC call to main process to stop the server
+        const result = await window.electronAPI.stopRequestor();
+         if (result && result.success) {
+            isRequestorRunning = false;
+            startBtn.disabled = false;
+            envToggle.disabled = false; // Re-enable toggle when stopped
+            updateStatus('Requestor stopped successfully.');
+            // Clear rentals list as the source is gone
+            updateRentalsList([]);
+        } else {
+            console.error('Failed to stop requestor:', result ? result.error : 'Unknown error');
+            updateStatus(`Failed to stop requestor: ${result ? result.error : 'Unknown error'}`, true);
+            stopBtn.disabled = false; // Re-enable stop button on failure (might need manual intervention)
+        }
+    } catch (error) {
+        console.error('Error sending stop-requestor IPC message:', error);
+        updateStatus(`Error stopping requestor: ${error.message}`, true);
+        stopBtn.disabled = false; // Re-enable stop button on error
+    }
+}
+
+
+// --- Initialization ---
+window.addEventListener('DOMContentLoaded', () => {
+    // Get UI elements
+    envToggle = document.getElementById('env-toggle');
+    envLabel = document.getElementById('env-label');
+    startBtn = document.getElementById('start-btn');
+    stopBtn = document.getElementById('stop-btn');
+    statusMessage = document.getElementById('status-message');
+    rentalsDiv = document.getElementById('rentals');
+    providersDiv = document.getElementById('providers');
+
+    // Set initial state
+    envToggle.checked = (currentEnvironment === 'dev');
+    envLabel.textContent = envToggle.checked ? 'Development' : 'Production';
+    startBtn.disabled = false;
+    stopBtn.disabled = true; // Can't stop if not started
+    envToggle.disabled = false; // Allow changing env when stopped
+
+    // Add event listeners
+    envToggle.addEventListener('change', handleEnvToggleChange);
+    startBtn.addEventListener('click', handleStartRequestor);
+    stopBtn.addEventListener('click', handleStopRequestor);
+
+    // Initial data load
     loadData();
 });

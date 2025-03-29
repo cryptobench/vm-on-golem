@@ -7,6 +7,23 @@
 </head>
 <body>
     <h1>Golem Requestor Interface</h1>
+    <div id="controls">
+        <h2>Controls</h2>
+        <div class="control-group">
+            <label for="env-toggle">Environment:</label>
+            <label class="switch">
+                <input type="checkbox" id="env-toggle">
+                <span class="slider round"></span>
+            </label>
+            <span id="env-label">Production</span>
+        </div>
+        <div class="control-group">
+            <button id="start-btn" class="btn btn-success">Start Requestor</button>
+            <button id="stop-btn" class="btn btn-danger" disabled>Stop Requestor</button>
+        </div>
+        <div id="status-message" class="status">Status: Idle</div>
+    </div>
+    <hr>
     <div id="app">
         <div id="rentals">
             <h2>Current Rentals</h2>
