@@ -1,0 +1,226 @@
+/* General Style & Aesthetic */
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    margin: 0;
+    padding: 30px; /* Increased padding */
+    background-color: #f8f9fa; /* Subtle grey background */
+    color: #212529; /* Darker text for better contrast */
+    line-height: 1.6;
+}
+
+/* Typography */
+h1 {
+    font-size: 2rem; /* Large headline */
+    font-weight: 600; /* Semi-bold */
+    color: #000000;
+    margin-bottom: 20px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid #dee2e6; /* Slightly darker border */
+}
+
+h2 {
+    font-size: 1.5rem; /* Medium subheading */
+    font-weight: 600;
+    color: #343a40; /* Dark grey heading */
+    margin-top: 0;
+    margin-bottom: 15px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #e9ecef; /* Lighter border for sections */
+}
+
+/* Layout & Spacing */
+#app {
+    display: grid;
+    grid-template-columns: 1fr 1fr; /* Two equal columns */
+    gap: 30px; /* Increased gap */
+}
+
+#rentals, #providers {
+    background-color: #ffffff; /* White background for sections */
+    padding: 20px; /* Increased padding */
+    border-radius: 12px; /* Softer rounded corners */
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.05); /* Softer shadow */
+    display: flex; /* Use flexbox for internal layout */
+    flex-direction: column; /* Stack elements vertically */
+}
+
+/* List Styling */
+.data-list {
+    list-style: none; /* Remove default bullets */
+    padding: 0;
+    margin: 0;
+    flex-grow: 1; /* Allow list to take available space */
+}
+
+.list-item {
+    display: flex; /* Use flexbox for item layout */
+    justify-content: space-between; /* Space out content */
+    align-items: center; /* Vertically align items */
+    padding: 15px;
+    margin-bottom: 10px; /* Space between items */
+    border: 1px solid #e9ecef; /* Subtle border */
+    border-radius: 8px; /* Rounded corners for items */
+    background-color: #ffffff; /* Ensure white background */
+    transition: box-shadow 0.2s ease-in-out; /* Smooth shadow transition on hover */
+}
+
+.list-item:hover {
+     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); /* Slightly more prominent shadow on hover */
+}
+
+.item-id {
+    font-weight: 500; /* Medium weight for IDs */
+    color: #495057;
+    white-space: nowrap; /* Prevent wrapping */
+    overflow: hidden; /* Hide overflow */
+    text-overflow: ellipsis; /* Add ellipsis for long IDs */
+    margin-right: 15px; /* Space between ID and details */
+    flex-shrink: 1; /* Allow shrinking if needed */
+    min-width: 100px; /* Minimum width */
+}
+
+.item-details {
+    color: #6c757d; /* Lighter grey for details */
+    font-size: 0.9rem;
+    flex-grow: 1; /* Allow details to take up space */
+    margin-right: 15px; /* Space between details and button */
+    text-align: left; /* Align text left */
+}
+
+/* Interactive Elements & Buttons */
+.btn {
+    padding: 8px 16px;
+    font-size: 0.9rem;
+    font-weight: 500;
+    border: none;
+    border-radius: 20px; /* Pill shape */
+    cursor: pointer;
+    transition: background-color 0.2s ease, box-shadow 0.2s ease;
+    white-space: nowrap; /* Prevent button text wrapping */
+    flex-shrink: 0; /* Prevent button shrinking */
+}
+
+.btn-primary {
+    background-color: #007bff; /* Primary blue */
+    color: #ffffff;
+}
+
+.btn-primary:hover {
+    background-color: #0056b3; /* Darker blue on hover */
+    box-shadow: 0 2px 4px rgba(0, 123, 255, 0.3);
+}
+
+.btn-secondary {
+    background-color: #6c757d; /* Secondary grey */
+    color: #ffffff;
+}
+
+.btn-secondary:hover {
+    background-color: #5a6268; /* Darker grey on hover */
+    box-shadow: 0 2px 4px rgba(108, 117, 125, 0.3);
+}
+
+/* Placeholder/Loading Styles */
+.loading, .list-placeholder {
+    color: #6c757d;
+    font-style: italic;
+    text-align: center;
+    padding: 20px;
+}
+/* --- Control Styles --- */
+#controls {
+    margin-bottom: 20px;
+    padding: 15px;
+    background-color: #f9f9f9;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+}
+
+#controls h2 {
+    margin-top: 0;
+    margin-bottom: 15px;
+}
+
+.control-group {
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+}
+
+.control-group label {
+    margin-right: 10px;
+}
+
+.status {
+    margin-top: 10px;
+    font-style: italic;
+    color: #555;
+}
+
+/* The switch - the box around the slider */
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 60px;
+  height: 34px;
+  margin-right: 10px;
+}
+
+/* Hide default HTML checkbox */
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+/* The slider */
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #ccc;
+  -webkit-transition: .4s;
+  transition: .4s;
+}
+
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 26px;
+  width: 26px;
+  left: 4px;
+  bottom: 4px;
+  background-color: white;
+  -webkit-transition: .4s;
+  transition: .4s;
+}
+
+input:checked + .slider {
+  background-color: #2196F3; /* Blue for Dev */
+}
+
+input:focus + .slider {
+  box-shadow: 0 0 1px #2196F3;
+}
+
+input:checked + .slider:before {
+  -webkit-transform: translateX(26px);
+  -ms-transform: translateX(26px);
+  transform: translateX(26px);
+}
+
+/* Rounded sliders */
+.slider.round {
+  border-radius: 34px;
+}
+
+.slider.round:before {
+  border-radius: 50%;
+}
+
+#env-label {
+    font-weight: bold;
+}
