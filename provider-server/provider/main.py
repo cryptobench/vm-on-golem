@@ -1,6 +1,7 @@
 from .api import routes
 import asyncio
 import os
+import socket
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional
@@ -107,6 +108,9 @@ async def verify_provider_port(port: int) -> bool:
         return False
 
 
+# The get_local_ip function has been removed as this logic is now handled in config.py
+
+
 import typer
 
 cli = typer.Typer()
@@ -134,9 +138,8 @@ def run_server(dev_mode: bool, no_verify_port: bool):
     env_path = Path(__file__).parent.parent / env_file
     load_dotenv(dotenv_path=env_path)
     
-    # In dev mode, force advertised IP to 127.0.0.1
-    if dev_mode:
-        os.environ["GOLEM_PROVIDER_PUBLIC_IP"] = "127.0.0.1"
+    # The logic for setting the public IP in dev mode is now handled in config.py
+    # The following lines are no longer needed and have been removed.
 
     # Import settings after loading env
     from .config import settings

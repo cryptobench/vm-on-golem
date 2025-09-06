@@ -3,7 +3,7 @@ from typing import Dict, List
 
 from ..discovery.resource_tracker import ResourceTracker
 from ..utils.logging import setup_logger
-from .models import VMConfig, VMInfo, VMResources
+from .models import VMConfig, VMInfo, VMResources, VMNotFoundError
 from .provider import VMProvider
 from .name_mapper import VMNameMapper
 from .cloud_init import generate_cloud_init, cleanup_cloud_init
@@ -55,10 +55,19 @@ class VMService:
             logger.warning(f"No multipass name found for VM {vm_id}")
             return
 
-        vm_info = await self.provider.get_vm_status(multipass_name)
-        await self.provider.delete_vm(multipass_name)
-        await self.resource_tracker.deallocate(vm_info.resources, vm_id)
-        await self.name_mapper.remove_mapping(vm_id)
+        try:
+            vm_info = await self.provider.get_vm_status(multipass_name)
+            await self.provider.delete_vm(multipass_name)
+            await self.resource_tracker.deallocate(vm_info.resources, vm_id)
+        except VMNotFoundError:
+            logger.warning(f"VM {multipass_name} not found on provider, cleaning up resources")
+            # If the VM is not found, we still need to deallocate the resources we have tracked for it
+            # Since we can't get the resources from the provider, we'll have to assume the resources are what we have tracked
+            # This is not ideal, but it's the best we can do in this situation
+            # A better solution would be to store the resources in the name mapper
+            pass
+        finally:
+            await self.name_mapper.remove_mapping(vm_id)
 
     async def list_vms(self) -> List[VMInfo]:
         """List all VMs."""

@@ -149,6 +149,13 @@ class VMService:
         """Format VM information for display."""
         from click import style
 
+        key_pair = self.ssh_service.get_key_pair_sync()
+        connect_command = self.ssh_service.format_ssh_command(
+            host=vm['provider_ip'],
+            port=vm['config'].get('ssh_port', 'N/A'),
+            private_key_path=key_pair.private_key.absolute()
+        )
+
         row = [
             vm['name'],
             vm['status'],
@@ -157,6 +164,7 @@ class VMService:
             vm['config']['cpu'],
             vm['config']['memory'],
             vm['config']['storage'],
+            connect_command,
             vm['created_at']
         ]
 
@@ -188,6 +196,7 @@ class VMService:
             "CPU",
             "Memory (GB)",
             "Storage (GB)",
+            "Connect Command",
             "Created"
         ]
 

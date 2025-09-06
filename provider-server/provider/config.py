@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 from typing import Optional
 import uuid
+import socket
 
 from pydantic_settings import BaseSettings
 from pydantic import field_validator, Field
@@ -396,14 +397,43 @@ class Settings(BaseSettings):
     def get_public_ip(cls, v: Optional[str], values: dict) -> Optional[str]:
         """Get public IP if set to 'auto'."""
         if values.data.get("ENVIRONMENT") == "development":
-            return "127.0.0.1"
+            try:
+                hostname = socket.gethostname()
+                ips = socket.gethostbyname_ex(hostname)[2]
+                local_ips = [ip for ip in ips if not ip.startswith("127.")]
+                if local_ips:
+                    ip = local_ips[0]
+                    logger.info(f"Found local IP for development: {ip}")
+                    return ip
+            except socket.gaierror:
+                pass
+
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            try:
+                s.connect(('8.8.8.8', 80))
+                IP = s.getsockname()[0]
+                if IP:
+                    logger.info(f"Found local IP for development: {IP}")
+                    return IP
+            except Exception:
+                pass
+            finally:
+                s.close()
+
+            raise ValueError("Could not determine local IP address in development mode. "
+                             "Please ensure you have a valid network connection.")
         if v == "auto":
             try:
                 import requests
                 response = requests.get("https://api.ipify.org")
-                return response.text.strip()
+                ip = response.text.strip()
+                logger.info(f"Found public IP: {ip}")
+                return ip
             except Exception:
                 return None
+        
+        if v:
+            logger.info(f"Using manually provided IP: {v}")
         return v
 
     class Config:

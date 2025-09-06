@@ -84,7 +84,7 @@ class ProviderService:
                 provider = {
                     'provider_id': annotations.get('golem_provider_id'),
                     'provider_name': annotations.get('golem_provider_name'),
-                    'ip_address': '127.0.0.1' if 'DEVMODE' in annotations.get('golem_provider_name', '') else annotations.get('golem_ip_address'),
+                    'ip_address': annotations.get('golem_ip_address'),
                     'country': annotations.get('golem_country'),
                     'resources': {
                         'cpu': int(annotations.get('golem_cpu', 0)),

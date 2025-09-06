@@ -4,7 +4,7 @@ import subprocess
 from pathlib import Path
 import asyncio
 from typing import Dict, List, Optional
-from ..utils.retry import async_retry
+from ..utils.retry import async_retry_unless_not_found
 
 from ..config import settings
 from ..utils.logging import setup_logger
@@ -53,11 +53,11 @@ class MultipassAdapter(VMProvider):
             stderr = e.stderr if should_capture and e.stderr else "No stderr captured. See provider logs for command output."
             raise MultipassError(f"Multipass command '{' '.join(args)}' timed out after {timeout} seconds. Stderr: {stderr}")
 
-    @async_retry(retries=5, delay=2.0)
+    @async_retry_unless_not_found(retries=5, delay=2.0)
     async def _get_vm_info(self, vm_id: str) -> Dict:
         """Get detailed information about a VM."""
-        result = await self._run_multipass(["info", vm_id, "--format", "json"])
         try:
+            result = await self._run_multipass(["info", vm_id, "--format", "json"])
             logger.info(f"Raw multipass info for {vm_id}: {result.stdout}")
             info = json.loads(result.stdout)
             vm_info = info["info"][vm_id]
@@ -65,6 +65,10 @@ class MultipassAdapter(VMProvider):
             if not all(field in vm_info for field in essential_fields):
                 raise KeyError(f"Essential fields missing from VM info. Got: {list(vm_info.keys())}")
             return vm_info
+        except MultipassError as e:
+            if "does not exist" in str(e):
+                raise VMNotFoundError(f"VM {vm_id} not found in multipass") from e
+            raise
         except (json.JSONDecodeError, KeyError) as e:
             raise MultipassError(f"Failed to parse VM info or essential fields are missing: {e}")
 

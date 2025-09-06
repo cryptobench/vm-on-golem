@@ -19,6 +19,13 @@ class SSHService:
         except Exception as e:
             raise SSHError(f"Failed to get SSH key pair: {str(e)}")
 
+    def get_key_pair_sync(self):
+        """Get or create SSH key pair synchronously."""
+        try:
+            return self.ssh_manager.get_key_pair_sync()
+        except Exception as e:
+            raise SSHError(f"Failed to get SSH key pair: {str(e)}")
+
     def connect_to_vm(
         self,
         host: str,

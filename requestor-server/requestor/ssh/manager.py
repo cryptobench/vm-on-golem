@@ -93,6 +93,36 @@ class SSHKeyManager:
             public_key_content=golem_pub_key.read_text().strip()
         )
 
+    def get_key_pair_sync(self) -> KeyPair:
+        """Get the SSH key pair to use (synchronous version)."""
+        logger.debug("Checking for system SSH key at %s", self.system_key_path)
+        system_pub_key = self.system_key_path.parent / 'id_rsa.pub'
+        
+        if self.system_key_path.exists() and system_pub_key.exists():
+            logger.info("Using existing system SSH key")
+            try:
+                return KeyPair(
+                    private_key=self.system_key_path,
+                    public_key=system_pub_key,
+                    private_key_content=self.system_key_path.read_text().strip(),
+                    public_key_content=system_pub_key.read_text().strip()
+                )
+            except (PermissionError, OSError) as e:
+                logger.warning("Could not read system SSH key: %s", e)
+        
+        logger.debug("Using Golem SSH key at %s", self.golem_key_path)
+        if not self.golem_key_path.exists():
+            logger.info("No existing Golem SSH key found, generating new key pair")
+            self._generate_key_pair_sync()
+        
+        golem_pub_key = Path(str(self.golem_key_path) + '.pub')
+        return KeyPair(
+            private_key=self.golem_key_path,
+            public_key=golem_pub_key,
+            private_key_content=self.golem_key_path.read_text().strip(),
+            public_key_content=golem_pub_key.read_text().strip()
+        )
+
     async def get_public_key_content(self) -> str:
         """Get the content of the public key file."""
         key_pair = await self.get_key_pair()
@@ -150,6 +180,38 @@ class SSHKeyManager:
             pub_key_path.write_bytes(public_pem)
             if os.name == 'posix':
                 os.chmod(pub_key_path, 0o644)  # Public key can be readable on Unix-like systems
+            logger.info("Successfully generated and saved SSH key pair")
+        except Exception as e:
+            logger.error("Failed to generate key pair: %s", str(e))
+            raise
+
+    def _generate_key_pair_sync(self):
+        """Generate a new RSA key pair for Golem VMs (synchronous version)."""
+        logger.debug("Generating new RSA key pair")
+        try:
+            private_key = rsa.generate_private_key(
+                public_exponent=65537,
+                key_size=2048,
+                backend=default_backend()
+            )
+            private_pem = private_key.private_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PrivateFormat.PKCS8,
+                encryption_algorithm=serialization.NoEncryption()
+            )
+            self.golem_key_path.write_bytes(private_pem)
+            if os.name == 'posix':
+                os.chmod(self.golem_key_path, 0o600)
+
+            public_key = private_key.public_key()
+            public_pem = public_key.public_bytes(
+                encoding=serialization.Encoding.OpenSSH,
+                format=serialization.PublicFormat.OpenSSH
+            )
+            pub_key_path = Path(str(self.golem_key_path) + '.pub')
+            pub_key_path.write_bytes(public_pem)
+            if os.name == 'posix':
+                os.chmod(pub_key_path, 0o644)
             logger.info("Successfully generated and saved SSH key pair")
         except Exception as e:
             logger.error("Failed to generate key pair: %s", str(e))
