@@ -3,7 +3,8 @@ from pathlib import Path
 from typing import Optional
 import uuid
 
-from pydantic import BaseSettings, validator, Field
+from pydantic_settings import BaseSettings
+from pydantic import validator, Field
 from .utils.logging import setup_logger
 
 logger = setup_logger(__name__)
@@ -17,6 +18,11 @@ class Settings(BaseSettings):
     HOST: str = "0.0.0.0"
     PORT: int = 7466
     SKIP_PORT_VERIFICATION: bool = False
+    ENVIRONMENT: str = "production"
+
+    @property
+    def DEV_MODE(self) -> bool:
+        return self.ENVIRONMENT == "development"
 
     @validator("SKIP_PORT_VERIFICATION", always=True)
     def set_skip_verification(cls, v: bool, values: dict) -> bool:
@@ -24,11 +30,15 @@ class Settings(BaseSettings):
         return v or values.get("DEBUG", False)
 
     # Provider Settings
-    PROVIDER_ID: str = ""  # Will be set from Ethereum identity
     PROVIDER_NAME: str = "golem-provider"
     PROVIDER_COUNTRY: str = "SE"
     ETHEREUM_KEY_DIR: str = ""
-
+    ETHEREUM_PRIVATE_KEY: Optional[str] = None
+    PROVIDER_ID: str = ""  # Will be set from Ethereum identity
+    FAUCET_URL: str = "https://ethwarsaw.holesky.golemdb.io/faucet"
+    CAPTCHA_URL: str = "https://cap.gobas.me"
+    CAPTCHA_API_KEY: str = "05381a2cef5e"
+ 
     @validator("ETHEREUM_KEY_DIR", pre=True)
     def resolve_key_dir(cls, v: str) -> str:
         """Resolve Ethereum key directory path."""
@@ -39,23 +49,55 @@ class Settings(BaseSettings):
             path = Path.home() / path
         return str(path)
 
-    @validator("PROVIDER_ID", always=True)
-    def get_or_create_provider_id(cls, v: str, values: dict) -> str:
-        """Get or create provider ID from Ethereum identity."""
+    @validator("ETHEREUM_PRIVATE_KEY", always=True)
+    def get_private_key(cls, v: Optional[str], values: dict) -> str:
+        """Get private key from key file if not provided."""
         from provider.security.ethereum import EthereumIdentity
 
-        # If ID provided in env, use it
         if v:
             return v
-
-        # Get ID from Ethereum identity
+        
         key_dir = values.get("ETHEREUM_KEY_DIR")
         identity = EthereumIdentity(key_dir)
-        return identity.get_or_create_identity()
+        _, private_key = identity.get_or_create_identity()
+        return private_key
 
+    @validator("PROVIDER_ID", always=True)
+    def get_provider_id(cls, v: str, values: dict) -> str:
+        """Get provider ID from private key."""
+        from eth_account import Account
+
+        private_key = values.get("ETHEREUM_PRIVATE_KEY")
+        if not private_key:
+            raise ValueError("ETHEREUM_PRIVATE_KEY is not set")
+
+        acct = Account.from_key(private_key)
+        provider_id_from_key = acct.address
+
+        # If ID was provided via env, warn if it doesn't match
+        if v and v != provider_id_from_key:
+            logger.warning(
+                f"Provider ID from env ('{v}') does not match ID from key file ('{provider_id_from_key}'). "
+                "Using ID from key file."
+            )
+        
+        return provider_id_from_key
+ 
+    @validator("PROVIDER_NAME", always=True)
+    def set_provider_name(cls, v: str, values: dict) -> str:
+        """Prefix provider name with DEVMODE if in development."""
+        if values.get("ENVIRONMENT") == "development":
+            return f"DEVMODE-{v}"
+        return v
+ 
     # Discovery Service Settings
     DISCOVERY_URL: str = "http://195.201.39.101:9001"
+    DISCOVERY_DRIVER: str = "golem-base" # or "legacy"
     ADVERTISEMENT_INTERVAL: int = 240  # seconds
+
+    # Golem Base Settings
+    GOLEM_BASE_RPC_URL: str = "https://ethwarsaw.holesky.golemdb.io/rpc"
+    GOLEM_BASE_WS_URL: str = "wss://ethwarsaw.holesky.golemdb.io/rpc/ws"
 
     # VM Settings
     MAX_VMS: int = 10
@@ -351,9 +393,19 @@ class Settings(BaseSettings):
         return str(path)
 
     @validator("PUBLIC_IP", pre=True)
-    def get_public_ip(cls, v: Optional[str]) -> Optional[str]:
+    def get_public_ip(cls, v: Optional[str], values: dict) -> Optional[str]:
         """Get public IP if set to 'auto'."""
         if v == "auto":
+            if values.get("ENVIRONMENT") == "development":
+                import socket
+                try:
+                    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                    s.connect(("8.8.8.8", 80))
+                    local_ip = s.getsockname()[0]
+                    s.close()
+                    return local_ip
+                except Exception:
+                    return "127.0.0.1"
             try:
                 import requests
                 response = requests.get("https://api.ipify.org")

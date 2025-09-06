@@ -51,8 +51,9 @@ def vm():
 @click.option('--memory', type=int, help='Minimum memory (GB) required')
 @click.option('--storage', type=int, help='Minimum storage (GB) required')
 @click.option('--country', help='Preferred provider country')
+@click.option('--driver', type=click.Choice(['central', 'golem-base']), default=None, help='Discovery driver to use')
 @async_command
-async def list_providers(cpu: Optional[int], memory: Optional[int], storage: Optional[int], country: Optional[str]):
+async def list_providers(cpu: Optional[int], memory: Optional[int], storage: Optional[int], country: Optional[str], driver: Optional[str]):
     """List available providers matching requirements."""
     try:
         # Log search criteria if any
@@ -70,13 +71,14 @@ async def list_providers(cpu: Optional[int], memory: Optional[int], storage: Opt
         logger.process("Querying discovery service")
         
         # Initialize provider service
-        provider_service = ProviderService(config.discovery_url)
+        provider_service = ProviderService()
         async with provider_service:
             providers = await provider_service.find_providers(
                 cpu=cpu,
                 memory=memory,
                 storage=storage,
-                country=country
+                country=country,
+                driver=driver
             )
 
         if not providers:
@@ -85,12 +87,12 @@ async def list_providers(cpu: Optional[int], memory: Optional[int], storage: Opt
 
         # Format provider information using service with colors
         headers = provider_service.provider_headers
-        rows = [provider_service.format_provider_row(p, colorize=True) for p in providers]
+        rows = await asyncio.gather(*(provider_service.format_provider_row(p, colorize=True) for p in providers))
 
         # Show fancy header
-        click.echo("\n" + "─" * 60)
+        click.echo("\n" + "─" * 80)
         click.echo(click.style(f"  🌍 Available Providers ({len(providers)} total)", fg="blue", bold=True))
-        click.echo("─" * 60)
+        click.echo("─" * 80)
 
         # Show table with colored headers
         click.echo("\n" + tabulate(
@@ -98,7 +100,7 @@ async def list_providers(cpu: Optional[int], memory: Optional[int], storage: Opt
             headers=[click.style(h, bold=True) for h in headers],
             tablefmt="grid"
         ))
-        click.echo("\n" + "─" * 60)
+        click.echo("\n" + "─" * 80)
 
     except Exception as e:
         logger.error(f"Failed to list providers: {str(e)}")
@@ -126,7 +128,7 @@ async def create_vm(name: str, provider_id: str, cpu: int, memory: int, storage:
         # Now start the deployment with spinner
         with Spinner("Deploying VM..."):
             # Initialize services
-            provider_service = ProviderService(config.discovery_url)
+            provider_service = ProviderService()
             async with provider_service:
                 # Verify provider and resources
                 provider = await provider_service.verify_provider(provider_id)
@@ -456,6 +458,24 @@ async def stop_vm(name: str):
         # Show fancy success message
         click.echo("\n" + "─" * 60)
         click.echo(click.style("  🔴 VM Stopped Successfully!", fg="yellow", bold=True))
+        click.echo("─" * 60 + "\n")
+
+        click.echo(click.style("  VM Status", fg="blue", bold=True))
+        click.echo("  " + "┈" * 25)
+        click.echo(f"  🏷️  Name      : {click.style(name, fg='cyan')}")
+        click.echo(f"  💫 Status     : {click.style('stopped', fg='yellow')}")
+        click.echo(f"  💾 Resources  : {click.style('preserved', fg='cyan')}")
+
+        click.echo("\n" + "─" * 60)
+
+    except Exception as e:
+        error_msg = str(e)
+        if "Not Found" in error_msg:
+            error_msg = "VM not found on provider (it may have been manually removed)"
+        logger.error(f"Failed to stop VM: {error_msg}")
+        raise click.Abort()
+
+
 @cli.group()
 def server():
     """Server management commands"""
@@ -487,22 +507,6 @@ def run_api_server(host: str, port: int, reload: bool):
         reload=reload,
         log_level="info" # Or adjust as needed
     )
-        click.echo("─" * 60 + "\n")
-        
-        click.echo(click.style("  VM Status", fg="blue", bold=True))
-        click.echo("  " + "┈" * 25)
-        click.echo(f"  🏷️  Name      : {click.style(name, fg='cyan')}")
-        click.echo(f"  💫 Status     : {click.style('stopped', fg='yellow')}")
-        click.echo(f"  💾 Resources  : {click.style('preserved', fg='cyan')}")
-        
-        click.echo("\n" + "─" * 60)
-
-    except Exception as e:
-        error_msg = str(e)
-        if "Not Found" in error_msg:
-            error_msg = "VM not found on provider (it may have been manually removed)"
-        logger.error(f"Failed to stop VM: {error_msg}")
-        raise click.Abort()
 
 
 @vm.command(name='list')
