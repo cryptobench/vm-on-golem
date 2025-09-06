@@ -90,11 +90,16 @@ class GolemBaseAdvertiser(Advertiser):
                 current_annotations = {ann.key: ann.value for ann in metadata.numeric_annotations}
                 current_annotations.update({ann.key: ann.value for ann in metadata.string_annotations})
 
-                if (current_annotations.get("golem_cpu") == resources["cpu"] and
-                    current_annotations.get("golem_memory") == resources["memory"] and
-                    current_annotations.get("golem_storage") == resources["storage"] and
-                    current_annotations.get("golem_ip_address") == ip_address and
-                    current_annotations.get("golem_provider_name") == settings.PROVIDER_NAME):
+                # Full comparison of all annotations
+                expected_annotations = {ann.key: ann.value for ann in string_annotations}
+                expected_annotations.update({ann.key: ann.value for ann in numeric_annotations})
+
+                # Debugging logs to compare annotations
+                logger.info(f"IP address from settings: {ip_address}")
+                logger.info(f"Current on-chain annotations: {current_annotations}")
+                logger.info(f"Expected annotations based on current config: {expected_annotations}")
+
+                if sorted(current_annotations.items()) == sorted(expected_annotations.items()):
                     logger.info("Advertisement is up-to-date. Waiting for expiration.")
                 else:
                     logger.info("Advertisement is outdated. Updating.")
