@@ -112,8 +112,29 @@ async def verify_provider_port(port: int) -> bool:
 
 
 import typer
+try:
+    from importlib import metadata
+except ImportError:
+    # Python < 3.8
+    import importlib_metadata as metadata
 
 cli = typer.Typer()
+
+def print_version(ctx: typer.Context, value: bool):
+    if not value:
+        return
+    try:
+        version = metadata.version('golem-vm-provider')
+    except metadata.PackageNotFoundError:
+        version = 'unknown'
+    print(f'Provider VM on Golem CLI version {version}')
+    raise typer.Exit()
+
+@cli.callback()
+def main(
+    version: bool = typer.Option(None, "--version", callback=print_version, is_eager=True, help="Show the version and exit.")
+):
+    pass
 
 @cli.command()
 def start(no_verify_port: bool = typer.Option(False, "--no-verify-port", help="Skip provider port verification.")):
