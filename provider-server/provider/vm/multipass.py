@@ -198,7 +198,11 @@ class MultipassProvider(VMProvider):
                 # First allocate a verified port
                 ssh_port = self.port_manager.allocate_port(multipass_name)
                 if not ssh_port:
-                    raise MultipassError("Failed to allocate verified SSH port")
+                    if settings.DEV_MODE:
+                        logger.warning("Failed to allocate verified SSH port in dev mode, falling back to random port")
+                        ssh_port = 0  # Let the proxy manager pick a random port
+                    else:
+                        raise MultipassError("Failed to allocate verified SSH port")
 
                 # Then configure proxy with allocated port
                 success = await self.proxy_manager.add_vm(multipass_name, ip_address, port=ssh_port)

@@ -10,8 +10,10 @@ from .utils.logging import setup_logger, PROCESS, SUCCESS
 from .utils.ascii_art import startup_animation
 from .discovery.resource_tracker import ResourceTracker
 from .discovery.advertiser import ResourceAdvertiser
+from .discovery.golem_base_advertiser import GolemBaseAdvertiser
 from .vm.multipass import MultipassProvider
 from .vm.port_manager import PortManager
+from .security.faucet import FaucetClient
 
 logger = setup_logger(__name__)
 
@@ -75,16 +77,19 @@ async def setup_provider() -> None:
             logger.error(f"Failed to initialize provider: {e}")
             raise
 
-        # Create and start advertiser in background
-        logger.process("🔄 Starting resource advertiser...")
-        advertiser = ResourceAdvertiser(
-            resource_tracker=resource_tracker,
-            discovery_url=settings.DISCOVERY_URL,
-            provider_id=settings.PROVIDER_ID
-        )
-
-        # Start advertiser in background task
-        app.state.advertiser_task = asyncio.create_task(advertiser.start())
+        # Create advertiser
+        logger.process("🔄 Initializing resource advertiser...")
+        if settings.DISCOVERY_DRIVER == "golem-base":
+            advertiser = GolemBaseAdvertiser(
+                resource_tracker=resource_tracker
+            )
+            await advertiser.initialize()
+        else:
+            advertiser = ResourceAdvertiser(
+                resource_tracker=resource_tracker,
+                discovery_url=settings.DISCOVERY_URL,
+                provider_id=settings.PROVIDER_ID
+            )
         app.state.advertiser = advertiser
 
         logger.success(
@@ -144,9 +149,23 @@ async def startup_event():
     try:
         # Display startup animation
         await startup_animation()
-
+ 
         # Initialize provider
         await setup_provider()
+
+        # Check wallet balance and request funds if needed
+        faucet_client = FaucetClient(
+            faucet_url=settings.FAUCET_URL,
+            captcha_url=settings.CAPTCHA_URL,
+            captcha_api_key=settings.CAPTCHA_API_KEY,
+        )
+        await faucet_client.get_funds(settings.PROVIDER_ID)
+
+        # Post initial advertisement and start advertising loop
+        if isinstance(app.state.advertiser, GolemBaseAdvertiser):
+            await app.state.advertiser.post_advertisement()
+            app.state.advertiser_task = asyncio.create_task(app.state.advertiser.start_loop())
+
     except Exception as e:
         logger.error(f"Startup failed: {e}")
         # Ensure proper cleanup
@@ -206,7 +225,12 @@ async def verify_provider_port(port: int) -> bool:
         return False
 
 
-def start():
+import typer
+
+cli = typer.Typer()
+
+@cli.command()
+def start(no_verify_port: bool = typer.Option(False, "--no-verify-port", help="Skip provider port verification.")):
     """Start the provider server."""
     import sys
     from pathlib import Path
@@ -235,7 +259,7 @@ def start():
             sys.exit(1)
 
         # Verify provider port is available
-        if not asyncio.run(verify_provider_port(settings.PORT)):
+        if not no_verify_port and not asyncio.run(verify_provider_port(settings.PORT)):
             logger.error(f"Provider port {settings.PORT} is not available")
             sys.exit(1)
 
@@ -259,3 +283,6 @@ def start():
     except Exception as e:
         logger.error(f"Failed to start provider server: {e}")
         sys.exit(1)
+
+if __name__ == "__main__":
+    cli()

@@ -52,9 +52,11 @@ def check_requirements():
 def main():
     """Run the provider server."""
     try:
-        # Load environment variables from .env file
-        env_path = Path(__file__).parent / '.env'
+        # Load environment variables from .env.dev file if it exists, otherwise use .env
+        dev_env_path = Path(__file__).parent / '.env.dev'
+        env_path = dev_env_path if dev_env_path.exists() else Path(__file__).parent / '.env'
         load_dotenv(dotenv_path=env_path)
+        logger.info(f"Loading environment variables from: {env_path}")
 
         # Log environment variables
         logger.info("Environment variables:")

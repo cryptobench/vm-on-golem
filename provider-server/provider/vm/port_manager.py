@@ -223,7 +223,8 @@ class PortManager:
                             return port
                         else:
                             # Port is in use, remove from verified ports
-                            self.verified_ports.remove(port)
+                            if not self.skip_verification:
+                                self.verified_ports.remove(port)
                             self._used_ports.pop(vm_id)
                     except Exception as e:
                         logger.debug(f"Failed to check port {port}: {e}")
@@ -236,7 +237,8 @@ class PortManager:
             used_ports = self._get_used_ports()
 
             # Find first available verified port
-            for port in sorted(self.verified_ports):
+            ports_to_check = sorted(self.verified_ports) if not self.skip_verification else range(self.start_port, self.end_port)
+            for port in ports_to_check:
                 if port not in used_ports:
                     # Quick check if port is actually available
                     try:
@@ -250,11 +252,12 @@ class PortManager:
                             self._used_ports[vm_id] = port
                             self._save_state()
                             logger.info(
-                                f"Allocated verified port {port} for VM {vm_id}")
+                                f"Allocated port {port} for VM {vm_id}")
                             return port
                         else:
                             # Port is in use, remove from verified ports
-                            self.verified_ports.remove(port)
+                            if not self.skip_verification and port in self.verified_ports:
+                                self.verified_ports.remove(port)
                     except Exception as e:
                         logger.debug(f"Failed to check port {port}: {e}")
                         continue

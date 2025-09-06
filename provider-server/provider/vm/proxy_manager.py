@@ -308,11 +308,12 @@ class PythonProxyManager:
         """
         try:
             # Use provided port or allocate one
-            if port is None:
-                port = self.port_manager.allocate_port(vm_id)
-                if port is None:
+            if port is None or port == 0:
+                allocated_port = self.port_manager.allocate_port(vm_id)
+                if allocated_port is None:
                     logger.error(f"Failed to allocate port for VM {vm_id}")
                     return False
+                port = allocated_port
             
             # Create and start proxy server
             proxy = ProxyServer(port, vm_ip)
@@ -327,7 +328,7 @@ class PythonProxyManager:
         except Exception as e:
             logger.error(f"Failed to configure proxy for VM {vm_id}: {e}")
             # Only deallocate if we allocated the port ourselves
-            if port is None and 'port' in locals():
+            if 'allocated_port' in locals() and allocated_port:
                 self.port_manager.deallocate_port(vm_id)
             return False
     

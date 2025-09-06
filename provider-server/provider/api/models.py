@@ -11,11 +11,11 @@ logger = setup_logger(__name__)
 class CreateVMRequest(BaseModel):
     """Request model for creating a VM."""
     name: str = Field(..., min_length=3, max_length=64,
-                      regex="^[a-z0-9][a-z0-9-]*[a-z0-9]$")
+                      pattern="^[a-z0-9][a-z0-9-]*[a-z0-9]$")
     size: Optional[VMSize] = None
     resources: Optional[VMResources] = None
     image: str = Field(default="24.04")  # Ubuntu 24.04 LTS
-    ssh_key: str = Field(..., regex="^(ssh-rsa|ssh-ed25519) ",
+    ssh_key: str = Field(..., pattern="^(ssh-rsa|ssh-ed25519) ",
                          description="SSH public key for VM access")
 
     @validator("name")
@@ -82,7 +82,7 @@ class VMResponse(BaseModel):
 class AddSSHKeyRequest(BaseModel):
     """Request model for adding SSH key."""
     name: str = Field(..., min_length=1, max_length=64)
-    public_key: str = Field(..., regex="^(ssh-rsa|ssh-ed25519) ")
+    public_key: str = Field(..., pattern="^(ssh-rsa|ssh-ed25519) ")
 
 
 class ErrorResponse(BaseModel):
