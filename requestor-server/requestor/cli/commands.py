@@ -68,7 +68,9 @@ async def list_providers(cpu: Optional[int], memory: Optional[int], storage: Opt
             if country:
                 logger.detail(f"Country: {country}")
         
-        logger.process("Querying discovery service")
+        # Determine the discovery driver being used
+        discovery_driver = driver or config.discovery_driver
+        logger.process(f"Querying discovery service via {discovery_driver}")
         
         # Initialize provider service
         provider_service = ProviderService()
