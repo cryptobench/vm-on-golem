@@ -1,28 +1,28 @@
 name: Publish Provider Package
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'provider-server/**'
+    push:
+        branches:
+            - main
+        paths:
+            - "provider-server/**"
 
 jobs:
-  publish:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.9"
-      - name: Install Poetry
-        run: |
-          curl -sSL https://install.python-poetry.org | python3 -
-      - name: Configure Poetry
-        run: |
-          poetry config pypi-token.pypi ${{ secrets.PYPI_TOKEN }}
-      - name: Build and publish
-        working-directory: ./provider-server
-        run: |
-          poetry build
-          poetry publish
+    publish:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v3
+            - name: Set up Python
+              uses: actions/setup-python@v4
+              with:
+                  python-version: "3.13"
+            - name: Install Poetry
+              run: |
+                  curl -sSL https://install.python-poetry.org | python3 -
+            - name: Configure Poetry
+              run: |
+                  poetry config pypi-token.pypi ${{ secrets.PYPI_TOKEN }}
+            - name: Build and publish
+              working-directory: ./provider-server
+              run: |
+                  poetry build
+                  poetry publish
