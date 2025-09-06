@@ -131,6 +131,7 @@ files = [
 
 [package.dependencies]
 frozenlist = ">=1.1.0"
+typing-extensions = {version = ">=4.2", markers = "python_version < \"3.13\""}
 
 [[package]]
 name = "aiosqlite"
@@ -171,6 +172,7 @@ files = [
 [package.dependencies]
 idna = ">=2.8"
 sniffio = ">=1.1"
+typing_extensions = {version = ">=4.5", markers = "python_version < \"3.13\""}
 
 [package.extras]
 trio = ["trio (>=0.26.1)"]
@@ -3057,5 +3059,5 @@ propcache = ">=0.2.1"
 
 [metadata]
 lock-version = "2.0"
-python-versions = "^3.13"
-content-hash = "876d132c2617eb056e2416b06c9310e33213874472daa1e701068f4008c1c239"
+python-versions = "^3.11"
+content-hash = "1ae1ac03b2dda708d2fd084b044e1dd9b8eefd266dc089e9161ff618a3c2ab57"
