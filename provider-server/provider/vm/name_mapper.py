@@ -9,21 +9,21 @@ logger = logging.getLogger(__name__)
 class VMNameMapper:
     """Maps between requestor VM names and multipass VM names."""
 
-    def __init__(self, storage_path: Optional[Path] = None):
+    def __init__(self, db_path: Optional[Path] = None):
         """Initialize name mapper.
         
         Args:
-            storage_path: Optional path to persist mappings
+            db_path: Optional path to persist mappings
         """
         self._name_map: Dict[str, str] = {}  # requestor_name -> multipass_name
         self._reverse_map: Dict[str, str] = {}  # multipass_name -> requestor_name
         self._lock = asyncio.Lock()
-        self._storage_path = storage_path
+        self._storage_path = db_path
         
         # Load existing mappings if storage path provided
-        if storage_path and storage_path.exists():
+        if db_path and db_path.exists():
             try:
-                with open(storage_path) as f:
+                with open(db_path) as f:
                     data = json.load(f)
                     self._name_map = data.get('name_map', {})
                     self._reverse_map = data.get('reverse_map', {})

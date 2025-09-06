@@ -9,15 +9,35 @@ from .config import settings
 from .utils.logging import setup_logger, PROCESS, SUCCESS
 from .utils.ascii_art import startup_animation
 from .discovery.resource_tracker import ResourceTracker
-from .discovery.advertiser import ResourceAdvertiser
-from .discovery.golem_base_advertiser import GolemBaseAdvertiser
-from .vm.multipass import MultipassProvider
-from .vm.port_manager import PortManager
-from .security.faucet import FaucetClient
-
-logger = setup_logger(__name__)
+from .discovery.advertiser import DiscoveryServerAdvertiser
+from .container import Container
+from .service import ProviderService
+from .utils.logging import setup_logger
 
 app = FastAPI(title="VM on Golem Provider")
+container = Container()
+container.config.from_pydantic(settings)
+app.container = container
+container.wire(modules=[".api.routes"])
+
+from .vm.models import VMNotFoundError
+from fastapi import Request
+from fastapi.responses import JSONResponse
+
+@app.exception_handler(VMNotFoundError)
+async def vm_not_found_exception_handler(request: Request, exc: VMNotFoundError):
+    return JSONResponse(
+        status_code=404,
+        content={"message": str(exc)},
+    )
+
+@app.exception_handler(Exception)
+async def generic_exception_handler(request: Request, exc: Exception):
+    return JSONResponse(
+        status_code=500,
+        content={"message": "An unexpected error occurred"},
+    )
+
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
@@ -27,156 +47,18 @@ app.add_middleware(
     allow_headers=["*"],  # Allows all headers
 )
 
-
-async def setup_provider() -> None:
-    """Setup and initialize the provider components."""
-    try:
-        # Create resource tracker first
-        logger.process("🔄 Initializing resource tracker...")
-        resource_tracker = ResourceTracker()
-        app.state.resource_tracker = resource_tracker
-
-        # Create provider with resource tracker and temporary port manager
-        logger.process("🔄 Initializing VM provider...")
-        provider = MultipassProvider(
-            resource_tracker, port_manager=None)  # Will be set later
-
-        try:
-            # Initialize provider (without port operations)
-            await asyncio.wait_for(provider.initialize(), timeout=30)
-
-            # Store provider reference
-            app.state.provider = provider
-            app.state.proxy_manager = provider.proxy_manager
-
-            # Initialize port manager first to verify all ports
-            logger.process("🔄 Initializing port manager...")
-            port_manager = PortManager(
-                start_port=settings.PORT_RANGE_START,
-                end_port=settings.PORT_RANGE_END,
-                discovery_port=settings.PORT,
-                skip_verification=settings.SKIP_PORT_VERIFICATION
-            )
-
-            if not await port_manager.initialize():
-                raise RuntimeError("Port verification failed")
-
-            # Store port manager references
-            app.state.port_manager = port_manager
-            provider.port_manager = port_manager
-            app.state.proxy_manager.port_manager = port_manager
-
-            # Now restore proxy configurations using only verified ports
-            logger.process("🔄 Restoring proxy configurations...")
-            await app.state.proxy_manager._load_state()
-
-        except asyncio.TimeoutError:
-            logger.error("Provider initialization timed out")
-            raise
-        except Exception as e:
-            logger.error(f"Failed to initialize provider: {e}")
-            raise
-
-        # Create advertiser
-        logger.process("🔄 Initializing resource advertiser...")
-        if settings.DISCOVERY_DRIVER == "golem-base":
-            advertiser = GolemBaseAdvertiser(
-                resource_tracker=resource_tracker
-            )
-            await advertiser.initialize()
-        else:
-            advertiser = ResourceAdvertiser(
-                resource_tracker=resource_tracker,
-                discovery_url=settings.DISCOVERY_URL,
-                provider_id=settings.PROVIDER_ID
-            )
-        app.state.advertiser = advertiser
-
-        logger.success(
-            "✨ Provider setup complete and ready to accept requests")
-    except Exception as e:
-        logger.error(f"Failed to setup provider: {e}")
-        # Attempt cleanup of any initialized components
-        await cleanup_provider()
-        raise
-
-
-async def cleanup_provider() -> None:
-    """Cleanup provider components."""
-    cleanup_errors = []
-
-    # Stop advertiser
-    if hasattr(app.state, "advertiser"):
-        try:
-            await app.state.advertiser.stop()
-            if hasattr(app.state, "advertiser_task"):
-                app.state.advertiser_task.cancel()
-                try:
-                    await app.state.advertiser_task
-                except asyncio.CancelledError:
-                    pass
-        except Exception as e:
-            cleanup_errors.append(f"Failed to stop advertiser: {e}")
-
-    # Cleanup proxy manager first to stop all proxy servers
-    if hasattr(app.state, "proxy_manager"):
-        try:
-            await asyncio.wait_for(app.state.proxy_manager.cleanup(), timeout=30)
-        except asyncio.TimeoutError:
-            cleanup_errors.append("Proxy manager cleanup timed out")
-        except Exception as e:
-            cleanup_errors.append(f"Failed to cleanup proxy manager: {e}")
-
-    # Cleanup provider
-    if hasattr(app.state, "provider"):
-        try:
-            await asyncio.wait_for(app.state.provider.cleanup(), timeout=30)
-        except asyncio.TimeoutError:
-            cleanup_errors.append("Provider cleanup timed out")
-        except Exception as e:
-            cleanup_errors.append(f"Failed to cleanup provider: {e}")
-
-    if cleanup_errors:
-        error_msg = "\n".join(cleanup_errors)
-        logger.error(f"Errors during cleanup:\n{error_msg}")
-    else:
-        logger.success("✨ Provider cleanup complete")
-
-
 @app.on_event("startup")
 async def startup_event():
     """Handle application startup."""
-    try:
-        # Display startup animation
-        await startup_animation()
- 
-        # Initialize provider
-        await setup_provider()
-
-        # Check wallet balance and request funds if needed
-        faucet_client = FaucetClient(
-            faucet_url=settings.FAUCET_URL,
-            captcha_url=settings.CAPTCHA_URL,
-            captcha_api_key=settings.CAPTCHA_API_KEY,
-        )
-        await faucet_client.get_funds(settings.PROVIDER_ID)
-
-        # Post initial advertisement and start advertising loop
-        if isinstance(app.state.advertiser, GolemBaseAdvertiser):
-            await app.state.advertiser.post_advertisement()
-            app.state.advertiser_task = asyncio.create_task(app.state.advertiser.start_loop())
-
-    except Exception as e:
-        logger.error(f"Startup failed: {e}")
-        # Ensure proper cleanup
-        await cleanup_provider()
-        raise
+    provider_service = container.provider_service()
+    await provider_service.setup(app)
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Handle application shutdown."""
-    await cleanup_provider()
+    provider_service = container.provider_service()
+    await provider_service.cleanup()
 
 # Import routes after app creation to avoid circular imports
 app.include_router(routes.router, prefix="/api/v1")
@@ -232,21 +114,37 @@ cli = typer.Typer()
 @cli.command()
 def start(no_verify_port: bool = typer.Option(False, "--no-verify-port", help="Skip provider port verification.")):
     """Start the provider server."""
+    run_server(dev_mode=False, no_verify_port=no_verify_port)
+
+@cli.command()
+def dev(no_verify_port: bool = typer.Option(True, "--no-verify-port", help="Skip provider port verification.")):
+    """Start the provider server in development mode."""
+    run_server(dev_mode=True, no_verify_port=no_verify_port)
+
+def run_server(dev_mode: bool, no_verify_port: bool):
+    """Helper to run the uvicorn server."""
     import sys
     from pathlib import Path
     from dotenv import load_dotenv
     import uvicorn
     from .utils.logging import setup_logger
+    
+    # Load appropriate .env file
+    env_file = ".env.dev" if dev_mode else ".env"
+    env_path = Path(__file__).parent.parent / env_file
+    load_dotenv(dotenv_path=env_path)
+    
+    # In dev mode, force advertised IP to 127.0.0.1
+    if dev_mode:
+        os.environ["GOLEM_PROVIDER_PUBLIC_IP"] = "127.0.0.1"
+
+    # Import settings after loading env
     from .config import settings
 
     # Configure logging with debug mode
-    logger = setup_logger(__name__, debug=True)
+    logger = setup_logger(__name__, debug=dev_mode)
 
     try:
-        # Load environment variables from .env file
-        env_path = Path(__file__).parent.parent / '.env'
-        load_dotenv(dotenv_path=env_path)
-
         # Log environment variables
         logger.info("Environment variables:")
         for key, value in os.environ.items():
@@ -275,7 +173,7 @@ def start(no_verify_port: bool = typer.Option(False, "--no-verify-port", help="S
             host=settings.HOST,
             port=settings.PORT,
             reload=settings.DEBUG,
-            log_level="info" if not settings.DEBUG else "debug",
+            log_level="debug" if dev_mode else "info",
             log_config=log_config,
             timeout_keep_alive=60,  # Increase keep-alive timeout
             limit_concurrency=100,  # Limit concurrent connections

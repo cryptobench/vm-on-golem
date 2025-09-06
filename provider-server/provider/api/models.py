@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 from typing import Dict, Optional, List, Any
 from datetime import datetime
 
@@ -18,14 +18,14 @@ class CreateVMRequest(BaseModel):
     ssh_key: str = Field(..., pattern="^(ssh-rsa|ssh-ed25519) ",
                          description="SSH public key for VM access")
 
-    @validator("name")
+    @field_validator("name")
     def validate_name(cls, v: str) -> str:
         """Validate VM name."""
         if "--" in v:
             raise ValueError("VM name cannot contain consecutive hyphens")
         return v
 
-    @validator("resources", pre=True)
+    @field_validator("resources", mode='before')
     def validate_resources(cls, v: Optional[Dict[str, Any]], values: Dict[str, Any]) -> VMResources:
         """Validate and set resources."""
         logger.debug(f"Validating resources input: {v}")
@@ -43,10 +43,10 @@ class CreateVMRequest(BaseModel):
                 return v
 
             # If size provided, use that
-            if "size" in values and values["size"] is not None:
-                result = VMResources.from_size(values["size"])
+            if "size" in values.data and values.data["size"] is not None:
+                result = VMResources.from_size(values.data["size"])
                 logger.debug(
-                    f"Created resources from size {values['size']}: {result}")
+                    f"Created resources from size {values.data['size']}: {result}")
                 return result
 
             # Only use defaults if nothing provided
@@ -57,7 +57,7 @@ class CreateVMRequest(BaseModel):
         except Exception as e:
             logger.error(f"Error validating resources: {e}")
             logger.error(f"Input value: {v}")
-            logger.error(f"Values dict: {values}")
+            logger.error(f"Values dict: {values.data}")
             raise ValueError(f"Invalid resource configuration: {str(e)}")
 
 
