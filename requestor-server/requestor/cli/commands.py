@@ -147,7 +147,7 @@ async def create_vm(name: str, provider_id: str, cpu: int, memory: int, storage:
                 # Initialize VM service
                 provider_url = config.get_provider_url(provider_ip)
                 async with ProviderClient(provider_url) as client:
-                    vm_service = VMService(db_service, client)
+                    vm_service = VMService(db_service, ssh_service, client)
                     
                     # Create VM
                     vm = await vm_service.create_vm(
@@ -230,7 +230,7 @@ async def ssh_vm(name: str):
         logger.process("Fetching connection details")
         provider_url = config.get_provider_url(vm['provider_ip'])
         async with ProviderClient(provider_url) as client:
-            vm_service = VMService(db_service, client)
+            vm_service = VMService(db_service, ssh_service, client)
             vm = await vm_service.get_vm(name)  # Get fresh VM info
             ssh_port = vm['config']['ssh_port']
 
@@ -271,7 +271,7 @@ async def destroy_vm(name: str):
         # Initialize VM service
         provider_url = config.get_provider_url(vm['provider_ip'])
         async with ProviderClient(provider_url) as client:
-            vm_service = VMService(db_service, client)
+            vm_service = VMService(db_service, SSHService(config.ssh_key_dir), client)
             await vm_service.destroy_vm(name)
         
         # Show fancy success message
@@ -327,7 +327,7 @@ async def purge_vms(force: bool):
                 # Initialize VM service
                 provider_url = config.get_provider_url(vm['provider_ip'])
                 async with ProviderClient(provider_url) as client:
-                    vm_service = VMService(db_service, client)
+                    vm_service = VMService(db_service, SSHService(config.ssh_key_dir), client)
                     try:
                         await vm_service.destroy_vm(vm['name'])
                         results['success'].append((vm['name'], 'Destroyed successfully'))
@@ -406,7 +406,7 @@ async def start_vm(name: str):
         # Initialize VM service
         provider_url = config.get_provider_url(vm['provider_ip'])
         async with ProviderClient(provider_url) as client:
-            vm_service = VMService(db_service, client)
+            vm_service = VMService(db_service, SSHService(config.ssh_key_dir), client)
             await vm_service.start_vm(name)
 
         # Show fancy success message
@@ -452,7 +452,7 @@ async def stop_vm(name: str):
         # Initialize VM service
         provider_url = config.get_provider_url(vm['provider_ip'])
         async with ProviderClient(provider_url) as client:
-            vm_service = VMService(db_service, client)
+            vm_service = VMService(db_service, SSHService(config.ssh_key_dir), client)
             await vm_service.stop_vm(name)
 
         # Show fancy success message
@@ -518,7 +518,8 @@ async def list_vms():
         logger.process("Fetching VM details")
         
         # Initialize VM service with temporary client (not needed for listing)
-        vm_service = VMService(db_service, None)
+        ssh_service = SSHService(config.ssh_key_dir)
+        vm_service = VMService(db_service, ssh_service, None)
         vms = await vm_service.list_vms()
         if not vms:
             logger.warning("No VMs found")
@@ -556,3 +557,43 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+
+@vm.command(name='stats')
+@click.argument('name')
+@async_command
+async def vm_stats(name: str):
+    """Display live resource usage statistics for a VM."""
+    try:
+        # Initialize services
+        ssh_service = SSHService(config.ssh_key_dir)
+        vm_service = VMService(db_service, ssh_service)
+
+        # Get VM details
+        vm = await vm_service.get_vm(name)
+        if not vm:
+            raise click.BadParameter(f"VM '{name}' not found")
+
+        # Loop to fetch and display stats continuously
+        while True:
+            stats = await vm_service.get_vm_stats(name)
+            
+            click.clear()
+            click.echo("\n" + "─" * 60)
+            click.echo(click.style(f"  📊 Live Stats for VM: {name} (Press Ctrl+C to exit)", fg="blue", bold=True))
+            click.echo("─" * 60)
+            
+            if 'cpu' in stats and 'usage' in stats['cpu']:
+                click.echo(f"  💻 CPU Usage : {click.style(stats['cpu']['usage'], fg='cyan')}")
+            if 'memory' in stats and 'used' in stats['memory']:
+                click.echo(f"  🧠 Memory    : {click.style(stats['memory']['used'], fg='cyan')} / {click.style(stats['memory']['total'], fg='cyan')}")
+            if 'disk' in stats and 'used' in stats['disk']:
+                click.echo(f"  💾 Disk      : {click.style(stats['disk']['used'], fg='cyan')} / {click.style(stats['disk']['total'], fg='cyan')}")
+            
+            click.echo("─" * 60)
+            
+            await asyncio.sleep(2)  # Update every 2 seconds
+
+    except Exception as e:
+        logger.error(f"Failed to get VM stats: {str(e)}")
+        raise click.Abort()

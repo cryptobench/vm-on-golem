@@ -5,6 +5,7 @@ from datetime import datetime
 from ..provider.client import ProviderClient
 from ..errors import RequestorError, VMError
 from .database_service import DatabaseService
+from .ssh_service import SSHService
 
 class VMService:
     """Service for VM operations."""
@@ -12,9 +13,11 @@ class VMService:
     def __init__(
         self,
         db_service: DatabaseService,
+        ssh_service: SSHService,
         provider_client: Optional[ProviderClient] = None
     ):
         self.db = db_service
+        self.ssh_service = ssh_service
         self.provider_client = provider_client
 
     async def create_vm(
@@ -187,3 +190,20 @@ class VMService:
             "Storage (GB)",
             "Created"
         ]
+
+    async def get_vm_stats(self, name: str) -> Dict:
+        """Get VM stats by name."""
+        try:
+            vm = await self.db.get_vm(name)
+            if not vm:
+                raise VMError(f"VM '{name}' not found")
+
+            key_pair = await self.ssh_service.get_key_pair()
+
+            return self.ssh_service.get_vm_stats(
+                host=vm['provider_ip'],
+                port=vm['config']['ssh_port'],
+                private_key_path=key_pair.private_key
+            )
+        except Exception as e:
+            raise VMError(f"Failed to get VM stats: {str(e)}")
