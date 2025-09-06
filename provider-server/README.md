@@ -235,7 +235,11 @@ Response:
 ### Starting the Provider
 
 ```bash
-poetry run python run.py
+# To run in production mode
+poetry run golem-provider start
+
+# To run in development mode
+poetry run golem-provider dev
 ```
 
 The provider will:

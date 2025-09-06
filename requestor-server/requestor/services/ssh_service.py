@@ -36,7 +36,7 @@ class SSHService:
                 "-o", "UserKnownHostsFile=/dev/null",
                 f"{username}@{host}"
             ]
-            subprocess.run(cmd)
+            subprocess.run(cmd, check=True)
         except Exception as e:
             raise SSHError(f"Failed to establish SSH connection: {str(e)}")
 

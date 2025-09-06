@@ -308,7 +308,7 @@ class PythonProxyManager:
         """
         try:
             # Use provided port or allocate one
-            if port is None or port == 0:
+            if port is None:
                 allocated_port = self.port_manager.allocate_port(vm_id)
                 if allocated_port is None:
                     logger.error(f"Failed to allocate port for VM {vm_id}")

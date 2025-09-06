@@ -1,5 +1,5 @@
 from enum import Enum
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 from typing import Dict, Optional
 from datetime import datetime
 
@@ -28,14 +28,14 @@ class VMResources(BaseModel):
     memory: int = Field(..., ge=1, description="Memory in GB")
     storage: int = Field(..., ge=10, description="Storage in GB")
 
-    @validator("cpu")
+    @field_validator("cpu")
     def validate_cpu(cls, v: int) -> int:
         """Validate CPU cores."""
         if v not in [1, 2, 4, 8, 16]:
             raise ValueError("CPU cores must be 1, 2, 4, 8, or 16")
         return v
 
-    @validator("memory")
+    @field_validator("memory")
     def validate_memory(cls, v: int) -> int:
         """Validate memory."""
         if v not in [1, 2, 4, 8, 16, 32, 64]:
@@ -66,21 +66,21 @@ class VMCreateRequest(BaseModel):
     ssh_key: str = Field(..., pattern="^(ssh-rsa|ssh-ed25519) ",
                          description="SSH public key for VM access")
 
-    @validator("name")
+    @field_validator("name")
     def validate_name(cls, v: str) -> str:
         """Validate VM name."""
         if "--" in v:
             raise ValueError("VM name cannot contain consecutive hyphens")
         return v
 
-    @validator("cpu_cores")
+    @field_validator("cpu_cores")
     def validate_cpu(cls, v: Optional[int]) -> Optional[int]:
         """Validate CPU cores."""
         if v is not None and v not in [1, 2, 4, 8, 16]:
             raise ValueError("CPU cores must be 1, 2, 4, 8, or 16")
         return v
 
-    @validator("memory_gb")
+    @field_validator("memory_gb")
     def validate_memory(cls, v: Optional[int]) -> Optional[int]:
         """Validate memory."""
         if v is not None and v not in [1, 2, 4, 8, 16, 32, 64]:
@@ -97,8 +97,9 @@ class VMConfig(BaseModel):
     size: Optional[VMSize] = None
     ssh_key: str = Field(..., pattern="^(ssh-rsa|ssh-ed25519) ",
                          description="SSH public key for VM access")
+    cloud_init_path: Optional[str] = None
 
-    @validator("name")
+    @field_validator("name")
     def validate_name(cls, v: str) -> str:
         """Validate VM name."""
         if "--" in v:

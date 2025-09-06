@@ -4,7 +4,7 @@ from typing import Optional
 import uuid
 
 from pydantic_settings import BaseSettings
-from pydantic import validator, Field
+from pydantic import field_validator, Field
 from .utils.logging import setup_logger
 
 logger = setup_logger(__name__)
@@ -24,10 +24,10 @@ class Settings(BaseSettings):
     def DEV_MODE(self) -> bool:
         return self.ENVIRONMENT == "development"
 
-    @validator("SKIP_PORT_VERIFICATION", always=True)
+    @field_validator("SKIP_PORT_VERIFICATION", mode='before')
     def set_skip_verification(cls, v: bool, values: dict) -> bool:
         """Set skip verification based on debug mode."""
-        return v or values.get("DEBUG", False)
+        return v or values.data.get("DEBUG", False)
 
     # Provider Settings
     PROVIDER_NAME: str = "golem-provider"
@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     CAPTCHA_URL: str = "https://cap.gobas.me"
     CAPTCHA_API_KEY: str = "05381a2cef5e"
  
-    @validator("ETHEREUM_KEY_DIR", pre=True)
+    @field_validator("ETHEREUM_KEY_DIR", mode='before')
     def resolve_key_dir(cls, v: str) -> str:
         """Resolve Ethereum key directory path."""
         if not v:
@@ -49,7 +49,7 @@ class Settings(BaseSettings):
             path = Path.home() / path
         return str(path)
 
-    @validator("ETHEREUM_PRIVATE_KEY", always=True)
+    @field_validator("ETHEREUM_PRIVATE_KEY", mode='before')
     def get_private_key(cls, v: Optional[str], values: dict) -> str:
         """Get private key from key file if not provided."""
         from provider.security.ethereum import EthereumIdentity
@@ -57,17 +57,17 @@ class Settings(BaseSettings):
         if v:
             return v
         
-        key_dir = values.get("ETHEREUM_KEY_DIR")
+        key_dir = values.data.get("ETHEREUM_KEY_DIR")
         identity = EthereumIdentity(key_dir)
         _, private_key = identity.get_or_create_identity()
         return private_key
 
-    @validator("PROVIDER_ID", always=True)
+    @field_validator("PROVIDER_ID", mode='before')
     def get_provider_id(cls, v: str, values: dict) -> str:
         """Get provider ID from private key."""
         from eth_account import Account
 
-        private_key = values.get("ETHEREUM_PRIVATE_KEY")
+        private_key = values.data.get("ETHEREUM_PRIVATE_KEY")
         if not private_key:
             raise ValueError("ETHEREUM_PRIVATE_KEY is not set")
 
@@ -83,16 +83,16 @@ class Settings(BaseSettings):
         
         return provider_id_from_key
  
-    @validator("PROVIDER_NAME", always=True)
+    @field_validator("PROVIDER_NAME", mode='before')
     def set_provider_name(cls, v: str, values: dict) -> str:
         """Prefix provider name with DEVMODE if in development."""
-        if values.get("ENVIRONMENT") == "development":
+        if values.data.get("ENVIRONMENT") == "development":
             return f"DEVMODE-{v}"
         return v
  
     # Discovery Service Settings
     DISCOVERY_URL: str = "http://195.201.39.101:9001"
-    DISCOVERY_DRIVER: str = "golem-base" # or "legacy"
+    ADVERTISER_TYPE: str = "golem_base"  # or "discovery_server"
     ADVERTISEMENT_INTERVAL: int = 240  # seconds
 
     # Golem Base Settings
@@ -107,7 +107,7 @@ class Settings(BaseSettings):
     CLOUD_INIT_DIR: str = ""
     CLOUD_INIT_FALLBACK_DIR: str = ""  # Will be set to a temp directory if needed
 
-    @validator("CLOUD_INIT_DIR", pre=True)
+    @field_validator("CLOUD_INIT_DIR", mode='before')
     def resolve_cloud_init_dir(cls, v: str) -> str:
         """Resolve and create cloud-init directory path."""
         import platform
@@ -190,7 +190,7 @@ class Settings(BaseSettings):
             logger.error(f"Failed to create cloud-init directory at {path}: {e}")
             raise ValueError(f"Failed to create cloud-init directory: {e}")
 
-    @validator("VM_DATA_DIR", pre=True)
+    @field_validator("VM_DATA_DIR", mode='before')
     def resolve_vm_data_dir(cls, v: str) -> str:
         """Resolve and create VM data directory path."""
         if not v:
@@ -209,7 +209,7 @@ class Settings(BaseSettings):
             
         return str(path)
 
-    @validator("SSH_KEY_DIR", pre=True)
+    @field_validator("SSH_KEY_DIR", mode='before')
     def resolve_ssh_key_dir(cls, v: str) -> str:
         """Resolve and create SSH key directory path with secure permissions."""
         if not v:
@@ -248,7 +248,7 @@ class Settings(BaseSettings):
         description="Path to multipass binary"
     )
 
-    @validator("MULTIPASS_BINARY_PATH")
+    @field_validator("MULTIPASS_BINARY_PATH")
     def detect_multipass_path(cls, v: str) -> str:
         """Detect and validate Multipass binary path."""
         import platform
@@ -373,7 +373,7 @@ class Settings(BaseSettings):
     PROXY_STATE_DIR: str = ""
     PUBLIC_IP: Optional[str] = None
 
-    @validator("PROXY_STATE_DIR", pre=True)
+    @field_validator("PROXY_STATE_DIR", mode='before')
     def resolve_proxy_state_dir(cls, v: str) -> str:
         """Resolve and create proxy state directory path."""
         if not v:
@@ -392,20 +392,12 @@ class Settings(BaseSettings):
             
         return str(path)
 
-    @validator("PUBLIC_IP", pre=True)
+    @field_validator("PUBLIC_IP", mode='before')
     def get_public_ip(cls, v: Optional[str], values: dict) -> Optional[str]:
         """Get public IP if set to 'auto'."""
+        if values.data.get("ENVIRONMENT") == "development":
+            return "127.0.0.1"
         if v == "auto":
-            if values.get("ENVIRONMENT") == "development":
-                import socket
-                try:
-                    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                    s.connect(("8.8.8.8", 80))
-                    local_ip = s.getsockname()[0]
-                    s.close()
-                    return local_ip
-                except Exception:
-                    return "127.0.0.1"
             try:
                 import requests
                 response = requests.get("https://api.ipify.org")

@@ -39,42 +39,26 @@ def setup_logger(name: Optional[str] = None, debug: bool = False) -> logging.Log
         Configured logger instance
     """
     logger = logging.getLogger(name or __name__)
-    logger.handlers = []  # Clear existing handlers
-    
-    # Fancy handler for important logs
-    fancy_handler = colorlog.StreamHandler(sys.stdout)
-    fancy_formatter = colorlog.ColoredFormatter(
-        "%(log_color)s[%(asctime)s] %(message)s",
+    if logger.handlers:
+        return logger  # Already configured
+
+    handler = colorlog.StreamHandler(sys.stdout)
+    formatter = colorlog.ColoredFormatter(
+        "%(log_color)s[%(asctime)s] %(levelname)s: %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
-        reset=True,
         log_colors={
+            'DEBUG': 'cyan',
             'INFO': 'green',
             'PROCESS': 'yellow',
             'WARNING': 'yellow',
             'SUCCESS': 'green,bold',
             'ERROR': 'red',
             'CRITICAL': 'red,bold',
-        },
-        secondary_log_colors={},
-        style='%'
+        }
     )
-    fancy_handler.setFormatter(fancy_formatter)
-    fancy_handler.addFilter(lambda record: record.levelno in [INFO, PROCESS, SUCCESS, WARNING, ERROR, CRITICAL])
-    logger.addHandler(fancy_handler)
-    
-    if debug:
-        # Debug handler for detailed logs
-        debug_handler = logging.StreamHandler(sys.stdout)
-        debug_formatter = logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            datefmt="%Y-%m-%d %H:%M:%S"
-        )
-        debug_handler.setFormatter(debug_formatter)
-        debug_handler.addFilter(lambda record: record.levelno == DEBUG)
-        logger.addHandler(debug_handler)
-        logger.setLevel(logging.DEBUG)
-    else:
-        logger.setLevel(logging.INFO)
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+    logger.setLevel(logging.DEBUG if debug else logging.INFO)
     
     return logger
 

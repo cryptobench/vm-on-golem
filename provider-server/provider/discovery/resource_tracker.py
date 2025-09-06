@@ -11,7 +11,7 @@ class ResourceTracker:
 
     def __init__(self):
         """Initialize resource tracker."""
-        from .advertiser import ResourceMonitor
+        from .resource_monitor import ResourceMonitor
         self.total_resources = {
             "cpu": ResourceMonitor.get_cpu_count(),
             "memory": ResourceMonitor.get_memory_gb(),

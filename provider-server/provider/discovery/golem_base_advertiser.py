@@ -2,6 +2,7 @@ import asyncio
 from typing import Optional
 
 from golem_base_sdk import GolemBaseClient, GolemBaseCreate, GolemBaseUpdate, GolemBaseDelete, Annotation
+from .advertiser import Advertiser
 from .golem_base_utils import get_provider_entity_keys
 from ..config import settings
 from ..utils.logging import setup_logger
@@ -9,7 +10,7 @@ from ..utils.logging import setup_logger
 logger = setup_logger(__name__)
 
 
-class GolemBaseAdvertiser:
+class GolemBaseAdvertiser(Advertiser):
     """Advertise available resources to the Golem Base network."""
 
     def __init__(self, resource_tracker: "ResourceTracker"):

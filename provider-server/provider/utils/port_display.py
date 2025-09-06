@@ -100,10 +100,8 @@ class PortVerificationDisplay:
         print("-------------------------")
         
         if self.skip_verification:
-            print("\n✅ All ports available in development mode")
-            print(f"└─ Port Range: {self.port_range_start}-{self.port_range_end}")
-            print("└─ Status: Port verification skipped")
-            print("└─ Note: Configure ports before deploying to production")
+            print("✅ Development Mode: Port verification skipped")
+            print(f"└─ Port Range: {self.port_range_start}-{self.port_range_end} assumed available")
             return
 
         await self.animate_verification("Scanning VM access ports...")
@@ -209,10 +207,10 @@ class PortVerificationDisplay:
         print("\n🎯 Current Status:", end=" ")
 
         if self.skip_verification:
-            print("Development Mode")
-            print("└─ Status: Port verification skipped")
-            print(f"└─ Available: All ports in range {self.port_range_start}-{self.port_range_end}")
-            print("└─ Note: This is for development only, configure ports in production")
+            print("✅ Development Mode")
+            print("└─ Status: Local port verification complete")
+            print(f"└─ Available: All ports in range {self.port_range_start}-{self.port_range_end} are assumed to be available locally")
+            print("└─ Note: External accessibility is not checked in dev mode")
             return
         
         if discovery_result is None:

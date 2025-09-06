@@ -47,10 +47,13 @@ class PortManager:
         self._existing_ports = existing_ports or set()
 
         # Initialize port verifier with default servers
-        self.port_check_servers = port_check_servers or [
-            "http://localhost:9000",  # Local development server
-            "http://195.201.39.101:9000",  # Production servers
-        ]
+        if settings.DEV_MODE:
+            self.port_check_servers = ["http://localhost:9000"]
+        else:
+            self.port_check_servers = port_check_servers or [
+                "http://localhost:9000",  # Local development server
+                "http://195.201.39.101:9000",  # Production servers
+            ]
         self.discovery_port = discovery_port or settings.PORT
         self.skip_verification = skip_verification
         self.port_verifier = PortVerifier(
@@ -105,7 +108,21 @@ class PortManager:
 
             # Clear existing verified ports before verification
             self.verified_ports.clear()
-            results = await self.port_verifier.verify_ports(ssh_ports)
+            results = {}
+            if not self.skip_verification:
+                try:
+                    results = await self.port_verifier.verify_ports(ssh_ports)
+                except RuntimeError as e:
+                    logger.error(f"Port verification failed: {e}")
+                    display.print_summary(
+                        PortVerificationResult(
+                            port=self.discovery_port,
+                            accessible=False,
+                            error=str(e)
+                        ),
+                        {}
+                    )
+                    return False
 
         # Add provider port as verified since we already checked it
         results[self.discovery_port] = PortVerificationResult(
@@ -237,7 +254,8 @@ class PortManager:
             used_ports = self._get_used_ports()
 
             # Find first available verified port
-            ports_to_check = sorted(self.verified_ports) if not self.skip_verification else range(self.start_port, self.end_port)
+            ports_to_check = sorted(list(self.verified_ports)) if not self.skip_verification else range(
+                self.start_port, self.end_port)
             for port in ports_to_check:
                 if port not in used_ports:
                     # Quick check if port is actually available

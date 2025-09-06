@@ -12,7 +12,7 @@ from .models import (
     VMStateError,
     ResourceError
 )
-from .multipass import MultipassProvider
+from .multipass_adapter import MultipassAdapter
 
 __all__ = [
     "VMConfig",
