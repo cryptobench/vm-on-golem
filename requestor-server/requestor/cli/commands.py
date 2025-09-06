@@ -7,6 +7,11 @@ import subprocess
 import aiohttp
 from tabulate import tabulate
 import uvicorn
+try:
+    from importlib import metadata
+except ImportError:
+    # Python < 3.8
+    import importlib_metadata as metadata
 
 from ..config import config
 from ..provider.client import ProviderClient
@@ -34,7 +39,20 @@ def async_command(f):
     return lambda *args, **kwargs: asyncio.run(wrapper(*args, **kwargs))
 
 
+def print_version(ctx, param, value):
+    if not value or ctx.resilient_parsing:
+        return
+    try:
+        version = metadata.version('request-vm-on-golem')
+    except metadata.PackageNotFoundError:
+        version = 'unknown'
+    click.echo(f'Requestor VM on Golem CLI version {version}')
+    ctx.exit()
+
+
 @click.group()
+@click.option('--version', is_flag=True, callback=print_version,
+              expose_value=False, is_eager=True, help="Show the version and exit.")
 def cli():
     """VM on Golem management CLI"""
     pass
