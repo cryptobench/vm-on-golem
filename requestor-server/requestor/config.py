@@ -1,5 +1,6 @@
 from pathlib import Path
 from typing import Optional, Dict
+import os
 from pydantic_settings import BaseSettings
 from pydantic import Field, validator
 
@@ -79,6 +80,10 @@ class RequestorConfig(BaseSettings):
     )
 
     def __init__(self, **kwargs):
+        # Allow overriding to dev mode with golem_dev_mode
+        if os.environ.get('golem_dev_mode', 'false').lower() in ('true', '1', 't'):
+            kwargs['environment'] = "development"
+
         # Set dependent paths before validation
         if 'ssh_key_dir' not in kwargs:
             base_dir = kwargs.get('base_dir', Path.home() / ".golem")
