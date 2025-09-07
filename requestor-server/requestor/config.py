@@ -102,8 +102,9 @@ class RequestorConfig(BaseSettings):
         Returns:
             The complete provider URL with protocol and port.
         """
-        if self.environment == "development" and self.force_localhost:
-            return "http://localhost:7466"
+        if self.environment == "development":
+            # In dev mode, we might still want to use the real IP
+            pass
         return f"http://{ip_address}:7466"
 
 config = RequestorConfig()
