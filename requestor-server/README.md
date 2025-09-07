@@ -92,6 +92,34 @@ cd vm-on-golem/requestor-server
 pip install -e .
 ```
 
+## Development
+
+To run the application in development mode, you need to set environment variables to configure development-specific settings. These are defined in the `.env.dev` file.
+
+You can run the server in development mode using one of the following methods:
+
+### Using `source`
+
+First, source the development environment variables:
+
+```bash
+source .env.dev
+```
+
+Then, run any `golem` command. For example:
+
+```bash
+poetry run golem vm providers
+```
+
+### Prepending variables
+
+Alternatively, you can prepend the environment variables directly to the command:
+
+```bash
+GOLEM_REQUESTOR_ENVIRONMENT="development" GOLEM_REQUESTOR_FORCE_LOCALHOST="true" poetry run golem vm providers
+```
+
 ## Usage
 
 ### Provider Discovery
