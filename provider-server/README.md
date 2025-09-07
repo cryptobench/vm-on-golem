@@ -228,10 +228,11 @@ Response:
 -   List VMs: `GET /api/v1/vms`
 -   Get VM Status: `GET /api/v1/vms/{vm_id}`
 -   Delete VM: `DELETE /api/v1/vms/{vm_id}`
+-   Stop VM: `POST /api/v1/vms/{vm_id}/stop`
 -   Get Access Info: `GET /api/v1/vms/{vm_id}/access`
-
-## Operations
-
+ 
+ ## Operations
+ 
 ### Starting the Provider
 
 ```bash
