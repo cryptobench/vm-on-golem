@@ -1,6 +1,7 @@
 """CLI interface for VM on Golem."""
 import click
 import asyncio
+import json
 from typing import Optional
 from pathlib import Path
 import subprocess
@@ -70,8 +71,9 @@ def vm():
 @click.option('--storage', type=int, help='Minimum storage (GB) required')
 @click.option('--country', help='Preferred provider country')
 @click.option('--driver', type=click.Choice(['central', 'golem-base']), default=None, help='Discovery driver to use')
+@click.option('--json', 'as_json', is_flag=True, help='Output in JSON format')
 @async_command
-async def list_providers(cpu: Optional[int], memory: Optional[int], storage: Optional[int], country: Optional[str], driver: Optional[str]):
+async def list_providers(cpu: Optional[int], memory: Optional[int], storage: Optional[int], country: Optional[str], driver: Optional[str], as_json: bool):
     """List available providers matching requirements."""
     try:
         # Log search criteria if any
@@ -85,11 +87,11 @@ async def list_providers(cpu: Optional[int], memory: Optional[int], storage: Opt
                 logger.detail(f"Storage: {storage}GB+")
             if country:
                 logger.detail(f"Country: {country}")
-        
+
         # Determine the discovery driver being used
         discovery_driver = driver or config.discovery_driver
         logger.process(f"Querying discovery service via {discovery_driver}")
-        
+
         # Initialize provider service
         provider_service = ProviderService()
         async with provider_service:
@@ -103,24 +105,31 @@ async def list_providers(cpu: Optional[int], memory: Optional[int], storage: Opt
 
         if not providers:
             logger.warning("No providers found matching criteria")
-            return
+            return {"providers": []}
 
-        # Format provider information using service with colors
-        headers = provider_service.provider_headers
-        rows = await asyncio.gather(*(provider_service.format_provider_row(p, colorize=True) for p in providers))
+        result = {"providers": providers}
 
-        # Show fancy header
-        click.echo("\n" + "─" * 80)
-        click.echo(click.style(f"  🌍 Available Providers ({len(providers)} total)", fg="blue", bold=True))
-        click.echo("─" * 80)
+        if as_json:
+            click.echo(json.dumps(result, indent=2))
+        else:
+            # Format provider information using service with colors
+            headers = provider_service.provider_headers
+            rows = await asyncio.gather(*(provider_service.format_provider_row(p, colorize=True) for p in providers))
 
-        # Show table with colored headers
-        click.echo("\n" + tabulate(
-            rows,
-            headers=[click.style(h, bold=True) for h in headers],
-            tablefmt="grid"
-        ))
-        click.echo("\n" + "─" * 80)
+            # Show fancy header
+            click.echo("\n" + "─" * 80)
+            click.echo(click.style(f"  🌍 Available Providers ({len(providers)} total)", fg="blue", bold=True))
+            click.echo("─" * 80)
+
+            # Show table with colored headers
+            click.echo("\n" + tabulate(
+                rows,
+                headers=[click.style(h, bold=True) for h in headers],
+                tablefmt="grid"
+            ))
+            click.echo("\n" + "─" * 80)
+
+        return result
 
     except Exception as e:
         logger.error(f"Failed to list providers: {str(e)}")
@@ -276,8 +285,9 @@ async def ssh_vm(name: str):
 
 @vm.command(name='info')
 @click.argument('name')
+@click.option('--json', 'as_json', is_flag=True, help='Output in JSON format')
 @async_command
-async def info_vm(name: str):
+async def info_vm(name: str, as_json: bool):
     """Show information about a VM."""
     try:
         logger.command(f"ℹ️  Getting info for VM '{name}'")
@@ -291,25 +301,32 @@ async def info_vm(name: str):
         if not vm:
             raise click.BadParameter(f"VM '{name}' not found")
 
-        headers = [
-            "Status",
-            "IP Address",
-            "SSH Port",
-            "CPU",
-            "Memory (GB)",
-            "Storage (GB)",
-        ]
+        result = vm
 
-        row = [
-            vm.get("status", "unknown"),
-            vm["provider_ip"],
-            vm["config"].get("ssh_port", "N/A"),
-            vm["config"]["cpu"],
-            vm["config"]["memory"],
-            vm["config"]["storage"],
-        ]
+        if as_json:
+            click.echo(json.dumps(result, indent=2))
+        else:
+            headers = [
+                "Status",
+                "IP Address",
+                "SSH Port",
+                "CPU",
+                "Memory (GB)",
+                "Storage (GB)",
+            ]
 
-        click.echo("\n" + tabulate([row], headers=headers, tablefmt="grid"))
+            row = [
+                vm.get("status", "unknown"),
+                vm["provider_ip"],
+                vm["config"].get("ssh_port", "N/A"),
+                vm["config"]["cpu"],
+                vm["config"]["memory"],
+                vm["config"]["storage"],
+            ]
+
+            click.echo("\n" + tabulate([row], headers=headers, tablefmt="grid"))
+
+        return result
 
     except Exception as e:
         logger.error(f"Failed to get VM info: {str(e)}")
@@ -562,37 +579,45 @@ def run_api_server(host: str, port: int, reload: bool):
 
 
 @vm.command(name='list')
+@click.option('--json', 'as_json', is_flag=True, help='Output in JSON format')
 @async_command
-async def list_vms():
+async def list_vms(as_json: bool):
     """List all VMs."""
     try:
         logger.command("📋 Listing your VMs")
         logger.process("Fetching VM details")
-        
+
         # Initialize VM service with temporary client (not needed for listing)
         ssh_service = SSHService(config.ssh_key_dir)
         vm_service = VMService(db_service, ssh_service, None)
         vms = await vm_service.list_vms()
         if not vms:
             logger.warning("No VMs found")
-            return
+            return {"vms": []}
 
-        # Format VM information using service
-        headers = vm_service.vm_headers
-        rows = [vm_service.format_vm_row(vm, colorize=True) for vm in vms]
+        result = {"vms": vms}
 
-        # Show fancy header
-        click.echo("\n" + "─" * 60)
-        click.echo(click.style(f"  📋 Your VMs ({len(vms)} total)", fg="blue", bold=True))
-        click.echo("─" * 60)
-        
-        # Show table with colored status
-        click.echo("\n" + tabulate(
-            rows,
-            headers=[click.style(h, bold=True) for h in headers],
-            tablefmt="grid"
-        ))
-        click.echo("\n" + "─" * 60)
+        if as_json:
+            click.echo(json.dumps(result, indent=2))
+        else:
+            # Format VM information using service
+            headers = vm_service.vm_headers
+            rows = [vm_service.format_vm_row(vm, colorize=True) for vm in vms]
+
+            # Show fancy header
+            click.echo("\n" + "─" * 60)
+            click.echo(click.style(f"  📋 Your VMs ({len(vms)} total)", fg="blue", bold=True))
+            click.echo("─" * 60)
+
+            # Show table with colored status
+            click.echo("\n" + tabulate(
+                rows,
+                headers=[click.style(h, bold=True) for h in headers],
+                tablefmt="grid"
+            ))
+            click.echo("\n" + "─" * 60)
+
+        return result
 
     except Exception as e:
         error_msg = str(e)
