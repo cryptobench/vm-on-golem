@@ -239,7 +239,7 @@ async def create_vm(name: str, provider_id: str, cpu: int, memory: int, storage:
 @click.argument('name')
 @async_command
 async def ssh_vm(name: str):
-    """SSH into a VM."""
+    """SSH into a VM (alias: connect)."""
     try:
         logger.command(f"🔌 Connecting to VM '{name}'")
         
@@ -282,6 +282,13 @@ async def ssh_vm(name: str):
             error_msg = "Unable to establish SSH connection (VM may be starting up)"
         logger.error(f"Failed to connect: {error_msg}")
         raise click.Abort()
+
+
+@vm.command(name="connect")
+@click.argument("name")
+def connect_vm(name: str):
+    """Connect to a VM via SSH (alias of ssh)."""
+    return ssh_vm.callback(name)
 
 
 @vm.command(name='info')
@@ -338,7 +345,7 @@ async def info_vm(name: str, as_json: bool):
 @click.argument('name')
 @async_command
 async def destroy_vm(name: str):
-    """Destroy a VM."""
+    """Destroy a VM (alias: delete)."""
     try:
         logger.command(f"💥 Destroying VM '{name}'")
 
@@ -375,6 +382,13 @@ async def destroy_vm(name: str):
             error_msg = "VM not found on provider (it may have been manually removed)"
         logger.error(f"Failed to destroy VM: {error_msg}")
         raise click.Abort()
+
+
+@vm.command(name="delete")
+@click.argument("name")
+def delete_vm(name: str):
+    """Delete a VM (alias of destroy)."""
+    return destroy_vm.callback(name)
 
 
 @vm.command(name='purge')
