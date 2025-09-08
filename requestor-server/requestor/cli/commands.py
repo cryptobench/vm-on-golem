@@ -1,12 +1,14 @@
 """CLI interface for VM on Golem."""
-import click
 import asyncio
+from functools import wraps
 from typing import Optional
 from pathlib import Path
 import subprocess
 import aiohttp
 from tabulate import tabulate
 import uvicorn
+import click
+import typer
 try:
     from importlib import metadata
 except ImportError:
@@ -32,46 +34,49 @@ db_service = DatabaseService(config.db_path)
 
 def async_command(f):
     """Decorator to run async commands."""
-    async def wrapper(*args, **kwargs):
-        # Initialize database
-        await db_service.init()
-        return await f(*args, **kwargs)
-    return lambda *args, **kwargs: asyncio.run(wrapper(*args, **kwargs))
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        async def run():
+            await db_service.init()
+            return await f(*args, **kwargs)
+        return asyncio.run(run())
+    return wrapper
 
 
-def print_version(ctx, param, value):
-    if not value or ctx.resilient_parsing:
+def print_version(value: bool):
+    if not value:
         return
     try:
         version = metadata.version('request-vm-on-golem')
     except metadata.PackageNotFoundError:
         version = 'unknown'
-    click.echo(f'Requestor VM on Golem CLI version {version}')
-    ctx.exit()
+    typer.echo(f'Requestor VM on Golem CLI version {version}')
+    raise typer.Exit()
 
 
-@click.group()
-@click.option('--version', is_flag=True, callback=print_version,
-              expose_value=False, is_eager=True, help="Show the version and exit.")
-def cli():
+cli = typer.Typer()
+vm = typer.Typer()
+server = typer.Typer()
+
+cli.add_typer(vm, name="vm")
+cli.add_typer(server, name="server")
+
+
+@cli.callback()
+def main(version: bool = typer.Option(False, "--version", callback=print_version, is_eager=True, help="Show the version and exit.")):
     """VM on Golem management CLI"""
     pass
 
 
-@cli.group()
-def vm():
-    """VM management commands"""
-    pass
-
-
 @vm.command(name='providers')
-@click.option('--cpu', type=int, help='Minimum CPU cores required')
-@click.option('--memory', type=int, help='Minimum memory (GB) required')
-@click.option('--storage', type=int, help='Minimum storage (GB) required')
-@click.option('--country', help='Preferred provider country')
-@click.option('--driver', type=click.Choice(['central', 'golem-base']), default=None, help='Discovery driver to use')
 @async_command
-async def list_providers(cpu: Optional[int], memory: Optional[int], storage: Optional[int], country: Optional[str], driver: Optional[str]):
+async def list_providers(
+    cpu: Optional[int] = typer.Option(None, "--cpu", help="Minimum CPU cores required"),
+    memory: Optional[int] = typer.Option(None, "--memory", help="Minimum memory (GB) required"),
+    storage: Optional[int] = typer.Option(None, "--storage", help="Minimum storage (GB) required"),
+    country: Optional[str] = typer.Option(None, "--country", help="Preferred provider country"),
+    driver: Optional[str] = typer.Option(None, "--driver", help="Discovery driver to use"),
+):
     """List available providers matching requirements."""
     try:
         # Log search criteria if any
@@ -124,17 +129,18 @@ async def list_providers(cpu: Optional[int], memory: Optional[int], storage: Opt
 
     except Exception as e:
         logger.error(f"Failed to list providers: {str(e)}")
-        raise click.Abort()
+        raise typer.Exit(code=1)
 
 
 @vm.command(name='create')
-@click.argument('name')
-@click.option('--provider-id', required=True, help='Provider ID to use')
-@click.option('--cpu', type=int, required=True, help='Number of CPU cores')
-@click.option('--memory', type=int, required=True, help='Memory in GB')
-@click.option('--storage', type=int, required=True, help='Storage in GB')
 @async_command
-async def create_vm(name: str, provider_id: str, cpu: int, memory: int, storage: int):
+async def create_vm(
+    name: str = typer.Argument(...),
+    provider_id: str = typer.Option(..., '--provider-id', help='Provider ID to use'),
+    cpu: int = typer.Option(..., '--cpu', help='Number of CPU cores'),
+    memory: int = typer.Option(..., '--memory', help='Memory in GB'),
+    storage: int = typer.Option(..., '--storage', help='Storage in GB'),
+):
     """Create a new VM on a specific provider."""
     try:
         # Show configuration details
@@ -222,13 +228,12 @@ async def create_vm(name: str, provider_id: str, cpu: int, memory: int, storage:
         elif "capacity" in error_msg:
             error_msg = "Provider doesn't have enough resources available"
         logger.error(f"Failed to create VM: {error_msg}")
-        raise click.Abort()
+        raise typer.Exit(code=1)
 
 
 @vm.command(name='ssh')
-@click.argument('name')
 @async_command
-async def ssh_vm(name: str):
+async def ssh_vm(name: str = typer.Argument(...)):
     """SSH into a VM."""
     try:
         logger.command(f"🔌 Connecting to VM '{name}'")
@@ -240,7 +245,7 @@ async def ssh_vm(name: str):
         logger.process("Retrieving VM details")
         vm = await db_service.get_vm(name)
         if not vm:
-            raise click.BadParameter(f"VM '{name}' not found")
+            raise typer.BadParameter(f"VM '{name}' not found")
 
         # Get SSH key
         logger.process("Loading SSH credentials")
@@ -271,13 +276,12 @@ async def ssh_vm(name: str):
         elif "Connection refused" in error_msg:
             error_msg = "Unable to establish SSH connection (VM may be starting up)"
         logger.error(f"Failed to connect: {error_msg}")
-        raise click.Abort()
+        raise typer.Exit(code=1)
 
 
 @vm.command(name='info')
-@click.argument('name')
 @async_command
-async def info_vm(name: str):
+async def info_vm(name: str = typer.Argument(...)):
     """Show information about a VM."""
     try:
         logger.command(f"ℹ️  Getting info for VM '{name}'")
@@ -289,7 +293,7 @@ async def info_vm(name: str):
         # Retrieve VM details
         vm = await vm_service.get_vm(name)
         if not vm:
-            raise click.BadParameter(f"VM '{name}' not found")
+            raise typer.BadParameter(f"VM '{name}' not found")
 
         headers = [
             "Status",
@@ -313,13 +317,12 @@ async def info_vm(name: str):
 
     except Exception as e:
         logger.error(f"Failed to get VM info: {str(e)}")
-        raise click.Abort()
+        raise typer.Exit(code=1)
 
 
 @vm.command(name='destroy')
-@click.argument('name')
 @async_command
-async def destroy_vm(name: str):
+async def destroy_vm(name: str = typer.Argument(...)):
     """Destroy a VM."""
     try:
         logger.command(f"💥 Destroying VM '{name}'")
@@ -328,7 +331,7 @@ async def destroy_vm(name: str):
         logger.process("Retrieving VM details")
         vm = await db_service.get_vm(name)
         if not vm:
-            raise click.BadParameter(f"VM '{name}' not found")
+            raise typer.BadParameter(f"VM '{name}' not found")
 
         # Initialize VM service
         provider_url = config.get_provider_url(vm['provider_ip'])
@@ -356,15 +359,17 @@ async def destroy_vm(name: str):
         elif "Not Found" in error_msg:
             error_msg = "VM not found on provider (it may have been manually removed)"
         logger.error(f"Failed to destroy VM: {error_msg}")
-        raise click.Abort()
+        raise typer.Exit(code=1)
 
 
 @vm.command(name='purge')
-@click.option('--force', is_flag=True, help='Force purge even if other errors occur')
-@click.confirmation_option(prompt='Are you sure you want to purge all VMs?')
 @async_command
-async def purge_vms(force: bool):
+async def purge_vms(
+    force: bool = typer.Option(False, "--force", help="Force purge even if other errors occur"),
+):
     """Purge all VMs and clean up local database."""
+    if not typer.confirm('Are you sure you want to purge all VMs?'):
+        raise typer.Abort()
     try:
         logger.command("🌪️  Purging all VMs")
         
@@ -438,13 +443,12 @@ async def purge_vms(force: bool):
 
     except Exception as e:
         logger.error(f"Purge operation failed: {str(e)}")
-        raise click.Abort()
+        raise typer.Exit(code=1)
 
 
 @vm.command(name='start')
-@click.argument('name')
 @async_command
-async def start_vm(name: str):
+async def start_vm(name: str = typer.Argument(...)):
     """Start a VM."""
     try:
         logger.command(f"🟢 Starting VM '{name}'")
@@ -453,7 +457,7 @@ async def start_vm(name: str):
         logger.process("Retrieving VM details")
         vm = await db_service.get_vm(name)
         if not vm:
-            raise click.BadParameter(f"VM '{name}' not found")
+            raise typer.BadParameter(f"VM '{name}' not found")
 
         # Initialize VM service
         provider_url = config.get_provider_url(vm['provider_ip'])
@@ -484,13 +488,12 @@ async def start_vm(name: str):
         elif "already running" in error_msg.lower():
             error_msg = "VM is already running"
         logger.error(f"Failed to start VM: {error_msg}")
-        raise click.Abort()
+        raise typer.Exit(code=1)
 
 
 @vm.command(name='stop')
-@click.argument('name')
 @async_command
-async def stop_vm(name: str):
+async def stop_vm(name: str = typer.Argument(...)):
     """Stop a VM."""
     try:
         logger.command(f"🔴 Stopping VM '{name}'")
@@ -499,7 +502,7 @@ async def stop_vm(name: str):
         logger.process("Retrieving VM details")
         vm = await db_service.get_vm(name)
         if not vm:
-            raise click.BadParameter(f"VM '{name}' not found")
+            raise typer.BadParameter(f"VM '{name}' not found")
 
         # Initialize VM service
         provider_url = config.get_provider_url(vm['provider_ip'])
@@ -525,20 +528,15 @@ async def stop_vm(name: str):
         if "Not Found" in error_msg:
             error_msg = "VM not found on provider (it may have been manually removed)"
         logger.error(f"Failed to stop VM: {error_msg}")
-        raise click.Abort()
-
-
-@cli.group()
-def server():
-    """Server management commands"""
-    pass
+        raise typer.Exit(code=1)
 
 
 @server.command(name='api')
-@click.option('--host', default='127.0.0.1', help='Host to bind the API server to.')
-@click.option('--port', default=8000, type=int, help='Port to run the API server on.')
-@click.option('--reload', is_flag=True, help='Enable auto-reload for development.')
-def run_api_server(host: str, port: int, reload: bool):
+def run_api_server(
+    host: str = typer.Option('127.0.0.1', '--host', help='Host to bind the API server to.'),
+    port: int = typer.Option(8000, '--port', help='Port to run the API server on.'),
+    reload: bool = typer.Option(False, '--reload', help='Enable auto-reload for development.'),
+):
     """Run the Requestor API server."""
     logger.command(f"🚀 Starting Requestor API server on {host}:{port}")
     if reload:
@@ -550,7 +548,7 @@ def run_api_server(host: str, port: int, reload: bool):
         logger.detail(f"Ensured database directory exists: {config.db_path.parent}")
     except Exception as e:
         logger.error(f"Failed to create database directory {config.db_path.parent}: {e}")
-        raise click.Abort()
+        raise typer.Exit(code=1)
 
     uvicorn.run(
         "requestor.api.main:app",
@@ -599,7 +597,7 @@ async def list_vms():
         if "database" in error_msg.lower():
             error_msg = "Failed to access local database (try running the command again)"
         logger.error(f"Failed to list VMs: {error_msg}")
-        raise click.Abort()
+        raise typer.Exit(code=1)
 
 
 def main():
@@ -612,9 +610,8 @@ if __name__ == '__main__':
 
 
 @vm.command(name='stats')
-@click.argument('name')
 @async_command
-async def vm_stats(name: str):
+async def vm_stats(name: str = typer.Argument(...)):
     """Display live resource usage statistics for a VM."""
     try:
         # Initialize services
@@ -624,7 +621,7 @@ async def vm_stats(name: str):
         # Get VM details
         vm = await vm_service.get_vm(name)
         if not vm:
-            raise click.BadParameter(f"VM '{name}' not found")
+            raise typer.BadParameter(f"VM '{name}' not found")
 
         # Loop to fetch and display stats continuously
         while True:
@@ -648,4 +645,4 @@ async def vm_stats(name: str):
 
     except Exception as e:
         logger.error(f"Failed to get VM stats: {str(e)}")
-        raise click.Abort()
+        raise typer.Exit(code=1)

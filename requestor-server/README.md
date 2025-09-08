@@ -1,6 +1,6 @@
 # VM on Golem Requestor
 
-A sophisticated command-line interface for managing virtual machines on the Golem Network. The requestor works in tandem with provider nodes to create and manage VMs with secure SSH access.
+A sophisticated command-line interface for managing virtual machines on the Golem Network. The requestor works in tandem with provider nodes to create and manage VMs with secure SSH access. The CLI is powered by [Typer](https://typer.tiangolo.com/), providing a modern command-line experience.
 
 ## Architecture Overview
 
