@@ -1,9 +1,14 @@
-.PHONY: install test start
+.PHONY: install test start lock
 
-install:
+install: lock
 	poetry -C discovery-server install
 	poetry -C provider-server install
 	poetry -C requestor-server install
+
+lock:
+	poetry -C discovery-server lock
+	poetry -C provider-server lock
+	poetry -C requestor-server lock
 
 test:
 	poetry -C discovery-server run pytest || [ $$? -eq 5 ]
