@@ -204,6 +204,12 @@ Optional background automation (all disabled by default):
 - `STREAM_WITHDRAW_INTERVAL_SECONDS` — how often to attempt withdrawals (default 1800)
 - `STREAM_MIN_WITHDRAW_WEI` — only withdraw when >= this amount (gas‑aware)
 
+Implementation notes:
+
+- The provider exposes `GET /api/v1/provider/info` returning `provider_id`, `stream_payment_address`, and `glm_token_address`. Requestors should prefer these values when opening streams.
+- On successful VM creation with a valid `stream_id`, the provider persists a VM→stream mapping in `streams.json`. This enables the background monitor to stop VMs with low remaining runway and to withdraw vested funds according to configured intervals.
+- When a VM is deleted, the VM→stream mapping is cleaned up.
+
 When enabled, the provider verifies each VM creation request’s `stream_id` and refuses to start the VM if:
 
 - stream recipient != provider’s Ethereum address

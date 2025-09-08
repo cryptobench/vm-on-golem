@@ -26,6 +26,7 @@ async def create_vm(
     request: CreateVMRequest,
     vm_service: VMService = Depends(Provide[Container.vm_service]),
     settings: Settings = Depends(Provide[Container.config]),
+    stream_map = Depends(Provide[Container.stream_map]),
 ) -> VMInfo:
     """Create a new VM."""
     try:
@@ -51,6 +52,12 @@ async def create_vm(
         )
         
         vm_info = await vm_service.create_vm(config)
+        # Persist VM->stream mapping if provided
+        if request.stream_id is not None:
+            try:
+                await stream_map.set(vm_info.id, int(request.stream_id))
+            except Exception as e:
+                logger.warning(f"failed to persist stream mapping for {vm_info.id}: {e}")
         await vm_creation_animation(request.name)
         return vm_info
     except MultipassError as e:
@@ -164,12 +171,17 @@ async def stop_vm(
 async def delete_vm(
     requestor_name: str,
     vm_service: VMService = Depends(Provide[Container.vm_service]),
+    stream_map = Depends(Provide[Container.stream_map]),
 ) -> None:
     """Delete a VM."""
     try:
         logger.process(f"🗑️  Deleting VM '{requestor_name}'")
         vm_status_change(requestor_name, "STOPPING", "Cleanup in progress")
         await vm_service.delete_vm(requestor_name)
+        try:
+            await stream_map.remove(requestor_name)
+        except Exception as e:
+            logger.warning(f"failed to remove stream mapping for {requestor_name}: {e}")
         vm_status_change(requestor_name, "TERMINATED", "Cleanup complete")
         logger.success(f"✨ Successfully deleted VM '{requestor_name}'")
     except VMNotFoundError as e:

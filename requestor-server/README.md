@@ -86,7 +86,7 @@ This requestor integrates with an on‑chain StreamPayment contract to enable �
 
 Flow:
 
-1. Fetch provider info:
+1. Fetch provider info (preferred addresses):
    - `GET http://{provider}:7466/api/v1/provider/info` → `provider_id`, `stream_payment_address`, `glm_token_address`.
 2. Compute `ratePerSecond` from provider pricing and requested VM resources.
 3. Ensure `deposit >= ratePerSecond * 3600` (≥ 1 hour runway recommended/minimum).
@@ -117,7 +117,7 @@ poetry run golem vm stream topup --stream-id 123 --hours 3
 poetry run golem vm stream topup --stream-id 123 --glm 25.0
 ```
 
-- Create a VM and attach an existing stream:
+- Create a VM and attach an existing stream (no auto-streams are created by the requestor):
 
 ```bash
 poetry run golem vm create my-vm \
@@ -129,14 +129,15 @@ poetry run golem vm create my-vm \
 Environment (env prefix `GOLEM_REQUESTOR_`):
 
 - `polygon_rpc_url` — Polygon PoS RPC URL
-- `stream_payment_address` — StreamPayment address
-- `glm_token_address` — GLM ERC20 address
-- `provider_eth_address` — optional helper for development; in production always use `/provider/info`
+- `stream_payment_address` — StreamPayment address (fallback if provider doesn’t advertise)
+- `glm_token_address` — GLM ERC20 address (fallback if provider doesn’t advertise)
+- `provider_eth_address` — optional dev helper; in production always use `/provider/info`
 
 Efficiency tips:
 
 - Batch top‑ups (e.g., add several hours at once) to reduce on‑chain calls.
 - Withdrawals are typically executed by providers; requestors don’t need to withdraw.
+- The CLI `vm stream open` will prefer the provider’s advertised contract/token addresses to prevent mismatches.
 
 ## Installation
 

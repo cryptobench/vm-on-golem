@@ -319,10 +319,11 @@ async def stream_open(provider_id: str, cpu: int, memory: int, storage: int, hou
                 recipient = info['provider_id']
 
             deposit_wei = rate_per_second_wei * int(hours) * 3600
+            # Prefer provider-advertised contract addresses to avoid mismatches
             spc = StreamPaymentConfig(
                 rpc_url=config.polygon_rpc_url,
-                contract_address=config.stream_payment_address,
-                glm_token_address=config.glm_token_address,
+                contract_address=info.get('stream_payment_address') or config.stream_payment_address,
+                glm_token_address=info.get('glm_token_address') or config.glm_token_address,
                 private_key=config.ethereum_private_key,
             )
             sp = StreamPaymentClient(spc)
