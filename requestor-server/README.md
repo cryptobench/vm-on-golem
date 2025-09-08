@@ -80,6 +80,64 @@ The SSH connection process:
 2. The provider's proxy system forwards your SSH connection to the VM
 3. All traffic is securely routed through the allocated port
 
+## Streaming Payments (Polygon GLM)
+
+This requestor integrates with an on‑chain StreamPayment contract to enable “pay‑as‑you‑go” rentals.
+
+Flow:
+
+1. Fetch provider info:
+   - `GET http://{provider}:7466/api/v1/provider/info` → `provider_id`, `stream_payment_address`, `glm_token_address`.
+2. Compute `ratePerSecond` from provider pricing and requested VM resources.
+3. Ensure `deposit >= ratePerSecond * 3600` (≥ 1 hour runway recommended/minimum).
+4. Create a stream (approve + `createStream(GLM, provider_id, deposit, ratePerSecond)`), capture `stream_id`.
+5. Create VM: `POST /api/v1/vms` with `stream_id` included.
+6. Top‑up over time with `topUp(stream_id, amount)` to extend stopTime and keep the VM running indefinitely.
+7. On stop/destroy: the requestor will best‑effort `withdraw` / `terminate` to settle.
+
+CLI helpers
+
+- Open a stream for a planned VM (computes rate from provider pricing):
+
+```bash
+poetry run golem vm stream open \
+  --provider-id 0xProvider \
+  --cpu 2 --memory 4 --storage 20 \
+  --hours 1
+# prints { stream_id, rate_per_second_wei, deposit_wei }
+```
+
+- Top up an existing stream:
+
+```bash
+# Add 3 hours at prior rate
+poetry run golem vm stream topup --stream-id 123 --hours 3
+
+# Or specify exact GLM amount
+poetry run golem vm stream topup --stream-id 123 --glm 25.0
+```
+
+- Create a VM and attach an existing stream:
+
+```bash
+poetry run golem vm create my-vm \
+  --provider-id 0xProvider \
+  --cpu 2 --memory 4 --storage 20 \
+  --stream-id 123
+```
+
+Environment (env prefix `GOLEM_REQUESTOR_`):
+
+- `polygon_rpc_url` — Polygon PoS RPC URL
+- `stream_payment_address` — StreamPayment address
+- `glm_token_address` — GLM ERC20 address
+- `provider_eth_address` — optional helper for development; in production always use `/provider/info`
+
+Efficiency tips:
+
+- Batch top‑ups (e.g., add several hours at once) to reduce on‑chain calls.
+- Withdrawals are typically executed by providers; requestors don’t need to withdraw.
+
 ## Installation
 
 ```bash

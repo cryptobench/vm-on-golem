@@ -14,11 +14,13 @@ class VMService:
         self,
         db_service: DatabaseService,
         ssh_service: SSHService,
-        provider_client: Optional[ProviderClient] = None
+        provider_client: Optional[ProviderClient] = None,
+        blockchain_client: Optional[object] = None,
     ):
         self.db = db_service
         self.ssh_service = ssh_service
         self.provider_client = provider_client
+        self.blockchain_client = blockchain_client
 
     async def create_vm(
         self,
@@ -27,7 +29,8 @@ class VMService:
         memory: int,
         storage: int,
         provider_ip: str,
-        ssh_key: str
+        ssh_key: str,
+        stream_id: int | None = None,
     ) -> Dict:
         """Create a new VM with validation and error handling."""
         try:
@@ -42,18 +45,42 @@ class VMService:
                 cpu=cpu,
                 memory=memory,
                 storage=storage,
-                ssh_key=ssh_key
+                ssh_key=ssh_key,
+                stream_id=stream_id
             )
 
             # Get VM access info
             access_info = await self.provider_client.get_vm_access(vm['id'])
+
+            # Optionally create a GLM stream (if configured)
+            from ..config import config as app_config
+            stream_id = None
+            try:
+                if (
+                    self.blockchain_client
+                    and app_config.stream_payment_address != "0x0000000000000000000000000000000000000000"
+                    and app_config.glm_token_address != "0x0000000000000000000000000000000000000000"
+                    and app_config.provider_eth_address
+                ):
+                    # Simple heuristic: deposit for 1 hour at a nominal rate
+                    rate_per_second = 10**18  # 1 GLM / second (example)
+                    deposit = rate_per_second * 3600  # 1 hour worth
+                    stream_id = self.blockchain_client.create_stream(
+                        app_config.provider_eth_address,
+                        deposit,
+                        rate_per_second,
+                    )
+            except Exception:
+                # Do not fail VM creation if streaming setup fails
+                stream_id = None
 
             # Save VM details to database
             config = {
                 'cpu': cpu,
                 'memory': memory,
                 'storage': storage,
-                'ssh_port': access_info['ssh_port']
+                'ssh_port': access_info['ssh_port'],
+                **({"stream_id": stream_id} if stream_id is not None else {}),
             }
             await self.db.save_vm(
                 name=name,
@@ -87,6 +114,15 @@ class VMService:
             except Exception as e:
                 if "Not Found" not in str(e):
                     raise
+
+            # Attempt to terminate stream if present
+            try:
+                stream_id = vm.get('config', {}).get('stream_id')
+                if stream_id is not None and self.blockchain_client:
+                    self.blockchain_client.terminate(stream_id)
+            except Exception:
+                # Best-effort: do not block deletion on chain failure
+                pass
 
             # Remove from database
             await self.db.delete_vm(name)
@@ -124,6 +160,14 @@ class VMService:
             
             # Update status in database
             await self.db.update_vm_status(name, "stopped")
+
+            # Best-effort withdraw on stop
+            try:
+                stream_id = vm.get('config', {}).get('stream_id')
+                if stream_id is not None and self.blockchain_client:
+                    self.blockchain_client.withdraw(stream_id)
+            except Exception:
+                pass
 
         except Exception as e:
             raise VMError(f"Failed to stop VM: {str(e)}")

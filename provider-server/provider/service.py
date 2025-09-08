@@ -17,6 +17,7 @@ class ProviderService:
         self.advertisement_service = advertisement_service
         self.port_manager = port_manager
         self._pricing_updater: PricingAutoUpdater | None = None
+        self._stream_monitor = None
 
     async def setup(self, app: FastAPI):
         """Setup and initialize the provider components."""
@@ -43,6 +44,13 @@ class ProviderService:
             self._pricing_updater = PricingAutoUpdater(on_updated_callback=_on_price_updated)
             asyncio.create_task(self._pricing_updater.start())
 
+            # Start stream monitor if enabled
+            from .container import Container
+            from .config import settings as cfg
+            if cfg.STREAM_MONITOR_ENABLED or cfg.STREAM_WITHDRAW_ENABLED:
+                self._stream_monitor = app.container.stream_monitor()
+                self._stream_monitor.start()
+
             # Check wallet balance and request funds if needed
             faucet_client = FaucetClient(
                 faucet_url=settings.FAUCET_URL,
@@ -64,6 +72,8 @@ class ProviderService:
         await self.vm_service.provider.cleanup()
         if self._pricing_updater:
             self._pricing_updater.stop()
+        if self._stream_monitor:
+            await self._stream_monitor.stop()
         logger.success("✨ Provider cleanup complete")
 
     def _setup_directories(self):

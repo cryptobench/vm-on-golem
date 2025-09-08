@@ -21,24 +21,35 @@ class ProviderClient:
         cpu: int,
         memory: int,
         storage: int,
-        ssh_key: str
+        ssh_key: str,
+        stream_id: int | None = None,
     ) -> Dict:
         """Create a VM on the provider."""
+        payload = {
+            "name": name,
+            "resources": {
+                "cpu": cpu,
+                "memory": memory,
+                "storage": storage
+            },
+            "ssh_key": ssh_key
+        }
+        if stream_id is not None:
+            payload["stream_id"] = int(stream_id)
         async with self.session.post(
             f"{self.provider_url}/api/v1/vms",
-            json={
-                "name": name,
-                "resources": {
-                    "cpu": cpu,
-                    "memory": memory,
-                    "storage": storage
-                },
-                "ssh_key": ssh_key
-            }
+            json=payload
         ) as response:
             if not response.ok:
                 error_text = await response.text()
                 raise Exception(f"Failed to create VM: {error_text}")
+            return await response.json()
+
+    async def get_provider_info(self) -> Dict:
+        async with self.session.get(f"{self.provider_url}/api/v1/provider/info") as response:
+            if not response.ok:
+                error_text = await response.text()
+                raise Exception(f"Failed to fetch provider info: {error_text}")
             return await response.json()
 
     async def add_ssh_key(self, vm_id: str, key: str) -> None:

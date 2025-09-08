@@ -173,9 +173,10 @@ async def list_providers(cpu: Optional[int], memory: Optional[int], storage: Opt
 @click.option('--cpu', type=int, required=True, help='Number of CPU cores')
 @click.option('--memory', type=int, required=True, help='Memory in GB')
 @click.option('--storage', type=int, required=True, help='Disk in GB')
+@click.option('--stream-id', type=int, default=None, help='Optional StreamPayment stream id to fund this VM')
 @click.option('--yes', is_flag=True, help='Do not prompt for confirmation')
 @async_command
-async def create_vm(name: str, provider_id: str, cpu: int, memory: int, storage: int, yes: bool):
+async def create_vm(name: str, provider_id: str, cpu: int, memory: int, storage: int, stream_id: int | None, yes: bool):
     """Create a new VM on a specific provider."""
     try:
         # Show configuration details
@@ -232,7 +233,8 @@ async def create_vm(name: str, provider_id: str, cpu: int, memory: int, storage:
                         memory=memory,
                         storage=storage,
                         provider_ip=provider_ip,
-                        ssh_key=key_pair.public_key_content
+                        ssh_key=key_pair.public_key_content,
+                        stream_id=stream_id
                     )
 
                     # Get access info from config
@@ -278,6 +280,88 @@ async def create_vm(name: str, provider_id: str, cpu: int, memory: int, storage:
         elif "capacity" in error_msg:
             error_msg = "Provider doesn't have enough resources available"
         logger.error(f"Failed to create VM: {error_msg}")
+        raise click.Abort()
+
+
+@vm.group(name='stream')
+def vm_stream():
+    """Streaming payments helpers"""
+    pass
+
+
+@vm_stream.command('open')
+@click.option('--provider-id', required=True, help='Provider ID to use')
+@click.option('--cpu', type=int, required=True, help='CPU cores for rate calc')
+@click.option('--memory', type=int, required=True, help='Memory (GB) for rate calc')
+@click.option('--storage', type=int, required=True, help='Storage (GB) for rate calc')
+@click.option('--hours', type=int, default=1, help='Deposit coverage in hours (default 1)')
+@async_command
+async def stream_open(provider_id: str, cpu: int, memory: int, storage: int, hours: int):
+    """Create a GLM stream for a planned VM rental."""
+    from ..payments.blockchain_service import StreamPaymentClient, StreamPaymentConfig
+    try:
+        provider_service = ProviderService()
+        async with provider_service:
+            provider = await provider_service.verify_provider(provider_id)
+            est = provider_service.compute_estimate(provider, (cpu, memory, storage))
+            if not est or est.get('glm_per_month') is None:
+                raise RequestorError('Provider does not advertise GLM pricing; cannot compute ratePerSecond')
+            glm_month = est['glm_per_month']
+            glm_per_second = float(glm_month) / (730.0 * 3600.0)
+            rate_per_second_wei = int(glm_per_second * (10**18))
+
+            provider_ip = 'localhost' if config.environment == "development" else provider.get('ip_address')
+            if not provider_ip and config.environment == "production":
+                raise RequestorError("Provider IP address not found in advertisement")
+            provider_url = config.get_provider_url(provider_ip)
+            async with ProviderClient(provider_url) as client:
+                info = await client.get_provider_info()
+                recipient = info['provider_id']
+
+            deposit_wei = rate_per_second_wei * int(hours) * 3600
+            spc = StreamPaymentConfig(
+                rpc_url=config.polygon_rpc_url,
+                contract_address=config.stream_payment_address,
+                glm_token_address=config.glm_token_address,
+                private_key=config.ethereum_private_key,
+            )
+            sp = StreamPaymentClient(spc)
+            stream_id = sp.create_stream(recipient, deposit_wei, rate_per_second_wei)
+            click.echo(json.dumps({"stream_id": stream_id, "rate_per_second_wei": rate_per_second_wei, "deposit_wei": deposit_wei}, indent=2))
+    except Exception as e:
+        logger.error(f"Failed to open stream: {e}")
+        raise click.Abort()
+
+
+@vm_stream.command('topup')
+@click.option('--stream-id', type=int, required=True)
+@click.option('--glm', type=float, required=False, help='GLM amount to add')
+@click.option('--hours', type=int, required=False, help='Hours of coverage to add at prior rate')
+@async_command
+async def stream_topup(stream_id: int, glm: float | None, hours: int | None):
+    """Top up a stream. Provide either --glm or --hours (using prior rate)."""
+    from ..payments.blockchain_service import StreamPaymentClient, StreamPaymentConfig
+    try:
+        spc = StreamPaymentConfig(
+            rpc_url=config.polygon_rpc_url,
+            contract_address=config.stream_payment_address,
+            glm_token_address=config.glm_token_address,
+            private_key=config.ethereum_private_key,
+        )
+        sp = StreamPaymentClient(spc)
+        add_wei: int
+        if glm is not None:
+            add_wei = int(float(glm) * (10**18))
+        elif hours is not None:
+            # naive: use last known rate by reading on-chain stream
+            rate = sp.contract.functions.streams(int(stream_id)).call()[5]  # ratePerSecond
+            add_wei = int(rate) * int(hours) * 3600
+        else:
+            raise RequestorError('Provide either --glm or --hours')
+        tx = sp.top_up(stream_id, add_wei)
+        click.echo(json.dumps({"stream_id": stream_id, "topped_up_wei": add_wei, "tx": tx}, indent=2))
+    except Exception as e:
+        logger.error(f"Failed to top up stream: {e}")
         raise click.Abort()
 
 
