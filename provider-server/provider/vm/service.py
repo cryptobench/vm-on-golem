@@ -69,12 +69,12 @@ class VMService:
         finally:
             await self.name_mapper.remove_mapping(vm_id)
 
-    async def stop_vm(self, vm_id: str) -> None:
-        """Stop a VM."""
+    async def stop_vm(self, vm_id: str) -> VMInfo:
+        """Stop a VM and return its updated status."""
         multipass_name = await self.name_mapper.get_multipass_name(vm_id)
         if not multipass_name:
             raise VMNotFoundError(f"VM {vm_id} not found")
-        await self.provider.stop_vm(multipass_name)
+        return await self.provider.stop_vm(multipass_name)
  
     async def list_vms(self) -> List[VMInfo]:
         """List all VMs."""
