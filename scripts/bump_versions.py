@@ -21,7 +21,7 @@ def bump(text: str, build_number: int | None) -> tuple[str, bool]:
     def _replace(match: re.Match[str]) -> str:
         major, minor, patch = map(int, match.groups())
         if build_number is not None:
-            patch = build_number
+            patch = build_number if build_number > patch else patch + 1
         else:
             patch += 1
         return f'version = "{major}.{minor}.{patch}"'
