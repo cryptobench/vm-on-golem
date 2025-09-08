@@ -4,6 +4,7 @@ from functools import wraps
 from typing import Optional
 from pathlib import Path
 import subprocess
+import json
 import aiohttp
 from tabulate import tabulate
 import uvicorn
@@ -281,7 +282,12 @@ async def ssh_vm(name: str = typer.Argument(...)):
 
 @vm.command(name='info')
 @async_command
-async def info_vm(name: str = typer.Argument(...)):
+async def info_vm(
+    name: str = typer.Argument(...),
+    json_output: bool = typer.Option(
+        False, "--json", help="Output VM information in JSON format"
+    ),
+):
     """Show information about a VM."""
     try:
         logger.command(f"ℹ️  Getting info for VM '{name}'")
@@ -294,6 +300,10 @@ async def info_vm(name: str = typer.Argument(...)):
         vm = await vm_service.get_vm(name)
         if not vm:
             raise typer.BadParameter(f"VM '{name}' not found")
+
+        if json_output:
+            typer.echo(json.dumps(vm))
+            return
 
         headers = [
             "Status",
