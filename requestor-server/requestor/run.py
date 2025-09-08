@@ -5,29 +5,35 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from requestor.utils.logging import setup_logger
-from requestor.cli.commands import cli
 
 # Configure logging with debug mode from environment variable
 logger = setup_logger(__name__)
 
-def check_requirements():
-    """Check if all requirements are met."""
-    # Check required directories
-    ssh_key_dir = os.environ.get(
-        'GOLEM_REQUESTOR_SSH_KEY_DIR',
-        str(Path.home() / '.golem' / 'requestor' / 'ssh')
+
+def get_ssh_key_dir() -> Path:
+    """Return the path to the SSH key directory."""
+    return Path(
+        os.environ.get(
+            "GOLEM_REQUESTOR_SSH_KEY_DIR",
+            str(Path.home() / ".golem" / "requestor" / "ssh"),
+        )
     )
-    
+
+
+def secure_directory(path: Path) -> bool:
+    """Create the directory if needed and set strict permissions."""
     try:
-        # Create and secure directories
-        path = Path(ssh_key_dir)
         path.mkdir(parents=True, exist_ok=True)
-        path.chmod(0o700)  # Secure permissions for SSH keys
-    except Exception as e:
+        path.chmod(0o700)
+    except Exception as e:  # pragma: no cover - OS-related failures
         logger.error(f"Failed to create required directories: {e}")
         return False
-        
     return True
+
+
+def check_requirements() -> bool:
+    """Check if all requirements are met."""
+    return secure_directory(get_ssh_key_dir())
 
 def main():
     """Run the requestor CLI."""
@@ -44,6 +50,8 @@ def main():
             sys.exit(1)
 
         # Run CLI
+        from requestor.cli.commands import cli
+
         cli()
     except Exception as e:
         logger.error(f"Failed to start requestor CLI: {e}")
