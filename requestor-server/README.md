@@ -204,6 +204,12 @@ my-database   ● stopped     192.168.1.101   4 CPU, 8GB RAM
 Other commands:
 
 ```bash
+# Show VM info
+golem vm info my-webserver
+
+# Show VM info as JSON
+golem vm info my-webserver --json
+
 # SSH into a VM
 golem vm ssh my-webserver
 

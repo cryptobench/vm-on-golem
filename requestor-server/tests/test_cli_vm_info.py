@@ -1,6 +1,7 @@
 import sys
 import types
 from pathlib import Path
+import json
 
 import pytest
 from typer.testing import CliRunner
@@ -47,6 +48,27 @@ def test_vm_info_success(runner, monkeypatch):
     assert '2' in out
     assert '4' in out
     assert '20' in out
+
+
+def test_vm_info_json_output(runner, monkeypatch):
+    expected = {
+        'status': 'running',
+        'provider_ip': '1.2.3.4',
+        'config': {'ssh_port': 2222, 'cpu': 2, 'memory': 4, 'storage': 20},
+    }
+
+    class DummyVMService:
+        def __init__(self, db, ssh):
+            pass
+
+        async def get_vm(self, name):
+            return expected
+
+    monkeypatch.setattr('requestor.cli.commands.VMService', DummyVMService)
+
+    result = runner.invoke(cli, ['vm', 'info', 'vmname', '--json'])
+    assert result.exit_code == 0
+    assert json.loads(result.output) == expected
 
 
 def test_vm_info_not_found(runner, monkeypatch):
