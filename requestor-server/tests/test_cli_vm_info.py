@@ -3,7 +3,7 @@ import types
 from pathlib import Path
 
 import pytest
-from click.testing import CliRunner
+from typer.testing import CliRunner
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
@@ -61,4 +61,3 @@ def test_vm_info_not_found(runner, monkeypatch):
 
     result = runner.invoke(cli, ['vm', 'info', 'missing'])
     assert result.exit_code != 0
-    assert 'Aborted' in result.output

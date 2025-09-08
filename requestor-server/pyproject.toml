@@ -23,7 +23,6 @@ packages = [
 
 [tool.poetry.dependencies]
 python = "^3.11"
-click = "^8.0.1"
 pydantic = "^2.4.0"
 cryptography = "^3.4.7"
 asyncssh = "^2.7.0"
@@ -39,6 +38,7 @@ golem-base-sdk = "==0.1.0"
 httptools = "^0.6.0"
 pydantic-settings = "^2.1.0"
 web3 = "==7.13.0"
+typer = "^0.12.3"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.0.0"
