@@ -82,3 +82,40 @@ async def test_monitor_stops_low_runway_and_withdraws(monkeypatch):
     assert vm_service.stopped == ["vm-1"]
     # Withdraw should have been attempted (vested - withdrawn threshold met)
     assert client.withdrawn == [42]
+
+
+@pytest.mark.asyncio
+async def test_monitor_respects_withdraw_interval(monkeypatch):
+    now = 2_000_000
+    stream = {
+        "token": "0xglm",
+        "sender": "0xreq",
+        "recipient": "0xprov",
+        "startTime": now - 10_000,
+        "stopTime": now + 10_000,
+        "ratePerSecond": 10,
+        "deposit": 200_000,
+        "withdrawn": 0,
+        "halted": False,
+    }
+    class S(DummySettings):
+        STREAM_WITHDRAW_INTERVAL_SECONDS = 10
+    settings = S()
+    stream_map = DummyStreamMap({"vm-1": 7})
+    vm_service = DummyVMService()
+    reader = DummyReader(now, stream)
+    client = DummyClient()
+    mon = StreamMonitor(stream_map=stream_map, vm_service=vm_service, reader=reader, client=client, settings=settings)
+
+    ticks = {"n": 0}
+    async def fake_sleep(_):
+        ticks["n"] += 1
+        # advance time by 1 sec each loop
+        reader._now += 1
+        if ticks["n"] >= 3:
+            raise asyncio.CancelledError
+    monkeypatch.setattr(asyncio, "sleep", fake_sleep)
+
+    await mon._run()
+    # Only one withdraw due to interval gating
+    assert client.withdrawn == [7]

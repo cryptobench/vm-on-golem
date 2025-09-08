@@ -56,10 +56,24 @@ def test_create_vm_accepts_valid_stream(monkeypatch, client: TestClient):
 
         monkeypatch.setattr(routes_mod, "StreamPaymentReader", DummyReader)
 
-        # Patch vm service to return a dummy VM
+        # Patch vm service to return a dummy VM and capture stream_map.set
         from provider.vm.models import VMInfo, VMResources, VMStatus
         vm_info = VMInfo(id="test-vm", name="test-vm", status=VMStatus.RUNNING, resources=VMResources(cpu=1, memory=1, storage=10))
         app.container.vm_service().create_vm = AsyncMock(return_value=vm_info)
+
+        # Replace stream_map with a dummy that records set/remove
+        class DummyStreamMap:
+            def __init__(self):
+                self.set_calls = []
+                self.remove_calls = []
+            async def set(self, vm_id, stream_id):
+                self.set_calls.append((vm_id, stream_id))
+            async def remove(self, vm_id):
+                self.remove_calls.append(vm_id)
+            async def all_items(self):
+                return {}
+        dummy_map = DummyStreamMap()
+        app.container.stream_map.override(dummy_map)
 
         request_data = {
             "name": "test-vm",
@@ -70,6 +84,8 @@ def test_create_vm_accepts_valid_stream(monkeypatch, client: TestClient):
         resp = client.post("/api/v1/vms", json=request_data)
         assert resp.status_code == 200
         assert resp.json()["name"] == "test-vm"
+        # mapping persisted
+        assert dummy_map.set_calls == [("test-vm", 123)]
     finally:
         app.container.config.override(old)
 

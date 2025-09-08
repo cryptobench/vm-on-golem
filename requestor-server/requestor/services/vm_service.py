@@ -52,27 +52,8 @@ class VMService:
             # Get VM access info
             access_info = await self.provider_client.get_vm_access(vm['id'])
 
-            # Optionally create a GLM stream (if configured)
-            from ..config import config as app_config
-            stream_id = None
-            try:
-                if (
-                    self.blockchain_client
-                    and app_config.stream_payment_address != "0x0000000000000000000000000000000000000000"
-                    and app_config.glm_token_address != "0x0000000000000000000000000000000000000000"
-                    and app_config.provider_eth_address
-                ):
-                    # Simple heuristic: deposit for 1 hour at a nominal rate
-                    rate_per_second = 10**18  # 1 GLM / second (example)
-                    deposit = rate_per_second * 3600  # 1 hour worth
-                    stream_id = self.blockchain_client.create_stream(
-                        app_config.provider_eth_address,
-                        deposit,
-                        rate_per_second,
-                    )
-            except Exception:
-                # Do not fail VM creation if streaming setup fails
-                stream_id = None
+            # Preserve any provided stream_id; do not auto-create streams here
+            # Stream creation should be explicit via CLI `vm stream open` command.
 
             # Save VM details to database
             config = {

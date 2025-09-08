@@ -5,53 +5,10 @@ from typing import Any, Dict
 
 from web3 import Web3
 from eth_account import Account
+from golem_streaming_abi import STREAM_PAYMENT_ABI
 
 
-STREAM_PAYMENT_ABI = [
-    {
-        "inputs": [
-            {"internalType": "address", "name": "token", "type": "address"},
-            {"internalType": "address", "name": "recipient", "type": "address"},
-            {"internalType": "uint256", "name": "deposit", "type": "uint256"},
-            {"internalType": "uint128", "name": "ratePerSecond", "type": "uint128"},
-        ],
-        "name": "createStream",
-        "outputs": [{"internalType": "uint256", "name": "streamId", "type": "uint256"}],
-        "stateMutability": "nonpayable",
-        "type": "function",
-    },
-    {
-        "inputs": [{"internalType": "uint256", "name": "streamId", "type": "uint256"}],
-        "name": "withdraw",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function",
-    },
-    {
-        "inputs": [{"internalType": "uint256", "name": "streamId", "type": "uint256"}],
-        "name": "terminate",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function",
-    },
-    {
-        "inputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
-        "name": "streams",
-        "outputs": [
-            {"internalType": "address", "name": "token", "type": "address"},
-            {"internalType": "address", "name": "sender", "type": "address"},
-            {"internalType": "address", "name": "recipient", "type": "address"},
-            {"internalType": "uint128", "name": "startTime", "type": "uint128"},
-            {"internalType": "uint128", "name": "stopTime", "type": "uint128"},
-            {"internalType": "uint128", "name": "ratePerSecond", "type": "uint128"},
-            {"internalType": "uint256", "name": "deposit", "type": "uint256"},
-            {"internalType": "uint256", "name": "withdrawn", "type": "uint256"},
-            {"internalType": "bool", "name": "halted", "type": "bool"}
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-]
+ # ABI imported from shared package
 
 
 @dataclass
@@ -87,6 +44,10 @@ class StreamPaymentClient:
 
     def withdraw(self, stream_id: int) -> str:
         fn = self.contract.functions.withdraw(int(stream_id))
+        receipt = self._send(fn)
+        return receipt["transactionHash"]
+    def terminate(self, stream_id: int) -> str:
+        fn = self.contract.functions.terminate(int(stream_id))
         receipt = self._send(fn)
         return receipt["transactionHash"]
 
@@ -129,7 +90,4 @@ class StreamPaymentReader:
             return False, "stream halted"
         return True, "ok"
 
-    def terminate(self, stream_id: int) -> str:
-        fn = self.contract.functions.terminate(int(stream_id))
-        receipt = self._send(fn)
-        return receipt["transactionHash"]
+    # Reader should remain read-only; no terminate here

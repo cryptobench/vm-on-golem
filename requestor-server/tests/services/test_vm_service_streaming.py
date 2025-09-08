@@ -47,9 +47,6 @@ class DummyChain:
         self.created = []
         self.withdrawn = []
         self.terminated = []
-    def create_stream(self, provider, deposit, rate):
-        self.created.append((provider, deposit, rate))
-        return 42
     def withdraw(self, sid):
         self.withdrawn.append(sid)
     def terminate(self, sid):
@@ -57,19 +54,15 @@ class DummyChain:
 
 
 @pytest.mark.asyncio
-async def test_create_vm_stores_stream_id(monkeypatch):
-    # Force config values for streaming
-    from requestor import config as cfgmod
-    cfgmod.config.stream_payment_address = "0x1111111111111111111111111111111111111111"
-    cfgmod.config.glm_token_address = "0x2222222222222222222222222222222222222222"
-    cfgmod.config.provider_eth_address = "0x3333333333333333333333333333333333333333"
-
+async def test_create_vm_preserves_passed_stream_id_and_withdraws(monkeypatch):
     db = DummyDB()
     chain = DummyChain()
     svc = VMService(db, DummySSH(), DummyProvider(), blockchain_client=chain)
 
-    vm = await svc.create_vm("n", 1, 1, 1, "127.0.0.1", "ssh-key")
+    # Provide an explicit stream id; service should store it and not auto-create
+    vm = await svc.create_vm("n", 1, 1, 1, "127.0.0.1", "ssh-key", stream_id=42)
     assert vm['config']['stream_id'] == 42
+    assert chain.created == []
 
     # stop should withdraw
     await svc.stop_vm("n")
@@ -78,4 +71,3 @@ async def test_create_vm_stores_stream_id(monkeypatch):
     # destroy should terminate
     await svc.destroy_vm("n")
     assert chain.terminated == [42]
-

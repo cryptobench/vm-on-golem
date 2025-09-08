@@ -52,13 +52,16 @@ class StreamMonitor:
                     if self.settings.STREAM_WITHDRAW_ENABLED and self.client:
                         vested = max(min(now, s["stopTime"]) - s["startTime"], 0) * s["ratePerSecond"]
                         withdrawable = max(vested - s["withdrawn"], 0)
-                        if withdrawable >= self.settings.STREAM_MIN_WITHDRAW_WEI:
+                        # Enforce a minimum interval between withdrawals
+                        if withdrawable >= self.settings.STREAM_MIN_WITHDRAW_WEI and (
+                            now - last_withdraw >= self.settings.STREAM_WITHDRAW_INTERVAL_SECONDS
+                        ):
                             try:
                                 self.client.withdraw(stream_id)
+                                last_withdraw = now
                             except Exception as e:
                                 logger.warning(f"withdraw failed for {stream_id}: {e}")
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 logger.error(f"stream monitor error: {e}")
-

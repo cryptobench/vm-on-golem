@@ -16,6 +16,7 @@ Quick links:
 - Deploy/contract docs: `contracts/README.md`
 - Provider configuration and API: `provider-server/README.md`
 - Requestor usage and flow: `requestor-server/README.md`
+ - Shared streaming ABI package: `streaming-abi/` (used by both provider and requestor)
 
 ## Environment Configuration
 
@@ -70,3 +71,11 @@ make start
 ```
 
 This runs all three services in the foreground for local development.
+
+## Repository Structure
+
+- `discovery-server/` – FastAPI discovery service
+- `provider-server/` – Provider API/CLI
+- `requestor-server/` – Requestor CLI
+- `streaming-abi/` – Shared package exporting StreamPayment and ERC20 ABIs
+- `scripts/` – Utilities

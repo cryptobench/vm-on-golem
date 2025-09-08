@@ -5,64 +5,7 @@ from typing import Optional, Any, Dict
 
 from web3 import Web3
 from eth_account import Account
-
-
-STREAM_PAYMENT_ABI = [
-    {
-        "inputs": [
-            {"internalType": "address", "name": "token", "type": "address"},
-            {"internalType": "address", "name": "recipient", "type": "address"},
-            {"internalType": "uint256", "name": "deposit", "type": "uint256"},
-            {"internalType": "uint128", "name": "ratePerSecond", "type": "uint128"},
-        ],
-        "name": "createStream",
-        "outputs": [{"internalType": "uint256", "name": "streamId", "type": "uint256"}],
-        "stateMutability": "nonpayable",
-        "type": "function",
-    },
-    {
-        "inputs": [{"internalType": "uint256", "name": "streamId", "type": "uint256"}],
-        "name": "withdraw",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function",
-    },
-    {
-        "inputs": [{"internalType": "uint256", "name": "streamId", "type": "uint256"}],
-        "name": "terminate",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function",
-    },
-    {
-        "anonymous": False,
-        "inputs": [
-            {"indexed": True, "internalType": "uint256", "name": "streamId", "type": "uint256"},
-            {"indexed": True, "internalType": "address", "name": "sender", "type": "address"},
-            {"indexed": True, "internalType": "address", "name": "recipient", "type": "address"},
-            {"indexed": False, "internalType": "address", "name": "token", "type": "address"},
-            {"indexed": False, "internalType": "uint256", "name": "deposit", "type": "uint256"},
-            {"indexed": False, "internalType": "uint256", "name": "ratePerSecond", "type": "uint256"},
-            {"indexed": False, "internalType": "uint256", "name": "startTime", "type": "uint256"},
-            {"indexed": False, "internalType": "uint256", "name": "stopTime", "type": "uint256"},
-        ],
-        "name": "StreamCreated",
-        "type": "event",
-    },
-]
-
-ERC20_ABI = [
-    {
-        "name": "approve",
-        "type": "function",
-        "stateMutability": "nonpayable",
-        "inputs": [
-            {"name": "spender", "type": "address"},
-            {"name": "amount", "type": "uint256"},
-        ],
-        "outputs": [{"name": "", "type": "bool"}],
-    }
-]
+from golem_streaming_abi import STREAM_PAYMENT_ABI, ERC20_ABI
 
 
 @dataclass
@@ -87,12 +30,35 @@ class StreamPaymentClient:
         )
 
     def _send(self, fn) -> Dict[str, Any]:
-        tx = fn.build_transaction(
-            {
-                "from": self.account.address,
-                "nonce": self.web3.eth.get_transaction_count(self.account.address),
-            }
-        )
+        base = {
+            "from": self.account.address,
+            "nonce": self.web3.eth.get_transaction_count(self.account.address),
+        }
+        # Fill chainId
+        try:
+            base["chainId"] = getattr(self.web3.eth, "chain_id", None) or self.web3.eth.chain_id
+        except Exception:
+            pass
+        # Try gas estimation and fee fields
+        try:
+            tx_preview = fn.build_transaction(base)
+            gas = self.web3.eth.estimate_gas(tx_preview)
+            base["gas"] = gas
+        except Exception:
+            pass
+        try:
+            # Prefer EIP-1559 if available
+            max_fee = getattr(self.web3.eth, "max_priority_fee", None)
+            if max_fee is not None:
+                base.setdefault("maxPriorityFeePerGas", max_fee)
+            base.setdefault("maxFeePerGas", getattr(self.web3.eth, "gas_price", lambda: None)() or self.web3.eth.gas_price)
+        except Exception:
+            try:
+                base.setdefault("gasPrice", self.web3.eth.gas_price)
+            except Exception:
+                pass
+
+        tx = fn.build_transaction(base)
         # In production, sign and send raw; in tests, Account may be a dummy without signer
         if hasattr(self.account, "sign_transaction"):
             signed = self.account.sign_transaction(tx)
@@ -103,9 +69,14 @@ class StreamPaymentClient:
         return {"transactionHash": tx_hash.hex(), "status": receipt.status, "logs": receipt.logs}
 
     def create_stream(self, provider_address: str, deposit_wei: int, rate_per_second_wei: int) -> int:
-        # 1) Approve deposit for the StreamPayment contract
-        approve = self.erc20.functions.approve(self.contract.address, int(deposit_wei))
-        self._send(approve)
+        # 1) Approve deposit for the StreamPayment contract (only if needed)
+        try:
+            allowance = self.erc20.functions.allowance(self.account.address, self.contract.address).call()
+        except Exception:
+            allowance = 0
+        if int(allowance) < int(deposit_wei):
+            approve = self.erc20.functions.approve(self.contract.address, int(deposit_wei))
+            self._send(approve)
 
         # 2) Create stream
         fn = self.contract.functions.createStream(
@@ -139,9 +110,14 @@ class StreamPaymentClient:
         return receipt["transactionHash"]
 
     def top_up(self, stream_id: int, amount_wei: int) -> str:
-        # Approve first
-        approve = self.erc20.functions.approve(self.contract.address, int(amount_wei))
-        self._send(approve)
+        # Approve first (only if needed)
+        try:
+            allowance = self.erc20.functions.allowance(self.account.address, self.contract.address).call()
+        except Exception:
+            allowance = 0
+        if int(allowance) < int(amount_wei):
+            approve = self.erc20.functions.approve(self.contract.address, int(amount_wei))
+            self._send(approve)
         # Top up
         fn = self.contract.functions.topUp(int(stream_id), int(amount_wei))
         receipt = self._send(fn)
