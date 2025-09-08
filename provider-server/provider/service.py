@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from .utils.logging import setup_logger
 from .vm.service import VMService
 from .discovery.service import AdvertisementService
+from .utils.pricing import PricingAutoUpdater
 
 logger = setup_logger(__name__)
 
@@ -15,6 +16,7 @@ class ProviderService:
         self.vm_service = vm_service
         self.advertisement_service = advertisement_service
         self.port_manager = port_manager
+        self._pricing_updater: PricingAutoUpdater | None = None
 
     async def setup(self, app: FastAPI):
         """Setup and initialize the provider components."""
@@ -35,6 +37,11 @@ class ProviderService:
             await self.port_manager.initialize()
             await self.vm_service.provider.initialize()
             await self.advertisement_service.start()
+            # Start pricing auto-updater; trigger re-advertise after updates
+            async def _on_price_updated(platform: str, glm_usd):
+                await self.advertisement_service.trigger_update()
+            self._pricing_updater = PricingAutoUpdater(on_updated_callback=_on_price_updated)
+            asyncio.create_task(self._pricing_updater.start())
 
             # Check wallet balance and request funds if needed
             faucet_client = FaucetClient(
@@ -55,6 +62,8 @@ class ProviderService:
         logger.process("🔄 Cleaning up provider...")
         await self.advertisement_service.stop()
         await self.vm_service.provider.cleanup()
+        if self._pricing_updater:
+            self._pricing_updater.stop()
         logger.success("✨ Provider cleanup complete")
 
     def _setup_directories(self):

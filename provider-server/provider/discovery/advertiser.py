@@ -65,7 +65,7 @@ class DiscoveryServerAdvertiser(Advertiser):
         try:
             while not self._stop_event.is_set():
                 await self.post_advertisement()
-                await asyncio.sleep(settings.ADVERTISEMENT_INTERVAL)
+                await asyncio.sleep(settings.DISCOVERY_ADVERTISEMENT_INTERVAL)
         finally:
             await self.stop()
 
@@ -76,7 +76,12 @@ class DiscoveryServerAdvertiser(Advertiser):
             await self.session.close()
             self.session = None
 
-    @async_retry(retries=5, delay=1.0, backoff=2.0, exceptions=(aiohttp.ClientError, asyncio.TimeoutError))
+    @async_retry(
+        retries=settings.RETRY_ATTEMPTS,
+        delay=settings.RETRY_DELAY_SECONDS,
+        backoff=settings.RETRY_BACKOFF,
+        exceptions=(aiohttp.ClientError, asyncio.TimeoutError),
+    )
     async def _check_discovery_health(self):
         """Check discovery service health with retries."""
         if not self.session:
@@ -86,7 +91,12 @@ class DiscoveryServerAdvertiser(Advertiser):
             if not response.ok:
                 raise Exception(f"Discovery service health check failed: {response.status}")
 
-    @async_retry(retries=3, delay=1.0, backoff=2.0, exceptions=(aiohttp.ClientError, asyncio.TimeoutError))
+    @async_retry(
+        retries=settings.RETRY_ATTEMPTS,
+        delay=settings.RETRY_DELAY_SECONDS,
+        backoff=settings.RETRY_BACKOFF,
+        exceptions=(aiohttp.ClientError, asyncio.TimeoutError),
+    )
     async def post_advertisement(self):
         """Post resource advertisement to discovery service."""
         if not self.session:
@@ -115,7 +125,15 @@ class DiscoveryServerAdvertiser(Advertiser):
                 json={
                     "ip_address": ip_address,
                     "country": settings.PROVIDER_COUNTRY,
-                    "resources": resources
+                    "resources": resources,
+                    "pricing": {
+                        "usd_per_core_month": settings.PRICE_USD_PER_CORE_MONTH,
+                        "usd_per_gb_ram_month": settings.PRICE_USD_PER_GB_RAM_MONTH,
+                        "usd_per_gb_storage_month": settings.PRICE_USD_PER_GB_STORAGE_MONTH,
+                        "glm_per_core_month": settings.PRICE_GLM_PER_CORE_MONTH,
+                        "glm_per_gb_ram_month": settings.PRICE_GLM_PER_GB_RAM_MONTH,
+                        "glm_per_gb_storage_month": settings.PRICE_GLM_PER_GB_STORAGE_MONTH,
+                    }
                 },
                 timeout=aiohttp.ClientTimeout(total=5)
             ) as response:
@@ -132,7 +150,12 @@ class DiscoveryServerAdvertiser(Advertiser):
             logger.error("Advertisement request timed out")
             raise
 
-    @async_retry(retries=3, delay=1.0, backoff=2.0, exceptions=(aiohttp.ClientError, asyncio.TimeoutError))
+    @async_retry(
+        retries=settings.RETRY_ATTEMPTS,
+        delay=settings.RETRY_DELAY_SECONDS,
+        backoff=settings.RETRY_BACKOFF,
+        exceptions=(aiohttp.ClientError, asyncio.TimeoutError),
+    )
     async def _get_public_ip(self) -> str:
         """Get public IP address with retries."""
         if not self.session:

@@ -4,7 +4,7 @@ import subprocess
 from pathlib import Path
 import asyncio
 from typing import Dict, List, Optional
-from ..utils.retry import async_retry_unless_not_found
+from ..utils.retry import async_retry_unless_not_found, NonRetryableError
 
 from ..config import settings
 from ..utils.logging import setup_logger
@@ -16,6 +16,11 @@ logger = setup_logger(__name__)
 
 class MultipassError(VMError):
     """Raised when multipass operations fail."""
+    pass
+
+
+class NonRetryableMultipassError(MultipassError, NonRetryableError):
+    """Multipass error that should not be retried (e.g., parse/validation errors)."""
     pass
 
 
@@ -35,7 +40,7 @@ class MultipassAdapter(VMProvider):
 
         # We add a timeout to the launch command to prevent it from hanging indefinitely
         # e.g. during image download. 300 seconds = 5 minutes.
-        timeout = 300 if args[0] == 'launch' else None
+        timeout = settings.LAUNCH_TIMEOUT_SECONDS if args[0] == 'launch' else None
 
         try:
             return await asyncio.to_thread(
@@ -53,7 +58,11 @@ class MultipassAdapter(VMProvider):
             stderr = e.stderr if should_capture and e.stderr else "No stderr captured. See provider logs for command output."
             raise MultipassError(f"Multipass command '{' '.join(args)}' timed out after {timeout} seconds. Stderr: {stderr}")
 
-    @async_retry_unless_not_found(retries=5, delay=2.0)
+    @async_retry_unless_not_found(
+        retries=settings.RETRY_ATTEMPTS,
+        delay=settings.RETRY_DELAY_SECONDS,
+        backoff=settings.RETRY_BACKOFF,
+    )
     async def _get_vm_info(self, vm_id: str) -> Dict:
         """Get detailed information about a VM."""
         try:
@@ -70,7 +79,10 @@ class MultipassAdapter(VMProvider):
                 raise VMNotFoundError(f"VM {vm_id} not found in multipass") from e
             raise
         except (json.JSONDecodeError, KeyError) as e:
-            raise MultipassError(f"Failed to parse VM info or essential fields are missing: {e}")
+            # Parsing/validation issues are not transient; do not waste time retrying
+            raise NonRetryableMultipassError(
+                f"Failed to parse VM info or essential fields are missing: {e}"
+            )
 
     async def initialize(self) -> None:
         """Initialize the VM provider."""
@@ -100,8 +112,8 @@ class MultipassAdapter(VMProvider):
             logger.info(f"VM {multipass_name} launched, waiting for it to be ready...")
 
             ip_address = None
-            max_retries = 15
-            retry_delay = 5  # seconds
+            max_retries = settings.CREATE_VM_MAX_RETRIES
+            retry_delay = settings.CREATE_VM_RETRY_DELAY_SECONDS  # seconds
             for attempt in range(max_retries):
                 try:
                     info = await self._get_vm_info(multipass_name)

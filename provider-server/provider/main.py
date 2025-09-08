@@ -121,6 +121,8 @@ except ImportError:
     import importlib_metadata as metadata
 
 cli = typer.Typer()
+pricing_app = typer.Typer(help="Configure USD pricing; auto-converts to GLM.")
+cli.add_typer(pricing_app, name="pricing")
 
 def print_version(ctx: typer.Context, value: bool):
     if not value:
@@ -148,6 +150,64 @@ def start(no_verify_port: bool = typer.Option(False, "--no-verify-port", help="S
 def dev(no_verify_port: bool = typer.Option(True, "--no-verify-port", help="Skip provider port verification.")):
     """Start the provider server in development mode."""
     run_server(dev_mode=True, no_verify_port=no_verify_port)
+
+def _env_path_for(dev_mode: Optional[bool]) -> str:
+    from pathlib import Path
+    env_file = ".env.dev" if dev_mode else ".env"
+    return str(Path(__file__).parent.parent / env_file)
+
+def _write_env_vars(path: str, updates: dict):
+    # Simple .env updater: preserves other lines, replaces/append updated keys
+    import re
+    import io
+    try:
+        with open(path, "r") as f:
+            lines = f.readlines()
+    except FileNotFoundError:
+        lines = []
+
+    kv = {**updates}
+    pattern = re.compile(r"^(?P<k>[A-Z0-9_]+)=.*$")
+    out = []
+    seen = set()
+    for line in lines:
+        m = pattern.match(line.strip())
+        if not m:
+            out.append(line)
+            continue
+        k = m.group("k")
+        if k in kv:
+            out.append(f"{k}={kv[k]}\n")
+            seen.add(k)
+        else:
+            out.append(line)
+    for k, v in kv.items():
+        if k not in seen:
+            out.append(f"{k}={v}\n")
+
+    with open(path, "w") as f:
+        f.writelines(out)
+
+def _print_pricing_examples(glm_usd):
+    from decimal import Decimal
+    from .utils.pricing import calculate_monthly_cost, calculate_monthly_cost_usd
+    from .vm.models import VMResources
+    examples = [
+        ("Small", VMResources(cpu=1, memory=1, storage=10)),
+        ("Medium", VMResources(cpu=2, memory=4, storage=20)),
+        ("Example 2c/2g/10g", VMResources(cpu=2, memory=2, storage=10)),
+    ]
+    # Maintain legacy header for tests while adding a clearer caption
+    print("\nExample monthly costs with current settings:")
+    print("(Estimated monthly earnings with your current pricing)")
+    for name, res in examples:
+        glm = calculate_monthly_cost(res)
+        usd = calculate_monthly_cost_usd(res, glm_usd)
+        usd_str = f"${usd:.2f}" if usd is not None else "—"
+        glm_str = f"{glm:.4f} GLM"
+        print(
+            f"- {name} ({res.cpu}C, {res.memory}GB RAM, {res.storage}GB Disk): ~{usd_str} per month (~{glm_str})"
+        )
 
 def run_server(dev_mode: bool, no_verify_port: bool):
     """Helper to run the uvicorn server."""
@@ -209,3 +269,74 @@ def run_server(dev_mode: bool, no_verify_port: bool):
 
 if __name__ == "__main__":
     cli()
+
+
+@pricing_app.command("show")
+def pricing_show():
+    """Show current USD and GLM per-unit monthly prices and examples."""
+    from decimal import Decimal
+    from .utils.pricing import fetch_glm_usd_price, update_glm_unit_prices_from_usd
+
+    print("Current pricing (per month):")
+    print(
+        f"  - USD per unit: CPU ${settings.PRICE_USD_PER_CORE_MONTH}/core, RAM ${settings.PRICE_USD_PER_GB_RAM_MONTH}/GB, Disk ${settings.PRICE_USD_PER_GB_STORAGE_MONTH}/GB"
+    )
+    glm_usd = fetch_glm_usd_price()
+    if not glm_usd:
+        print("Error: Could not fetch GLM/USD price. Please try again later.")
+        raise typer.Exit(code=1)
+    # Coerce to Decimal for calculations if needed
+    from decimal import Decimal
+    if not isinstance(glm_usd, Decimal):
+        glm_usd = Decimal(str(glm_usd))
+    update_glm_unit_prices_from_usd(glm_usd)
+    print(f"  - GLM price: ${glm_usd} per GLM")
+    print(f"  - Rate: {glm_usd} USD/GLM")
+    print(
+        f"  - GLM per unit: CPU {round(float(settings.PRICE_GLM_PER_CORE_MONTH), 6)} GLM/core, RAM {round(float(settings.PRICE_GLM_PER_GB_RAM_MONTH), 6)} GLM/GB, Disk {round(float(settings.PRICE_GLM_PER_GB_STORAGE_MONTH), 6)} GLM/GB"
+    )
+    _print_pricing_examples(glm_usd)
+
+
+@pricing_app.command("set")
+def pricing_set(
+    usd_per_core: float = typer.Option(
+        ..., "--usd-per-core", "--core-usd", help="USD per CPU core per month"
+    ),
+    usd_per_mem: float = typer.Option(
+        ..., "--usd-per-mem", "--ram-usd", help="USD per GB of RAM per month"
+    ),
+    usd_per_disk: float = typer.Option(
+        ..., "--usd-per-disk", "--usd-per-storage", "--storage-usd", help="USD per GB of disk per month"
+    ),
+    dev: bool = typer.Option(False, "--dev", help="Write to .env.dev instead of .env"),
+):
+    """Set USD pricing; GLM rates auto-update via CoinGecko in background."""
+    if usd_per_core < 0 or usd_per_mem < 0 or usd_per_disk < 0:
+        raise typer.BadParameter("All pricing values must be >= 0")
+    env_path = _env_path_for(dev)
+    updates = {
+        "GOLEM_PROVIDER_PRICE_USD_PER_CORE_MONTH": usd_per_core,
+        "GOLEM_PROVIDER_PRICE_USD_PER_GB_RAM_MONTH": usd_per_mem,
+        "GOLEM_PROVIDER_PRICE_USD_PER_GB_STORAGE_MONTH": usd_per_disk,
+    }
+    _write_env_vars(env_path, updates)
+    print(f"Updated pricing in {env_path}")
+    # Immediately reflect in current process settings as well
+    settings.PRICE_USD_PER_CORE_MONTH = usd_per_core
+    settings.PRICE_USD_PER_GB_RAM_MONTH = usd_per_mem
+    settings.PRICE_USD_PER_GB_STORAGE_MONTH = usd_per_disk
+
+    from .utils.pricing import fetch_glm_usd_price, update_glm_unit_prices_from_usd
+    glm_usd = fetch_glm_usd_price()
+    if glm_usd:
+        # Coerce to Decimal for calculations if needed
+        from decimal import Decimal
+        if not isinstance(glm_usd, Decimal):
+            glm_usd = Decimal(str(glm_usd))
+        update_glm_unit_prices_from_usd(glm_usd)
+        print("Recalculated GLM prices due to updated USD configuration.")
+        _print_pricing_examples(glm_usd)
+    else:
+        print("Warning: could not fetch GLM/USD; GLM unit prices not recalculated.")
+        print("Tip: run 'golem-provider pricing show' when online to verify pricing with USD examples.")

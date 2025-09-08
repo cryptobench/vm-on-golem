@@ -195,7 +195,7 @@ class VMService:
             "SSH Port",
             "CPU",
             "Memory (GB)",
-            "Storage (GB)",
+            "Disk (GB)",
             "Connect Command",
             "Created"
         ]

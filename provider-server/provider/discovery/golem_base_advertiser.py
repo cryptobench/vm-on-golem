@@ -36,7 +36,7 @@ class GolemBaseAdvertiser(Advertiser):
         try:
             while not self._stop_event.is_set():
                 await self.post_advertisement()
-                await asyncio.sleep(settings.ADVERTISEMENT_INTERVAL)
+                await asyncio.sleep(settings.GOLEM_BASE_ADVERTISEMENT_INTERVAL)
         finally:
             await self.stop()
 
@@ -70,11 +70,18 @@ class GolemBaseAdvertiser(Advertiser):
                 Annotation(key="golem_ip_address", value=ip_address),
                 Annotation(key="golem_country", value=settings.PROVIDER_COUNTRY),
                 Annotation(key="golem_provider_name", value=settings.PROVIDER_NAME),
+                Annotation(key="golem_price_currency", value="USD/GLM"),
             ]
             numeric_annotations = [
                 Annotation(key="golem_cpu", value=resources["cpu"]),
                 Annotation(key="golem_memory", value=resources["memory"]),
                 Annotation(key="golem_storage", value=resources["storage"]),
+                Annotation(key="golem_price_usd_core_month", value=float(settings.PRICE_USD_PER_CORE_MONTH)),
+                Annotation(key="golem_price_usd_ram_gb_month", value=float(settings.PRICE_USD_PER_GB_RAM_MONTH)),
+                Annotation(key="golem_price_usd_storage_gb_month", value=float(settings.PRICE_USD_PER_GB_STORAGE_MONTH)),
+                Annotation(key="golem_price_glm_core_month", value=float(settings.PRICE_GLM_PER_CORE_MONTH)),
+                Annotation(key="golem_price_glm_ram_gb_month", value=float(settings.PRICE_GLM_PER_GB_RAM_MONTH)),
+                Annotation(key="golem_price_glm_storage_gb_month", value=float(settings.PRICE_GLM_PER_GB_STORAGE_MONTH)),
             ]
 
             if len(existing_keys) > 1:

@@ -53,9 +53,17 @@ class SSHKeyManager:
         
         # Create Golem directory if needed
         self.golem_dir.mkdir(parents=True, exist_ok=True)
-        # Secure directory permissions (on Unix-like systems)
+        # Secure directory permissions (on Unix-like systems). If the directory
+        # is a system path (e.g., "/tmp") or not owned/permission-changeable
+        # by the current user, ignore the error to avoid test and runtime failures.
         if os.name == 'posix':
-            os.chmod(self.golem_dir, 0o700)
+            try:
+                os.chmod(self.golem_dir, 0o700)
+            except PermissionError:
+                logger.warning(
+                    "Could not set permissions on %s; continuing without chmod",
+                    self.golem_dir,
+                )
 
     async def get_key_pair(self) -> KeyPair:
         """Get the SSH key pair to use.

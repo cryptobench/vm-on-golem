@@ -19,6 +19,10 @@ class AdvertisementCreate(BaseModel):
         ...,
         description="Available resources (cpu, memory, storage)"
     )
+    pricing: Optional[Dict] = Field(
+        None,
+        description="Pricing info (USD and GLM per-unit monthly)"
+    )
 
     @validator("resources")
     def validate_resources(cls, v):
@@ -43,6 +47,7 @@ class AdvertisementResponse(BaseModel):
     ip_address: str
     country: str
     resources: Dict[str, int]
+    pricing: Optional[Dict]
     created_at: datetime
     updated_at: datetime
 

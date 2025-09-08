@@ -15,7 +15,8 @@ class AdvertisementRepository:
         provider_id: str,
         ip_address: str,
         country: str,
-        resources: Dict[str, Any]
+        resources: Dict[str, Any],
+        pricing: Optional[Dict[str, Any]] = None
     ) -> Advertisement:
         """Create or update a provider advertisement."""
         stmt = insert(Advertisement).values(
@@ -23,6 +24,7 @@ class AdvertisementRepository:
             ip_address=ip_address,
             country=country,
             resources=resources,
+            pricing=pricing,
             updated_at=datetime.utcnow()
         )
         
@@ -33,6 +35,7 @@ class AdvertisementRepository:
                 'ip_address': stmt.excluded.ip_address,
                 'country': stmt.excluded.country,
                 'resources': stmt.excluded.resources,
+                'pricing': stmt.excluded.pricing,
                 'updated_at': stmt.excluded.updated_at
             }
         )

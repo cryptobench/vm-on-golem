@@ -90,7 +90,7 @@ def vm():
 @vm.command(name='providers')
 @click.option('--cpu', type=int, help='Minimum CPU cores required')
 @click.option('--memory', type=int, help='Minimum memory (GB) required')
-@click.option('--storage', type=int, help='Minimum storage (GB) required')
+@click.option('--storage', type=int, help='Minimum disk (GB) required')
 @click.option('--country', help='Preferred provider country')
 @click.option('--driver', type=click.Choice(['central', 'golem-base']), default=None, help='Discovery driver to use')
 @click.option('--json', 'as_json', is_flag=True, help='Output in JSON format')
@@ -106,7 +106,7 @@ async def list_providers(cpu: Optional[int], memory: Optional[int], storage: Opt
             if memory:
                 logger.detail(f"Memory: {memory}GB+")
             if storage:
-                logger.detail(f"Storage: {storage}GB+")
+                logger.detail(f"Disk: {storage}GB+")
             if country:
                 logger.detail(f"Country: {country}")
 
@@ -117,6 +117,9 @@ async def list_providers(cpu: Optional[int], memory: Optional[int], storage: Opt
         # Initialize provider service
         provider_service = ProviderService()
         async with provider_service:
+            # If a full spec is provided, enable per-provider estimate display
+            if cpu and memory and storage:
+                provider_service.estimate_spec = (cpu, memory, storage)
             providers = await provider_service.find_providers(
                 cpu=cpu,
                 memory=memory,
@@ -129,6 +132,12 @@ async def list_providers(cpu: Optional[int], memory: Optional[int], storage: Opt
             logger.warning("No providers found matching criteria")
             return {"providers": []}
 
+        # If JSON requested and full spec provided, include estimates per provider
+        if as_json and cpu and memory and storage:
+            for p in providers:
+                est = provider_service.compute_estimate(p, (cpu, memory, storage))
+                if est is not None:
+                    p['estimate'] = est
         result = {"providers": providers}
 
         if as_json:
@@ -163,9 +172,10 @@ async def list_providers(cpu: Optional[int], memory: Optional[int], storage: Opt
 @click.option('--provider-id', required=True, help='Provider ID to use')
 @click.option('--cpu', type=int, required=True, help='Number of CPU cores')
 @click.option('--memory', type=int, required=True, help='Memory in GB')
-@click.option('--storage', type=int, required=True, help='Storage in GB')
+@click.option('--storage', type=int, required=True, help='Disk in GB')
+@click.option('--yes', is_flag=True, help='Do not prompt for confirmation')
 @async_command
-async def create_vm(name: str, provider_id: str, cpu: int, memory: int, storage: int):
+async def create_vm(name: str, provider_id: str, cpu: int, memory: int, storage: int, yes: bool):
     """Create a new VM on a specific provider."""
     try:
         # Show configuration details
@@ -173,7 +183,7 @@ async def create_vm(name: str, provider_id: str, cpu: int, memory: int, storage:
         click.echo(click.style("  VM Configuration", fg="blue", bold=True))
         click.echo("─" * 60)
         click.echo(f"  Provider   : {click.style(provider_id, fg='cyan')}")
-        click.echo(f"  Resources  : {click.style(f'{cpu} CPU, {memory}GB RAM, {storage}GB Storage', fg='cyan')}")
+        click.echo(f"  Resources  : {click.style(f'{cpu} CPU, {memory}GB RAM, {storage}GB Disk', fg='cyan')}")
         click.echo("─" * 60 + "\n")
 
         # Now start the deployment with spinner
@@ -190,6 +200,21 @@ async def create_vm(name: str, provider_id: str, cpu: int, memory: int, storage:
                 provider_ip = 'localhost' if config.environment == "development" else provider.get('ip_address')
                 if not provider_ip and config.environment == "production":
                     raise RequestorError("Provider IP address not found in advertisement")
+
+                # Before proceeding, show estimated monthly price and confirm
+                provider_service.estimate_spec = (cpu, memory, storage)
+                est_row = await provider_service.format_provider_row(provider, colorize=False)
+                # Columns: ... [7]=USD/core/mo, [8]=USD/GB RAM/mo, [9]=USD/GB Disk/mo, [10]=Est. $/mo, [11]=Est. GLM/mo
+                est_usd = est_row[10]
+                est_glm = est_row[11]
+                price_str = f"~${est_usd}/mo" if est_usd != '—' else "(no USD pricing)"
+                if est_glm != '—':
+                    price_str += f" (~{est_glm} GLM/mo)"
+                click.echo(click.style(f"  💵 Estimated Monthly Cost: {price_str}", fg='yellow', bold=True))
+                if not yes:
+                    if not click.confirm("Proceed with VM creation?", default=True):
+                        logger.warning("Creation cancelled by user")
+                        return
 
                 # Setup SSH
                 ssh_service = SSHService(config.ssh_key_dir)
@@ -222,7 +247,7 @@ async def create_vm(name: str, provider_id: str, cpu: int, memory: int, storage:
         click.echo(click.style("  VM Details", fg="blue", bold=True))
         click.echo("  " + "┈" * 25)
         click.echo(f"  🏷️  Name      : {click.style(name, fg='cyan')}")
-        click.echo(f"  💻 Resources  : {click.style(f'{cpu} CPU, {memory}GB RAM, {storage}GB Storage', fg='cyan')}")
+        click.echo(f"  💻 Resources  : {click.style(f'{cpu} CPU, {memory}GB RAM, {storage}GB Disk', fg='cyan')}")
         click.echo(f"  🟢 Status     : {click.style('running', fg='green')}")
         
         # Connection Details Section
@@ -341,7 +366,7 @@ async def info_vm(name: str, as_json: bool):
                 "SSH Port",
                 "CPU",
                 "Memory (GB)",
-                "Storage (GB)",
+                "Disk (GB)",
             ]
 
             row = [

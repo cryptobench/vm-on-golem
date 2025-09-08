@@ -7,6 +7,11 @@ logger = logging.getLogger(__name__)
 
 T = TypeVar('T')
 
+
+class NonRetryableError(Exception):
+    """Base class for errors that should not be retried by retry decorators."""
+    pass
+
 def async_retry(
     retries: int = 3,
     delay: float = 1.0,
@@ -68,7 +73,8 @@ def async_retry_unless_not_found(
                 try:
                     return await func(*args, **kwargs)
                 except exceptions as e:
-                    if isinstance(e, VMNotFoundError):
+                    # Skip retries for known non-retryable cases
+                    if isinstance(e, (VMNotFoundError, NonRetryableError)):
                         raise e
 
                     last_exception = e
