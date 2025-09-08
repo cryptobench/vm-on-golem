@@ -14,7 +14,7 @@ except ImportError:
     # Python < 3.8
     import importlib_metadata as metadata
 
-from ..config import config
+from ..config import config, ensure_config
 from ..provider.client import ProviderClient
 from ..errors import RequestorError
 from ..utils.logging import setup_logger
@@ -56,6 +56,7 @@ def print_version(ctx, param, value):
               expose_value=False, is_eager=True, help="Show the version and exit.")
 def cli():
     """VM on Golem management CLI"""
+    ensure_config()
     pass
 
 

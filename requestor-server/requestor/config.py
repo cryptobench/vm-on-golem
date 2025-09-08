@@ -1,14 +1,46 @@
 from pathlib import Path
 from typing import Optional, Dict
 import os
-from pydantic_settings import BaseSettings
-from pydantic import Field, validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, field_validator, ValidationInfo
+
+
+def ensure_config() -> None:
+    """Ensure the requestor configuration directory and defaults exist."""
+    base_dir = Path.home() / ".golem" / "requestor"
+    ssh_dir = base_dir / "ssh"
+    env_file = base_dir / ".env"
+    created = False
+
+    if not base_dir.exists():
+        base_dir.mkdir(parents=True, exist_ok=True)
+        created = True
+    if not ssh_dir.exists():
+        ssh_dir.mkdir(parents=True, exist_ok=True)
+        created = True
+
+    if not env_file.exists():
+        env_file.write_text("GOLEM_REQUESTOR_ENVIRONMENT=production\n")
+        created = True
+
+    private_key = ssh_dir / "id_rsa"
+    public_key = ssh_dir / "id_rsa.pub"
+    if not private_key.exists():
+        private_key.write_text("placeholder-private-key")
+        private_key.chmod(0o600)
+        public_key.write_text("placeholder-public-key")
+        created = True
+
+    if created:
+        print("Using default settings – run with --help to customize")
+
+
+ensure_config()
 
 class RequestorConfig(BaseSettings):
     """Configuration settings for the requestor node."""
-    
-    class Config:
-        env_prefix = "GOLEM_REQUESTOR_"
+
+    model_config = SettingsConfigDict(env_prefix="GOLEM_REQUESTOR_")
     
     # Environment
     environment: str = Field(
@@ -36,10 +68,11 @@ class RequestorConfig(BaseSettings):
         description="URL of the discovery service (for 'central' driver)"
     )
 
-    @validator("discovery_url", always=True)
-    def set_discovery_url(cls, v: str, values: dict) -> str:
+    @field_validator("discovery_url")
+    @classmethod
+    def set_discovery_url(cls, v: str, info: ValidationInfo) -> str:
         """Prefix discovery URL with DEVMODE if in development."""
-        if values.get("environment") == "development":
+        if info.data.get("environment") == "development":
             return f"DEVMODE-{v}"
         return v
 
@@ -63,7 +96,7 @@ class RequestorConfig(BaseSettings):
     
     # Base Directory
     base_dir: Path = Field(
-        default_factory=lambda: Path.home() / ".golem",
+        default_factory=lambda: Path.home() / ".golem" / "requestor",
         description="Base directory for all Golem requestor files"
     )
     
@@ -86,10 +119,10 @@ class RequestorConfig(BaseSettings):
 
         # Set dependent paths before validation
         if 'ssh_key_dir' not in kwargs:
-            base_dir = kwargs.get('base_dir', Path.home() / ".golem")
+            base_dir = kwargs.get('base_dir', Path.home() / ".golem" / "requestor")
             kwargs['ssh_key_dir'] = base_dir / "ssh"
         if 'db_path' not in kwargs:
-            base_dir = kwargs.get('base_dir', Path.home() / ".golem")
+            base_dir = kwargs.get('base_dir', Path.home() / ".golem" / "requestor")
             kwargs['db_path'] = base_dir / "vms.db"
         super().__init__(**kwargs)
 
