@@ -25,3 +25,34 @@ export GOLEM_REQUESTOR_ENVIRONMENT="development"
 ```
 
 If these variables are not set, the applications will default to `production` mode.
+
+## Development
+
+This repository provides a Makefile to streamline common tasks during development.
+
+### Install dependencies
+
+Install the discovery, provider, and requestor packages using Poetry:
+
+```bash
+make install
+```
+
+### Run tests
+
+Execute unit tests for all packages:
+
+```bash
+make test
+```
+
+### Start development servers
+
+Launch the discovery, provider, and requestor servers concurrently:
+
+```bash
+make start
+```
+
+This runs all three services in the foreground for local development.
+
