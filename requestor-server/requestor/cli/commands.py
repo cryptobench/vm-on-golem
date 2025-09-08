@@ -17,6 +17,22 @@ except ImportError:
     import importlib_metadata as metadata
 
 from ..config import config
+
+# `ensure_config` is responsible for creating default configuration
+# files and directories on first run.  Some unit tests replace the
+# entire `requestor.config` module with a lightweight stub that only
+# provides a `config` object.  Importing `ensure_config` in such
+# scenarios would raise an ``ImportError`` which prevents the CLI
+# module from being imported at all.  To make the CLI resilient during
+# tests we try to import ``ensure_config`` but fall back to a no-op
+# when it isn't available.
+try:
+    from ..config import ensure_config  # type: ignore
+except Exception:  # pragma: no cover - used only when tests stub the module
+    def ensure_config() -> None:
+        """Fallback ``ensure_config`` used in tests."""
+        pass
+
 from ..provider.client import ProviderClient
 from ..errors import RequestorError
 from ..utils.logging import setup_logger
@@ -66,7 +82,7 @@ cli.add_typer(server, name="server")
 @cli.callback()
 def main(version: bool = typer.Option(False, "--version", callback=print_version, is_eager=True, help="Show the version and exit.")):
     """VM on Golem management CLI"""
-    pass
+    ensure_config()
 
 
 @vm.command(name='providers')
@@ -77,6 +93,7 @@ async def list_providers(
     storage: Optional[int] = typer.Option(None, "--storage", help="Minimum storage (GB) required"),
     country: Optional[str] = typer.Option(None, "--country", help="Preferred provider country"),
     driver: Optional[str] = typer.Option(None, "--driver", help="Discovery driver to use"),
+    as_json: bool = typer.Option(False, "--json", help="Output in JSON format"),
 ):
     """List available providers matching requirements."""
     try:
@@ -109,24 +126,31 @@ async def list_providers(
 
         if not providers:
             logger.warning("No providers found matching criteria")
-            return
+            return {"providers": []}
 
-        # Format provider information using service with colors
-        headers = provider_service.provider_headers
-        rows = await asyncio.gather(*(provider_service.format_provider_row(p, colorize=True) for p in providers))
+        result = {"providers": providers}
 
-        # Show fancy header
-        click.echo("\n" + "─" * 80)
-        click.echo(click.style(f"  🌍 Available Providers ({len(providers)} total)", fg="blue", bold=True))
-        click.echo("─" * 80)
+        if as_json:
+            typer.echo(json.dumps(result, indent=2))
+        else:
+            # Format provider information using service with colors
+            headers = provider_service.provider_headers
+            rows = await asyncio.gather(*(provider_service.format_provider_row(p, colorize=True) for p in providers))
 
-        # Show table with colored headers
-        click.echo("\n" + tabulate(
-            rows,
-            headers=[click.style(h, bold=True) for h in headers],
-            tablefmt="grid"
-        ))
-        click.echo("\n" + "─" * 80)
+            # Show fancy header
+            click.echo("\n" + "─" * 80)
+            click.echo(click.style(f"  🌍 Available Providers ({len(providers)} total)", fg="blue", bold=True))
+            click.echo("─" * 80)
+
+            # Show table with colored headers
+            click.echo("\n" + tabulate(
+                rows,
+                headers=[click.style(h, bold=True) for h in headers],
+                tablefmt="grid"
+            ))
+            click.echo("\n" + "─" * 80)
+
+        return result
 
     except Exception as e:
         logger.error(f"Failed to list providers: {str(e)}")
@@ -280,11 +304,17 @@ async def ssh_vm(name: str = typer.Argument(...)):
         raise typer.Exit(code=1)
 
 
+@vm.command(name='connect')
+def connect_vm(name: str = typer.Argument(...)):
+    """Alias for the ``ssh`` command."""
+    return ssh_vm(name)
+
+
 @vm.command(name='info')
 @async_command
 async def info_vm(
     name: str = typer.Argument(...),
-    json_output: bool = typer.Option(
+    as_json: bool = typer.Option(
         False, "--json", help="Output VM information in JSON format"
     ),
 ):
@@ -301,9 +331,9 @@ async def info_vm(
         if not vm:
             raise typer.BadParameter(f"VM '{name}' not found")
 
-        if json_output:
+        if as_json:
             typer.echo(json.dumps(vm))
-            return
+            return vm
 
         headers = [
             "Status",
@@ -324,6 +354,7 @@ async def info_vm(
         ]
 
         click.echo("\n" + tabulate([row], headers=headers, tablefmt="grid"))
+        return vm
 
     except Exception as e:
         logger.error(f"Failed to get VM info: {str(e)}")
@@ -370,6 +401,12 @@ async def destroy_vm(name: str = typer.Argument(...)):
             error_msg = "VM not found on provider (it may have been manually removed)"
         logger.error(f"Failed to destroy VM: {error_msg}")
         raise typer.Exit(code=1)
+
+
+@vm.command(name='delete')
+def delete_vm(name: str = typer.Argument(...)):
+    """Alias for the ``destroy`` command."""
+    return destroy_vm(name)
 
 
 @vm.command(name='purge')
@@ -571,36 +608,45 @@ def run_api_server(
 
 @vm.command(name='list')
 @async_command
-async def list_vms():
+async def list_vms(
+    as_json: bool = typer.Option(False, "--json", help="Output in JSON format"),
+):
     """List all VMs."""
     try:
         logger.command("📋 Listing your VMs")
         logger.process("Fetching VM details")
-        
+
         # Initialize VM service with temporary client (not needed for listing)
         ssh_service = SSHService(config.ssh_key_dir)
         vm_service = VMService(db_service, ssh_service, None)
         vms = await vm_service.list_vms()
         if not vms:
             logger.warning("No VMs found")
-            return
+            return {"vms": []}
 
-        # Format VM information using service
-        headers = vm_service.vm_headers
-        rows = [vm_service.format_vm_row(vm, colorize=True) for vm in vms]
+        result = {"vms": vms}
 
-        # Show fancy header
-        click.echo("\n" + "─" * 60)
-        click.echo(click.style(f"  📋 Your VMs ({len(vms)} total)", fg="blue", bold=True))
-        click.echo("─" * 60)
-        
-        # Show table with colored status
-        click.echo("\n" + tabulate(
-            rows,
-            headers=[click.style(h, bold=True) for h in headers],
-            tablefmt="grid"
-        ))
-        click.echo("\n" + "─" * 60)
+        if as_json:
+            typer.echo(json.dumps(result, indent=2))
+        else:
+            # Format VM information using service
+            headers = vm_service.vm_headers
+            rows = [vm_service.format_vm_row(vm, colorize=True) for vm in vms]
+
+            # Show fancy header
+            click.echo("\n" + "─" * 60)
+            click.echo(click.style(f"  📋 Your VMs ({len(vms)} total)", fg="blue", bold=True))
+            click.echo("─" * 60)
+
+            # Show table with colored status
+            click.echo("\n" + tabulate(
+                rows,
+                headers=[click.style(h, bold=True) for h in headers],
+                tablefmt="grid"
+            ))
+            click.echo("\n" + "─" * 60)
+
+        return result
 
     except Exception as e:
         error_msg = str(e)
