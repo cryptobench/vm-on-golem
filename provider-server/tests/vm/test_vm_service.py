@@ -113,9 +113,11 @@ async def test_delete_vm_does_not_exist(vm_service, mock_vm_provider):
     # Arrange
     mock_vm_provider.get_vm_status.side_effect = VMNotFoundError("VM not found")
 
-    # Act &amp; Assert
-    with pytest.raises(VMNotFoundError):
-        await vm_service.delete_vm("test-vm")
+    # Act
+    await vm_service.delete_vm("test-vm")
+
+    # Assert
+    mock_vm_provider.delete_vm.assert_not_awaited()
 
 @pytest.mark.asyncio
 async def test_delete_vm_provider_fails(vm_service, mock_vm_provider):
@@ -171,6 +173,33 @@ async def test_get_vm_status_does_not_exist(vm_service, mock_vm_provider):
     # Act &amp; Assert
     with pytest.raises(VMNotFoundError):
         await vm_service.get_vm_status("test-vm")
+
+
+@pytest.mark.asyncio
+async def test_stop_vm_happy_path(vm_service, mock_vm_provider):
+    # Arrange
+    vm_service.name_mapper.get_multipass_name = AsyncMock(return_value="multipass-test-vm")
+    vm_info = VMInfo(id="test-vm", name="test-vm", status=VMStatus.STOPPED, resources=VMResources(cpu=2, memory=2, storage=20))
+    mock_vm_provider.stop_vm = AsyncMock(return_value=vm_info)
+
+    # Act
+    result = await vm_service.stop_vm("test-vm")
+
+    # Assert
+    vm_service.name_mapper.get_multipass_name.assert_awaited_once_with("test-vm")
+    mock_vm_provider.stop_vm.assert_awaited_once_with("multipass-test-vm")
+    assert result == vm_info
+
+
+@pytest.mark.asyncio
+async def test_stop_vm_not_found(vm_service, mock_vm_provider):
+    # Arrange
+    vm_service.name_mapper.get_multipass_name = AsyncMock(return_value=None)
+
+    # Act & Assert
+    with pytest.raises(VMNotFoundError):
+        await vm_service.stop_vm("test-vm")
+    mock_vm_provider.stop_vm.assert_not_awaited()
 
 @pytest.mark.asyncio
 async def test_initialize(vm_service, mock_vm_provider):
