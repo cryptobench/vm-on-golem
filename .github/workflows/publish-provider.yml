@@ -21,6 +21,11 @@ jobs:
             - name: Configure Poetry
               run: |
                   poetry config pypi-token.pypi ${{ secrets.PYPI_TOKEN }}
+            - name: Bump package version
+              run: |
+                  python scripts/bump_versions.py provider-server/pyproject.toml
+              env:
+                  BUILD_NUMBER: ${{ github.run_number }}
             - name: Build and publish
               working-directory: ./provider-server
               run: |
