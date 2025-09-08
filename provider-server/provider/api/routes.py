@@ -122,18 +122,19 @@ async def get_vm_access(
         raise HTTPException(status_code=500, detail="An unexpected error occurred")
 
 
-@router.post("/vms/{requestor_name}/stop")
+@router.post("/vms/{requestor_name}/stop", response_model=VMInfo)
 @inject
 async def stop_vm(
     requestor_name: str,
     vm_service: VMService = Depends(Provide[Container.vm_service]),
-) -> None:
+) -> VMInfo:
     """Stop a VM."""
     try:
         logger.process(f"🛑 Stopping VM '{requestor_name}'")
-        await vm_service.stop_vm(requestor_name)
-        vm_status_change(requestor_name, "STOPPED", "VM stopped")
+        vm_info = await vm_service.stop_vm(requestor_name)
+        vm_status_change(requestor_name, vm_info.status.value, "VM stopped")
         logger.success(f"✨ Successfully stopped VM '{requestor_name}'")
+        return vm_info
     except VMNotFoundError as e:
         logger.error(f"VM not found: {e}")
         raise HTTPException(status_code=404, detail=str(e))
