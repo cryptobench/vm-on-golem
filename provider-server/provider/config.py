@@ -11,6 +11,37 @@ from .utils.logging import setup_logger
 logger = setup_logger(__name__)
 
 
+def ensure_config() -> None:
+    """Ensure the provider configuration directory and defaults exist."""
+    base_dir = Path.home() / ".golem" / "provider"
+    env_file = base_dir / ".env"
+    subdirs = ["keys", "ssh", "vms", "proxy"]
+    created = False
+
+    for sub in subdirs:
+        path = base_dir / sub
+        if not path.exists():
+            path.mkdir(parents=True, exist_ok=True)
+            created = True
+
+    if not env_file.exists():
+        env_file.write_text("GOLEM_PROVIDER_ENVIRONMENT=production\n")
+        created = True
+
+    from .security.ethereum import EthereumIdentity
+
+    identity = EthereumIdentity(str(base_dir / "keys"))
+    if not identity.key_file.exists():
+        identity.get_or_create_identity()
+        created = True
+
+    if created:
+        print("Using default settings – run with --help to customize")
+
+
+ensure_config()
+
+
 class Settings(BaseSettings):
     """Provider configuration settings."""
 

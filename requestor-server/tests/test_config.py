@@ -9,7 +9,7 @@ from requestor.config import RequestorConfig
 def test_default_paths(monkeypatch, tmp_path):
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     cfg = RequestorConfig()
-    expected_base = tmp_path / ".golem"
+    expected_base = tmp_path / ".golem" / "requestor"
     assert cfg.base_dir == expected_base
     assert cfg.ssh_key_dir == expected_base / "ssh"
     assert cfg.db_path == expected_base / "vms.db"
