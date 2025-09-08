@@ -1,4 +1,3 @@
-from .api import routes
 import asyncio
 import os
 import socket
@@ -6,14 +5,16 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional
 
-from .config import settings
-from .utils.logging import setup_logger, PROCESS, SUCCESS
+from .config import settings, ensure_config
+from .utils.logging import setup_logger
 from .utils.ascii_art import startup_animation
 from .discovery.resource_tracker import ResourceTracker
 from .discovery.advertiser import DiscoveryServerAdvertiser
 from .container import Container
 from .service import ProviderService
-from .utils.logging import setup_logger
+
+
+logger = setup_logger(__name__)
 
 app = FastAPI(title="VM on Golem Provider")
 container = Container()
@@ -62,6 +63,7 @@ async def shutdown_event():
     await provider_service.cleanup()
 
 # Import routes after app creation to avoid circular imports
+from .api import routes
 app.include_router(routes.router, prefix="/api/v1")
 
 # Export app for uvicorn
@@ -134,6 +136,7 @@ def print_version(ctx: typer.Context, value: bool):
 def main(
     version: bool = typer.Option(None, "--version", callback=print_version, is_eager=True, help="Show the version and exit.")
 ):
+    ensure_config()
     pass
 
 @cli.command()
@@ -152,8 +155,6 @@ def run_server(dev_mode: bool, no_verify_port: bool):
     from pathlib import Path
     from dotenv import load_dotenv
     import uvicorn
-    from .utils.logging import setup_logger
-    
     # Load appropriate .env file
     env_file = ".env.dev" if dev_mode else ".env"
     env_path = Path(__file__).parent.parent / env_file
