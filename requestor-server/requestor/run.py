@@ -50,7 +50,7 @@ def main():
             sys.exit(1)
 
         # Run CLI
-        from requestor.cli.commands import cli
+        from requestor.cli.cli import cli
 
         cli()
     except Exception as e:
