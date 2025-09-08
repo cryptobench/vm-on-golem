@@ -274,6 +274,48 @@ async def ssh_vm(name: str):
         raise click.Abort()
 
 
+@vm.command(name='info')
+@click.argument('name')
+@async_command
+async def info_vm(name: str):
+    """Show information about a VM."""
+    try:
+        logger.command(f"ℹ️  Getting info for VM '{name}'")
+
+        # Initialize VM service
+        ssh_service = SSHService(config.ssh_key_dir)
+        vm_service = VMService(db_service, ssh_service)
+
+        # Retrieve VM details
+        vm = await vm_service.get_vm(name)
+        if not vm:
+            raise click.BadParameter(f"VM '{name}' not found")
+
+        headers = [
+            "Status",
+            "IP Address",
+            "SSH Port",
+            "CPU",
+            "Memory (GB)",
+            "Storage (GB)",
+        ]
+
+        row = [
+            vm.get("status", "unknown"),
+            vm["provider_ip"],
+            vm["config"].get("ssh_port", "N/A"),
+            vm["config"]["cpu"],
+            vm["config"]["memory"],
+            vm["config"]["storage"],
+        ]
+
+        click.echo("\n" + tabulate([row], headers=headers, tablefmt="grid"))
+
+    except Exception as e:
+        logger.error(f"Failed to get VM info: {str(e)}")
+        raise click.Abort()
+
+
 @vm.command(name='destroy')
 @click.argument('name')
 @async_command
