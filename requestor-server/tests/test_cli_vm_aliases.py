@@ -8,10 +8,14 @@ from click.testing import CliRunner
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
+from requestor.cli.cli import cli
+import requestor.cli.vm_commands as vm_commands
+
 
 class DummyDatabaseService:
     def __init__(self, db_path):
         self.db_path = db_path
+
     async def init(self):
         pass
 
@@ -31,9 +35,8 @@ def load_commands(monkeypatch):
     monkeypatch.setitem(sys.modules, 'requestor.provider.client', types.SimpleNamespace(ProviderClient=object))
     monkeypatch.setitem(sys.modules, 'requestor.errors', types.SimpleNamespace(RequestorError=Exception))
 
-    import requestor.cli.commands as commands
-    reload(commands)
-    return commands
+    reload(vm_commands)
+    return vm_commands
 
 
 @pytest.fixture
@@ -51,7 +54,7 @@ def test_vm_connect_alias_calls_ssh_callback(runner, monkeypatch):
     monkeypatch.setattr(commands.ssh_vm, 'callback', fake_callback)
     monkeypatch.setattr(commands, 'db_service', types.SimpleNamespace(init=lambda: None))
 
-    result = runner.invoke(commands.cli, ['vm', 'connect', 'myvm'])
+    result = runner.invoke(cli, ['vm', 'connect', 'myvm'])
 
     assert result.exit_code == 0
     assert called['name'] == 'myvm'
@@ -67,7 +70,8 @@ def test_vm_delete_alias_calls_destroy_callback(runner, monkeypatch):
     monkeypatch.setattr(commands.destroy_vm, 'callback', fake_callback)
     monkeypatch.setattr(commands, 'db_service', types.SimpleNamespace(init=lambda: None))
 
-    result = runner.invoke(commands.cli, ['vm', 'delete', 'oldvm'])
+    result = runner.invoke(cli, ['vm', 'delete', 'oldvm'])
 
     assert result.exit_code == 0
     assert called['name'] == 'oldvm'
+

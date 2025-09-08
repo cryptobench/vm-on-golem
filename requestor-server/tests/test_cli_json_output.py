@@ -8,7 +8,9 @@ from click.testing import CliRunner
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-from requestor.cli.commands import cli
+from requestor.cli.cli import cli
+import requestor.cli.vm_commands as vm_cmds
+import requestor.cli.provider_commands as provider_cmds
 
 
 @pytest.fixture
@@ -16,16 +18,15 @@ def runner(monkeypatch):
     async def init_stub():
         pass
 
-    monkeypatch.setattr(
-        'requestor.cli.commands.db_service',
-        types.SimpleNamespace(init=init_stub),
-    )
+    stub_db = types.SimpleNamespace(init=init_stub)
+    monkeypatch.setattr('requestor.cli.shared.db_service', stub_db)
+    monkeypatch.setattr('requestor.cli.vm_commands.db_service', stub_db)
 
     class DummySSH:
         def __init__(self, key_dir):
             pass
 
-    monkeypatch.setattr('requestor.cli.commands.SSHService', DummySSH)
+    monkeypatch.setattr('requestor.cli.vm_commands.SSHService', DummySSH)
 
     return CliRunner()
 
@@ -44,15 +45,13 @@ def test_vm_info_json(runner, monkeypatch):
         async def get_vm(self, name):
             return expected
 
-    monkeypatch.setattr('requestor.cli.commands.VMService', DummyVMService)
+    monkeypatch.setattr('requestor.cli.vm_commands.VMService', DummyVMService)
 
     result = runner.invoke(cli, ['vm', 'info', 'vmname', '--json'])
     assert result.exit_code == 0
     assert json.loads(result.output) == expected
 
-    from requestor.cli import commands as cmd
-
-    assert cmd.info_vm.callback('vmname', as_json=True) == expected
+    assert vm_cmds.info_vm.callback('vmname', as_json=True) == expected
 
 
 def test_vm_list_json(runner, monkeypatch):
@@ -65,15 +64,13 @@ def test_vm_list_json(runner, monkeypatch):
         async def list_vms(self):
             return expected
 
-    monkeypatch.setattr('requestor.cli.commands.VMService', DummyVMService)
+    monkeypatch.setattr('requestor.cli.vm_commands.VMService', DummyVMService)
 
     result = runner.invoke(cli, ['vm', 'list', '--json'])
     assert result.exit_code == 0
     assert json.loads(result.output) == {'vms': expected}
 
-    from requestor.cli import commands as cmd
-
-    assert cmd.list_vms.callback(as_json=True) == {'vms': expected}
+    assert vm_cmds.list_vms.callback(as_json=True) == {'vms': expected}
 
 
 def test_list_providers_json(runner, monkeypatch):
@@ -89,13 +86,11 @@ def test_list_providers_json(runner, monkeypatch):
         async def find_providers(self, cpu=None, memory=None, storage=None, country=None, driver=None):
             return expected
 
-    monkeypatch.setattr('requestor.cli.commands.ProviderService', DummyProviderService)
+    monkeypatch.setattr('requestor.cli.provider_commands.ProviderService', DummyProviderService)
 
-    result = runner.invoke(cli, ['vm', 'providers', '--json'])
+    result = runner.invoke(cli, ['provider', 'list', '--json'])
     assert result.exit_code == 0
     assert json.loads(result.output) == {'providers': expected}
 
-    from requestor.cli import commands as cmd
-
-    assert cmd.list_providers.callback(None, None, None, None, None, as_json=True) == {'providers': expected}
+    assert provider_cmds.list_providers.callback(None, None, None, None, None, as_json=True) == {'providers': expected}
 
