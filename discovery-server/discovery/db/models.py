@@ -14,6 +14,7 @@ class Advertisement(Base):
     ip_address = Column(String, nullable=False)
     country = Column(String(2), nullable=False)  # ISO 3166-1 alpha-2
     resources = Column(JSON, nullable=False)  # CPU, memory, storage
+    pricing = Column(JSON, nullable=True)  # Optional pricing info
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 

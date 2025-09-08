@@ -6,6 +6,7 @@ from .config import settings
 from .discovery.resource_tracker import ResourceTracker
 from .discovery.golem_base_advertiser import GolemBaseAdvertiser
 from .discovery.advertiser import DiscoveryServerAdvertiser
+from .discovery.multi_advertiser import MultiAdvertiser
 from .discovery.service import AdvertisementService
 from .service import ProviderService
 from .vm.multipass_adapter import MultipassAdapter
@@ -30,6 +31,10 @@ class Container(containers.DeclarativeContainer):
         ),
         discovery_server=providers.Singleton(
             DiscoveryServerAdvertiser,
+            resource_tracker=resource_tracker,
+        ),
+        both=providers.Singleton(
+            MultiAdvertiser,
             resource_tracker=resource_tracker,
         ),
     )

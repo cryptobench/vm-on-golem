@@ -22,3 +22,10 @@ class AdvertisementService:
             self._task.cancel()
             await self._task
         await self.advertiser.stop()
+
+    async def trigger_update(self):
+        """Trigger an immediate advertisement update."""
+        try:
+            await self.advertiser.post_advertisement()
+        except Exception:
+            pass

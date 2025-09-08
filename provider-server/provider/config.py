@@ -39,7 +39,8 @@ def ensure_config() -> None:
         print("Using default settings – run with --help to customize")
 
 
-ensure_config()
+if not os.environ.get("GOLEM_PROVIDER_SKIP_BOOTSTRAP") and not os.environ.get("PYTEST_CURRENT_TEST"):
+    ensure_config()
 
 
 class Settings(BaseSettings):
@@ -125,7 +126,10 @@ class Settings(BaseSettings):
     # Discovery Service Settings
     DISCOVERY_URL: str = "http://195.201.39.101:9001"
     ADVERTISER_TYPE: str = "golem_base"  # or "discovery_server"
+    # Deprecated: use platform-specific intervals below
     ADVERTISEMENT_INTERVAL: int = 240  # seconds
+    DISCOVERY_ADVERTISEMENT_INTERVAL: int = 240  # seconds
+    GOLEM_BASE_ADVERTISEMENT_INTERVAL: int = 3600  # seconds (on-chain cost, keep higher)
 
     # Golem Base Settings
     GOLEM_BASE_RPC_URL: str = "https://ethwarsaw.holesky.golemdb.io/rpc"
@@ -273,6 +277,14 @@ class Settings(BaseSettings):
 
     # Rate Limiting
     RATE_LIMIT_PER_MINUTE: int = 100
+
+    # Retry/Timeout Settings (for long-running external calls)
+    RETRY_ATTEMPTS: int = 5
+    RETRY_DELAY_SECONDS: float = 2.0
+    RETRY_BACKOFF: float = 2.0
+    CREATE_VM_MAX_RETRIES: int = 15
+    CREATE_VM_RETRY_DELAY_SECONDS: float = 5.0
+    LAUNCH_TIMEOUT_SECONDS: int = 300
 
     # Multipass Settings
     MULTIPASS_BINARY_PATH: str = Field(
@@ -466,6 +478,25 @@ class Settings(BaseSettings):
         if v:
             logger.info(f"Using manually provided IP: {v}")
         return v
+
+    # Pricing Settings (configured in USD; auto-converted to GLM)
+    # Per-month prices per unit
+    PRICE_USD_PER_CORE_MONTH: float = Field(default=5.0, ge=0)
+    PRICE_USD_PER_GB_RAM_MONTH: float = Field(default=2.0, ge=0)
+    PRICE_USD_PER_GB_STORAGE_MONTH: float = Field(default=0.1, ge=0)
+
+    # Auto-updated GLM-denominated prices (derived from USD via CoinGecko)
+    PRICE_GLM_PER_CORE_MONTH: float = Field(default=0.0, ge=0)
+    PRICE_GLM_PER_GB_RAM_MONTH: float = Field(default=0.0, ge=0)
+    PRICE_GLM_PER_GB_STORAGE_MONTH: float = Field(default=0.0, ge=0)
+
+    # CoinGecko integration
+    COINGECKO_API_URL: str = "https://api.coingecko.com/api/v3"
+    COINGECKO_IDS: str = "golem,golem-network-tokens"  # try both, first wins
+    PRICING_UPDATE_ENABLED: bool = True
+    PRICING_UPDATE_MIN_DELTA_PERCENT: float = Field(default=1.0, ge=0.0)
+    PRICING_UPDATE_INTERVAL_DISCOVERY: int = 900    # 15 minutes
+    PRICING_UPDATE_INTERVAL_GOLEM_BASE: int = 14400 # 4 hours
 
     class Config:
         env_prefix = "GOLEM_PROVIDER_"

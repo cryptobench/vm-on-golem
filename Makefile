@@ -11,9 +11,16 @@ lock:
 	poetry -C requestor-server lock
 
 test:
-	poetry -C discovery-server run pytest || [ $$? -eq 5 ]
-	poetry -C provider-server run pytest || [ $$? -eq 5 ]
-	poetry -C requestor-server run pytest || [ $$? -eq 5 ]
+	# Ensure dev deps (e.g., requests for TestClient) are installed per service
+	poetry -C discovery-server lock --no-update
+	poetry -C discovery-server install --with dev --no-interaction
+	poetry -C discovery-server run pytest discovery-server/tests || [ $$? -eq 5 ]
+	poetry -C provider-server lock --no-update
+	poetry -C provider-server install --with dev --no-interaction
+	poetry -C provider-server run pytest provider-server/tests || [ $$? -eq 5 ]
+	poetry -C requestor-server lock --no-update
+	poetry -C requestor-server install --with dev --no-interaction
+	poetry -C requestor-server run pytest requestor-server/tests || [ $$? -eq 5 ]
 
 start:
 	@set -e; \

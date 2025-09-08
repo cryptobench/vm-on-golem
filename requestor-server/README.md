@@ -136,7 +136,7 @@ Example output:
 ────────────────────────────────────────────────
   🌍 Available Providers (3 total)
 ────────────────────────────────────────────────
-Provider ID     Country   CPU    Memory    Storage
+Provider ID     Country   CPU    Memory    Disk
 provider-1      🌍 SE     💻 4    🧠 8GB    💾 40GB
 provider-2      🌍 US     💻 8    🧠 16GB   💾 80GB
 provider-3      🌍 DE     💻 2    🧠 4GB    💾 20GB
@@ -167,7 +167,7 @@ Example output:
   VM Details
   ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
   🏷️  Name      : my-webserver
-  💻 Resources  : 2 CPU, 4GB RAM, 20GB Storage
+  💻 Resources  : 2 CPU, 4GB RAM, 20GB Disk
   🟢 Status     : running
 
   Connection Details

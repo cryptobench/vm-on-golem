@@ -53,7 +53,8 @@ async def create_advertisement(
             provider_id=provider_id,
             ip_address=advertisement.ip_address,
             country=advertisement.country,
-            resources=advertisement.resources
+            resources=advertisement.resources,
+            pricing=advertisement.pricing
         )
         return db_advertisement
     except Exception as e:
