@@ -14,6 +14,9 @@ from .vm.service import VMService
 from .vm.name_mapper import VMNameMapper
 from .vm.port_manager import PortManager
 from .vm.proxy_manager import PythonProxyManager
+from .payments.stream_map import StreamMap
+from .payments.blockchain_service import StreamPaymentReader, StreamPaymentClient, StreamPaymentConfig as _SPC
+from .payments.monitor import StreamMonitor
 
 
 class Container(containers.DeclarativeContainer):
@@ -49,6 +52,11 @@ class Container(containers.DeclarativeContainer):
         db_path=Path(settings.VM_DATA_DIR) / "vm_names.json",
     )
 
+    stream_map = providers.Singleton(
+        StreamMap,
+        storage_path=Path(settings.VM_DATA_DIR) / "streams.json",
+    )
+
     port_manager = providers.Singleton(
         PortManager,
         start_port=config.PORT_RANGE_START,
@@ -79,6 +87,31 @@ class Container(containers.DeclarativeContainer):
         provider=vm_provider,
         resource_tracker=resource_tracker,
         name_mapper=vm_name_mapper,
+    )
+
+    # Payments
+    stream_reader = providers.Factory(
+        StreamPaymentReader,
+        rpc_url=config.POLYGON_RPC_URL,
+        contract_address=config.STREAM_PAYMENT_ADDRESS,
+    )
+    stream_client = providers.Factory(
+        StreamPaymentClient,
+        cfg=providers.Callable(
+            lambda rpc, addr, pk: _SPC(rpc_url=rpc, contract_address=addr, private_key=pk),
+            config.POLYGON_RPC_URL,
+            config.STREAM_PAYMENT_ADDRESS,
+            config.ETHEREUM_PRIVATE_KEY,
+        ),
+    )
+
+    stream_monitor = providers.Singleton(
+        StreamMonitor,
+        stream_map=stream_map,
+        vm_service=vm_service,
+        reader=stream_reader,
+        client=stream_client,
+        settings=config,
     )
 
     provider_service = providers.Singleton(

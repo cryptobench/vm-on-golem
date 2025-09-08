@@ -187,6 +187,29 @@ GOLEM_PROVIDER_DISCOVERY_URL="http://discovery.golem.network:9001"
 GOLEM_PROVIDER_ADVERTISEMENT_INTERVAL=240
 ```
 
+### Streaming Payments (Polygon GLM)
+
+Enable on‑chain stream‑gated rentals by configuring the following (env prefix `GOLEM_PROVIDER_`):
+
+- `POLYGON_RPC_URL` — Polygon PoS RPC URL (e.g., https://polygon-rpc.com)
+- `STREAM_PAYMENT_ADDRESS` — StreamPayment contract address; if non‑zero, VM creation requires a valid `stream_id`
+- `GLM_TOKEN_ADDRESS` — GLM ERC20 address (for info endpoint)
+
+Optional background automation (all disabled by default):
+
+- `STREAM_MIN_REMAINING_SECONDS` — minimum remaining runway to keep a VM running (default 3600)
+- `STREAM_MONITOR_ENABLED` — stop VMs when remaining runway < threshold (default false)
+- `STREAM_MONITOR_INTERVAL_SECONDS` — how frequently to check runway (default 60)
+- `STREAM_WITHDRAW_ENABLED` — periodically withdraw vested funds (default false)
+- `STREAM_WITHDRAW_INTERVAL_SECONDS` — how often to attempt withdrawals (default 1800)
+- `STREAM_MIN_WITHDRAW_WEI` — only withdraw when >= this amount (gas‑aware)
+
+When enabled, the provider verifies each VM creation request’s `stream_id` and refuses to start the VM if:
+
+- stream recipient != provider’s Ethereum address
+- deposit is zero, stream not started, or stream halted
+- (Optional) remaining runway < `STREAM_MIN_REMAINING_SECONDS`
+
 ## API Reference
 
 ### Create VM
@@ -202,7 +225,8 @@ Request:
     "name": "my-webserver",
     "cpu_cores": 2,
     "memory_gb": 4,
-    "storage_gb": 20
+    "storage_gb": 20,
+    "stream_id": 123            // required when STREAM_PAYMENT_ADDRESS is set
 }
 ```
 
@@ -230,6 +254,24 @@ Response:
 -   Delete VM: `DELETE /api/v1/vms/{vm_id}`
 -   Stop VM: `POST /api/v1/vms/{vm_id}/stop`
 -   Get Access Info: `GET /api/v1/vms/{vm_id}/access`
+
+### Provider Info
+
+```bash
+GET /api/v1/provider/info
+```
+
+Response:
+
+```json
+{
+  "provider_id": "0xProviderEthereumAddress",
+  "stream_payment_address": "0xStreamPayment",
+  "glm_token_address": "0xGLM"
+}
+```
+
+Use this endpoint to discover the correct recipient for creating a GLM stream.
  
  ## Operations
  

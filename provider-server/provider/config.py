@@ -135,6 +135,44 @@ class Settings(BaseSettings):
     GOLEM_BASE_RPC_URL: str = "https://ethwarsaw.holesky.golemdb.io/rpc"
     GOLEM_BASE_WS_URL: str = "wss://ethwarsaw.holesky.golemdb.io/rpc/ws"
 
+    # Polygon / Payments
+    POLYGON_RPC_URL: str = Field(
+        default="https://polygon-rpc.com",
+        description="Polygon PoS RPC URL for GLM payments"
+    )
+    STREAM_PAYMENT_ADDRESS: str = Field(
+        default="0x0000000000000000000000000000000000000000",
+        description="Deployed StreamPayment contract address"
+    )
+    GLM_TOKEN_ADDRESS: str = Field(
+        default="0x0000000000000000000000000000000000000000",
+        description="GLM ERC20 token address on target network"
+    )
+    STREAM_MIN_REMAINING_SECONDS: int = Field(
+        default=3600,
+        description="Minimum remaining seconds required to keep a VM running"
+    )
+    STREAM_MONITOR_ENABLED: bool = Field(
+        default=False,
+        description="Enable background monitor to stop VMs when runway < threshold"
+    )
+    STREAM_WITHDRAW_ENABLED: bool = Field(
+        default=False,
+        description="Enable background withdrawals for active streams"
+    )
+    STREAM_MONITOR_INTERVAL_SECONDS: int = Field(
+        default=60,
+        description="How frequently to check stream runway"
+    )
+    STREAM_WITHDRAW_INTERVAL_SECONDS: int = Field(
+        default=1800,
+        description="How frequently to attempt withdrawals"
+    )
+    STREAM_MIN_WITHDRAW_WEI: int = Field(
+        default=0,
+        description="Min withdrawable amount (wei) before triggering withdraw"
+    )
+
     # VM Settings
     MAX_VMS: int = 10
     DEFAULT_VM_IMAGE: str = "ubuntu:24.04"

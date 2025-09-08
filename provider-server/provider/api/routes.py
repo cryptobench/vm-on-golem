@@ -11,7 +11,8 @@ from ..container import Container
 from ..utils.logging import setup_logger
 from ..utils.ascii_art import vm_creation_animation, vm_status_change
 from ..vm.models import VMInfo, VMAccessInfo, VMConfig, VMResources, VMNotFoundError
-from .models import CreateVMRequest
+from .models import CreateVMRequest, ProviderInfoResponse
+from ..payments.blockchain_service import StreamPaymentReader
 from ..vm.service import VMService
 from ..vm.multipass_adapter import MultipassError
 
@@ -31,6 +32,15 @@ async def create_vm(
         logger.info(f"📥 Received VM creation request for '{request.name}'")
         
         resources = request.resources or VMResources()
+
+        # If payments are enabled, require a valid stream before starting
+        if settings["STREAM_PAYMENT_ADDRESS"] and settings["STREAM_PAYMENT_ADDRESS"] != "0x0000000000000000000000000000000000000000":
+            if request.stream_id is None:
+                raise HTTPException(status_code=400, detail="stream_id required when payments are enabled")
+            reader = StreamPaymentReader(settings["POLYGON_RPC_URL"], settings["STREAM_PAYMENT_ADDRESS"])
+            ok, reason = reader.verify_stream(int(request.stream_id), settings["PROVIDER_ID"])
+            if not ok:
+                raise HTTPException(status_code=400, detail=f"invalid stream: {reason}")
         
         # Create VM config
         config = VMConfig(
@@ -46,6 +56,9 @@ async def create_vm(
     except MultipassError as e:
         logger.error(f"Failed to create VM: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+    except HTTPException:
+        # Propagate explicit HTTP errors (e.g., payment gating)
+        raise
     except Exception as e:
         logger.error(f"An unexpected error occurred: {e}")
         raise HTTPException(status_code=500, detail="An unexpected error occurred")
@@ -168,3 +181,11 @@ async def delete_vm(
     except Exception as e:
         logger.error(f"An unexpected error occurred: {e}")
         raise HTTPException(status_code=500, detail="An unexpected error occurred")
+@router.get("/provider/info", response_model=ProviderInfoResponse)
+@inject
+async def provider_info(settings: Settings = Depends(Provide[Container.config])) -> ProviderInfoResponse:
+    return ProviderInfoResponse(
+        provider_id=settings["PROVIDER_ID"],
+        stream_payment_address=settings["STREAM_PAYMENT_ADDRESS"],
+        glm_token_address=settings["GLM_TOKEN_ADDRESS"],
+    )

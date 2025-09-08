@@ -19,10 +19,12 @@ class VMService:
         provider: VMProvider,
         resource_tracker: ResourceTracker,
         name_mapper: VMNameMapper,
+        blockchain_client: object | None = None,
     ):
         self.provider = provider
         self.resource_tracker = resource_tracker
         self.name_mapper = name_mapper
+        self.blockchain_client = blockchain_client
 
     async def create_vm(self, config: VMConfig) -> VMInfo:
         """Create a new VM."""
@@ -59,6 +61,13 @@ class VMService:
             vm_info = await self.provider.get_vm_status(multipass_name)
             await self.provider.delete_vm(multipass_name)
             await self.resource_tracker.deallocate(vm_info.resources, vm_id)
+            # Optional: best-effort on-chain termination if we have a mapping
+            try:
+                if self.blockchain_client:
+                    # In future: look up stream id associated to this vm_id
+                    pass
+            except Exception:
+                pass
         except VMNotFoundError:
             logger.warning(f"VM {multipass_name} not found on provider, cleaning up resources")
             # If the VM is not found, we still need to deallocate the resources we have tracked for it
@@ -74,7 +83,15 @@ class VMService:
         multipass_name = await self.name_mapper.get_multipass_name(vm_id)
         if not multipass_name:
             raise VMNotFoundError(f"VM {vm_id} not found")
-        return await self.provider.stop_vm(multipass_name)
+        vm = await self.provider.stop_vm(multipass_name)
+        # Optional: best-effort withdraw for active stream
+        try:
+            if self.blockchain_client:
+                # In future: look up stream id associated to this vm_id
+                pass
+        except Exception:
+            pass
+        return vm
  
     async def list_vms(self) -> List[VMInfo]:
         """List all VMs."""

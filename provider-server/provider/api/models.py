@@ -17,6 +17,10 @@ class CreateVMRequest(BaseModel):
     image: str = Field(default="24.04")  # Ubuntu 24.04 LTS
     ssh_key: str = Field(..., pattern="^(ssh-rsa|ssh-ed25519) ",
                          description="SSH public key for VM access")
+    stream_id: Optional[int] = Field(
+        default=None,
+        description="On-chain StreamPayment stream id used to fund this VM"
+    )
 
     @field_validator("name")
     def validate_name(cls, v: str) -> str:
@@ -106,3 +110,9 @@ class ProviderStatusResponse(BaseModel):
     resources: Dict[str, int]
     vm_count: int
     max_vms: int
+
+
+class ProviderInfoResponse(BaseModel):
+    provider_id: str
+    stream_payment_address: str
+    glm_token_address: str

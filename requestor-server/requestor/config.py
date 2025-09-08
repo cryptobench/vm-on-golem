@@ -94,6 +94,24 @@ class RequestorConfig(BaseSettings):
         description="Private key for Golem Base"
     )
     
+    # Polygon / Payments
+    polygon_rpc_url: str = Field(
+        default="https://polygon-rpc.com",
+        description="Polygon PoS RPC URL for GLM payments"
+    )
+    stream_payment_address: str = Field(
+        default="0x0000000000000000000000000000000000000000",
+        description="Deployed StreamPayment contract address"
+    )
+    glm_token_address: str = Field(
+        default="0x0000000000000000000000000000000000000000",
+        description="GLM ERC20 token address on target network"
+    )
+    provider_eth_address: str = Field(
+        default="",
+        description="Optional provider Ethereum address for test/dev streaming"
+    )
+
     # Base Directory
     base_dir: Path = Field(
         default_factory=lambda: Path.home() / ".golem" / "requestor",
