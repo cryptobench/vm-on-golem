@@ -160,78 +160,110 @@ async def list_providers(cpu: Optional[int], memory: Optional[int], storage: Opt
 
 @vm.command(name='create')
 @click.argument('name')
-@click.option('--provider-id', required=True, help='Provider ID to use')
-@click.option('--cpu', type=int, required=True, help='Number of CPU cores')
-@click.option('--memory', type=int, required=True, help='Memory in GB')
-@click.option('--storage', type=int, required=True, help='Storage in GB')
+@click.option('--provider-id', help='Provider ID to use')
+@click.option('--cpu', type=int, help='Number of CPU cores')
+@click.option('--memory', type=int, help='Memory in GB')
+@click.option('--storage', type=int, help='Storage in GB')
 @async_command
-async def create_vm(name: str, provider_id: str, cpu: int, memory: int, storage: int):
+async def create_vm(name: str, provider_id: Optional[str], cpu: Optional[int], memory: Optional[int], storage: Optional[int]):
     """Create a new VM on a specific provider."""
     try:
-        # Show configuration details
+        provider_service = ProviderService()
+        async with provider_service:
+            if not provider_id:
+                providers = await provider_service.find_providers()
+                if not providers:
+                    logger.error("No providers found")
+                    raise click.Abort()
+
+                headers = provider_service.provider_headers
+                rows = await asyncio.gather(
+                    *(provider_service.format_provider_row(p, colorize=True) for p in providers)
+                )
+                click.echo("\n" + "─" * 80)
+                click.echo(click.style(f"  🌍 Available Providers ({len(providers)} total)", fg="blue", bold=True))
+                click.echo("─" * 80)
+                click.echo("\n" + tabulate(
+                    rows,
+                    headers=[click.style(h, bold=True) for h in headers],
+                    tablefmt="grid",
+                ))
+                click.echo("\n" + "─" * 80)
+
+                provider = providers[0]
+                provider_id = provider['provider_id']
+                click.echo(click.style(f"\nSelected provider {provider_id}", fg='green'))
+            else:
+                provider = await provider_service.verify_provider(provider_id)
+
+            available = provider['resources']
+            click.echo(
+                f"Available resources: {available['cpu']} CPU, {available['memory']}GB RAM, {available['storage']}GB Storage"
+            )
+
+            if cpu is None:
+                cpu = click.prompt('CPU cores', type=int, default=available['cpu'])
+            if memory is None:
+                memory = click.prompt('Memory in GB', type=int, default=available['memory'])
+            if storage is None:
+                storage = click.prompt('Storage in GB', type=int, default=available['storage'])
+
+            if not await provider_service.check_resource_availability(provider_id, cpu, memory, storage):
+                raise RequestorError("Provider doesn't have enough resources available")
+
+            provider_ip = 'localhost' if config.environment == "development" else provider.get('ip_address')
+            if not provider_ip and config.environment == "production":
+                raise RequestorError("Provider IP address not found in advertisement")
+
+        ssh_service = SSHService(config.ssh_key_dir)
+        key_pair = await ssh_service.get_key_pair()
+
         click.echo("\n" + "─" * 60)
         click.echo(click.style("  VM Configuration", fg="blue", bold=True))
         click.echo("─" * 60)
         click.echo(f"  Provider   : {click.style(provider_id, fg='cyan')}")
-        click.echo(f"  Resources  : {click.style(f'{cpu} CPU, {memory}GB RAM, {storage}GB Storage', fg='cyan')}")
+        click.echo(
+            f"  Resources  : {click.style(f'{cpu} CPU, {memory}GB RAM, {storage}GB Storage', fg='cyan')}"
+        )
         click.echo("─" * 60 + "\n")
 
-        # Now start the deployment with spinner
+        if not click.confirm('Proceed with deployment?', default=True):
+            logger.warning("Deployment aborted by user")
+            raise click.Abort()
+
         with Spinner("Deploying VM..."):
-            # Initialize services
-            provider_service = ProviderService()
-            async with provider_service:
-                # Verify provider and resources
-                provider = await provider_service.verify_provider(provider_id)
-                if not await provider_service.check_resource_availability(provider_id, cpu, memory, storage):
-                    raise RequestorError("Provider doesn't have enough resources available")
+            provider_url = config.get_provider_url(provider_ip)
+            async with ProviderClient(provider_url) as client:
+                vm_service = VMService(db_service, ssh_service, client)
 
-                # Get provider IP
-                provider_ip = 'localhost' if config.environment == "development" else provider.get('ip_address')
-                if not provider_ip and config.environment == "production":
-                    raise RequestorError("Provider IP address not found in advertisement")
+                vm = await vm_service.create_vm(
+                    name=name,
+                    cpu=cpu,
+                    memory=memory,
+                    storage=storage,
+                    provider_ip=provider_ip,
+                    ssh_key=key_pair.public_key_content
+                )
 
-                # Setup SSH
-                ssh_service = SSHService(config.ssh_key_dir)
-                key_pair = await ssh_service.get_key_pair()
+                ssh_port = vm['config']['ssh_port']
 
-                # Initialize VM service
-                provider_url = config.get_provider_url(provider_ip)
-                async with ProviderClient(provider_url) as client:
-                    vm_service = VMService(db_service, ssh_service, client)
-                    
-                    # Create VM
-                    vm = await vm_service.create_vm(
-                        name=name,
-                        cpu=cpu,
-                        memory=memory,
-                        storage=storage,
-                        provider_ip=provider_ip,
-                        ssh_key=key_pair.public_key_content
-                    )
-
-                    # Get access info from config
-                    ssh_port = vm['config']['ssh_port']
-
-        # Create a visually appealing success message
         click.echo("\n" + "─" * 60)
         click.echo(click.style("  🎉 VM Deployed Successfully!", fg="green", bold=True))
         click.echo("─" * 60 + "\n")
 
-        # VM Details Section
         click.echo(click.style("  VM Details", fg="blue", bold=True))
         click.echo("  " + "┈" * 25)
         click.echo(f"  🏷️  Name      : {click.style(name, fg='cyan')}")
-        click.echo(f"  💻 Resources  : {click.style(f'{cpu} CPU, {memory}GB RAM, {storage}GB Storage', fg='cyan')}")
+        click.echo(
+            f"  💻 Resources  : {click.style(f'{cpu} CPU, {memory}GB RAM, {storage}GB Storage', fg='cyan')}"
+        )
         click.echo(f"  🟢 Status     : {click.style('running', fg='green')}")
-        
-        # Connection Details Section
+
         click.echo("\n" + click.style("  Connection Details", fg="blue", bold=True))
         click.echo("  " + "┈" * 25)
         click.echo(f"  🌐 IP Address : {click.style(provider_ip, fg='cyan')}")
         click.echo(f"  🔌 Port       : {click.style(str(ssh_port), fg='cyan')}")
-        
-        # Quick Connect Section
+
         click.echo("\n" + click.style("  Quick Connect", fg="blue", bold=True))
         click.echo("  " + "┈" * 25)
         ssh_command = ssh_service.format_ssh_command(
@@ -241,7 +273,7 @@ async def create_vm(name: str, provider_id: str, cpu: int, memory: int, storage:
             colorize=True
         )
         click.echo(f"  🔑 SSH Command : {ssh_command}")
-        
+
         click.echo("\n" + "─" * 60)
 
     except Exception as e:
