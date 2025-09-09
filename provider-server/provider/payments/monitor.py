@@ -15,11 +15,21 @@ class StreamMonitor:
         self.settings = settings
         self._task: Optional[asyncio.Task] = None
 
+    def _get(self, key: str, default=None):
+        """Safely read setting from either an object with attributes or a dict-like mapping."""
+        try:
+            return getattr(self.settings, key)
+        except Exception:
+            try:
+                return self.settings.get(key, default)
+            except Exception:
+                return default
+
     def start(self):
-        if self.settings.STREAM_MONITOR_ENABLED or self.settings.STREAM_WITHDRAW_ENABLED:
+        if self._get("STREAM_MONITOR_ENABLED", False) or self._get("STREAM_WITHDRAW_ENABLED", False):
             logger.info(
-                f"⏱️ Stream monitor enabled (check={self.settings.STREAM_MONITOR_ENABLED}, withdraw={self.settings.STREAM_WITHDRAW_ENABLED}) "
-                f"interval={self.settings.STREAM_MONITOR_INTERVAL_SECONDS}s"
+                f"⏱️ Stream monitor enabled (check={self._get('STREAM_MONITOR_ENABLED', False)}, "
+                f"withdraw={self._get('STREAM_WITHDRAW_ENABLED', False)}) interval={self._get('STREAM_MONITOR_INTERVAL_SECONDS', 60)}s"
             )
             self._task = asyncio.create_task(self._run(), name="stream-monitor")
 
@@ -35,7 +45,7 @@ class StreamMonitor:
         last_withdraw = 0
         while True:
             try:
-                await asyncio.sleep(self.settings.STREAM_MONITOR_INTERVAL_SECONDS)
+                await asyncio.sleep(int(self._get("STREAM_MONITOR_INTERVAL_SECONDS", 60)))
                 items = await self.stream_map.all_items()
                 now = int(self.reader.web3.eth.get_block("latest")["timestamp"]) if items else 0
                 logger.debug(f"stream monitor tick: {len(items)} streams, now={now}")
@@ -51,7 +61,7 @@ class StreamMonitor:
                         f"stream {stream_id} for VM {vm_id}: start={s['startTime']} stop={s['stopTime']} "
                         f"rate={s['ratePerSecond']} withdrawn={s['withdrawn']} halted={s['halted']} remaining={remaining}s"
                     )
-                    if self.settings.STREAM_MONITOR_ENABLED and remaining < self.settings.STREAM_MIN_REMAINING_SECONDS:
+                    if self._get("STREAM_MONITOR_ENABLED", False) and remaining < int(self._get("STREAM_MIN_REMAINING_SECONDS", 0)):
                         logger.info(f"Stopping VM {vm_id} due to low stream runway ({remaining}s)")
                         try:
                             await self.vm_service.stop_vm(vm_id)
@@ -59,16 +69,16 @@ class StreamMonitor:
                             logger.warning(f"stop_vm failed for {vm_id}: {e}")
                     else:
                         logger.debug(
-                            f"VM {vm_id} stream {stream_id} healthy (remaining={remaining}s, threshold={self.settings.STREAM_MIN_REMAINING_SECONDS}s)"
+                            f"VM {vm_id} stream {stream_id} healthy (remaining={remaining}s, threshold={self._get('STREAM_MIN_REMAINING_SECONDS', 0)}s)"
                         )
                     # Withdraw if enough vested and configured
-                    if self.settings.STREAM_WITHDRAW_ENABLED and self.client:
+                    if self._get("STREAM_WITHDRAW_ENABLED", False) and self.client:
                         vested = max(min(now, s["stopTime"]) - s["startTime"], 0) * s["ratePerSecond"]
                         withdrawable = max(vested - s["withdrawn"], 0)
                         logger.debug(f"withdraw check stream {stream_id}: vested={vested} withdrawable={withdrawable}")
                         # Enforce a minimum interval between withdrawals
-                        if withdrawable >= self.settings.STREAM_MIN_WITHDRAW_WEI and (
-                            now - last_withdraw >= self.settings.STREAM_WITHDRAW_INTERVAL_SECONDS
+                        if withdrawable >= int(self._get("STREAM_MIN_WITHDRAW_WEI", 0)) and (
+                            now - last_withdraw >= int(self._get("STREAM_WITHDRAW_INTERVAL_SECONDS", 1800))
                         ):
                             try:
                                 self.client.withdraw(stream_id)
