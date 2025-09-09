@@ -72,6 +72,16 @@ make start
 
 This runs all three services in the foreground for local development.
 
+You can also target a specific network for provider/requestor discovery:
+
+```bash
+# Start on testnet (default RPCs in service configs)
+make start-testnet
+
+# Start with mainnet filtering (set RPC URLs via env if needed)
+make start-mainnet
+```
+
 ## Repository Structure
 
 - `discovery-server/` – FastAPI discovery service

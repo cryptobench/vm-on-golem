@@ -75,9 +75,17 @@ def print_version(ctx, param, value):
 @click.group()
 @click.option('--version', is_flag=True, callback=print_version,
               expose_value=False, is_eager=True, help="Show the version and exit.")
-def cli():
+@click.option('--network', type=click.Choice(['testnet', 'mainnet']), default=None,
+              help="Override network for discovery filtering ('testnet' or 'mainnet')")
+def cli(network: str | None):
     """VM on Golem management CLI"""
     ensure_config()
+    # Allow on-demand override without touching env
+    if network:
+        try:
+            config.network = network
+        except Exception:
+            pass
     pass
 
 
@@ -94,10 +102,14 @@ def vm():
 @click.option('--country', help='Preferred provider country')
 @click.option('--driver', type=click.Choice(['central', 'golem-base']), default=None, help='Discovery driver to use')
 @click.option('--json', 'as_json', is_flag=True, help='Output in JSON format')
+@click.option('--network', type=click.Choice(['testnet', 'mainnet']), default=None,
+              help='Override network filter for this command')
 @async_command
-async def list_providers(cpu: Optional[int], memory: Optional[int], storage: Optional[int], country: Optional[str], driver: Optional[str], as_json: bool):
+async def list_providers(cpu: Optional[int], memory: Optional[int], storage: Optional[int], country: Optional[str], driver: Optional[str], as_json: bool, network: Optional[str] = None):
     """List available providers matching requirements."""
     try:
+        if network:
+            config.network = network
         # Log search criteria if any
         if any([cpu, memory, storage, country]):
             logger.command("🔍 Searching for providers with criteria:")
@@ -112,7 +124,7 @@ async def list_providers(cpu: Optional[int], memory: Optional[int], storage: Opt
 
         # Determine the discovery driver being used
         discovery_driver = driver or config.discovery_driver
-        logger.process(f"Querying discovery service via {discovery_driver}")
+        logger.process(f"Querying discovery service via {discovery_driver} (network={config.network})")
 
         # Initialize provider service
         provider_service = ProviderService()
@@ -175,10 +187,13 @@ async def list_providers(cpu: Optional[int], memory: Optional[int], storage: Opt
 @click.option('--storage', type=int, required=True, help='Disk in GB')
 @click.option('--stream-id', type=int, default=None, help='Optional StreamPayment stream id to fund this VM')
 @click.option('--yes', is_flag=True, help='Do not prompt for confirmation')
+@click.option('--network', type=click.Choice(['testnet', 'mainnet']), default=None, help='Override network for discovery during creation')
 @async_command
-async def create_vm(name: str, provider_id: str, cpu: int, memory: int, storage: int, stream_id: int | None, yes: bool):
+async def create_vm(name: str, provider_id: str, cpu: int, memory: int, storage: int, stream_id: int | None, yes: bool, network: Optional[str] = None):
     """Create a new VM on a specific provider."""
     try:
+        if network:
+            config.network = network
         # Show configuration details
         click.echo("\n" + "─" * 60)
         click.echo(click.style("  VM Configuration", fg="blue", bold=True))
@@ -295,11 +310,14 @@ def vm_stream():
 @click.option('--memory', type=int, required=True, help='Memory (GB) for rate calc')
 @click.option('--storage', type=int, required=True, help='Storage (GB) for rate calc')
 @click.option('--hours', type=int, default=1, help='Deposit coverage in hours (default 1)')
+@click.option('--network', type=click.Choice(['testnet', 'mainnet']), default=None, help='Override network for discovery during stream open')
 @async_command
-async def stream_open(provider_id: str, cpu: int, memory: int, storage: int, hours: int):
+async def stream_open(provider_id: str, cpu: int, memory: int, storage: int, hours: int, network: Optional[str] = None):
     """Create a GLM stream for a planned VM rental."""
     from ..payments.blockchain_service import StreamPaymentClient, StreamPaymentConfig
     try:
+        if network:
+            config.network = network
         provider_service = ProviderService()
         async with provider_service:
             provider = await provider_service.verify_provider(provider_id)

@@ -21,7 +21,6 @@ packages = [
 
 [tool.poetry.scripts]
 golem-provider = "provider.main:cli"
-dev = "provider.main:dev"
 
 [tool.poetry.dependencies]
 python = "^3.11"

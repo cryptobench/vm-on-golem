@@ -185,6 +185,10 @@ GOLEM_PROVIDER_PUBLIC_IP="auto"
 # Discovery Settings
 GOLEM_PROVIDER_DISCOVERY_URL="http://discovery.golem.network:9001"
 GOLEM_PROVIDER_ADVERTISEMENT_INTERVAL=240
+
+# Network Selection
+# Adds an annotation to on-chain advertisements and can be used by requestors to filter
+GOLEM_PROVIDER_NETWORK="testnet"  # or "mainnet"
 ```
 
 ### Streaming Payments (Polygon GLM)
@@ -287,9 +291,25 @@ Use this endpoint to discover the correct recipient for creating a GLM stream.
 # To run in production mode
 poetry run golem-provider start
 
-# To run in development mode
-poetry run golem-provider dev
+# To run in development mode, set the environment and optionally network
+GOLEM_PROVIDER_ENVIRONMENT=development poetry run golem-provider start --network testnet
 ```
+
+### Mode vs. Network
+
+- Development Mode (`GOLEM_PROVIDER_ENVIRONMENT=development`)
+  - Optimizes for local iteration: enables reload + debug logging and uses local defaults (e.g., local port check servers). May derive a local/LAN IP automatically and prefix the provider name with `DEVMODE-`.
+  - Does not decide which chain you target.
+
+- Network Selection (`--network` or `GOLEM_PROVIDER_NETWORK`)
+  - Chooses the discovery/advertisement scope: providers advertise `golem_network=testnet|mainnet` and requestors filter accordingly.
+  - Pair with appropriate RPC envs (`GOLEM_PROVIDER_GOLEM_BASE_RPC_URL`, `GOLEM_PROVIDER_GOLEM_BASE_WS_URL`).
+  - Does not change dev ergonomics (logging, reload, or port verification behavior).
+
+Common setups:
+- Local dev on testnet: `GOLEM_PROVIDER_ENVIRONMENT=development` plus `--network testnet`.
+- Staging on testnet: keep `ENVIRONMENT=production`, set `--network testnet` and testnet RPCs.
+- Production on mainnet: `ENVIRONMENT=production` with `--network mainnet` and mainnet RPCs.
 
 The provider will:
 
