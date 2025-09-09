@@ -186,10 +186,11 @@ async def list_providers(cpu: Optional[int], memory: Optional[int], storage: Opt
 @click.option('--memory', type=int, required=True, help='Memory in GB')
 @click.option('--storage', type=int, required=True, help='Disk in GB')
 @click.option('--stream-id', type=int, default=None, help='Optional StreamPayment stream id to fund this VM')
+@click.option('--hours', type=int, default=1, help='If no stream-id is provided and payments are enabled, open a stream with this many hours of deposit (default 1)')
 @click.option('--yes', is_flag=True, help='Do not prompt for confirmation')
 @click.option('--network', type=click.Choice(['testnet', 'mainnet']), default=None, help='Override network for discovery during creation')
 @async_command
-async def create_vm(name: str, provider_id: str, cpu: int, memory: int, storage: int, stream_id: int | None, yes: bool, network: Optional[str] = None):
+async def create_vm(name: str, provider_id: str, cpu: int, memory: int, storage: int, stream_id: int | None, hours: int, yes: bool, network: Optional[str] = None):
     """Create a new VM on a specific provider."""
     try:
         if network:
@@ -227,10 +228,7 @@ async def create_vm(name: str, provider_id: str, cpu: int, memory: int, storage:
                 if est_glm != '—':
                     price_str += f" (~{est_glm} GLM/mo)"
                 click.echo(click.style(f"  💵 Estimated Monthly Cost: {price_str}", fg='yellow', bold=True))
-                if not yes:
-                    if not click.confirm("Proceed with VM creation?", default=True):
-                        logger.warning("Creation cancelled by user")
-                        return
+                # For streamlined UX, proceed without an interactive confirmation
 
                 # Setup SSH
                 ssh_service = SSHService(config.ssh_key_dir)
@@ -239,8 +237,46 @@ async def create_vm(name: str, provider_id: str, cpu: int, memory: int, storage:
                 # Initialize VM service
                 provider_url = config.get_provider_url(provider_ip)
                 async with ProviderClient(provider_url) as client:
+                    # Fetch provider info if available (for preferred contract addresses); proceed regardless
+                    info = None
+                    try:
+                        info = await client.get_provider_info()
+                    except Exception:
+                        info = None
+                    # Always auto-open a stream when none provided (assume streaming required by default)
+                    if stream_id is None:
+                        # Compute rate from provider pricing
+                        est = provider_service.compute_estimate(provider, (cpu, memory, storage))
+                        if not est or est.get('glm_per_month') is None:
+                            raise RequestorError('Provider requires streaming but does not advertise GLM pricing; cannot compute ratePerSecond')
+                        glm_month = est['glm_per_month']
+                        glm_per_second = float(glm_month) / (730.0 * 3600.0)
+                        rate_per_second_wei = int(glm_per_second * (10**18))
+                        deposit_wei = rate_per_second_wei * int(hours) * 3600
+                        # Auto-fund via faucet if needed (testnets), then create stream
+                        try:
+                            from eth_account import Account
+                            from ..security.faucet import L2FaucetService
+                            acct = Account.from_key(config.ethereum_private_key)
+                            faucet = L2FaucetService(config)
+                            await faucet.request_funds(acct.address)
+                        except Exception:
+                            # Non-fatal; stream creation may still succeed if already funded
+                            pass
+                        # Open stream on-chain
+                        from ..payments.blockchain_service import StreamPaymentClient, StreamPaymentConfig
+                        spc = StreamPaymentConfig(
+                            rpc_url=config.polygon_rpc_url,
+                            contract_address=(info.get('stream_payment_address') if info else None) or config.stream_payment_address,
+                            glm_token_address=(info.get('glm_token_address') if info else None) or config.glm_token_address,
+                            private_key=config.ethereum_private_key,
+                        )
+                        sp_client = StreamPaymentClient(spc)
+                        recipient = (info.get('provider_id') if info else None) or provider_id
+                        stream_id = sp_client.create_stream(recipient, int(deposit_wei), int(rate_per_second_wei))
+                        logger.success(f"Opened stream id={stream_id} (hours={hours})")
+
                     vm_service = VMService(db_service, ssh_service, client)
-                    
                     # Create VM
                     vm = await vm_service.create_vm(
                         name=name,

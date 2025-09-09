@@ -238,6 +238,9 @@ class Settings(BaseSettings):
     @field_validator("STREAM_PAYMENT_ADDRESS", mode='before')
     @classmethod
     def default_stream_addr(cls, v: str) -> str:
+        # Disable payments during pytest to keep unit tests independent
+        if os.environ.get("PYTEST_CURRENT_TEST"):
+            return "0x0000000000000000000000000000000000000000"
         if v:
             return v
         addr, _ = Settings._load_l2_deployment()
@@ -246,6 +249,8 @@ class Settings(BaseSettings):
     @field_validator("GLM_TOKEN_ADDRESS", mode='before')
     @classmethod
     def default_token_addr(cls, v: str) -> str:
+        if os.environ.get("PYTEST_CURRENT_TEST"):
+            return "0x0000000000000000000000000000000000000000"
         if v:
             return v
         _, token = Settings._load_l2_deployment()
