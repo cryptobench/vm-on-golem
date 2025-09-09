@@ -3,6 +3,7 @@ from typing import Optional, Dict
 import os
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, field_validator, ValidationInfo
+import os
 
 
 def ensure_config() -> None:
@@ -99,10 +100,10 @@ class RequestorConfig(BaseSettings):
         description="Private key for Golem Base"
     )
     
-    # Polygon / Payments
+    # Payments (EVM RPC)
     polygon_rpc_url: str = Field(
-        default="https://polygon-rpc.com",
-        description="Polygon PoS RPC URL for GLM payments"
+        default="https://l2.holesky.golemdb.io/rpc",
+        description="EVM RPC URL for streaming payments (L2 by default)"
     )
     stream_payment_address: str = Field(
         default="0x0000000000000000000000000000000000000000",
@@ -110,12 +111,39 @@ class RequestorConfig(BaseSettings):
     )
     glm_token_address: str = Field(
         default="0x0000000000000000000000000000000000000000",
-        description="GLM ERC20 token address on target network"
+        description="Token address (0x0 means native ETH)"
+    )
+    # Faucet settings (L2 payments)
+    l2_faucet_url: str = Field(
+        default="https://l2.holesky.golemdb.io/faucet",
+        description="L2 faucet base URL (no trailing /api)"
+    )
+    captcha_url: str = Field(
+        default="https://cap.gobas.me",
+        description="CAPTCHA base URL"
+    )
+    captcha_api_key: str = Field(
+        default="05381a2cef5e",
+        description="CAPTCHA API key path segment"
     )
     provider_eth_address: str = Field(
         default="",
         description="Optional provider Ethereum address for test/dev streaming"
     )
+
+    @field_validator("polygon_rpc_url", mode='before')
+    @classmethod
+    def prefer_alt_env(cls, v: str) -> str:
+        # Accept alt aliases
+        for key in (
+            "GOLEM_REQUESTOR_l2_rpc_url",
+            "GOLEM_REQUESTOR_L2_RPC_URL",
+            "GOLEM_REQUESTOR_kaolin_rpc_url",
+            "GOLEM_REQUESTOR_KAOLIN_RPC_URL",
+        ):
+            if os.environ.get(key):
+                return os.environ[key]
+        return v
 
     # Base Directory
     base_dir: Path = Field(

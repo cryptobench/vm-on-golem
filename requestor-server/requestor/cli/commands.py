@@ -384,6 +384,31 @@ async def stream_topup(stream_id: int, glm: float | None, hours: int | None):
         raise click.Abort()
 
 
+@cli.group()
+def wallet():
+    """Wallet utilities (funding, balance)."""
+    pass
+
+
+@wallet.command('faucet')
+@async_command
+async def wallet_faucet():
+    """Request L2 faucet funds for the requestor's payment address."""
+    try:
+        from ..security.faucet import L2FaucetService
+        from eth_account import Account
+        acct = Account.from_key(config.ethereum_private_key)
+        service = L2FaucetService(config)
+        tx = await service.request_funds(acct.address)
+        if tx:
+            click.echo(json.dumps({"address": acct.address, "tx": tx}, indent=2))
+        else:
+            click.echo(json.dumps({"address": acct.address, "tx": None}, indent=2))
+    except Exception as e:
+        logger.error(f"Faucet request failed: {e}")
+        raise click.Abort()
+
+
 @vm.command(name='ssh')
 @click.argument('name')
 @async_command

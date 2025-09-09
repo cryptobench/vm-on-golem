@@ -8,7 +8,7 @@ STREAM_PAYMENT_ABI = [
         ],
         "name": "createStream",
         "outputs": [{"internalType": "uint256", "name": "streamId", "type": "uint256"}],
-        "stateMutability": "nonpayable",
+        "stateMutability": "payable",
         "type": "function",
     },
     {
@@ -25,7 +25,7 @@ STREAM_PAYMENT_ABI = [
         ],
         "name": "topUp",
         "outputs": [],
-        "stateMutability": "nonpayable",
+        "stateMutability": "payable",
         "type": "function",
     },
     {
@@ -93,4 +93,3 @@ ERC20_ABI = [
 ]
 
 __all__ = ["STREAM_PAYMENT_ABI", "ERC20_ABI"]
-

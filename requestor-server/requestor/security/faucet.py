@@ -1,0 +1,54 @@
+from __future__ import annotations
+
+from typing import Optional, List, Tuple
+
+from web3 import Web3
+from golem_faucet import PowFaucetClient
+from ..utils.logging import setup_logger
+from ..config import RequestorConfig
+
+logger = setup_logger(__name__)
+
+
+class L2FaucetService:
+    def __init__(self, config: RequestorConfig):
+        self.cfg = config
+        self.web3 = Web3(Web3.HTTPProvider(config.polygon_rpc_url))
+        self.client = PowFaucetClient(
+            faucet_url=getattr(config, 'l2_faucet_url', 'https://l2.holesky.golemdb.io/faucet'),
+            captcha_base_url=getattr(config, 'captcha_url', 'https://cap.gobas.me'),
+            captcha_api_key=getattr(config, 'captcha_api_key', '05381a2cef5e'),
+        )
+
+    def _balance_eth(self, address: str) -> float:
+        try:
+            wei = self.web3.eth.get_balance(Web3.to_checksum_address(address))
+            return float(self.web3.from_wei(wei, 'ether'))
+        except Exception as e:
+            logger.warning(f"balance check failed: {e}")
+            return 0.0
+
+    async def request_funds(self, address: str) -> Optional[str]:
+        bal = self._balance_eth(address)
+        if bal > 0.01:
+            logger.info(f"Sufficient L2 funds ({bal} ETH), skipping faucet.")
+            return None
+        chall = await self.client.get_challenge()
+        if not chall:
+            logger.error("could not fetch faucet challenge")
+            return None
+        token = chall.get('token')
+        challenge_list = chall.get('challenge') or []
+        solutions: List[Tuple[str, str, int]] = []
+        for salt, target in challenge_list:
+            nonce = PowFaucetClient.solve_challenge(salt, target)
+            solutions.append((salt, target, nonce))
+        redeemed = await self.client.redeem(token, solutions)
+        if not redeemed:
+            logger.error("failed to redeem challenge")
+            return None
+        tx = await self.client.request_funds(address, redeemed)
+        if tx:
+            logger.success(f"L2 faucet sent tx: {tx}")
+        return tx
+

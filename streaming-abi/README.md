@@ -50,7 +50,8 @@ make install
 - Ensure `STREAM_PAYMENT_ABI` contains at least:
   - `createStream`, `withdraw`, `terminate`, `topUp`, `streams`
   - `StreamCreated` event
-- Ensure `ERC20_ABI` contains at least `approve` and `allowance`.
+- Note: `createStream` and `topUp` are payable; pass ETH `value` when `token=0x000...0`.
+- Ensure `ERC20_ABI` contains at least `approve` and `allowance` (ERC20 mode only; not used for native ETH).
 - Test guarantees:
   - Requestor test `tests/payments/test_abi_contains_streams_and_topup.py` asserts presence of `streams` and `topUp`.
 

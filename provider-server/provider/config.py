@@ -6,6 +6,7 @@ import socket
 
 from pydantic_settings import BaseSettings
 from pydantic import field_validator, Field
+import os
 from .utils.logging import setup_logger
 
 logger = setup_logger(__name__)
@@ -70,9 +71,6 @@ class Settings(BaseSettings):
     ETHEREUM_KEY_DIR: str = ""
     ETHEREUM_PRIVATE_KEY: Optional[str] = None
     PROVIDER_ID: str = ""  # Will be set from Ethereum identity
-    FAUCET_URL: str = "https://ethwarsaw.holesky.golemdb.io/faucet"
-    CAPTCHA_URL: str = "https://cap.gobas.me"
-    CAPTCHA_API_KEY: str = "05381a2cef5e"
  
     @field_validator("ETHEREUM_KEY_DIR", mode='before')
     def resolve_key_dir(cls, v: str) -> str:
@@ -139,8 +137,8 @@ class Settings(BaseSettings):
 
     # Polygon / Payments
     POLYGON_RPC_URL: str = Field(
-        default="https://polygon-rpc.com",
-        description="Polygon PoS RPC URL for GLM payments"
+        default="https://l2.holesky.golemdb.io/rpc",
+        description="EVM RPC URL for streaming payments (L2 by default)"
     )
     STREAM_PAYMENT_ADDRESS: str = Field(
         default="0x0000000000000000000000000000000000000000",
@@ -148,7 +146,7 @@ class Settings(BaseSettings):
     )
     GLM_TOKEN_ADDRESS: str = Field(
         default="0x0000000000000000000000000000000000000000",
-        description="GLM ERC20 token address on target network"
+        description="Token address (0x0 means native ETH)"
     )
     STREAM_MIN_REMAINING_SECONDS: int = Field(
         default=3600,
@@ -174,6 +172,34 @@ class Settings(BaseSettings):
         default=0,
         description="Min withdrawable amount (wei) before triggering withdraw"
     )
+
+    # Faucet settings (L3 for Golem Base adverts)
+    FAUCET_URL: str = "https://ethwarsaw.holesky.golemdb.io/faucet"
+    CAPTCHA_URL: str = "https://cap.gobas.me"
+    CAPTCHA_API_KEY: str = "05381a2cef5e"
+
+    # L2 payments faucet (native ETH)
+    L2_FAUCET_URL: str = Field(
+        default="https://l2.holesky.golemdb.io/faucet",
+        description="L2 faucet base URL (no trailing /api)"
+    )
+    L2_CAPTCHA_URL: str = Field(
+        default="https://cap.gobas.me",
+        description="CAPTCHA base URL"
+    )
+    L2_CAPTCHA_API_KEY: str = Field(
+        default="05381a2cef5e",
+        description="CAPTCHA API key path segment"
+    )
+
+    @field_validator("POLYGON_RPC_URL", mode='before')
+    @classmethod
+    def prefer_custom_env(cls, v: str) -> str:
+        # Accept alternative aliases for payments RPC
+        for key in ("GOLEM_PROVIDER_L2_RPC_URL", "GOLEM_PROVIDER_KAOLIN_RPC_URL"):
+            if os.environ.get(key):
+                return os.environ[key]
+        return v
 
     # VM Settings
     MAX_VMS: int = 10

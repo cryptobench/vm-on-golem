@@ -1,0 +1,17 @@
+# Node / Hardhat artifacts
+node_modules/
+artifacts/
+cache/
+coverage/
+typechain-types/
+
+# Env and OS noise
+.env
+.env.local
+.DS_Store
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+

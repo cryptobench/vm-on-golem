@@ -80,17 +80,17 @@ The SSH connection process:
 2. The provider's proxy system forwards your SSH connection to the VM
 3. All traffic is securely routed through the allocated port
 
-## Streaming Payments (Polygon GLM)
+## Streaming Payments (Native ETH on L2)
 
-This requestor integrates with an on‑chain StreamPayment contract to enable “pay‑as‑you‑go” rentals.
+This requestor integrates with an on‑chain StreamPayment contract to enable “pay‑as‑you‑go” rentals using native ETH (no ERC20 approvals when the token address is zero).
 
 Flow:
 
 1. Fetch provider info (preferred addresses):
-   - `GET http://{provider}:7466/api/v1/provider/info` → `provider_id`, `stream_payment_address`, `glm_token_address`.
+   - `GET http://{provider}:7466/api/v1/provider/info` → `provider_id`, `stream_payment_address`, `glm_token_address` (zero address means native ETH).
 2. Compute `ratePerSecond` from provider pricing and requested VM resources.
 3. Ensure `deposit >= ratePerSecond * 3600` (≥ 1 hour runway recommended/minimum).
-4. Create a stream (approve + `createStream(GLM, provider_id, deposit, ratePerSecond)`), capture `stream_id`.
+4. Create a stream (`createStream(0x000...0, provider_id, deposit, ratePerSecond)` plus `value=deposit`), capture `stream_id`. For ERC20 mode use a token address and approve first.
 5. Create VM: `POST /api/v1/vms` with `stream_id` included.
 6. Top‑up over time with `topUp(stream_id, amount)` to extend stopTime and keep the VM running indefinitely.
 7. On stop/destroy: the requestor will best‑effort `withdraw` / `terminate` to settle.
@@ -128,9 +128,9 @@ poetry run golem vm create my-vm \
 
 Environment (env prefix `GOLEM_REQUESTOR_`):
 
-- `polygon_rpc_url` — Polygon PoS RPC URL
+- `polygon_rpc_url` — EVM RPC URL (default L2 RPC)
 - `stream_payment_address` — StreamPayment address (fallback if provider doesn’t advertise)
-- `glm_token_address` — GLM ERC20 address (fallback if provider doesn’t advertise)
+- `glm_token_address` — Token address; set to zero address to use native ETH
 - `provider_eth_address` — optional dev helper; in production always use `/provider/info`
 - `network` — Target network for discovery filtering: `testnet` (default) or `mainnet`
 
@@ -139,6 +139,19 @@ Efficiency tips:
 - Batch top‑ups (e.g., add several hours at once) to reduce on‑chain calls.
 - Withdrawals are typically executed by providers; requestors don’t need to withdraw.
 - The CLI `vm stream open` will prefer the provider’s advertised contract/token addresses to prevent mismatches.
+
+## Faucet (L2 ETH)
+
+- Request L2 test ETH to cover stream transactions:
+
+```bash
+poetry run golem wallet faucet
+```
+
+- Defaults:
+  - Faucet: `https://l2.holesky.golemdb.io/faucet`
+  - CAPTCHA: `https://cap.gobas.me/05381a2cef5e`
+  - Override with env: `GOLEM_REQUESTOR_l2_faucet_url`, `GOLEM_REQUESTOR_captcha_url`, `GOLEM_REQUESTOR_captcha_api_key`.
 
 ## Installation
 

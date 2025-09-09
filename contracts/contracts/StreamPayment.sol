@@ -34,7 +34,7 @@ contract StreamPayment {
 
     event StreamCreated(uint256 indexed streamId, address indexed sender, address indexed recipient, address token, uint256 deposit, uint256 ratePerSecond, uint256 startTime, uint256 stopTime);
     event Withdraw(uint256 indexed streamId, address indexed recipient, uint256 amount);
-    event Terminated(uint256 indexed streamId, address senderRefund, uint256 recipientPayout);
+    event Terminated(uint256 indexed streamId, uint256 senderRefund, uint256 recipientPayout);
     event Halted(uint256 indexed streamId);
     event ToppedUp(uint256 indexed streamId, uint256 amount, uint128 newStopTime);
 
@@ -49,14 +49,14 @@ contract StreamPayment {
     }
 
     /**
-     * @notice Create a stream. Caller must approve `deposit` GLM to this contract before calling.
-     * @param token GLM ERC20 token address
+     * @notice Create a stream. In ERC20 mode, caller must approve `deposit` tokens beforehand.
+     *         In native ETH mode (token=address(0)), send `deposit` as msg.value.
+     * @param token ERC20 token address or address(0) for native ETH
      * @param recipient Provider address that will receive the stream
-     * @param deposit Total GLM to be streamed (18 decimals)
-     * @param ratePerSecond GLM per second (18 decimals)
+     * @param deposit Total amount to be streamed (18 decimals)
+     * @param ratePerSecond Tokens per second (18 decimals)
      */
-    function createStream(address token, address recipient, uint256 deposit, uint128 ratePerSecond) external returns (uint256 streamId) {
-        require(token != address(0), "token=0");
+    function createStream(address token, address recipient, uint256 deposit, uint128 ratePerSecond) external payable returns (uint256 streamId) {
         require(recipient != address(0), "recipient=0");
         require(deposit > 0, "deposit=0");
         require(ratePerSecond > 0, "rate=0");
@@ -67,8 +67,13 @@ contract StreamPayment {
         require(duration > 0, "duration=0");
         uint128 stop = start + uint128(duration);
 
-        // Pull funds
-        require(IERC20(token).transferFrom(msg.sender, address(this), deposit), "transferFrom failed");
+        if (token == address(0)) {
+            // Native ETH mode: deposit must be sent as value
+            require(msg.value == deposit, "value != deposit");
+        } else {
+            // ERC20 mode: pull funds
+            require(IERC20(token).transferFrom(msg.sender, address(this), deposit), "transferFrom failed");
+        }
 
         streamId = ++nextStreamId;
         streams[streamId] = Stream({
@@ -120,7 +125,12 @@ contract StreamPayment {
         uint256 amount = vested - s.withdrawn;
         require(amount > 0, "nothing to withdraw");
         s.withdrawn += amount;
-        require(IERC20(s.token).transfer(s.recipient, amount), "transfer failed");
+        if (s.token == address(0)) {
+            (bool ok, ) = payable(s.recipient).call{value: amount}("");
+            require(ok, "eth transfer failed");
+        } else {
+            require(IERC20(s.token).transfer(s.recipient, amount), "transfer failed");
+        }
         emit Withdraw(streamId, s.recipient, amount);
     }
 
@@ -139,11 +149,22 @@ contract StreamPayment {
         address sender = s.sender;
         s.recipient = address(0);
 
-        if (owedToRecipient > 0) {
-            require(IERC20(token).transfer(recipient, owedToRecipient), "transfer payout failed");
-        }
-        if (refundToSender > 0) {
-            require(IERC20(token).transfer(sender, refundToSender), "transfer refund failed");
+        if (token == address(0)) {
+            if (owedToRecipient > 0) {
+                (bool ok1, ) = payable(recipient).call{value: owedToRecipient}("");
+                require(ok1, "eth payout failed");
+            }
+            if (refundToSender > 0) {
+                (bool ok2, ) = payable(sender).call{value: refundToSender}("");
+                require(ok2, "eth refund failed");
+            }
+        } else {
+            if (owedToRecipient > 0) {
+                require(IERC20(token).transfer(recipient, owedToRecipient), "transfer payout failed");
+            }
+            if (refundToSender > 0) {
+                require(IERC20(token).transfer(sender, refundToSender), "transfer refund failed");
+            }
         }
         emit Terminated(streamId, refundToSender, owedToRecipient);
     }
@@ -166,13 +187,17 @@ contract StreamPayment {
      * @notice Top up an existing stream by increasing the deposit and extending stopTime accordingly.
      *         Caller must be the original sender and must have approved `amount` GLM.
      */
-    function topUp(uint256 streamId, uint256 amount) external {
+    function topUp(uint256 streamId, uint256 amount) external payable {
         Stream storage s = streams[streamId];
         require(s.recipient != address(0), "no-stream");
         require(!s.halted, "halted");
         require(msg.sender == s.sender, "not sender");
         require(amount > 0, "amount=0");
-        require(IERC20(s.token).transferFrom(msg.sender, address(this), amount), "transferFrom failed");
+        if (s.token == address(0)) {
+            require(msg.value == amount, "value != amount");
+        } else {
+            require(IERC20(s.token).transferFrom(msg.sender, address(this), amount), "transferFrom failed");
+        }
         s.deposit += amount;
         // Extend stopTime by amount / rate
         uint128 delta = uint128(amount / uint256(s.ratePerSecond));
