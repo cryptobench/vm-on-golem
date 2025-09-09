@@ -35,6 +35,8 @@ def test_cli_group_help_streams():
     assert result.exit_code == 0
     assert "list" in result.stdout
     assert "show" in result.stdout
+    assert "earnings" in result.stdout
+    assert "withdraw" in result.stdout
 
 
 def test_cli_start_help_options_present():
@@ -43,4 +45,3 @@ def test_cli_start_help_options_present():
     assert result.exit_code == 0
     assert "--no-verify-port" in result.stdout
     assert "--network" in result.stdout
-

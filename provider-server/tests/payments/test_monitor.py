@@ -119,3 +119,47 @@ async def test_monitor_respects_withdraw_interval(monkeypatch):
     await mon._run()
     # Only one withdraw due to interval gating
     assert client.withdrawn == [7]
+
+
+@pytest.mark.asyncio
+async def test_monitor_accepts_dict_settings(monkeypatch):
+    now = 3_000_000
+    stream = {
+        "token": "0xglm",
+        "sender": "0xreq",
+        "recipient": "0xprov",
+        "startTime": now - 10_000,
+        "stopTime": now + 100,  # trigger stop due to low remaining
+        "ratePerSecond": 10,
+        "deposit": 200_000,
+        "withdrawn": 50_000,
+        "halted": False,
+    }
+
+    class DictSettings(dict):
+        pass
+
+    settings = DictSettings({
+        "STREAM_MONITOR_ENABLED": True,
+        "STREAM_WITHDRAW_ENABLED": True,
+        "STREAM_MONITOR_INTERVAL_SECONDS": 0,
+        "STREAM_WITHDRAW_INTERVAL_SECONDS": 0,
+        "STREAM_MIN_REMAINING_SECONDS": 3600,
+        "STREAM_MIN_WITHDRAW_WEI": 100,
+    })
+    stream_map = DummyStreamMap({"vm-1": 5})
+    vm_service = DummyVMService()
+    reader = DummyReader(now, stream)
+    client = DummyClient()
+    mon = StreamMonitor(stream_map=stream_map, vm_service=vm_service, reader=reader, client=client, settings=settings)
+
+    calls = {"n": 0}
+    async def fake_sleep(_):
+        calls["n"] += 1
+        if calls["n"] >= 2:
+            raise asyncio.CancelledError
+    monkeypatch.setattr(asyncio, "sleep", fake_sleep)
+
+    await mon._run()
+    assert vm_service.stopped == ["vm-1"]
+    assert client.withdrawn == [5]
