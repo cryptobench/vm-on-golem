@@ -36,7 +36,10 @@ class StreamPaymentClient:
         )
         if hasattr(self.account, "sign_transaction"):
             signed = self.account.sign_transaction(tx)
-            tx_hash = self.web3.eth.send_raw_transaction(signed.rawTransaction)
+            raw = getattr(signed, "rawTransaction", None) or getattr(signed, "raw_transaction", None)
+            if raw is None:
+                raise RuntimeError("sign_transaction did not return raw transaction bytes")
+            tx_hash = self.web3.eth.send_raw_transaction(raw)
         else:
             tx_hash = self.web3.eth.send_transaction(tx)
         receipt = self.web3.eth.wait_for_transaction_receipt(tx_hash)

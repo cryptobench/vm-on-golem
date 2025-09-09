@@ -66,7 +66,10 @@ class StreamPaymentClient:
         # In production, sign and send raw; in tests, Account may be a dummy without signer
         if hasattr(self.account, "sign_transaction"):
             signed = self.account.sign_transaction(tx)
-            tx_hash = self.web3.eth.send_raw_transaction(signed.rawTransaction)
+            raw = getattr(signed, "rawTransaction", None) or getattr(signed, "raw_transaction", None)
+            if raw is None:
+                raise RuntimeError("sign_transaction did not return raw transaction bytes")
+            tx_hash = self.web3.eth.send_raw_transaction(raw)
         else:
             tx_hash = self.web3.eth.send_transaction(tx)
         receipt = self.web3.eth.wait_for_transaction_receipt(tx_hash)
@@ -105,7 +108,10 @@ class StreamPaymentClient:
             }
             tx = fn.build_transaction(base)
             signed = self.account.sign_transaction(tx)
-            tx_hash = self.web3.eth.send_raw_transaction(signed.rawTransaction)
+            raw = getattr(signed, "rawTransaction", None) or getattr(signed, "raw_transaction", None)
+            if raw is None:
+                raise RuntimeError("sign_transaction did not return raw transaction bytes")
+            tx_hash = self.web3.eth.send_raw_transaction(raw)
             receipt = self.web3.eth.wait_for_transaction_receipt(tx_hash)
             tx_receipt = {"transactionHash": tx_hash.hex(), "status": receipt.status, "logs": receipt.logs}
         else:
@@ -156,6 +162,9 @@ class StreamPaymentClient:
             }
             tx = fn.build_transaction(base)
             signed = self.account.sign_transaction(tx)
-            tx_hash = self.web3.eth.send_raw_transaction(signed.rawTransaction)
+            raw = getattr(signed, "rawTransaction", None) or getattr(signed, "raw_transaction", None)
+            if raw is None:
+                raise RuntimeError("sign_transaction did not return raw transaction bytes")
+            tx_hash = self.web3.eth.send_raw_transaction(raw)
             self.web3.eth.wait_for_transaction_receipt(tx_hash)
             return tx_hash.hex()
