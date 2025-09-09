@@ -191,6 +191,9 @@ def streams_list(json_out: bool = typer.Option(False, "--json", help="Output in 
     from .container import Container
     from .config import settings
     from .payments.blockchain_service import StreamPaymentReader
+    from .utils.pricing import fetch_glm_usd_price, fetch_eth_usd_price
+    from decimal import Decimal
+    from web3 import Web3
     import json as _json
     try:
         if not settings.STREAM_PAYMENT_ADDRESS or settings.STREAM_PAYMENT_ADDRESS == "0x0000000000000000000000000000000000000000":
@@ -213,6 +216,7 @@ def streams_list(json_out: bool = typer.Option(False, "--json", help="Output in 
                 rows.append({
                     "vm_id": vm_id,
                     "stream_id": int(stream_id),
+                    "token": str(s.get("token")),
                     "recipient": s["recipient"],
                     "start": int(s["startTime"]),
                     "stop": int(s["stopTime"]),
@@ -232,12 +236,66 @@ def streams_list(json_out: bool = typer.Option(False, "--json", help="Output in 
         if not rows:
             print("No streams mapped.")
             return
-        print("\nStreams (VM → stream_id, remaining s, verified):")
+        # Prepare human-friendly display (ETH/GLM + USD)
+        ZERO = "0x0000000000000000000000000000000000000000"
+        # Cache prices so we don't query per-row
+        price_cache: dict[str, Optional[Decimal]] = {"ETH": None, "GLM": None}
+        # Determine which symbols are present
+        symbols_present = set()
         for r in rows:
             if "error" in r:
-                print(f"- {r['vm_id']}: {r['stream_id']} ERROR: {r['error']}")
-            else:
-                print(f"- {r['vm_id']}: {r['stream_id']} remaining={r['remaining']}s verified={r['verified']} reason={r['reason']} withdrawable={r['withdrawable']}")
+                continue
+            token_addr = (r.get("token") or "").lower()
+            sym = "ETH" if token_addr == ZERO.lower() else "GLM"
+            symbols_present.add(sym)
+        if "ETH" in symbols_present:
+            price_cache["ETH"] = fetch_eth_usd_price()
+        if "GLM" in symbols_present:
+            price_cache["GLM"] = fetch_glm_usd_price()
+
+        # Build table rows
+        table_rows = []
+        for r in rows:
+            if "error" in r:
+                table_rows.append([r["vm_id"], str(r["stream_id"]), "—", "ERROR", r.get("error", ""), "—"])
+                continue
+            token_addr = (r.get("token") or "").lower()
+            sym = "ETH" if token_addr == ZERO.lower() else "GLM"
+            withdrawable_eth = Decimal(str(Web3.from_wei(int(r["withdrawable"]), "ether")))
+            withdrawable_str = f"{withdrawable_eth:.6f} {sym}"
+            price = price_cache.get(sym)
+            usd_str = "—"
+            if price is not None:
+                try:
+                    usd_val = (withdrawable_eth * price).quantize(Decimal("0.01"))
+                    usd_str = f"${usd_val}"
+                except Exception:
+                    usd_str = "—"
+            table_rows.append([
+                r["vm_id"],
+                str(r["stream_id"]),
+                f"{int(r['remaining'])}s",
+                "yes" if r["verified"] else "no",
+                withdrawable_str,
+                usd_str,
+            ])
+
+        headers = ["VM", "Stream", "Remaining", "Verified", "Withdrawable", "USD"]
+        # Compute column widths
+        cols = len(headers)
+        col_widths = [len(h) for h in headers]
+        for row in table_rows:
+            for i in range(cols):
+                col_widths[i] = max(col_widths[i], len(str(row[i])))
+
+        def fmt_row(values: list[str]) -> str:
+            return "  ".join(str(values[i]).ljust(col_widths[i]) for i in range(cols))
+
+        print("\nStreams")
+        print(fmt_row(headers))
+        print("  ".join("-" * w for w in col_widths))
+        for row in table_rows:
+            print(fmt_row(row))
     except Exception as e:
         print(f"Error: {e}")
         raise typer.Exit(code=1)
@@ -249,6 +307,9 @@ def streams_show(vm_id: str = typer.Argument(..., help="VM id (requestor_name)")
     from .container import Container
     from .config import settings
     from .payments.blockchain_service import StreamPaymentReader
+    from .utils.pricing import fetch_glm_usd_price, fetch_eth_usd_price
+    from decimal import Decimal
+    from web3 import Web3
     import json as _json
     try:
         c = Container()
@@ -281,7 +342,43 @@ def streams_show(vm_id: str = typer.Argument(..., help="VM id (requestor_name)")
         if json_out:
             print(_json.dumps(out, indent=2))
         else:
-            print(f"VM {vm_id}: stream {sid} remaining={remaining}s verified={ok} withdrawable={withdrawable}")
+            ZERO = "0x0000000000000000000000000000000000000000"
+            token_addr = (s.get("token") or "").lower()
+            sym = "ETH" if token_addr == ZERO.lower() else "GLM"
+            nat = Decimal(str(Web3.from_wei(int(withdrawable), "ether")))
+            price = fetch_eth_usd_price() if sym == "ETH" else fetch_glm_usd_price()
+            usd_str = "—"
+            if price is not None:
+                try:
+                    usd_val = (nat * price).quantize(Decimal("0.01"))
+                    usd_str = f"${usd_val}"
+                except Exception:
+                    usd_str = "—"
+            def _fmt_seconds(sec: int) -> str:
+                m, s2 = divmod(int(sec), 60)
+                h, m = divmod(m, 60)
+                d, h = divmod(h, 24)
+                parts = []
+                if d: parts.append(f"{d}d")
+                if h: parts.append(f"{h}h")
+                if m and not d: parts.append(f"{m}m")
+                if s2 and not d and not h and not m: parts.append(f"{s2}s")
+                return " ".join(parts) or "0s"
+            # Pretty single-record display
+            print("\nStream Details")
+            headers = ["VM", "Stream", "Remaining", "Verified", "Withdrawable", "USD"]
+            cols = [
+                vm_id,
+                str(sid),
+                _fmt_seconds(remaining),
+                "yes" if ok else "no",
+                f"{nat:.6f} {sym}",
+                usd_str,
+            ]
+            w = [max(len(headers[i]), len(str(cols[i]))) for i in range(len(headers))]
+            print("  ".join(headers[i].ljust(w[i]) for i in range(len(w))))
+            print("  ".join("-" * wi for wi in w))
+            print("  ".join(str(cols[i]).ljust(w[i]) for i in range(len(w))))
     except Exception as e:
         print(f"Error: {e}")
         raise typer.Exit(code=1)
@@ -292,6 +389,9 @@ def streams_earnings(json_out: bool = typer.Option(False, "--json", help="Output
     from .container import Container
     from .config import settings
     from .payments.blockchain_service import StreamPaymentReader
+    from .utils.pricing import fetch_glm_usd_price, fetch_eth_usd_price
+    from decimal import Decimal
+    from web3 import Web3
     import json as _json
     try:
         c = Container()
@@ -304,6 +404,8 @@ def streams_earnings(json_out: bool = typer.Option(False, "--json", help="Output
         total_vested = 0
         total_withdrawn = 0
         total_withdrawable = 0
+        ZERO = "0x0000000000000000000000000000000000000000"
+        sums_native: dict[str, Decimal] = {"ETH": Decimal("0"), "GLM": Decimal("0")}
         for vm_id, stream_id in items.items():
             try:
                 s = reader.get_stream(int(stream_id))
@@ -312,9 +414,12 @@ def streams_earnings(json_out: bool = typer.Option(False, "--json", help="Output
                 total_vested += int(vested)
                 total_withdrawn += int(s["withdrawn"])  # type: ignore
                 total_withdrawable += int(withdrawable)
+                sym = "ETH" if (s.get("token") or "").lower() == ZERO.lower() else "GLM"
+                sums_native[sym] += Decimal(str(Web3.from_wei(int(withdrawable), "ether")))
                 rows.append({
                     "vm_id": vm_id,
                     "stream_id": int(stream_id),
+                    "token": str(s.get("token")),
                     "vested": int(vested),
                     "withdrawn": int(s["withdrawn"]),
                     "withdrawable": int(withdrawable),
@@ -332,17 +437,53 @@ def streams_earnings(json_out: bool = typer.Option(False, "--json", help="Output
         if json_out:
             print(_json.dumps(out, indent=2))
             return
-        print("\nEarnings summary (wei):")
-        print(f"  Vested total      : {total_vested}")
-        print(f"  Withdrawn total   : {total_withdrawn}")
-        print(f"  Withdrawable total: {total_withdrawable}")
+        # Human summary by token with USD
+        price_eth = fetch_eth_usd_price()
+        price_glm = fetch_glm_usd_price()
+        def _fmt_usd(amount_native: Decimal, price: Optional[Decimal]) -> str:
+            if price is None:
+                return "—"
+            try:
+                return f"${(amount_native * price).quantize(Decimal('0.01'))}"
+            except Exception:
+                return "—"
+        print("\nEarnings Summary")
+        headers = ["Token", "Withdrawable", "USD"]
+        data_rows = [
+            ["ETH", f"{sums_native['ETH']:.6f} ETH", _fmt_usd(sums_native["ETH"], price_eth)],
+            ["GLM", f"{sums_native['GLM']:.6f} GLM", _fmt_usd(sums_native["GLM"], price_glm)],
+        ]
+        # Table widths
+        w = [len(h) for h in headers]
+        for r in data_rows:
+            for i in range(3):
+                w[i] = max(w[i], len(str(r[i])))
+        print("  ".join(headers[i].ljust(w[i]) for i in range(3)))
+        print("  ".join("-" * wi for wi in w))
+        for r in data_rows:
+            print("  ".join(str(r[i]).ljust(w[i]) for i in range(3)))
+        # Per stream table
         if rows:
-            print("\nPer-stream:")
+            table = []
             for r in rows:
                 if "error" in r:
-                    print(f"- {r['vm_id']} [{r['stream_id']}] ERROR: {r['error']}")
-                else:
-                    print(f"- {r['vm_id']} [{r['stream_id']}]: vested={r['vested']} withdrawn={r['withdrawn']} withdrawable={r['withdrawable']}")
+                    table.append([r["vm_id"], str(r["stream_id"]), "ERROR", r.get("error", "")])
+                    continue
+                sym = "ETH" if (r.get("token") or "").lower() == ZERO.lower() else "GLM"
+                nat = Decimal(str(Web3.from_wei(int(r["withdrawable"]), "ether")))
+                price = price_eth if sym == "ETH" else price_glm
+                usd = _fmt_usd(nat, price)
+                table.append([r["vm_id"], str(r["stream_id"]), f"{nat:.6f} {sym}", usd])
+            h2 = ["VM", "Stream", "Withdrawable", "USD"]
+            w2 = [len(x) for x in h2]
+            for row in table:
+                for i in range(4):
+                    w2[i] = max(w2[i], len(str(row[i])))
+            print("\nPer Stream")
+            print("  ".join(h2[i].ljust(w2[i]) for i in range(4)))
+            print("  ".join("-" * wi for wi in w2))
+            for row in table:
+                print("  ".join(str(row[i]).ljust(w2[i]) for i in range(4)))
     except Exception as e:
         print(f"Error: {e}")
         raise typer.Exit(code=1)
