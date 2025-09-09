@@ -1,6 +1,39 @@
 # VM on Golem Requestor
 
-A sophisticated command-line interface for managing virtual machines on the Golem Network. The requestor works in tandem with provider nodes to create and manage VMs with secure SSH access.
+Rent compute on demand — like Airbnb for servers. The `golem` CLI helps you discover providers, fund pay‑as‑you‑go streams, launch VMs, and connect via SSH.
+
+## Quick Start (Rent a VM)
+
+1) Install:
+
+```bash
+pip install request-vm-on-golem
+```
+
+2) Find providers (testnet by default):
+
+```bash
+golem vm providers
+```
+
+3) Create a VM (auto‑opens a payment stream if needed):
+
+```bash
+golem vm create my-vm --provider-id 0xProvider --cpu 2 --memory 4 --storage 20
+```
+
+4) SSH in:
+
+```bash
+golem vm ssh my-vm
+```
+
+5) Stop or destroy when done:
+
+```bash
+golem vm stop my-vm
+golem vm destroy my-vm
+```
 
 ## Architecture Overview
 
@@ -100,7 +133,7 @@ CLI helpers
 - Open a stream for a planned VM (computes rate from provider pricing):
 
 ```bash
-poetry run golem vm stream open \
+golem vm stream open \
   --provider-id 0xProvider \
   --cpu 2 --memory 4 --storage 20 \
   --hours 1
@@ -111,39 +144,39 @@ poetry run golem vm stream open \
 
 ```bash
 # Add 3 hours at prior rate
-poetry run golem vm stream topup --stream-id 123 --hours 3
+golem vm stream topup --stream-id 123 --hours 3
 
 # Or specify exact GLM amount
-poetry run golem vm stream topup --stream-id 123 --glm 25.0
+golem vm stream topup --stream-id 123 --glm 25.0
 ```
 
 - Check stream status via provider (by VM name recorded in your DB):
 
 ```bash
-poetry run golem vm stream status my-vm
+golem vm stream status my-vm
 # add --json for machine-readable output
 ```
 
 - Inspect a stream directly on-chain:
 
 ```bash
-poetry run golem vm stream inspect --stream-id 123
+golem vm stream inspect --stream-id 123
 ```
 
 - Stopping or destroying a VM ends the stream:
 
 ```bash
 # Stop VM and terminate payment stream (best-effort)
-poetry run golem vm stop my-vm
+golem vm stop my-vm
 
 # Destroy VM and terminate stream
-poetry run golem vm destroy my-vm
+golem vm destroy my-vm
 ```
 
 - Create a VM and attach an existing stream (no auto-streams are created by the requestor):
 
 ```bash
-poetry run golem vm create my-vm \
+golem vm create my-vm \
   --provider-id 0xProvider \
   --cpu 2 --memory 4 --storage 20 \
   --stream-id 123
@@ -151,7 +184,8 @@ poetry run golem vm create my-vm \
 
 Environment (env prefix `GOLEM_REQUESTOR_`):
 
-- `polygon_rpc_url` — EVM RPC URL (default L2 RPC)
+- `payments_network` — Payments network profile (defaults to `l2.holesky`). Profiles provide RPC + faucet defaults.
+- `polygon_rpc_url` — EVM RPC URL (defaults from `payments_network` profile; can be overridden)
 - `stream_payment_address` — StreamPayment address (defaults from `contracts/deployments/l2.json`; overridden by provider info)
 - `glm_token_address` — Token address (defaults from `contracts/deployments/l2.json`; zero address means native ETH)
   - Optional override of deployments directory: set `GOLEM_DEPLOYMENTS_DIR` to a folder containing `l2.json`.
@@ -169,16 +203,16 @@ Monitoring and auto top-up:
 - The requestor API runs a background monitor that keeps each running VM’s stream funded with at least 1 hour runway (configurable). It checks every 30s and tops up to the target runway.
 - Configure via env (prefix `GOLEM_REQUESTOR_`): `stream_monitor_enabled` (default true), `stream_monitor_interval_seconds` (default 30), `stream_min_remaining_seconds` (default 3600), `stream_topup_target_seconds` (default 3600).
 
-## Faucet (L2 ETH)
+## Faucet (Testnet only)
 
 - Request L2 test ETH to cover stream transactions:
 
 ```bash
-poetry run golem wallet faucet
+golem wallet faucet
 ```
 
 - Defaults:
-  - Faucet: `https://l2.holesky.golemdb.io/faucet`
+  - Faucet URL and enablement come from the active `payments_network` profile. On `mainnet` (or other profiles without faucet) the command is disabled.
   - CAPTCHA: `https://cap.gobas.me/05381a2cef5e`
   - Override with env: `GOLEM_REQUESTOR_l2_faucet_url`, `GOLEM_REQUESTOR_captcha_url`, `GOLEM_REQUESTOR_captcha_api_key`.
 
@@ -186,7 +220,7 @@ poetry run golem wallet faucet
 
 ```bash
 # Install using pip
-pip install golem-vm-requestor
+pip install request-vm-on-golem
 
 # Or install from source
 git clone https://github.com/golem/vm-on-golem.git
@@ -208,11 +242,7 @@ First, source the development environment variables:
 source .env.dev
 ```
 
-Then, run any `golem` command. For example:
-
-```bash
-poetry run golem vm providers
-```
+Then, run any `golem` command. For example: `golem vm providers`
 
 ### Prepending variables
 
@@ -229,19 +259,15 @@ GOLEM_REQUESTOR_ENVIRONMENT="development" GOLEM_REQUESTOR_FORCE_LOCALHOST="true"
   - Does not determine chain selection.
 
 - Network Selection (`--network` or `GOLEM_REQUESTOR_NETWORK`)
-  - Filters Golem Base discovery results by `golem_network=testnet|mainnet`.
-  - Combine with the appropriate RPC envs (`GOLEM_REQUESTOR_GOLEM_BASE_RPC_URL`, `GOLEM_REQUESTOR_GOLEM_BASE_WS_URL`) and any contract addresses.
-  - Independent from dev ergonomics.
+  - Filters results by `testnet|mainnet`. Defaults are sensible; most users don’t need to change anything.
+
+- Payments Network (`GOLEM_REQUESTOR_PAYMENTS_NETWORK`)
+  - Selects the payments chain profile (e.g., `l2.holesky`, `mainnet`) used for streaming payments; sets default RPC and faucet behavior.
+  - Provider discovery filters by this payments network via `vm providers` unless `--all-payments` is supplied. Override payments filter with `--payments-network <name>`.
 
 Examples:
-- List providers on mainnet without changing env:
-  ```bash
-  poetry run golem vm providers --network mainnet
-  ```
-- Create a VM while targeting testnet:
-  ```bash
-  poetry run golem vm create my-vm --provider-id 0xProvider --cpu 2 --memory 4 --storage 20 --network testnet
-  ```
+- List providers on mainnet without changing env: `golem vm providers --network mainnet`
+- Create a VM while targeting testnet: `golem vm create my-vm --provider-id 0xProvider --cpu 2 --memory 4 --storage 20 --network testnet`
 
 ## Usage
 
@@ -347,9 +373,6 @@ The requestor uses a hierarchical configuration system:
 1. Environment Variables:
 
 ```bash
-# Discovery Service
-export GOLEM_REQUESTOR_DISCOVERY_URL="http://discovery.golem.network:9001"
-
 # Base Directory (default: ~/.golem)
 export GOLEM_REQUESTOR_BASE_DIR="/path/to/golem/dir"
 
@@ -360,7 +383,7 @@ export GOLEM_REQUESTOR_DB_PATH="/path/to/database.db"
 # Environment Mode (defaults to "production")
 export GOLEM_REQUESTOR_ENVIRONMENT="development"  # Optional: Switch to development mode
 export GOLEM_REQUESTOR_FORCE_LOCALHOST="true"    # Optional: Force localhost in development mode
-export GOLEM_REQUESTOR_NETWORK="testnet"         # Or "mainnet"; filters Golem Base results by annotation
+export GOLEM_REQUESTOR_NETWORK="testnet"         # Or "mainnet"; optional filter for listing/creation
 ```
 
 2. Directory Structure:
@@ -397,7 +420,7 @@ Local state is maintained in SQLite:
 
 The requestor communicates with providers through:
 
-1. Discovery service for provider location
+1. Network discovery (uses sane defaults; no setup required for most users)
 2. Direct API calls for VM management
 3. SSH proxy system for secure access
 4. Resource tracking for capacity management

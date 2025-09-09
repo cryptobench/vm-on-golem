@@ -15,7 +15,7 @@ class L2FaucetService:
         self.cfg = config
         self.web3 = Web3(Web3.HTTPProvider(config.polygon_rpc_url))
         self.client = PowFaucetClient(
-            faucet_url=getattr(config, 'l2_faucet_url', 'https://l2.holesky.golemdb.io/faucet'),
+            faucet_url=getattr(config, 'l2_faucet_url', '') or 'https://l2.holesky.golemdb.io/faucet',
             captcha_base_url=getattr(config, 'captcha_url', 'https://cap.gobas.me'),
             captcha_api_key=getattr(config, 'captcha_api_key', '05381a2cef5e'),
         )
@@ -29,6 +29,10 @@ class L2FaucetService:
             return 0.0
 
     async def request_funds(self, address: str) -> Optional[str]:
+        # Disallow faucet if explicitly disabled by profile
+        if hasattr(self.cfg, 'faucet_enabled') and not getattr(self.cfg, 'faucet_enabled'):
+            logger.info("Faucet disabled for current payments network; skipping.")
+            return None
         bal = self._balance_eth(address)
         if bal > 0.01:
             logger.info(f"Sufficient L2 funds ({bal} ETH), skipping faucet.")
@@ -51,4 +55,3 @@ class L2FaucetService:
         if tx:
             logger.success(f"L2 faucet sent tx: {tx}")
         return tx
-

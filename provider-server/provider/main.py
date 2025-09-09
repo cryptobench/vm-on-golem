@@ -149,6 +149,9 @@ def wallet_faucet_l2():
     from .config import settings
     from .security.l2_faucet import L2FaucetService
     try:
+        if not bool(getattr(settings, "FAUCET_ENABLED", False)):
+            print("Faucet is disabled for current payments network.")
+            raise typer.Exit(code=0)
         addr = settings.PROVIDER_ID
         async def _run():
             svc = L2FaucetService(settings)

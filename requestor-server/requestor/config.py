@@ -54,6 +54,13 @@ class RequestorConfig(BaseSettings):
         description="Target network: 'testnet' or 'mainnet'"
     )
     
+    # Payments chain selection (modular network profiles)
+    # Keep current standard as l2.holesky
+    payments_network: str = Field(
+        default="l2.holesky",
+        description="Payments network profile (e.g., 'l2.holesky', 'kaolin.holesky', 'mainnet')"
+    )
+    
     # Development Settings
     force_localhost: bool = Field(
         default=False,
@@ -102,8 +109,8 @@ class RequestorConfig(BaseSettings):
     
     # Payments (EVM RPC)
     polygon_rpc_url: str = Field(
-        default="https://l2.holesky.golemdb.io/rpc",
-        description="EVM RPC URL for streaming payments (L2 by default)"
+        default="",
+        description="EVM RPC URL for streaming payments; defaults from payments_network profile"
     )
     stream_payment_address: str = Field(
         default="",
@@ -130,10 +137,10 @@ class RequestorConfig(BaseSettings):
         default=3600,
         description="Target runway after top-up (seconds)"
     )
-    # Faucet settings (L2 payments)
+    # Faucet settings (payments)
     l2_faucet_url: str = Field(
-        default="https://l2.holesky.golemdb.io/faucet",
-        description="L2 faucet base URL (no trailing /api)"
+        default="",
+        description="Faucet base URL (no trailing /api). Only used on testnets. Defaults from payments_network profile"
     )
     captcha_url: str = Field(
         default="https://cap.gobas.me",
@@ -150,8 +157,8 @@ class RequestorConfig(BaseSettings):
 
     @field_validator("polygon_rpc_url", mode='before')
     @classmethod
-    def prefer_alt_env(cls, v: str) -> str:
-        # Accept alt aliases
+    def prefer_alt_env(cls, v: str, info: ValidationInfo) -> str:
+        # Accept alt aliases overriding the profile
         for key in (
             "GOLEM_REQUESTOR_l2_rpc_url",
             "GOLEM_REQUESTOR_L2_RPC_URL",
@@ -160,22 +167,45 @@ class RequestorConfig(BaseSettings):
         ):
             if os.environ.get(key):
                 return os.environ[key]
-        return v
+        if v:
+            return v
+        # Default from payments profile
+        pn = info.data.get("payments_network") or "l2.holesky"
+        return RequestorConfig._profile_defaults(pn)["rpc_url"]
+
+    @field_validator("l2_faucet_url", mode='before')
+    @classmethod
+    def default_faucet_env(cls, v: str, info: ValidationInfo) -> str:
+        for key in (
+            "GOLEM_REQUESTOR_l2_faucet_url",
+            "GOLEM_REQUESTOR_L2_FAUCET_URL",
+        ):
+            if os.environ.get(key):
+                return os.environ[key]
+        if v:
+            return v
+        pn = info.data.get("payments_network") or "l2.holesky"
+        return RequestorConfig._profile_defaults(pn).get("faucet_url", "")
 
     @staticmethod
-    def _load_l2_deployment() -> tuple[str | None, str | None]:
+    def _load_deployment(network: str) -> tuple[str | None, str | None]:
         try:
             base = os.environ.get("GOLEM_DEPLOYMENTS_DIR")
             if base:
-                path = Path(base) / "l2.json"
+                path = Path(base) / f"{RequestorConfig._deployment_basename(network)}.json"
             else:
                 # repo root assumption: ../../ relative to this file
-                path = Path(__file__).resolve().parents[2] / "contracts" / "deployments" / "l2.json"
+                path = (
+                    Path(__file__).resolve().parents[2]
+                    / "contracts" / "deployments" / f"{RequestorConfig._deployment_basename(network)}.json"
+                )
             if not path.exists():
                 # Try package resource fallback
                 try:
                     import importlib.resources as ir
-                    with ir.files("requestor.data.deployments").joinpath("l2.json").open("r") as fh:  # type: ignore[attr-defined]
+                    with ir.files("requestor.data.deployments").joinpath(
+                        f"{RequestorConfig._deployment_basename(network)}.json"
+                    ).open("r") as fh:  # type: ignore[attr-defined]
                         import json as _json
                         data = _json.load(fh)
                 except Exception:
@@ -192,21 +222,82 @@ class RequestorConfig(BaseSettings):
             pass
         return None, None
 
+    @staticmethod
+    def _deployment_basename(network: str) -> str:
+        # Map well-known network aliases to deployment file base names
+        n = (network or "").lower()
+        if n in ("l2", "l2.holesky"):  # current standard
+            return "l2"
+        if "." in n:
+            return n.split(".")[0]
+        return n or "l2"
+
+    @staticmethod
+    def _profile_defaults(network: str) -> Dict[str, str]:
+        n = (network or "l2.holesky").lower()
+        # Built-in profiles; extend easily in future
+        profiles = {
+            "l2.holesky": {
+                "rpc_url": "https://l2.holesky.golemdb.io/rpc",
+                "faucet_url": "https://l2.holesky.golemdb.io/faucet",
+                "faucet_enabled": True,
+                "token_symbol": "GLM",
+                "gas_symbol": "ETH",
+            },
+            # Example: mainnet has no faucet by default
+            "mainnet": {
+                "rpc_url": "",
+                "faucet_url": "",
+                "faucet_enabled": False,
+                "token_symbol": "GLM",
+                "gas_symbol": "ETH",
+            },
+        }
+        return profiles.get(n, profiles["l2.holesky"])  # default to current standard
+
     @field_validator("stream_payment_address", mode='before')
     @classmethod
-    def default_stream_addr(cls, v: str) -> str:
+    def default_stream_addr(cls, v: str, info: ValidationInfo) -> str:
         if v:
             return v
-        addr, _ = RequestorConfig._load_l2_deployment()
+        network = info.data.get("payments_network") or "l2.holesky"
+        addr, _ = RequestorConfig._load_deployment(network)
         return addr or "0x0000000000000000000000000000000000000000"
 
     @field_validator("glm_token_address", mode='before')
     @classmethod
-    def default_token_addr(cls, v: str) -> str:
+    def default_token_addr(cls, v: str, info: ValidationInfo) -> str:
         if v:
             return v
-        _, token = RequestorConfig._load_l2_deployment()
+        network = info.data.get("payments_network") or "l2.holesky"
+        _, token = RequestorConfig._load_deployment(network)
         return token or "0x0000000000000000000000000000000000000000"
+
+    # Optional convenience: expose token and gas symbols based on profile
+    token_symbol: str = Field(
+        default="",
+        description="Human-friendly symbol of payment token (e.g., GLM)"
+    )
+    gas_token_symbol: str = Field(
+        default="",
+        description="Symbol of gas token for the chain (e.g., ETH)"
+    )
+
+    @field_validator("token_symbol", mode="before")
+    @classmethod
+    def default_token_symbol(cls, v: str, info: ValidationInfo) -> str:
+        if v:
+            return v
+        pn = info.data.get("payments_network") or "l2.holesky"
+        return RequestorConfig._profile_defaults(pn).get("token_symbol", "")
+
+    @field_validator("gas_token_symbol", mode="before")
+    @classmethod
+    def default_gas_symbol(cls, v: str, info: ValidationInfo) -> str:
+        if v:
+            return v
+        pn = info.data.get("payments_network") or "l2.holesky"
+        return RequestorConfig._profile_defaults(pn).get("gas_symbol", "")
 
     # Base Directory
     base_dir: Path = Field(
@@ -239,6 +330,11 @@ class RequestorConfig(BaseSettings):
             base_dir = kwargs.get('base_dir', Path.home() / ".golem" / "requestor")
             kwargs['db_path'] = base_dir / "vms.db"
         super().__init__(**kwargs)
+
+    @property
+    def faucet_enabled(self) -> bool:
+        """Whether requesting funds from faucet is allowed for current payments network."""
+        return bool(self._profile_defaults(self.payments_network).get("faucet_enabled", False))
 
     def get_provider_url(self, ip_address: str) -> str:
         """Get provider API URL.

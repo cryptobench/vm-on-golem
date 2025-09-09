@@ -66,7 +66,9 @@ class ProviderService:
         memory: Optional[int] = None,
         storage: Optional[int] = None,
         country: Optional[str] = None,
-        driver: Optional[str] = None
+        driver: Optional[str] = None,
+        payments_network: Optional[str] = None,
+        include_all_payments: bool = False,
     ) -> List[Dict]:
         """Find providers matching requirements."""
         discovery_driver = driver or config.discovery_driver
@@ -79,7 +81,11 @@ class ProviderService:
                     ws_url=config.golem_base_ws_url,
                     private_key=private_key_bytes,
                 )
-            return await self._find_providers_golem_base(cpu, memory, storage, country)
+            return await self._find_providers_golem_base(
+                cpu, memory, storage, country,
+                payments_network=payments_network,
+                include_all_payments=include_all_payments,
+            )
         else:
             return await self._find_providers_central(cpu, memory, storage, country)
 
@@ -88,7 +94,9 @@ class ProviderService:
         cpu: Optional[int] = None,
         memory: Optional[int] = None,
         storage: Optional[int] = None,
-        country: Optional[str] = None
+        country: Optional[str] = None,
+        payments_network: Optional[str] = None,
+        include_all_payments: bool = False,
     ) -> List[Dict]:
         """Find providers using Golem Base."""
         try:
@@ -104,6 +112,10 @@ class ProviderService:
             # Filter by advertised network to avoid cross-network results
             if config.network:
                 query += f' && golem_network="{config.network}"'
+            # Filter by payments network unless explicitly disabled
+            pn = payments_network if payments_network is not None else getattr(config, 'payments_network', None)
+            if pn and not include_all_payments:
+                query += f' && golem_payments_network="{pn}"'
             if cpu:
                 query += f' && golem_cpu>={cpu}'
             if memory:
@@ -130,6 +142,7 @@ class ProviderService:
                     'provider_name': annotations.get('golem_provider_name'),
                     'ip_address': annotations.get('golem_ip_address'),
                     'country': annotations.get('golem_country'),
+                    'payments_network': annotations.get('golem_payments_network'),
                     'resources': {
                         'cpu': int(annotations.get('golem_cpu', 0)),
                         'memory': int(annotations.get('golem_memory', 0)),

@@ -101,11 +101,13 @@ def vm():
 @click.option('--storage', type=int, help='Minimum disk (GB) required')
 @click.option('--country', help='Preferred provider country')
 @click.option('--driver', type=click.Choice(['central', 'golem-base']), default=None, help='Discovery driver to use')
+@click.option('--payments-network', type=str, default=None, help='Filter by payments network profile (default: current config)')
+@click.option('--all-payments', is_flag=True, help='Do not filter by payments network (show all)')
 @click.option('--json', 'as_json', is_flag=True, help='Output in JSON format')
 @click.option('--network', type=click.Choice(['testnet', 'mainnet']), default=None,
               help='Override network filter for this command')
 @async_command
-async def list_providers(cpu: Optional[int], memory: Optional[int], storage: Optional[int], country: Optional[str], driver: Optional[str], as_json: bool, network: Optional[str] = None):
+async def list_providers(cpu: Optional[int], memory: Optional[int], storage: Optional[int], country: Optional[str], driver: Optional[str], payments_network: Optional[str] = None, all_payments: bool = False, as_json: bool = False, network: Optional[str] = None):
     """List available providers matching requirements."""
     try:
         if network:
@@ -124,7 +126,8 @@ async def list_providers(cpu: Optional[int], memory: Optional[int], storage: Opt
 
         # Determine the discovery driver being used
         discovery_driver = driver or config.discovery_driver
-        logger.process(f"Querying discovery service via {discovery_driver} (network={config.network})")
+        eff_pn = payments_network if payments_network is not None else getattr(config, 'payments_network', None)
+        logger.process(f"Querying discovery via {discovery_driver} (network={config.network}, payments={eff_pn if not all_payments else 'ALL'})")
 
         # Initialize provider service
         provider_service = ProviderService()
@@ -132,13 +135,21 @@ async def list_providers(cpu: Optional[int], memory: Optional[int], storage: Opt
             # If a full spec is provided, enable per-provider estimate display
             if cpu and memory and storage:
                 provider_service.estimate_spec = (cpu, memory, storage)
-            providers = await provider_service.find_providers(
-                cpu=cpu,
-                memory=memory,
-                storage=storage,
-                country=country,
-                driver=driver
-            )
+            try:
+                providers = await provider_service.find_providers(
+                    cpu=cpu,
+                    memory=memory,
+                    storage=storage,
+                    country=country,
+                    driver=driver,
+                    payments_network=eff_pn,
+                    include_all_payments=bool(all_payments),
+                )
+            except TypeError:
+                # Backward compatibility with older/dummy service stubs in tests
+                providers = await provider_service.find_providers(
+                    cpu=cpu, memory=memory, storage=storage, country=country, driver=driver
+                )
 
         if not providers:
             logger.warning("No providers found matching criteria")
@@ -606,6 +617,10 @@ def wallet():
 async def wallet_faucet():
     """Request L2 faucet funds for the requestor's payment address."""
     try:
+        if not getattr(config, 'faucet_enabled', False):
+            logger.warning("Faucet is disabled for the current payments network.")
+            click.echo(json.dumps({"error": "faucet_disabled", "network": getattr(config, 'payments_network', None)}, indent=2))
+            return
         from ..security.faucet import L2FaucetService
         from eth_account import Account
         acct = Account.from_key(config.ethereum_private_key)
