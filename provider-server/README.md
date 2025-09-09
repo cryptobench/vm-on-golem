@@ -409,6 +409,8 @@ poetry run golem-provider streams withdraw --vm-id <vm_id>
 poetry run golem-provider streams withdraw --all
 ```
 
+Note: On testnets, the withdraw command auto-attempts to fund the provider's L2 address via the configured faucet if native gas balance is low.
+
 Configure monitor and withdraw via CLI:
 
 ```bash

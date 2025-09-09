@@ -147,38 +147,17 @@ def main():
 def wallet_faucet_l2():
     """Request L2 faucet funds for the provider's payment address (native ETH)."""
     from .config import settings
-    from golem_faucet import PowFaucetClient
-    from web3 import Web3
+    from .security.l2_faucet import L2FaucetService
     try:
         addr = settings.PROVIDER_ID
-        faucet = PowFaucetClient(settings.L2_FAUCET_URL, settings.L2_CAPTCHA_URL, settings.L2_CAPTCHA_API_KEY)
-        # Check current L2 balance
-        w3 = Web3(Web3.HTTPProvider(settings.POLYGON_RPC_URL))
-        bal = 0.0
-        try:
-            bal = float(w3.from_wei(w3.eth.get_balance(Web3.to_checksum_address(addr)), 'ether'))
-        except Exception:
-            pass
-        if bal > 0.01:
-            print(f"Sufficient L2 funds ({bal} ETH); skipping faucet.")
-            return
         async def _run():
-            chall = await faucet.get_challenge()
-            if not chall:
-                print("Failed to get challenge")
-                raise typer.Exit(code=1)
-            sols = []
-            for salt, target in chall.get('challenge') or []:
-                sols.append((salt, target, PowFaucetClient.solve_challenge(salt, target)))
-            redeemed = await faucet.redeem(chall.get('token'), sols)
-            if not redeemed:
-                print("Failed to redeem solutions")
-                raise typer.Exit(code=1)
-            tx = await faucet.request_funds(addr, redeemed)
+            svc = L2FaucetService(settings)
+            tx = await svc.request_funds(addr)
             if tx:
                 print(f"Faucet tx: {tx}")
             else:
-                print("Faucet request failed")
+                # Either skipped due to sufficient balance or failed
+                pass
         asyncio.run(_run())
     except Exception as e:
         print(f"Error: {e}")
@@ -497,6 +476,7 @@ def streams_withdraw(
     """Withdraw vested funds for one or all streams."""
     from .container import Container
     from .config import settings
+    from .security.l2_faucet import L2FaucetService
     try:
         if not vm_id and not all_streams:
             print("Specify --vm-id or --all")
@@ -505,6 +485,12 @@ def streams_withdraw(
         c.config.from_pydantic(settings)
         stream_map = c.stream_map()
         client = c.stream_client()
+        # Ensure we have L2 gas for withdrawals (testnets)
+        try:
+            asyncio.run(L2FaucetService(settings).request_funds(settings.PROVIDER_ID))
+        except Exception:
+            # Non-fatal; proceed with withdraw attempt
+            pass
         targets = []
         if all_streams:
             items = asyncio.run(stream_map.all_items())
