@@ -38,6 +38,10 @@ class L2FaucetService:
 
         Returns tx hash string on payout, or None if skipped/failed.
         """
+        # Respect profile gating only if explicitly present and false
+        if hasattr(self.cfg, "FAUCET_ENABLED") and not bool(getattr(self.cfg, "FAUCET_ENABLED")):
+            logger.info("Faucet disabled for current payments network; skipping.")
+            return None
         bal = self._balance_eth(address)
         if bal > 0.01:
             logger.info(f"Sufficient L2 funds ({bal} ETH), skipping faucet.")
@@ -60,4 +64,3 @@ class L2FaucetService:
         if tx:
             logger.success(f"L2 faucet sent tx: {tx}")
         return tx
-

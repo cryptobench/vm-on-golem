@@ -57,6 +57,17 @@ class Settings(BaseSettings):
     # Logical network selector for annotation and client defaults
     NETWORK: str = "mainnet"  # one of: "testnet", "mainnet"
 
+    # Payments chain selection (modular network profiles). Keep default on l2.holesky
+    PAYMENTS_NETWORK: str = Field(
+        default="l2.holesky",
+        description="Payments network profile (e.g., 'l2.holesky', 'kaolin.holesky', 'mainnet')"
+    )
+
+    @field_validator("PAYMENTS_NETWORK", mode='before')
+    @classmethod
+    def prefer_payments_network_env(cls, v: str) -> str:
+        return os.environ.get("GOLEM_PROVIDER_PAYMENTS_NETWORK", v)
+
     @property
     def DEV_MODE(self) -> bool:
         return self.ENVIRONMENT == "development"
@@ -138,8 +149,8 @@ class Settings(BaseSettings):
 
     # Polygon / Payments
     POLYGON_RPC_URL: str = Field(
-        default="https://l2.holesky.golemdb.io/rpc",
-        description="EVM RPC URL for streaming payments (L2 by default)"
+        default="",
+        description="EVM RPC URL for streaming payments; defaults from PAYMENTS_NETWORK profile"
     )
     STREAM_PAYMENT_ADDRESS: str = Field(
         default="",
@@ -181,8 +192,8 @@ class Settings(BaseSettings):
 
     # L2 payments faucet (native ETH)
     L2_FAUCET_URL: str = Field(
-        default="https://l2.holesky.golemdb.io/faucet",
-        description="L2 faucet base URL (no trailing /api)"
+        default="",
+        description="Faucet base URL (no trailing /api). Only used on testnets; defaults from PAYMENTS_NETWORK profile"
     )
     L2_CAPTCHA_URL: str = Field(
         default="https://cap.gobas.me",
@@ -193,17 +204,42 @@ class Settings(BaseSettings):
         description="CAPTCHA API key path segment"
     )
 
+    @field_validator("L2_CAPTCHA_URL", mode='before')
+    @classmethod
+    def prefer_l2_captcha_url(cls, v: str) -> str:
+        return os.environ.get("GOLEM_PROVIDER_L2_CAPTCHA_URL", v)
+
+    @field_validator("L2_CAPTCHA_API_KEY", mode='before')
+    @classmethod
+    def prefer_l2_captcha_key(cls, v: str) -> str:
+        return os.environ.get("GOLEM_PROVIDER_L2_CAPTCHA_API_KEY", v)
+
     @field_validator("POLYGON_RPC_URL", mode='before')
     @classmethod
-    def prefer_custom_env(cls, v: str) -> str:
+    def prefer_custom_env(cls, v: str, values: dict) -> str:
         # Accept alternative aliases for payments RPC
         for key in ("GOLEM_PROVIDER_L2_RPC_URL", "GOLEM_PROVIDER_KAOLIN_RPC_URL"):
             if os.environ.get(key):
                 return os.environ[key]
-        return v
+        if v:
+            return v
+        # Default from profile
+        pn = values.data.get("PAYMENTS_NETWORK") or "l2.holesky"
+        return Settings._profile_defaults(pn)["rpc_url"]
+
+    @field_validator("L2_FAUCET_URL", mode='before')
+    @classmethod
+    def prefer_faucet_env(cls, v: str, values: dict) -> str:
+        for key in ("GOLEM_PROVIDER_L2_FAUCET_URL",):
+            if os.environ.get(key):
+                return os.environ[key]
+        if v:
+            return v
+        pn = values.data.get("PAYMENTS_NETWORK") or "l2.holesky"
+        return Settings._profile_defaults(pn).get("faucet_url", "")
 
     @staticmethod
-    def _load_l2_deployment() -> tuple[str | None, str | None]:
+    def _load_deployment(network: str) -> tuple[str | None, str | None]:
         """Try to load default StreamPayment + token from contracts/deployments/l2.json.
 
         Returns (stream_payment_address, glm_token_address) or (None, None) if not found.
@@ -212,15 +248,15 @@ class Settings(BaseSettings):
             # Allow override via env
             base = os.environ.get("GOLEM_DEPLOYMENTS_DIR")
             if base:
-                path = Path(base) / "l2.json"
+                path = Path(base) / f"{Settings._deployment_basename(network)}.json"
             else:
                 # repo root = ../../ from this file
-                path = Path(__file__).resolve().parents[2] / "contracts" / "deployments" / "l2.json"
+                path = Path(__file__).resolve().parents[2] / "contracts" / "deployments" / f"{Settings._deployment_basename(network)}.json"
             if not path.exists():
                 # Try package resource fallback
                 try:
                     import importlib.resources as ir
-                    with ir.files("provider.data.deployments").joinpath("l2.json").open("r") as fh:  # type: ignore[attr-defined]
+                    with ir.files("provider.data.deployments").joinpath(f"{Settings._deployment_basename(network)}.json").open("r") as fh:  # type: ignore[attr-defined]
                         data = json.load(fh)
                 except Exception:
                     return None, None
@@ -235,29 +271,90 @@ class Settings(BaseSettings):
             pass
         return None, None
 
+    # Backwards-compat helper used by tests expecting this method name
+    @staticmethod
+    def _load_l2_deployment() -> tuple[str | None, str | None]:
+        return Settings._load_deployment("l2.holesky")
+
+    @staticmethod
+    def _deployment_basename(network: str) -> str:
+        n = (network or "").lower()
+        if n in ("l2", "l2.holesky"):
+            return "l2"
+        if "." in n:
+            return n.split(".")[0]
+        return n or "l2"
+
+    @staticmethod
+    def _profile_defaults(network: str) -> dict[str, str | bool]:
+        n = (network or "l2.holesky").lower()
+        profiles = {
+            "l2.holesky": {
+                "rpc_url": "https://l2.holesky.golemdb.io/rpc",
+                "faucet_url": "https://l2.holesky.golemdb.io/faucet",
+                "faucet_enabled": True,
+                "token_symbol": "GLM",
+                "gas_symbol": "ETH",
+            },
+            "mainnet": {
+                "rpc_url": "",
+                "faucet_url": "",
+                "faucet_enabled": False,
+                "token_symbol": "GLM",
+                "gas_symbol": "ETH",
+            },
+        }
+        return profiles.get(n, profiles["l2.holesky"])  # default to current standard
+
     @field_validator("STREAM_PAYMENT_ADDRESS", mode='before')
     @classmethod
-    def default_stream_addr(cls, v: str) -> str:
+    def default_stream_addr(cls, v: str, values: dict) -> str:
         # Disable payments during pytest to keep unit tests independent
         if os.environ.get("PYTEST_CURRENT_TEST"):
             return "0x0000000000000000000000000000000000000000"
         if v:
             return v
-        addr, _ = Settings._load_l2_deployment()
+        pn = values.data.get("PAYMENTS_NETWORK") or "l2.holesky"
+        addr, _ = Settings._load_deployment(pn)
         return addr or "0x0000000000000000000000000000000000000000"
 
     @field_validator("GLM_TOKEN_ADDRESS", mode='before')
     @classmethod
-    def default_token_addr(cls, v: str) -> str:
+    def default_token_addr(cls, v: str, values: dict) -> str:
         if os.environ.get("PYTEST_CURRENT_TEST"):
             return "0x0000000000000000000000000000000000000000"
         if v:
             return v
-        _, token = Settings._load_l2_deployment()
+        pn = values.data.get("PAYMENTS_NETWORK") or "l2.holesky"
+        _, token = Settings._load_deployment(pn)
         return token or "0x0000000000000000000000000000000000000000"
 
     # VM Settings
     MAX_VMS: int = 10
+
+    # Optional human-friendly symbols from profile
+    TOKEN_SYMBOL: str = Field(default="", description="Payment token symbol, e.g., GLM")
+    GAS_TOKEN_SYMBOL: str = Field(default="", description="Gas token symbol, e.g., ETH")
+
+    @field_validator("TOKEN_SYMBOL", mode='before')
+    @classmethod
+    def default_token_symbol(cls, v: str, values: dict) -> str:
+        if v:
+            return v
+        pn = values.data.get("PAYMENTS_NETWORK") or "l2.holesky"
+        return str(Settings._profile_defaults(pn).get("token_symbol", ""))
+
+    @field_validator("GAS_TOKEN_SYMBOL", mode='before')
+    @classmethod
+    def default_gas_symbol(cls, v: str, values: dict) -> str:
+        if v:
+            return v
+        pn = values.data.get("PAYMENTS_NETWORK") or "l2.holesky"
+        return str(Settings._profile_defaults(pn).get("gas_symbol", ""))
+
+    @property
+    def FAUCET_ENABLED(self) -> bool:
+        return bool(self._profile_defaults(self.PAYMENTS_NETWORK).get("faucet_enabled", False))
     DEFAULT_VM_IMAGE: str = "ubuntu:24.04"
     VM_DATA_DIR: str = ""
     SSH_KEY_DIR: str = ""

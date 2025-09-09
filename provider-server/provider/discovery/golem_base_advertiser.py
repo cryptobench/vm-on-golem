@@ -68,6 +68,7 @@ class GolemBaseAdvertiser(Advertiser):
             string_annotations = [
                 Annotation(key="golem_type", value="provider"),
                 Annotation(key="golem_network", value=settings.NETWORK),
+                Annotation(key="golem_payments_network", value=settings.PAYMENTS_NETWORK),
                 Annotation(key="golem_provider_id", value=settings.PROVIDER_ID),
                 Annotation(key="golem_ip_address", value=ip_address),
                 Annotation(key="golem_country", value=settings.PROVIDER_COUNTRY),

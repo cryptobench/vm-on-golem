@@ -1,6 +1,34 @@
 # VM on Golem Provider Node
 
-The Provider Node enables participation in the Golem Network by managing virtual machines and computing resources. It handles VM lifecycle management, resource allocation, network proxying, and automated discovery advertisement.
+Earn by renting out your machine’s compute — like Airbnb for servers. The Provider service runs VMs for requestors, verifies payments via streaming, and lets you withdraw earnings.
+
+## Quick Start (Host and Earn)
+
+1) Install (Python 3.11+ recommended):
+
+```bash
+pip install golem-vm-provider
+```
+
+2) Start the provider (testnet by default is fine):
+
+```bash
+golem-provider start --network testnet
+```
+
+3) Set pricing in USD (GLM rates auto‑compute):
+
+```bash
+golem-provider pricing set --usd-per-core 12 --usd-per-mem 4 --usd-per-disk 0.1
+```
+
+4) On testnets, optionally fund gas for withdrawals:
+
+```bash
+golem-provider wallet faucet-l2
+```
+
+You are now discoverable to requestors and will earn as your VMs run.
 
 ## System Architecture
 
@@ -133,26 +161,26 @@ sequenceDiagram
 -   Clean connection handling
 -   Automatic proxy cleanup
 
-## Installation
+## Installation (from source / development)
 
 1. Prerequisites:
+   - Python 3.11+
+   - Multipass
+   - Poetry (for development)
 
-    - Python 3.9+
-    - Multipass
-    - Poetry
+2. Install from source:
 
-2. Install dependencies:
+```bash
+cd provider-server
+poetry install
+```
 
-    ```bash
-    cd provider-server
-    poetry install
-    ```
+3. Local environment (optional):
 
-3. Configure environment:
-    ```bash
-    cp .env.example .env
-    # Edit .env with your settings
-    ```
+```bash
+cp .env.example .env
+# Edit .env to tweak defaults if needed
+```
 
 ## Configuration
 
@@ -182,9 +210,9 @@ GOLEM_PROVIDER_PORT_RANGE_START={start_port}  # Default: 50800
 GOLEM_PROVIDER_PORT_RANGE_END={end_port}      # Default: 50900
 GOLEM_PROVIDER_PUBLIC_IP="auto"
 
-# Discovery Settings
-GOLEM_PROVIDER_DISCOVERY_URL="http://discovery.golem.network:9001"
-GOLEM_PROVIDER_ADVERTISEMENT_INTERVAL=240
+# Legacy discovery (optional; not required in normal operation)
+# GOLEM_PROVIDER_DISCOVERY_URL="http://discovery.golem.network:9001"
+# GOLEM_PROVIDER_ADVERTISEMENT_INTERVAL=240
 
 # Network Selection
 # Adds an annotation to on-chain advertisements and can be used by requestors to filter
@@ -221,7 +249,7 @@ When enabled, the provider verifies each VM creation request’s `stream_id` and
 - deposit is zero, stream not started, or stream halted
 - (Optional) remaining runway < `STREAM_MIN_REMAINING_SECONDS`
 
-## API Reference
+## API Reference (for integrators)
 
 ### Create VM
 
@@ -327,11 +355,11 @@ Notes:
 ### Starting the Provider
 
 ```bash
-# To run in production mode
-poetry run golem-provider start
+# Production mode
+golem-provider start
 
-# To run in development mode, set the environment and optionally network
-GOLEM_PROVIDER_ENVIRONMENT=development poetry run golem-provider start --network testnet
+# Development mode with extra logs and reload
+GOLEM_PROVIDER_ENVIRONMENT=development golem-provider start --network testnet
 ```
 
 ### Mode vs. Network
@@ -344,6 +372,9 @@ GOLEM_PROVIDER_ENVIRONMENT=development poetry run golem-provider start --network
   - Chooses the discovery/advertisement scope: providers advertise `golem_network=testnet|mainnet` and requestors filter accordingly.
   - Pair with appropriate RPC envs (`GOLEM_PROVIDER_GOLEM_BASE_RPC_URL`, `GOLEM_PROVIDER_GOLEM_BASE_WS_URL`).
   - Does not change dev ergonomics (logging, reload, or port verification behavior).
+
+- Payments Network (`GOLEM_PROVIDER_PAYMENTS_NETWORK`)
+  - Selects the payments chain profile (e.g., `l2.holesky`, `mainnet`). Determines default payments RPC, faucet enablement, and symbols.
 
 Common setups:
 - Local dev on testnet: `GOLEM_PROVIDER_ENVIRONMENT=development` plus `--network testnet`.
@@ -361,17 +392,20 @@ The provider will:
 4. Begin resource advertisement
 5. Listen for VM requests
 
+Notes:
+- Advertisements include both `golem_network` (testnet/mainnet) and `golem_payments_network` (e.g., `l2.holesky`). Requestors default to matching both; they can list all payments networks with a CLI flag.
+
 ### Faucet
 
 - L3 (Golem Base adverts): provider auto-requests funds on startup from `FAUCET_URL` (defaults to EthWarsaw Holesky) protected by CAPTCHA at `CAPTCHA_URL/05381a2cef5e`.
-- L2 (payments): Use the CLI to request native ETH:
+- L2 (payments): Use the CLI to request native ETH (enabled only on testnet profiles):
 
 ```bash
-poetry run golem-provider wallet faucet-l2
+golem-provider wallet faucet-l2
 ```
 
 Defaults:
-- L2 faucet: `https://l2.holesky.golemdb.io/faucet`
+- Faucet URL and enablement come from the active payments profile. On `mainnet` (or other profiles without faucet) the command is disabled.
 - CAPTCHA: `https://cap.gobas.me/05381a2cef5e`
 - Override with env: `GOLEM_PROVIDER_L2_FAUCET_URL`, `GOLEM_PROVIDER_L2_CAPTCHA_URL`, `GOLEM_PROVIDER_L2_CAPTCHA_API_KEY`.
 
@@ -415,10 +449,10 @@ Configure monitor and withdraw via CLI:
 
 ```bash
 # Set monitor to require 1h remaining, check every 30s
-poetry run golem-provider config monitor --enable true --interval 30 --min-remaining 3600
+golem-provider config monitor --enable true --interval 30 --min-remaining 3600
 
 # Enable auto-withdraw every 15 minutes when >= 1e15 wei
-poetry run golem-provider config withdraw --enable true --interval 900 --min-wei 1000000000000000
+golem-provider config withdraw --enable true --interval 900 --min-wei 1000000000000000
 ```
 
 ### Resource Advertisement Flow
