@@ -83,8 +83,9 @@ async def test_golem_base_advertiser_annotations_include_pricing(monkeypatch):
             pass
 
         async def create_entities(self, entities):
-            # capture numeric annotations of first entity
+            # capture annotations of first entity
             nonlocal_capture["numeric_annotations"] = entities[0].numeric_annotations
+            nonlocal_capture["string_annotations"] = entities[0].string_annotations
             # Return fake receipt
             class R:
                 entity_key = "abc"
@@ -109,7 +110,16 @@ async def test_golem_base_advertiser_annotations_include_pricing(monkeypatch):
     settings.PRICE_GLM_PER_GB_STORAGE_MONTH = 0.24
 
     await adv.post_advertisement()
-    anns = {a.key: a.value for a in nonlocal_capture["numeric_annotations"]}
-    assert anns["golem_price_usd_core_month"] == 6.0
-    assert anns["golem_price_glm_ram_gb_month"] == 5.0
-
+    # With updated advertiser, pricing is stored as string annotations
+    str_anns = {a.key: a.value for a in getattr(nonlocal_capture, "string_annotations", [])}
+    # Older StubClient only captured numeric_annotations; adapt to capture both
+    if not str_anns and "string_annotations" in nonlocal_capture:
+        str_anns = {a.key: a.value for a in nonlocal_capture["string_annotations"]}
+    num_anns = {a.key: a.value for a in nonlocal_capture["numeric_annotations"]}
+    # Pricing as strings
+    assert str_anns["golem_price_usd_core_month"] == str(6.0)
+    assert str_anns["golem_price_glm_ram_gb_month"] == str(5.0)
+    # Resources remain numeric ints
+    assert num_anns["golem_cpu"] == 2
+    assert num_anns["golem_memory"] == 2
+    assert num_anns["golem_storage"] == 10

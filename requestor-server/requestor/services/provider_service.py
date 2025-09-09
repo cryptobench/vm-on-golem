@@ -92,6 +92,14 @@ class ProviderService:
     ) -> List[Dict]:
         """Find providers using Golem Base."""
         try:
+            def _to_float(val):
+                if val is None:
+                    return None
+                try:
+                    return float(val)
+                except Exception:
+                    return None
+
             query = 'golem_type="provider"'
             # Filter by advertised network to avoid cross-network results
             if config.network:
@@ -128,12 +136,12 @@ class ProviderService:
                         'storage': int(annotations.get('golem_storage', 0)),
                     },
                     'pricing': {
-                        'usd_per_core_month': annotations.get('golem_price_usd_core_month'),
-                        'usd_per_gb_ram_month': annotations.get('golem_price_usd_ram_gb_month'),
-                        'usd_per_gb_storage_month': annotations.get('golem_price_usd_storage_gb_month'),
-                        'glm_per_core_month': annotations.get('golem_price_glm_core_month'),
-                        'glm_per_gb_ram_month': annotations.get('golem_price_glm_ram_gb_month'),
-                        'glm_per_gb_storage_month': annotations.get('golem_price_glm_storage_gb_month'),
+                        'usd_per_core_month': _to_float(annotations.get('golem_price_usd_core_month')),
+                        'usd_per_gb_ram_month': _to_float(annotations.get('golem_price_usd_ram_gb_month')),
+                        'usd_per_gb_storage_month': _to_float(annotations.get('golem_price_usd_storage_gb_month')),
+                        'glm_per_core_month': _to_float(annotations.get('golem_price_glm_core_month')),
+                        'glm_per_gb_ram_month': _to_float(annotations.get('golem_price_glm_ram_gb_month')),
+                        'glm_per_gb_storage_month': _to_float(annotations.get('golem_price_glm_storage_gb_month')),
                     },
                     'created_at_block': metadata.expires_at_block - (config.advertisement_interval * 2)
                 }
