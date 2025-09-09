@@ -11,7 +11,7 @@ from ..container import Container
 from ..utils.logging import setup_logger
 from ..utils.ascii_art import vm_creation_animation, vm_status_change
 from ..vm.models import VMInfo, VMAccessInfo, VMConfig, VMResources, VMNotFoundError
-from .models import CreateVMRequest, ProviderInfoResponse
+from .models import CreateVMRequest, ProviderInfoResponse, StreamStatus, StreamOnChain, StreamComputed
 from ..payments.blockchain_service import StreamPaymentReader
 from ..vm.service import VMService
 from ..vm.multipass_adapter import MultipassError
@@ -40,6 +40,17 @@ async def create_vm(
                 raise HTTPException(status_code=400, detail="stream_id required when payments are enabled")
             reader = StreamPaymentReader(settings["POLYGON_RPC_URL"], settings["STREAM_PAYMENT_ADDRESS"])
             ok, reason = reader.verify_stream(int(request.stream_id), settings["PROVIDER_ID"])
+            try:
+                s = reader.get_stream(int(request.stream_id))
+                now = int(reader.web3.eth.get_block("latest")["timestamp"])  # type: ignore[attr-defined]
+                remaining = max(int(s["stopTime"]) - now, 0)
+                logger.info(
+                    f"💸 Stream check id={int(request.stream_id)} ok={ok} reason='{reason}' "
+                    f"start={s['startTime']} stop={s['stopTime']} rate={s['ratePerSecond']} deposit={s['deposit']} withdrawn={s['withdrawn']} remaining={remaining}s"
+                )
+            except Exception:
+                # Best-effort logging; creation will continue/fail based on ok
+                pass
             if not ok:
                 raise HTTPException(status_code=400, detail=f"invalid stream: {reason}")
         
@@ -201,3 +212,72 @@ async def provider_info(settings: Settings = Depends(Provide[Container.config]))
         stream_payment_address=settings["STREAM_PAYMENT_ADDRESS"],
         glm_token_address=settings["GLM_TOKEN_ADDRESS"],
     )
+
+
+@router.get("/vms/{requestor_name}/stream", response_model=StreamStatus)
+@inject
+async def get_vm_stream_status(
+    requestor_name: str,
+    settings: Settings = Depends(Provide[Container.config]),
+    stream_map = Depends(Provide[Container.stream_map]),
+) -> StreamStatus:
+    """Return on-chain stream status for a VM (if mapped)."""
+    if not settings["STREAM_PAYMENT_ADDRESS"] or settings["STREAM_PAYMENT_ADDRESS"] == "0x0000000000000000000000000000000000000000":
+        raise HTTPException(status_code=400, detail="streaming payments not enabled on this provider")
+    stream_id = await stream_map.get(requestor_name)
+    if stream_id is None:
+        raise HTTPException(status_code=404, detail="no stream mapped for this VM")
+    reader = StreamPaymentReader(settings["POLYGON_RPC_URL"], settings["STREAM_PAYMENT_ADDRESS"])
+    try:
+        s = reader.get_stream(int(stream_id))
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"stream lookup failed: {e}")
+    ok, reason = reader.verify_stream(int(stream_id), settings["PROVIDER_ID"])
+    now = int(reader.web3.eth.get_block("latest")["timestamp"])  # type: ignore[attr-defined]
+    vested = max(min(now, int(s["stopTime"])) - int(s["startTime"]), 0) * int(s["ratePerSecond"])  # type: ignore[operator]
+    withdrawable = max(int(vested) - int(s["withdrawn"]), 0)
+    remaining = max(int(s["stopTime"]) - now, 0)
+    return StreamStatus(
+        vm_id=requestor_name,
+        stream_id=int(stream_id),
+        chain=StreamOnChain(**s),
+        computed=StreamComputed(now=now, remaining_seconds=remaining, vested_wei=int(vested), withdrawable_wei=int(withdrawable)),
+        verified=bool(ok),
+        reason=str(reason),
+    )
+
+
+@router.get("/payments/streams", response_model=List[StreamStatus])
+@inject
+async def list_stream_statuses(
+    settings: Settings = Depends(Provide[Container.config]),
+    stream_map = Depends(Provide[Container.stream_map]),
+) -> List[StreamStatus]:
+    """List stream status for all mapped VMs."""
+    if not settings["STREAM_PAYMENT_ADDRESS"] or settings["STREAM_PAYMENT_ADDRESS"] == "0x0000000000000000000000000000000000000000":
+        raise HTTPException(status_code=400, detail="streaming payments not enabled on this provider")
+    reader = StreamPaymentReader(settings["POLYGON_RPC_URL"], settings["STREAM_PAYMENT_ADDRESS"])
+    items = await stream_map.all_items()
+    now = int(reader.web3.eth.get_block("latest")["timestamp"]) if items else 0  # type: ignore[attr-defined]
+    resp: List[StreamStatus] = []
+    for vm_id, stream_id in items.items():
+        try:
+            s = reader.get_stream(int(stream_id))
+            ok, reason = reader.verify_stream(int(stream_id), settings["PROVIDER_ID"])
+            vested = max(min(now, int(s["stopTime"])) - int(s["startTime"]), 0) * int(s["ratePerSecond"])  # type: ignore[operator]
+            withdrawable = max(int(vested) - int(s["withdrawn"]), 0)
+            remaining = max(int(s["stopTime"]) - now, 0)
+            resp.append(
+                StreamStatus(
+                    vm_id=vm_id,
+                    stream_id=int(stream_id),
+                    chain=StreamOnChain(**s),
+                    computed=StreamComputed(now=now, remaining_seconds=remaining, vested_wei=int(vested), withdrawable_wei=int(withdrawable)),
+                    verified=bool(ok),
+                    reason=str(reason),
+                )
+            )
+        except Exception as e:
+            logger.warning(f"stream {stream_id} lookup failed: {e}")
+            continue
+    return resp

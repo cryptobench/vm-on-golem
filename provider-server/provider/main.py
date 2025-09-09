@@ -123,8 +123,10 @@ except ImportError:
 cli = typer.Typer()
 pricing_app = typer.Typer(help="Configure USD pricing; auto-converts to GLM.")
 wallet_app = typer.Typer(help="Wallet utilities (funding, balance)")
+streams_app = typer.Typer(help="Inspect payment streams")
 cli.add_typer(pricing_app, name="pricing")
 cli.add_typer(wallet_app, name="wallet")
+cli.add_typer(streams_app, name="streams")
 
 def print_version(ctx: typer.Context, value: bool):
     if not value:
@@ -181,6 +183,108 @@ def wallet_faucet_l2():
             else:
                 print("Faucet request failed")
         asyncio.run(_run())
+    except Exception as e:
+        print(f"Error: {e}")
+        raise typer.Exit(code=1)
+
+
+@streams_app.command("list")
+def streams_list(json_out: bool = typer.Option(False, "--json", help="Output in JSON")):
+    """List all mapped streams with computed status."""
+    from .container import Container
+    from .config import settings
+    from .payments.blockchain_service import StreamPaymentReader
+    import json as _json
+    try:
+        if not settings.STREAM_PAYMENT_ADDRESS or settings.STREAM_PAYMENT_ADDRESS == "0x0000000000000000000000000000000000000000":
+            print("Streaming payments are disabled on this provider.")
+            raise typer.Exit(code=1)
+        c = Container()
+        c.config.from_pydantic(settings)
+        stream_map = c.stream_map()
+        reader = StreamPaymentReader(settings.POLYGON_RPC_URL, settings.STREAM_PAYMENT_ADDRESS)
+        items = asyncio.run(stream_map.all_items())
+        now = int(reader.web3.eth.get_block("latest")["timestamp"]) if items else 0
+        rows = []
+        for vm_id, stream_id in items.items():
+            try:
+                s = reader.get_stream(int(stream_id))
+                vested = max(min(now, int(s["stopTime"])) - int(s["startTime"]), 0) * int(s["ratePerSecond"])  # type: ignore
+                withdrawable = max(int(vested) - int(s["withdrawn"]), 0)
+                remaining = max(int(s["stopTime"]) - now, 0)
+                ok, reason = reader.verify_stream(int(stream_id), settings.PROVIDER_ID)
+                rows.append({
+                    "vm_id": vm_id,
+                    "stream_id": int(stream_id),
+                    "recipient": s["recipient"],
+                    "start": int(s["startTime"]),
+                    "stop": int(s["stopTime"]),
+                    "rate": int(s["ratePerSecond"]),
+                    "deposit": int(s["deposit"]),
+                    "withdrawn": int(s["withdrawn"]),
+                    "remaining": remaining,
+                    "verified": bool(ok),
+                    "reason": reason,
+                    "withdrawable": int(withdrawable),
+                })
+            except Exception as e:
+                rows.append({"vm_id": vm_id, "stream_id": int(stream_id), "error": str(e)})
+        if json_out:
+            print(_json.dumps({"streams": rows}, indent=2))
+            return
+        if not rows:
+            print("No streams mapped.")
+            return
+        print("\nStreams (VM → stream_id, remaining s, verified):")
+        for r in rows:
+            if "error" in r:
+                print(f"- {r['vm_id']}: {r['stream_id']} ERROR: {r['error']}")
+            else:
+                print(f"- {r['vm_id']}: {r['stream_id']} remaining={r['remaining']}s verified={r['verified']} reason={r['reason']} withdrawable={r['withdrawable']}")
+    except Exception as e:
+        print(f"Error: {e}")
+        raise typer.Exit(code=1)
+
+
+@streams_app.command("show")
+def streams_show(vm_id: str = typer.Argument(..., help="VM id (requestor_name)"), json_out: bool = typer.Option(False, "--json")):
+    """Show a single VM's stream status."""
+    from .container import Container
+    from .config import settings
+    from .payments.blockchain_service import StreamPaymentReader
+    import json as _json
+    try:
+        c = Container()
+        c.config.from_pydantic(settings)
+        stream_map = c.stream_map()
+        sid = asyncio.run(stream_map.get(vm_id))
+        if sid is None:
+            print("No stream mapped for this VM.")
+            raise typer.Exit(code=1)
+        reader = StreamPaymentReader(settings.POLYGON_RPC_URL, settings.STREAM_PAYMENT_ADDRESS)
+        s = reader.get_stream(int(sid))
+        now = int(reader.web3.eth.get_block("latest")["timestamp"])  # type: ignore
+        vested = max(min(now, int(s["stopTime"])) - int(s["startTime"]), 0) * int(s["ratePerSecond"])  # type: ignore
+        withdrawable = max(int(vested) - int(s["withdrawn"]), 0)
+        remaining = max(int(s["stopTime"]) - now, 0)
+        ok, reason = reader.verify_stream(int(sid), settings.PROVIDER_ID)
+        out = {
+            "vm_id": vm_id,
+            "stream_id": int(sid),
+            "chain": s,
+            "computed": {
+                "now": now,
+                "remaining_seconds": remaining,
+                "vested_wei": int(vested),
+                "withdrawable_wei": int(withdrawable),
+            },
+            "verified": bool(ok),
+            "reason": reason,
+        }
+        if json_out:
+            print(_json.dumps(out, indent=2))
+        else:
+            print(f"VM {vm_id}: stream {sid} remaining={remaining}s verified={ok} withdrawable={withdrawable}")
     except Exception as e:
         print(f"Error: {e}")
         raise typer.Exit(code=1)

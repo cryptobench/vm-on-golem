@@ -384,6 +384,97 @@ async def stream_topup(stream_id: int, glm: float | None, hours: int | None):
         raise click.Abort()
 
 
+@vm_stream.command('status')
+@click.argument('name')
+@click.option('--json', 'as_json', is_flag=True, help='Output in JSON format')
+@async_command
+async def stream_status(name: str, as_json: bool):
+    """Show the payment stream status for a VM by name."""
+    try:
+        # Resolve VM and provider
+        vm = await db_service.get_vm(name)
+        if not vm:
+            raise RequestorError(f"VM '{name}' not found in local DB")
+        provider_url = config.get_provider_url(vm['provider_ip'])
+        async with ProviderClient(provider_url) as client:
+            status = await client.get_vm_stream_status(vm['vm_id'])
+        if as_json:
+            click.echo(json.dumps(status, indent=2))
+            return
+        # Pretty print
+        c = status.get('chain', {})
+        comp = status.get('computed', {})
+        click.echo("\n" + "─" * 60)
+        click.echo(click.style(f"  💸 Stream Status for VM: {name}", fg="blue", bold=True))
+        click.echo("─" * 60)
+        click.echo(f"  Stream ID     : {click.style(str(status.get('stream_id')), fg='cyan')}")
+        click.echo(f"  Verified      : {click.style(str(status.get('verified')), fg='green' if status.get('verified') else 'yellow')}")
+        click.echo(f"  Reason        : {status.get('reason')}")
+        click.echo("  On-chain      :")
+        click.echo(f"    recipient   : {c.get('recipient')} ")
+        click.echo(f"    startTime   : {c.get('startTime')}  stopTime: {c.get('stopTime')}")
+        click.echo(f"    rate/second : {c.get('ratePerSecond')}  deposit: {c.get('deposit')}  withdrawn: {c.get('withdrawn')}  halted: {c.get('halted')}")
+        click.echo("  Computed      :")
+        click.echo(f"    now         : {comp.get('now')}  remaining: {comp.get('remaining_seconds')}s")
+        click.echo(f"    vested      : {comp.get('vested_wei')}  withdrawable: {comp.get('withdrawable_wei')}")
+        click.echo("─" * 60)
+    except Exception as e:
+        logger.error(f"Failed to fetch stream status: {e}")
+        raise click.Abort()
+
+
+@vm_stream.command('inspect')
+@click.option('--stream-id', type=int, required=True)
+@click.option('--json', 'as_json', is_flag=True, help='Output in JSON format')
+@async_command
+async def stream_inspect(stream_id: int, as_json: bool):
+    """Inspect a stream directly on-chain (no provider required)."""
+    try:
+        from web3 import Web3
+        from golem_streaming_abi import STREAM_PAYMENT_ABI
+        w3 = Web3(Web3.HTTPProvider(config.polygon_rpc_url))
+        contract = w3.eth.contract(address=Web3.to_checksum_address(config.stream_payment_address), abi=STREAM_PAYMENT_ABI)
+        token, sender, recipient, startTime, stopTime, ratePerSecond, deposit, withdrawn, halted = contract.functions.streams(int(stream_id)).call()
+        now = int(w3.eth.get_block('latest')['timestamp'])
+        vested = max(min(now, int(stopTime)) - int(startTime), 0) * int(ratePerSecond)
+        withdrawable = max(int(vested) - int(withdrawn), 0)
+        remaining = max(int(stopTime) - now, 0)
+        out = {
+            "stream_id": int(stream_id),
+            "chain": {
+                "token": token,
+                "sender": sender,
+                "recipient": recipient,
+                "startTime": int(startTime),
+                "stopTime": int(stopTime),
+                "ratePerSecond": int(ratePerSecond),
+                "deposit": int(deposit),
+                "withdrawn": int(withdrawn),
+                "halted": bool(halted),
+            },
+            "computed": {
+                "now": now,
+                "remaining_seconds": remaining,
+                "vested_wei": int(vested),
+                "withdrawable_wei": int(withdrawable),
+            }
+        }
+        if as_json:
+            click.echo(json.dumps(out, indent=2))
+        else:
+            click.echo("\n" + "─" * 60)
+            click.echo(click.style(f"  🔎 On-chain Stream Inspect: {stream_id}", fg="blue", bold=True))
+            click.echo("─" * 60)
+            click.echo(f"  recipient     : {recipient}")
+            click.echo(f"  startTime     : {int(startTime)}  stopTime: {int(stopTime)}  now: {now}  remaining: {remaining}s")
+            click.echo(f"  rate/second   : {int(ratePerSecond)}  deposit: {int(deposit)}  withdrawn: {int(withdrawn)}  halted: {bool(halted)}")
+            click.echo(f"  vested        : {int(vested)}  withdrawable: {int(withdrawable)}")
+            click.echo("─" * 60)
+    except Exception as e:
+        logger.error(f"Failed to inspect stream: {e}")
+        raise click.Abort()
+
+
 @cli.group()
 def wallet():
     """Wallet utilities (funding, balance)."""

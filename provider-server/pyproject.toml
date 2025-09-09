@@ -19,6 +19,11 @@ packages = [
     { include = "provider" }
 ]
 
+# Include package data (deployment JSON)
+include = [
+    { path = "provider/data/deployments/l2.json", format = "wheel" },
+]
+
 [tool.poetry.scripts]
 golem-provider = "provider.main:cli"
 

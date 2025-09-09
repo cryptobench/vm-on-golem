@@ -193,11 +193,12 @@ GOLEM_PROVIDER_NETWORK="testnet"  # or "mainnet"
 
 ### Streaming Payments (Native ETH on L2)
 
-Enable on‑chain stream‑gated rentals funded in native ETH. Configure (env prefix `GOLEM_PROVIDER_`):
+Enable on‑chain stream‑gated rentals funded in native ETH. By default, the provider auto‑loads the StreamPayment contract from `contracts/deployments/l2.json` and enables payments out of the box. Configure/override (env prefix `GOLEM_PROVIDER_`):
 
-- `POLYGON_RPC_URL` — EVM RPC URL (default points to L2: https://l2.holesky.golemdb.io/rpc)
-- `STREAM_PAYMENT_ADDRESS` — StreamPayment contract address; if non‑zero, VM creation requires a valid `stream_id`
-- `GLM_TOKEN_ADDRESS` — Token address; set to `0x0000000000000000000000000000000000000000` to indicate native ETH
+- `POLYGON_RPC_URL` — EVM RPC URL (default L2 RPC)
+- `STREAM_PAYMENT_ADDRESS` — StreamPayment address (defaults from `contracts/deployments/l2.json`)
+- `GLM_TOKEN_ADDRESS` — Token address (defaults from `contracts/deployments/l2.json`; `0x0` means native ETH)
+  - Optional override of deployments directory: set `GOLEM_DEPLOYMENTS_DIR` to a folder containing `l2.json`.
 
 Optional background automation (all disabled by default):
 
@@ -210,7 +211,7 @@ Optional background automation (all disabled by default):
 
 Implementation notes:
 
-- The provider exposes `GET /api/v1/provider/info` returning `provider_id`, `stream_payment_address`, and `glm_token_address`. For ETH mode this field is the zero address (`0x000...000`). Requestors should prefer these values when opening streams.
+- The provider exposes `GET /api/v1/provider/info` returning `provider_id`, `stream_payment_address`, and `glm_token_address`. Requestors should prefer these values when opening streams.
 - On successful VM creation with a valid `stream_id`, the provider persists a VM→stream mapping in `streams.json`. This enables the background monitor to stop VMs with low remaining runway and to withdraw vested funds according to configured intervals.
 - When a VM is deleted, the VM→stream mapping is cleaned up.
 
@@ -283,7 +284,44 @@ Response:
 ```
 
 Use this endpoint to discover the correct recipient for creating a GLM stream.
- 
+
+### Payment Streams
+
+- Get a VM’s stream status: `GET /api/v1/vms/{vm_id}/stream`
+- List all mapped streams: `GET /api/v1/payments/streams`
+
+Response (per stream):
+
+```json
+{
+  "vm_id": "golem-my-webserver-20250219-130424",
+  "stream_id": 123,
+  "verified": true,
+  "reason": "ok",
+  "chain": {
+    "token": "0x0000000000000000000000000000000000000000",
+    "sender": "0x...",
+    "recipient": "0xProviderEthereumAddress",
+    "startTime": 1700000000,
+    "stopTime": 1700007200,
+    "ratePerSecond": 12345,
+    "deposit": 1000000000000000000,
+    "withdrawn": 0,
+    "halted": false
+  },
+  "computed": {
+    "now": 1700003600,
+    "remaining_seconds": 3600,
+    "vested_wei": 44442000,
+    "withdrawable_wei": 44442000
+  }
+}
+```
+
+Notes:
+- Endpoints return 400 when streaming is disabled (zero `STREAM_PAYMENT_ADDRESS`).
+- In development mode (`GOLEM_PROVIDER_ENVIRONMENT=development`) additional debug logs are emitted around stream verification and monitor ticks.
+
  ## Operations
  
 ### Starting the Provider
@@ -336,6 +374,22 @@ Defaults:
 - L2 faucet: `https://l2.holesky.golemdb.io/faucet`
 - CAPTCHA: `https://cap.gobas.me/05381a2cef5e`
 - Override with env: `GOLEM_PROVIDER_L2_FAUCET_URL`, `GOLEM_PROVIDER_L2_CAPTCHA_URL`, `GOLEM_PROVIDER_L2_CAPTCHA_API_KEY`.
+
+### Streams (CLI)
+
+- List all mapped streams with computed fields:
+
+```bash
+poetry run golem-provider streams list
+# or JSON
+poetry run golem-provider streams list --json
+```
+
+- Show one VM’s stream (VM id = `requestor_name`):
+
+```bash
+poetry run golem-provider streams show <vm_id>
+```
 
 ### Resource Advertisement Flow
 

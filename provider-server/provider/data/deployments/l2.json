@@ -1,0 +1,9 @@
+{
+  "network": "l2",
+  "timestamp": "",
+  "StreamPayment": {
+    "address": "0x0281B792b5491E3548c8Fc17C24A2e0Cb99FbeC2",
+    "oracle": "0xDd329f6EDf93637634E8862d34c3909d298A7055",
+    "glmToken": "0x0000000000000000000000000000000000000000"
+  }
+}

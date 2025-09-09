@@ -106,12 +106,12 @@ class RequestorConfig(BaseSettings):
         description="EVM RPC URL for streaming payments (L2 by default)"
     )
     stream_payment_address: str = Field(
-        default="0x0000000000000000000000000000000000000000",
-        description="Deployed StreamPayment contract address"
+        default="",
+        description="Deployed StreamPayment contract address (defaults to contracts/deployments/l2.json)"
     )
     glm_token_address: str = Field(
-        default="0x0000000000000000000000000000000000000000",
-        description="Token address (0x0 means native ETH)"
+        default="",
+        description="Token address (0x0 means native ETH). Defaults from l2.json"
     )
     # Faucet settings (L2 payments)
     l2_faucet_url: str = Field(
@@ -144,6 +144,52 @@ class RequestorConfig(BaseSettings):
             if os.environ.get(key):
                 return os.environ[key]
         return v
+
+    @staticmethod
+    def _load_l2_deployment() -> tuple[str | None, str | None]:
+        try:
+            base = os.environ.get("GOLEM_DEPLOYMENTS_DIR")
+            if base:
+                path = Path(base) / "l2.json"
+            else:
+                # repo root assumption: ../../ relative to this file
+                path = Path(__file__).resolve().parents[2] / "contracts" / "deployments" / "l2.json"
+            if not path.exists():
+                # Try package resource fallback
+                try:
+                    import importlib.resources as ir
+                    with ir.files("requestor.data.deployments").joinpath("l2.json").open("r") as fh:  # type: ignore[attr-defined]
+                        import json as _json
+                        data = _json.load(fh)
+                except Exception:
+                    return None, None
+            else:
+                import json as _json
+                data = _json.loads(path.read_text())
+            sp = data.get("StreamPayment", {})
+            addr = sp.get("address")
+            token = sp.get("glmToken")
+            if isinstance(addr, str) and addr:
+                return addr, token or "0x0000000000000000000000000000000000000000"
+        except Exception:
+            pass
+        return None, None
+
+    @field_validator("stream_payment_address", mode='before')
+    @classmethod
+    def default_stream_addr(cls, v: str) -> str:
+        if v:
+            return v
+        addr, _ = RequestorConfig._load_l2_deployment()
+        return addr or "0x0000000000000000000000000000000000000000"
+
+    @field_validator("glm_token_address", mode='before')
+    @classmethod
+    def default_token_addr(cls, v: str) -> str:
+        if v:
+            return v
+        _, token = RequestorConfig._load_l2_deployment()
+        return token or "0x0000000000000000000000000000000000000000"
 
     # Base Directory
     base_dir: Path = Field(
