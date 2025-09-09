@@ -113,6 +113,23 @@ class RequestorConfig(BaseSettings):
         default="",
         description="Token address (0x0 means native ETH). Defaults from l2.json"
     )
+    # Stream monitor (auto top-up)
+    stream_monitor_enabled: bool = Field(
+        default=True,
+        description="Enable background monitor to auto top-up streams"
+    )
+    stream_monitor_interval_seconds: int = Field(
+        default=30,
+        description="How frequently to check and top up streams"
+    )
+    stream_min_remaining_seconds: int = Field(
+        default=3600,
+        description="Minimum remaining runway to maintain (seconds)"
+    )
+    stream_topup_target_seconds: int = Field(
+        default=3600,
+        description="Target runway after top-up (seconds)"
+    )
     # Faucet settings (L2 payments)
     l2_faucet_url: str = Field(
         default="https://l2.holesky.golemdb.io/faucet",

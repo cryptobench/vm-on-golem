@@ -130,6 +130,16 @@ poetry run golem vm stream status my-vm
 poetry run golem vm stream inspect --stream-id 123
 ```
 
+- Stopping or destroying a VM ends the stream:
+
+```bash
+# Stop VM and terminate payment stream (best-effort)
+poetry run golem vm stop my-vm
+
+# Destroy VM and terminate stream
+poetry run golem vm destroy my-vm
+```
+
 - Create a VM and attach an existing stream (no auto-streams are created by the requestor):
 
 ```bash
@@ -153,6 +163,11 @@ Efficiency tips:
 - Batch top‑ups (e.g., add several hours at once) to reduce on‑chain calls.
 - Withdrawals are typically executed by providers; requestors don’t need to withdraw.
 - The CLI `vm stream open` will prefer the provider’s advertised contract/token addresses to prevent mismatches.
+
+Monitoring and auto top-up:
+
+- The requestor API runs a background monitor that keeps each running VM’s stream funded with at least 1 hour runway (configurable). It checks every 30s and tops up to the target runway.
+- Configure via env (prefix `GOLEM_REQUESTOR_`): `stream_monitor_enabled` (default true), `stream_monitor_interval_seconds` (default 30), `stream_min_remaining_seconds` (default 3600), `stream_topup_target_seconds` (default 3600).
 
 ## Faucet (L2 ETH)
 

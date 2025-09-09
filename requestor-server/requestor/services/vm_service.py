@@ -142,11 +142,11 @@ class VMService:
             # Update status in database
             await self.db.update_vm_status(name, "stopped")
 
-            # Best-effort withdraw on stop
+            # Best-effort terminate stream on stop (treat stop as end of agreement)
             try:
                 stream_id = vm.get('config', {}).get('stream_id')
                 if stream_id is not None and self.blockchain_client:
-                    self.blockchain_client.withdraw(stream_id)
+                    self.blockchain_client.terminate(stream_id)
             except Exception:
                 pass
 
