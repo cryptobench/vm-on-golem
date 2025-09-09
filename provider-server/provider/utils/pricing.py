@@ -47,6 +47,14 @@ def fetch_glm_usd_price() -> Optional[Decimal]:
     return _coingecko_simple_price(settings.COINGECKO_IDS)
 
 
+def fetch_eth_usd_price() -> Optional[Decimal]:
+    """Fetch the current ETH price in USD from CoinGecko.
+
+    Uses the canonical "ethereum" id.
+    """
+    return _coingecko_simple_price("ethereum")
+
+
 def usd_to_glm(usd_amount: Decimal, glm_usd: Decimal) -> Decimal:
     if glm_usd <= 0:
         raise ValueError("Invalid GLM/USD price")
