@@ -132,6 +132,8 @@ streams_app = typer.Typer(help="Inspect payment streams")
 cli.add_typer(pricing_app, name="pricing")
 cli.add_typer(wallet_app, name="wallet")
 cli.add_typer(streams_app, name="streams")
+config_app = typer.Typer(help="Configure stream monitoring and withdrawals")
+cli.add_typer(config_app, name="config")
 
 @cli.callback()
 def main():
@@ -284,6 +286,108 @@ def streams_show(vm_id: str = typer.Argument(..., help="VM id (requestor_name)")
         print(f"Error: {e}")
         raise typer.Exit(code=1)
 
+@streams_app.command("earnings")
+def streams_earnings(json_out: bool = typer.Option(False, "--json", help="Output in JSON")):
+    """Summarize provider earnings: vested, withdrawn, and withdrawable totals."""
+    from .container import Container
+    from .config import settings
+    from .payments.blockchain_service import StreamPaymentReader
+    import json as _json
+    try:
+        c = Container()
+        c.config.from_pydantic(settings)
+        stream_map = c.stream_map()
+        reader = StreamPaymentReader(settings.POLYGON_RPC_URL, settings.STREAM_PAYMENT_ADDRESS)
+        items = asyncio.run(stream_map.all_items())
+        now = int(reader.web3.eth.get_block("latest")["timestamp"]) if items else 0
+        rows = []
+        total_vested = 0
+        total_withdrawn = 0
+        total_withdrawable = 0
+        for vm_id, stream_id in items.items():
+            try:
+                s = reader.get_stream(int(stream_id))
+                vested = max(min(now, int(s["stopTime"])) - int(s["startTime"]), 0) * int(s["ratePerSecond"])  # type: ignore
+                withdrawable = max(int(vested) - int(s["withdrawn"]), 0)
+                total_vested += int(vested)
+                total_withdrawn += int(s["withdrawn"])  # type: ignore
+                total_withdrawable += int(withdrawable)
+                rows.append({
+                    "vm_id": vm_id,
+                    "stream_id": int(stream_id),
+                    "vested": int(vested),
+                    "withdrawn": int(s["withdrawn"]),
+                    "withdrawable": int(withdrawable),
+                })
+            except Exception as e:
+                rows.append({"vm_id": vm_id, "stream_id": int(stream_id), "error": str(e)})
+        out = {
+            "streams": rows,
+            "totals": {
+                "vested": int(total_vested),
+                "withdrawn": int(total_withdrawn),
+                "withdrawable": int(total_withdrawable),
+            }
+        }
+        if json_out:
+            print(_json.dumps(out, indent=2))
+            return
+        print("\nEarnings summary (wei):")
+        print(f"  Vested total      : {total_vested}")
+        print(f"  Withdrawn total   : {total_withdrawn}")
+        print(f"  Withdrawable total: {total_withdrawable}")
+        if rows:
+            print("\nPer-stream:")
+            for r in rows:
+                if "error" in r:
+                    print(f"- {r['vm_id']} [{r['stream_id']}] ERROR: {r['error']}")
+                else:
+                    print(f"- {r['vm_id']} [{r['stream_id']}]: vested={r['vested']} withdrawn={r['withdrawn']} withdrawable={r['withdrawable']}")
+    except Exception as e:
+        print(f"Error: {e}")
+        raise typer.Exit(code=1)
+
+
+@streams_app.command("withdraw")
+def streams_withdraw(
+    vm_id: str = typer.Option(None, "--vm-id", help="Withdraw for a single VM id"),
+    all_streams: bool = typer.Option(False, "--all", help="Withdraw for all mapped streams"),
+):
+    """Withdraw vested funds for one or all streams."""
+    from .container import Container
+    from .config import settings
+    try:
+        if not vm_id and not all_streams:
+            print("Specify --vm-id or --all")
+            raise typer.Exit(code=1)
+        c = Container()
+        c.config.from_pydantic(settings)
+        stream_map = c.stream_map()
+        client = c.stream_client()
+        targets = []
+        if all_streams:
+            items = asyncio.run(stream_map.all_items())
+            for vid, sid in items.items():
+                targets.append((vid, int(sid)))
+        else:
+            sid = asyncio.run(stream_map.get(vm_id))
+            if sid is None:
+                print("No stream mapped for this VM.")
+                raise typer.Exit(code=1)
+            targets.append((vm_id, int(sid)))
+        results = []
+        for vid, sid in targets:
+            try:
+                tx = client.withdraw(int(sid))
+                results.append((vid, sid, tx))
+                print(f"Withdrew stream {sid} for VM {vid}: tx={tx}")
+            except Exception as e:
+                print(f"Failed to withdraw stream {sid} for VM {vid}: {e}")
+        # no JSON aggregation here; use earnings for structured output
+    except Exception as e:
+        print(f"Error: {e}")
+        raise typer.Exit(code=1)
+
 @cli.command()
 def start(
     no_verify_port: bool = typer.Option(False, "--no-verify-port", help="Skip provider port verification."),
@@ -330,6 +434,80 @@ def _write_env_vars(path: str, updates: dict):
 
     with open(path, "w") as f:
         f.writelines(out)
+
+
+@config_app.command("withdraw")
+def config_withdraw(
+    enable: bool = typer.Option(None, "--enable", help="Enable/disable auto-withdraw (true/false)"),
+    interval: int = typer.Option(None, "--interval", help="Withdraw interval in seconds (e.g., 1800)"),
+    min_wei: int = typer.Option(None, "--min-wei", help="Only withdraw when >= this wei amount"),
+    dev: bool = typer.Option(False, "--dev", help="Write to .env.dev instead of .env"),
+):
+    """Configure provider auto-withdraw settings and persist to .env(.dev)."""
+    from .config import settings
+    env_path = _env_path_for(dev)
+    updates = {}
+    if enable is not None:
+        updates["GOLEM_PROVIDER_STREAM_WITHDRAW_ENABLED"] = str(enable).lower()
+        settings.STREAM_WITHDRAW_ENABLED = bool(enable)
+    if interval is not None:
+        if interval < 0:
+            raise typer.BadParameter("--interval must be >= 0")
+        updates["GOLEM_PROVIDER_STREAM_WITHDRAW_INTERVAL_SECONDS"] = int(interval)
+        try:
+            settings.STREAM_WITHDRAW_INTERVAL_SECONDS = int(interval)
+        except Exception:
+            pass
+    if min_wei is not None:
+        if min_wei < 0:
+            raise typer.BadParameter("--min-wei must be >= 0")
+        updates["GOLEM_PROVIDER_STREAM_MIN_WITHDRAW_WEI"] = int(min_wei)
+        try:
+            settings.STREAM_MIN_WITHDRAW_WEI = int(min_wei)
+        except Exception:
+            pass
+    if not updates:
+        print("No changes (use --enable/--interval/--min-wei)")
+        raise typer.Exit(code=0)
+    _write_env_vars(env_path, updates)
+    print(f"Updated withdraw settings in {env_path}")
+
+
+@config_app.command("monitor")
+def config_monitor(
+    enable: bool = typer.Option(None, "--enable", help="Enable/disable stream monitor (true/false)"),
+    interval: int = typer.Option(None, "--interval", help="Monitor interval in seconds (e.g., 30)"),
+    min_remaining: int = typer.Option(None, "--min-remaining", help="Minimum remaining runway to keep VM running (seconds)"),
+    dev: bool = typer.Option(False, "--dev", help="Write to .env.dev instead of .env"),
+):
+    """Configure provider stream monitor and persist to .env(.dev)."""
+    from .config import settings
+    env_path = _env_path_for(dev)
+    updates = {}
+    if enable is not None:
+        updates["GOLEM_PROVIDER_STREAM_MONITOR_ENABLED"] = str(enable).lower()
+        settings.STREAM_MONITOR_ENABLED = bool(enable)
+    if interval is not None:
+        if interval < 0:
+            raise typer.BadParameter("--interval must be >= 0")
+        updates["GOLEM_PROVIDER_STREAM_MONITOR_INTERVAL_SECONDS"] = int(interval)
+        try:
+            settings.STREAM_MONITOR_INTERVAL_SECONDS = int(interval)
+        except Exception:
+            pass
+    if min_remaining is not None:
+        if min_remaining < 0:
+            raise typer.BadParameter("--min-remaining must be >= 0")
+        updates["GOLEM_PROVIDER_STREAM_MIN_REMAINING_SECONDS"] = int(min_remaining)
+        try:
+            settings.STREAM_MIN_REMAINING_SECONDS = int(min_remaining)
+        except Exception:
+            pass
+    if not updates:
+        print("No changes (use --enable/--interval/--min-remaining)")
+        raise typer.Exit(code=0)
+    _write_env_vars(env_path, updates)
+    print(f"Updated monitor settings in {env_path}")
 
 def _print_pricing_examples(glm_usd):
     from decimal import Decimal

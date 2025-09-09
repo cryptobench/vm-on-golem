@@ -391,6 +391,34 @@ poetry run golem-provider streams list --json
 poetry run golem-provider streams show <vm_id>
 ```
 
+- Summarize earnings and withdrawable amounts:
+
+```bash
+poetry run golem-provider streams earnings
+# or JSON
+poetry run golem-provider streams earnings --json
+```
+
+- Withdraw vested funds:
+
+```bash
+# One VM by id
+poetry run golem-provider streams withdraw --vm-id <vm_id>
+
+# All mapped streams
+poetry run golem-provider streams withdraw --all
+```
+
+Configure monitor and withdraw via CLI:
+
+```bash
+# Set monitor to require 1h remaining, check every 30s
+poetry run golem-provider config monitor --enable true --interval 30 --min-remaining 3600
+
+# Enable auto-withdraw every 15 minutes when >= 1e15 wei
+poetry run golem-provider config withdraw --enable true --interval 900 --min-wei 1000000000000000
+```
+
 ### Resource Advertisement Flow
 
 ```mermaid
