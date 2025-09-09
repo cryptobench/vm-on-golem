@@ -1,0 +1,9 @@
+[run]
+omit =
+    discovery-server/discovery/main.py
+    */discovery/main.py
+
+[report]
+omit =
+    discovery-server/discovery/main.py
+    */discovery/main.py

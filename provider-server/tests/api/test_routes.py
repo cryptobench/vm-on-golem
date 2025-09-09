@@ -181,6 +181,75 @@ def test_list_vms_service_exception(client: TestClient, mock_vm_service: VMServi
     assert response.status_code == 500
     assert response.json()["detail"] == "An unexpected error occurred"
 
+def test_list_vms_multipass_error(client: TestClient, mock_vm_service: VMService):
+    # Arrange
+    from provider.vm.multipass_adapter import MultipassError
+    mock_vm_service.list_vms = AsyncMock(side_effect=MultipassError("mp failed"))
+
+    # Act
+    response = client.get("/api/v1/vms")
+
+    # Assert
+    assert response.status_code == 500
+
+def test_get_vm_status_multipass_error(client: TestClient, mock_vm_service: VMService):
+    # Arrange
+    from provider.vm.multipass_adapter import MultipassError
+    mock_vm_service.get_vm_status = AsyncMock(side_effect=MultipassError("mp failed"))
+
+    # Act
+    response = client.get("/api/v1/vms/test-vm")
+
+    # Assert
+    assert response.status_code == 500
+
+def test_stop_vm_multipass_error(client: TestClient, mock_vm_service: VMService):
+    # Arrange
+    from provider.vm.multipass_adapter import MultipassError
+    mock_vm_service.stop_vm = AsyncMock(side_effect=MultipassError("mp failed"))
+
+    # Act
+    response = client.post("/api/v1/vms/test-vm/stop")
+
+    # Assert
+    assert response.status_code == 500
+
+def test_delete_vm_multipass_error(client: TestClient, mock_vm_service: VMService):
+    # Arrange
+    from provider.vm.multipass_adapter import MultipassError
+    mock_vm_service.delete_vm = AsyncMock(side_effect=MultipassError("mp failed"))
+
+    # Act
+    response = client.delete("/api/v1/vms/test-vm")
+
+    # Assert
+    assert response.status_code == 500
+
+def test_delete_vm_warns_on_stream_remove_failure(client: TestClient, mock_vm_service: VMService):
+    # Arrange
+    mock_vm_service.delete_vm = AsyncMock()
+    # Inject a stream_map that raises on remove
+    class BadMap:
+        async def remove(self, *_):
+            raise RuntimeError("remove failed")
+    app.container.stream_map.override(BadMap())
+
+    # Act
+    response = client.delete("/api/v1/vms/test-vm")
+
+    # Assert
+    assert response.status_code == 200
+
+def test_stop_vm_generic_exception(client: TestClient, mock_vm_service: VMService):
+    # Arrange
+    mock_vm_service.stop_vm = AsyncMock(side_effect=Exception("boom"))
+
+    # Act
+    response = client.post("/api/v1/vms/test-vm/stop")
+
+    # Assert
+    assert response.status_code == 500
+
 @pytest.mark.parametrize("payload", [
     {"name": "test-vm", "ssh_key": "ssh-rsa AAA...", "resources": {"cpu": -1, "memory": 2, "storage": 20}},
     {"name": "test-vm", "ssh_key": "ssh-rsa AAA...", "resources": {"cpu": 2, "memory": -1, "storage": 20}},
