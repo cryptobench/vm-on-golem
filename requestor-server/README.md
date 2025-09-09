@@ -132,6 +132,7 @@ Environment (env prefix `GOLEM_REQUESTOR_`):
 - `stream_payment_address` — StreamPayment address (fallback if provider doesn’t advertise)
 - `glm_token_address` — GLM ERC20 address (fallback if provider doesn’t advertise)
 - `provider_eth_address` — optional dev helper; in production always use `/provider/info`
+- `network` — Target network for discovery filtering: `testnet` (default) or `mainnet`
 
 Efficiency tips:
 
@@ -178,6 +179,27 @@ Alternatively, you can prepend the environment variables directly to the command
 ```bash
 GOLEM_REQUESTOR_ENVIRONMENT="development" GOLEM_REQUESTOR_FORCE_LOCALHOST="true" poetry run golem vm providers
 ```
+
+### Mode vs. Network
+
+- Development Mode (`GOLEM_REQUESTOR_ENVIRONMENT=development`)
+  - Improves local workflows: prefixes central discovery URL with `DEVMODE-` and, when using the central driver, maps provider IPs to `localhost` for easier testing.
+  - Does not determine chain selection.
+
+- Network Selection (`--network` or `GOLEM_REQUESTOR_NETWORK`)
+  - Filters Golem Base discovery results by `golem_network=testnet|mainnet`.
+  - Combine with the appropriate RPC envs (`GOLEM_REQUESTOR_GOLEM_BASE_RPC_URL`, `GOLEM_REQUESTOR_GOLEM_BASE_WS_URL`) and any contract addresses.
+  - Independent from dev ergonomics.
+
+Examples:
+- List providers on mainnet without changing env:
+  ```bash
+  poetry run golem vm providers --network mainnet
+  ```
+- Create a VM while targeting testnet:
+  ```bash
+  poetry run golem vm create my-vm --provider-id 0xProvider --cpu 2 --memory 4 --storage 20 --network testnet
+  ```
 
 ## Usage
 
@@ -296,6 +318,7 @@ export GOLEM_REQUESTOR_DB_PATH="/path/to/database.db"
 # Environment Mode (defaults to "production")
 export GOLEM_REQUESTOR_ENVIRONMENT="development"  # Optional: Switch to development mode
 export GOLEM_REQUESTOR_FORCE_LOCALHOST="true"    # Optional: Force localhost in development mode
+export GOLEM_REQUESTOR_NETWORK="testnet"         # Or "mainnet"; filters Golem Base results by annotation
 ```
 
 2. Directory Structure:

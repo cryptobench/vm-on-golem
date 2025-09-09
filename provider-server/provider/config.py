@@ -52,6 +52,8 @@ class Settings(BaseSettings):
     PORT: int = 7466
     SKIP_PORT_VERIFICATION: bool = False
     ENVIRONMENT: str = "production"
+    # Logical network selector for annotation and client defaults
+    NETWORK: str = "mainnet"  # one of: "testnet", "mainnet"
 
     @property
     def DEV_MODE(self) -> bool:

@@ -93,6 +93,9 @@ class ProviderService:
         """Find providers using Golem Base."""
         try:
             query = 'golem_type="provider"'
+            # Filter by advertised network to avoid cross-network results
+            if config.network:
+                query += f' && golem_network="{config.network}"'
             if cpu:
                 query += f' && golem_cpu>={cpu}'
             if memory:

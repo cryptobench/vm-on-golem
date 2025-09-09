@@ -47,6 +47,11 @@ class RequestorConfig(BaseSettings):
         default="production",
         description="Environment mode: 'development' or 'production'"
     )
+    # Network (for discovery filtering and defaults)
+    network: str = Field(
+        default="mainnet",
+        description="Target network: 'testnet' or 'mainnet'"
+    )
     
     # Development Settings
     force_localhost: bool = Field(

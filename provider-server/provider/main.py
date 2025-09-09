@@ -142,14 +142,14 @@ def main(
     pass
 
 @cli.command()
-def start(no_verify_port: bool = typer.Option(False, "--no-verify-port", help="Skip provider port verification.")):
+def start(
+    no_verify_port: bool = typer.Option(False, "--no-verify-port", help="Skip provider port verification."),
+    network: str = typer.Option(None, "--network", help="Target network: 'testnet' or 'mainnet' (overrides env)")
+):
     """Start the provider server."""
-    run_server(dev_mode=False, no_verify_port=no_verify_port)
+    run_server(dev_mode=False, no_verify_port=no_verify_port, network=network)
 
-@cli.command()
-def dev(no_verify_port: bool = typer.Option(True, "--no-verify-port", help="Skip provider port verification.")):
-    """Start the provider server in development mode."""
-    run_server(dev_mode=True, no_verify_port=no_verify_port)
+# Removed separate 'dev' command; use environment GOLEM_PROVIDER_ENVIRONMENT=development instead.
 
 def _env_path_for(dev_mode: Optional[bool]) -> str:
     from pathlib import Path
@@ -209,22 +209,35 @@ def _print_pricing_examples(glm_usd):
             f"- {name} ({res.cpu}C, {res.memory}GB RAM, {res.storage}GB Disk): ~{usd_str} per month (~{glm_str})"
         )
 
-def run_server(dev_mode: bool, no_verify_port: bool):
+def run_server(dev_mode: bool | None = None, no_verify_port: bool = False, network: str | None = None):
     """Helper to run the uvicorn server."""
     import sys
     from pathlib import Path
     from dotenv import load_dotenv
     import uvicorn
-    # Load appropriate .env file
+    # Decide dev mode from explicit arg or environment
+    if dev_mode is None:
+        dev_mode = os.environ.get("GOLEM_PROVIDER_ENVIRONMENT", "").lower() == "development"
+
+    # Load appropriate .env file based on mode
     env_file = ".env.dev" if dev_mode else ".env"
     env_path = Path(__file__).parent.parent / env_file
     load_dotenv(dotenv_path=env_path)
+
+    # Apply network override early (affects settings and annotations)
+    if network:
+        os.environ["GOLEM_PROVIDER_NETWORK"] = network
     
     # The logic for setting the public IP in dev mode is now handled in config.py
     # The following lines are no longer needed and have been removed.
 
     # Import settings after loading env
     from .config import settings
+    if network:
+        try:
+            settings.NETWORK = network
+        except Exception:
+            pass
 
     # Configure logging with debug mode
     logger = setup_logger(__name__, debug=dev_mode)
@@ -235,6 +248,8 @@ def run_server(dev_mode: bool, no_verify_port: bool):
         for key, value in os.environ.items():
             if key.startswith('GOLEM_PROVIDER_'):
                 logger.info(f"{key}={value}")
+        if network:
+            logger.info(f"Overridden network: {network}")
 
         # Check requirements
         if not check_requirements():
@@ -257,7 +272,7 @@ def run_server(dev_mode: bool, no_verify_port: bool):
             "provider:app",
             host=settings.HOST,
             port=settings.PORT,
-            reload=settings.DEBUG,
+            reload=dev_mode,
             log_level="debug" if dev_mode else "info",
             log_config=log_config,
             timeout_keep_alive=60,  # Increase keep-alive timeout

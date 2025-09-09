@@ -1,4 +1,4 @@
-.PHONY: install test start lock
+.PHONY: install test start lock start-testnet start-mainnet
 
 install: lock
 	poetry -C discovery-server install
@@ -24,7 +24,21 @@ test:
 
 start:
 	@set -e; \
-	poetry -C discovery-server run golem-discovery & \
-	poetry -C provider-server run dev & \
-	poetry -C requestor-server run golem server api --reload & \
+	GOLEM_PROVIDER_ENVIRONMENT=development poetry -C discovery-server run golem-discovery & \
+	GOLEM_PROVIDER_ENVIRONMENT=development poetry -C provider-server run golem-provider start --network testnet & \
+	GOLEM_REQUESTOR_ENVIRONMENT=development poetry -C requestor-server run golem server api --reload & \
+	wait
+
+start-testnet:
+	@set -e; \
+	GOLEM_PROVIDER_NETWORK=testnet GOLEM_PROVIDER_ENVIRONMENT=development poetry -C discovery-server run golem-discovery & \
+	GOLEM_PROVIDER_NETWORK=testnet GOLEM_PROVIDER_ENVIRONMENT=development poetry -C provider-server run golem-provider start --network testnet & \
+	GOLEM_REQUESTOR_NETWORK=testnet GOLEM_REQUESTOR_ENVIRONMENT=development poetry -C requestor-server run golem server api --reload & \
+	wait
+
+start-mainnet:
+	@set -e; \
+	GOLEM_PROVIDER_NETWORK=mainnet GOLEM_PROVIDER_ENVIRONMENT=production poetry -C discovery-server run golem-discovery & \
+	GOLEM_PROVIDER_NETWORK=mainnet GOLEM_PROVIDER_ENVIRONMENT=production poetry -C provider-server run golem-provider start & \
+	GOLEM_REQUESTOR_NETWORK=mainnet GOLEM_REQUESTOR_ENVIRONMENT=production poetry -C requestor-server run golem server api --reload & \
 	wait
