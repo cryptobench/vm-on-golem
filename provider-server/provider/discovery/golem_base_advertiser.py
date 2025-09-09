@@ -64,6 +64,7 @@ class GolemBaseAdvertiser(Advertiser):
         try:
             existing_keys = await get_provider_entity_keys(self.client, settings.PROVIDER_ID)
 
+            # String annotations (metadata + prices as strings; on-chain numeric annotations must be ints)
             string_annotations = [
                 Annotation(key="golem_type", value="provider"),
                 Annotation(key="golem_network", value=settings.NETWORK),
@@ -72,17 +73,19 @@ class GolemBaseAdvertiser(Advertiser):
                 Annotation(key="golem_country", value=settings.PROVIDER_COUNTRY),
                 Annotation(key="golem_provider_name", value=settings.PROVIDER_NAME),
                 Annotation(key="golem_price_currency", value="USD/GLM"),
+                # Prices must be strings to avoid RLP sedes errors (ints only allowed for numeric annotations)
+                Annotation(key="golem_price_usd_core_month", value=str(float(settings.PRICE_USD_PER_CORE_MONTH))),
+                Annotation(key="golem_price_usd_ram_gb_month", value=str(float(settings.PRICE_USD_PER_GB_RAM_MONTH))),
+                Annotation(key="golem_price_usd_storage_gb_month", value=str(float(settings.PRICE_USD_PER_GB_STORAGE_MONTH))),
+                Annotation(key="golem_price_glm_core_month", value=str(float(settings.PRICE_GLM_PER_CORE_MONTH))),
+                Annotation(key="golem_price_glm_ram_gb_month", value=str(float(settings.PRICE_GLM_PER_GB_RAM_MONTH))),
+                Annotation(key="golem_price_glm_storage_gb_month", value=str(float(settings.PRICE_GLM_PER_GB_STORAGE_MONTH))),
             ]
+            # Numeric annotations: strictly integers
             numeric_annotations = [
                 Annotation(key="golem_cpu", value=resources["cpu"]),
                 Annotation(key="golem_memory", value=resources["memory"]),
                 Annotation(key="golem_storage", value=resources["storage"]),
-                Annotation(key="golem_price_usd_core_month", value=float(settings.PRICE_USD_PER_CORE_MONTH)),
-                Annotation(key="golem_price_usd_ram_gb_month", value=float(settings.PRICE_USD_PER_GB_RAM_MONTH)),
-                Annotation(key="golem_price_usd_storage_gb_month", value=float(settings.PRICE_USD_PER_GB_STORAGE_MONTH)),
-                Annotation(key="golem_price_glm_core_month", value=float(settings.PRICE_GLM_PER_CORE_MONTH)),
-                Annotation(key="golem_price_glm_ram_gb_month", value=float(settings.PRICE_GLM_PER_GB_RAM_MONTH)),
-                Annotation(key="golem_price_glm_storage_gb_month", value=float(settings.PRICE_GLM_PER_GB_STORAGE_MONTH)),
             ]
 
             if len(existing_keys) > 1:
