@@ -133,22 +133,12 @@ cli.add_typer(pricing_app, name="pricing")
 cli.add_typer(wallet_app, name="wallet")
 cli.add_typer(streams_app, name="streams")
 
-def print_version(ctx: typer.Context, value: bool):
-    if not value:
-        return
-    try:
-        version = metadata.version('golem-vm-provider')
-    except metadata.PackageNotFoundError:
-        version = 'unknown'
-    print(f'Provider VM on Golem CLI version {version}')
-    raise typer.Exit()
-
 @cli.callback()
-def main(
-    version: bool = typer.Option(None, "--version", callback=print_version, is_eager=True, help="Show the version and exit.")
-):
+def main():
+    """VM on Golem Provider CLI"""
     ensure_config()
-    pass
+    # No-op callback to initialize config; avoid custom --version flag to keep help stable
+    return
 
 
 @wallet_app.command("faucet-l2")

@@ -340,6 +340,90 @@ def vm_stream():
     pass
 
 
+@vm_stream.command('list')
+@click.option('--json', 'as_json', is_flag=True, help='Output in JSON format')
+@async_command
+async def stream_list(as_json: bool):
+    """List payment stream status for all known VMs."""
+    try:
+        vms = await db_service.list_vms()
+        if not vms:
+            logger.warning("No VMs found in local database")
+            click.echo(json.dumps({"streams": []}, indent=2) if as_json else "No VMs found.")
+            return {"streams": []}
+
+        results = []
+        for vm in vms:
+            item: dict = {
+                "name": vm.get("name"),
+                "provider_ip": vm.get("provider_ip"),
+                "stream_id": None,
+                "verified": False,
+                "reason": None,
+                "computed": {},
+                "error": None,
+            }
+            try:
+                provider_url = config.get_provider_url(vm['provider_ip'])
+                async with ProviderClient(provider_url) as client:
+                    status = await client.get_vm_stream_status(vm['vm_id'])
+                item.update({
+                    "stream_id": status.get("stream_id"),
+                    "verified": bool(status.get("verified")),
+                    "reason": status.get("reason"),
+                    "computed": status.get("computed", {}),
+                })
+            except Exception as e:
+                msg = str(e)
+                # Normalize common provider errors
+                if "no stream mapped" in msg.lower():
+                    item.update({
+                        "stream_id": None,
+                        "verified": False,
+                        "reason": "unmapped",
+                    })
+                else:
+                    item["error"] = msg
+            results.append(item)
+
+        out = {"streams": results}
+
+        if as_json:
+            click.echo(json.dumps(out, indent=2))
+        else:
+            # Render a concise table
+            headers = [
+                "VM",
+                "Stream ID",
+                "Verified",
+                "Reason",
+                "Remaining (s)",
+                "Withdrawable (wei)",
+            ]
+            rows = []
+            for r in results:
+                comp = r.get("computed") or {}
+                rows.append([
+                    r.get("name"),
+                    r.get("stream_id") if r.get("stream_id") is not None else "—",
+                    "✔" if r.get("verified") else "✖",
+                    r.get("reason") or ("error: " + r.get("error") if r.get("error") else ""),
+                    comp.get("remaining_seconds", ""),
+                    comp.get("withdrawable_wei", ""),
+                ])
+            click.echo("\n" + "─" * 60)
+            click.echo(click.style(f"  💸 Streams ({len(results)} VMs)", fg="blue", bold=True))
+            click.echo("─" * 60)
+            click.echo("\n" + tabulate(rows, headers=[click.style(h, bold=True) for h in headers], tablefmt="grid"))
+            click.echo("\n" + "─" * 60)
+
+        return out
+
+    except Exception as e:
+        logger.error(f"Failed to list streams: {e}")
+        raise click.Abort()
+
+
 @vm_stream.command('open')
 @click.option('--provider-id', required=True, help='Provider ID to use')
 @click.option('--cpu', type=int, required=True, help='CPU cores for rate calc')
