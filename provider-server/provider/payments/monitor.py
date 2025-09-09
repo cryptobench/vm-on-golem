@@ -57,6 +57,10 @@ class StreamMonitor:
                             await self.vm_service.stop_vm(vm_id)
                         except Exception as e:
                             logger.warning(f"stop_vm failed for {vm_id}: {e}")
+                    else:
+                        logger.debug(
+                            f"VM {vm_id} stream {stream_id} healthy (remaining={remaining}s, threshold={self.settings.STREAM_MIN_REMAINING_SECONDS}s)"
+                        )
                     # Withdraw if enough vested and configured
                     if self.settings.STREAM_WITHDRAW_ENABLED and self.client:
                         vested = max(min(now, s["stopTime"]) - s["startTime"], 0) * s["ratePerSecond"]

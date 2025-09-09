@@ -5,11 +5,13 @@ from contextlib import asynccontextmanager
 from ..services.database_service import DatabaseService
 from ..config import config
 from ..errors import DatabaseError
+from ..payments.monitor import RequestorStreamMonitor
 
 logger = logging.getLogger(__name__)
 
 # Global variable to hold the database service instance
 db_service: DatabaseService = None
+stream_monitor: RequestorStreamMonitor | None = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -26,9 +28,15 @@ async def lifespan(app: FastAPI):
         logger.error(f"Failed to initialize database during startup: {e}")
         # Depending on requirements, you might want to prevent the app from starting
         # raise RuntimeError(f"Database initialization failed: {e}") from e
+    # Start requestor stream monitor
+    global stream_monitor
+    stream_monitor = RequestorStreamMonitor(db_service)
+    stream_monitor.start()
     yield
     # Shutdown: Cleanup (if needed)
     logger.info("Shutting down API.")
+    if stream_monitor:
+        await stream_monitor.stop()
     # No explicit cleanup needed for aiosqlite connection usually
 
 app = FastAPI(lifespan=lifespan)

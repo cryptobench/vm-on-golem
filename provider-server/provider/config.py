@@ -150,11 +150,11 @@ class Settings(BaseSettings):
         description="Token address (0x0 means native ETH). Defaults from l2.json"
     )
     STREAM_MIN_REMAINING_SECONDS: int = Field(
-        default=3600,
+        default=0,
         description="Minimum remaining seconds required to keep a VM running"
     )
     STREAM_MONITOR_ENABLED: bool = Field(
-        default=False,
+        default=True,
         description="Enable background monitor to stop VMs when runway < threshold"
     )
     STREAM_WITHDRAW_ENABLED: bool = Field(
@@ -162,7 +162,7 @@ class Settings(BaseSettings):
         description="Enable background withdrawals for active streams"
     )
     STREAM_MONITOR_INTERVAL_SECONDS: int = Field(
-        default=60,
+        default=30,
         description="How frequently to check stream runway"
     )
     STREAM_WITHDRAW_INTERVAL_SECONDS: int = Field(

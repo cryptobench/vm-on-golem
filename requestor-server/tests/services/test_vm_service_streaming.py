@@ -64,10 +64,10 @@ async def test_create_vm_preserves_passed_stream_id_and_withdraws(monkeypatch):
     assert vm['config']['stream_id'] == 42
     assert chain.created == []
 
-    # stop should withdraw
+    # stop should terminate stream now (agreement end on stop)
     await svc.stop_vm("n")
-    assert chain.withdrawn == [42]
-
-    # destroy should terminate
-    await svc.destroy_vm("n")
     assert chain.terminated == [42]
+
+    # destroy should terminate again (best-effort, may repeat)
+    await svc.destroy_vm("n")
+    assert chain.terminated == [42, 42]

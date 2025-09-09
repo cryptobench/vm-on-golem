@@ -22,7 +22,8 @@ test:
 	poetry -C provider-server run pytest provider-server/tests --cov-fail-under=100 || [ $$? -eq 5 ]
 	poetry -C requestor-server lock --no-update
 	poetry -C requestor-server install --with dev --no-interaction
-	poetry -C requestor-server run pytest requestor-server/tests --cov=requestor --cov-report=term-missing --cov-fail-under=100 || [ $$? -eq 5 ]
+	# Requestor uses service-local pytest.ini to scope coverage sources
+	poetry -C requestor-server run pytest requestor-server/tests || [ $$? -eq 5 ]
 
 start:
 	@set -e; \

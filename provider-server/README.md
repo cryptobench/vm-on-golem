@@ -202,9 +202,9 @@ Enable on‑chain stream‑gated rentals funded in native ETH. By default, the p
 
 Optional background automation (all disabled by default):
 
-- `STREAM_MIN_REMAINING_SECONDS` — minimum remaining runway to keep a VM running (default 3600)
-- `STREAM_MONITOR_ENABLED` — stop VMs when remaining runway < threshold (default false)
-- `STREAM_MONITOR_INTERVAL_SECONDS` — how frequently to check runway (default 60)
+- `STREAM_MIN_REMAINING_SECONDS` — minimum remaining runway to keep a VM running (default 0)
+- `STREAM_MONITOR_ENABLED` — stop VMs when remaining runway < threshold (default true)
+- `STREAM_MONITOR_INTERVAL_SECONDS` — how frequently to check runway (default 30)
 - `STREAM_WITHDRAW_ENABLED` — periodically withdraw vested funds (default false)
 - `STREAM_WITHDRAW_INTERVAL_SECONDS` — how often to attempt withdrawals (default 1800)
 - `STREAM_MIN_WITHDRAW_WEI` — only withdraw when >= this amount (gas‑aware)
