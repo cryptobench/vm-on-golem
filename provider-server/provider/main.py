@@ -18,7 +18,12 @@ logger = setup_logger(__name__)
 
 app = FastAPI(title="VM on Golem Provider")
 container = Container()
-container.config.from_pydantic(settings)
+# Load configuration using a dict to avoid version-specific adapters
+try:
+    container.config.from_dict(settings.model_dump())
+except Exception:
+    # Fallback for environments without pydantic v2 model_dump
+    container.config.from_pydantic(settings)
 app.container = container
 container.wire(modules=[".api.routes"])
 

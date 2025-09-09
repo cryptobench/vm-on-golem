@@ -119,6 +119,77 @@ async def test_delete_vm_does_not_exist(vm_service, mock_vm_provider):
     # Assert
     mock_vm_provider.delete_vm.assert_not_awaited()
 
+
+@pytest.mark.asyncio
+async def test_delete_vm_no_mapping_returns_early(vm_service, mock_vm_provider):
+    # No mapping found -> early return and no provider calls
+    vm_service.name_mapper.get_multipass_name = AsyncMock(return_value=None)
+    await vm_service.delete_vm("ghost")
+    mock_vm_provider.get_vm_status.assert_not_awaited()
+    mock_vm_provider.delete_vm.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_delete_vm_blockchain_try_except_is_noop(vm_service, mock_vm_provider):
+    # Exercise the optional blockchain_client try/except path by raising on truthiness
+    class BadBC:
+        def __bool__(self):
+            raise RuntimeError("bc boom")
+
+    vm_service.blockchain_client = BadBC()
+    vm_info = VMInfo(id="x", name="x", status=VMStatus.RUNNING, resources=VMResources(cpu=1, memory=1, storage=10))
+    mock_vm_provider.get_vm_status.return_value = vm_info
+    await vm_service.delete_vm("x")
+    mock_vm_provider.delete_vm.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_stop_vm_blockchain_try_except_is_noop(vm_service, mock_vm_provider):
+    class BadBC:
+        def __bool__(self):
+            raise RuntimeError("bc boom")
+
+    vm_service.blockchain_client = BadBC()
+    vm_service.name_mapper.get_multipass_name = AsyncMock(return_value="m-x")
+    vm_info = VMInfo(id="x", name="x", status=VMStatus.STOPPED, resources=VMResources(cpu=1, memory=1, storage=10))
+    mock_vm_provider.stop_vm = AsyncMock(return_value=vm_info)
+    out = await vm_service.stop_vm("x")
+    assert out is vm_info
+
+
+@pytest.mark.asyncio
+async def test_delete_vm_blockchain_truthy_noop(vm_service, mock_vm_provider):
+    # Truthy blockchain client should go through the no-op pass branch
+    vm_service.blockchain_client = object()
+    vm_info = VMInfo(id="y", name="y", status=VMStatus.RUNNING, resources=VMResources(cpu=1, memory=1, storage=10))
+    mock_vm_provider.get_vm_status.return_value = vm_info
+    await vm_service.delete_vm("y")
+    mock_vm_provider.delete_vm.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_stop_vm_blockchain_truthy_noop(vm_service, mock_vm_provider):
+    vm_service.blockchain_client = object()
+    vm_service.name_mapper.get_multipass_name = AsyncMock(return_value="m-y")
+    vm_info = VMInfo(id="y", name="y", status=VMStatus.STOPPED, resources=VMResources(cpu=1, memory=1, storage=10))
+    mock_vm_provider.stop_vm = AsyncMock(return_value=vm_info)
+    out = await vm_service.stop_vm("y")
+    assert out is vm_info
+
+
+@pytest.mark.asyncio
+async def test_get_all_vms_resources(vm_service, mock_vm_provider):
+    mock_vm_provider.get_all_vms_resources = AsyncMock(return_value={"id": VMResources(cpu=1, memory=1, storage=10)})
+    res = await vm_service.get_all_vms_resources()
+    assert "id" in res and res["id"].cpu == 1
+
+
+@pytest.mark.asyncio
+async def test_get_vm_status_no_mapping_raises(vm_service, mock_vm_provider):
+    vm_service.name_mapper.get_multipass_name = AsyncMock(return_value=None)
+    with pytest.raises(VMNotFoundError):
+        await vm_service.get_vm_status("ghost")
+
 @pytest.mark.asyncio
 async def test_delete_vm_provider_fails(vm_service, mock_vm_provider):
     # Arrange

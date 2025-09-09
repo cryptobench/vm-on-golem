@@ -1,0 +1,129 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.11.13, pytest-8.4.2, pluggy-1.6.0
+rootdir: /Users/golemgrid/Documents/GitHub.nosync/vm-on-golem/provider-server
+configfile: pytest.ini
+plugins: asyncio-1.1.0, mock-3.15.0, anyio-4.10.0, cov-3.0.0
+asyncio: mode=Mode.AUTO, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 96 items
+
+tests/api/test_access_and_streams.py ..........                          [ 10%]
+tests/api/test_provider_info.py .                                        [ 11%]
+tests/api/test_routes.py .......................                         [ 35%]
+tests/api/test_stream_gating.py ........                                 [ 43%]
+tests/cli/test_pricing_cli.py ....                                       [ 47%]
+tests/discovery/test_advertisers.py ..                                   [ 50%]
+tests/payments/test_blockchain_client_signed_tx_fields.py ..             [ 52%]
+tests/payments/test_monitor.py ..                                        [ 54%]
+tests/security/test_faucet.py .....                                      [ 59%]
+tests/utils/test_pricing.py ....                                         [ 63%]
+tests/utils/test_pricing_updater.py .                                    [ 64%]
+tests/vm/test_multipass_adapter.py ....................                  [ 85%]
+tests/vm/test_vm_service.py ..............                               [100%]
+
+=============================== warnings summary ===============================
+../../../../Library/Caches/pypoetry/virtualenvs/golem-vm-provider-aLYIT_c1-py3.11/lib/python3.11/site-packages/pytest_cov/plugin.py:256
+  /Users/golemgrid/Library/Caches/pypoetry/virtualenvs/golem-vm-provider-aLYIT_c1-py3.11/lib/python3.11/site-packages/pytest_cov/plugin.py:256: PytestDeprecationWarning: The hookimpl CovPlugin.pytest_configure_node uses old-style configuration options (marks or attributes).
+  Please use the pytest.hookimpl(optionalhook=True) decorator instead
+   to configure the hooks.
+   See https://docs.pytest.org/en/latest/deprecations.html#configuring-hook-specs-impls-using-markers
+    def pytest_configure_node(self, node):
+
+../../../../Library/Caches/pypoetry/virtualenvs/golem-vm-provider-aLYIT_c1-py3.11/lib/python3.11/site-packages/pytest_cov/plugin.py:265
+  /Users/golemgrid/Library/Caches/pypoetry/virtualenvs/golem-vm-provider-aLYIT_c1-py3.11/lib/python3.11/site-packages/pytest_cov/plugin.py:265: PytestDeprecationWarning: The hookimpl CovPlugin.pytest_testnodedown uses old-style configuration options (marks or attributes).
+  Please use the pytest.hookimpl(optionalhook=True) decorator instead
+   to configure the hooks.
+   See https://docs.pytest.org/en/latest/deprecations.html#configuring-hook-specs-impls-using-markers
+    def pytest_testnodedown(self, node, error):
+
+../../../../Library/Caches/pypoetry/virtualenvs/golem-vm-provider-aLYIT_c1-py3.11/lib/python3.11/site-packages/fastapi/openapi/models.py:55
+  /Users/golemgrid/Library/Caches/pypoetry/virtualenvs/golem-vm-provider-aLYIT_c1-py3.11/lib/python3.11/site-packages/fastapi/openapi/models.py:55: DeprecationWarning: `general_plain_validator_function` is deprecated, use `with_info_plain_validator_function` instead.
+    return general_plain_validator_function(cls._validate)
+
+../../../../Library/Caches/pypoetry/virtualenvs/golem-vm-provider-aLYIT_c1-py3.11/lib/python3.11/site-packages/pydantic_core/core_schema.py:4298
+  /Users/golemgrid/Library/Caches/pypoetry/virtualenvs/golem-vm-provider-aLYIT_c1-py3.11/lib/python3.11/site-packages/pydantic_core/core_schema.py:4298: DeprecationWarning: `general_plain_validator_function` is deprecated, use `with_info_plain_validator_function` instead.
+    warnings.warn(
+
+../../../../Library/Caches/pypoetry/virtualenvs/golem-vm-provider-aLYIT_c1-py3.11/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+../../../../Library/Caches/pypoetry/virtualenvs/golem-vm-provider-aLYIT_c1-py3.11/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+../../../../Library/Caches/pypoetry/virtualenvs/golem-vm-provider-aLYIT_c1-py3.11/lib/python3.11/site-packages/pydantic/_internal/_config.py:323
+  /Users/golemgrid/Library/Caches/pypoetry/virtualenvs/golem-vm-provider-aLYIT_c1-py3.11/lib/python3.11/site-packages/pydantic/_internal/_config.py:323: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.11/migration/
+    warnings.warn(DEPRECATION_MESSAGE, DeprecationWarning)
+
+../../../../Library/Caches/pypoetry/virtualenvs/golem-vm-provider-aLYIT_c1-py3.11/lib/python3.11/site-packages/pydantic/_internal/_generate_schema.py:298
+../../../../Library/Caches/pypoetry/virtualenvs/golem-vm-provider-aLYIT_c1-py3.11/lib/python3.11/site-packages/pydantic/_internal/_generate_schema.py:298
+../../../../Library/Caches/pypoetry/virtualenvs/golem-vm-provider-aLYIT_c1-py3.11/lib/python3.11/site-packages/pydantic/_internal/_generate_schema.py:298
+../../../../Library/Caches/pypoetry/virtualenvs/golem-vm-provider-aLYIT_c1-py3.11/lib/python3.11/site-packages/pydantic/_internal/_generate_schema.py:298
+  /Users/golemgrid/Library/Caches/pypoetry/virtualenvs/golem-vm-provider-aLYIT_c1-py3.11/lib/python3.11/site-packages/pydantic/_internal/_generate_schema.py:298: PydanticDeprecatedSince20: `json_encoders` is deprecated. See https://docs.pydantic.dev/2.11/concepts/serialization/#custom-serializers for alternatives. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.11/migration/
+    warnings.warn(
+
+../../../../Library/Caches/pypoetry/virtualenvs/golem-vm-provider-aLYIT_c1-py3.11/lib/python3.11/site-packages/websockets/legacy/__init__.py:6
+  /Users/golemgrid/Library/Caches/pypoetry/virtualenvs/golem-vm-provider-aLYIT_c1-py3.11/lib/python3.11/site-packages/websockets/legacy/__init__.py:6: DeprecationWarning: websockets.legacy is deprecated; see https://websockets.readthedocs.io/en/stable/howto/upgrade.html for upgrade instructions
+    warnings.warn(  # deprecated in 14.0 - 2024-11-09
+
+../../../../Library/Caches/pypoetry/virtualenvs/golem-vm-provider-aLYIT_c1-py3.11/lib/python3.11/site-packages/typer/completion.py:121
+  /Users/golemgrid/Library/Caches/pypoetry/virtualenvs/golem-vm-provider-aLYIT_c1-py3.11/lib/python3.11/site-packages/typer/completion.py:121: DeprecationWarning: 'BaseCommand' is deprecated and will be removed in Click 9.0. Use 'Command' instead.
+    cli: click.BaseCommand,
+
+tests/cli/test_pricing_cli.py: 125 warnings
+  /Users/golemgrid/Library/Caches/pypoetry/virtualenvs/golem-vm-provider-aLYIT_c1-py3.11/lib/python3.11/site-packages/typer/utils.py:24: DeprecationWarning: The '__version__' attribute is deprecated and will be removed in Click 9.1. Use feature detection or 'importlib.metadata.version("click")' instead.
+    return int(click.__version__.split(".")[0])
+
+tests/vm/test_multipass_adapter.py::test_create_vm_happy_path
+tests/vm/test_multipass_adapter.py::test_get_vm_status_happy_path
+tests/vm/test_multipass_adapter.py::test_get_vm_status_not_running
+tests/vm/test_multipass_adapter.py::test_get_vm_status_no_ipv4
+  /Users/golemgrid/Documents/GitHub.nosync/vm-on-golem/provider-server/provider/vm/multipass_adapter.py:208: PydanticDeprecatedSince20: The `dict` method is deprecated; use `model_dump` instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.11/migration/
+    logger.debug(f"Constructed VMInfo object: {vm_info_obj.dict()}")
+
+tests/vm/test_multipass_adapter.py::test_create_vm_happy_path
+  /Users/golemgrid/Documents/GitHub.nosync/vm-on-golem/provider-server/provider/vm/multipass_adapter.py:138: PydanticDeprecatedSince20: The `dict` method is deprecated; use `model_dump` instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.11/migration/
+    logger.info(f"Successfully created VM: {vm_info.dict()}")
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+
+--------- coverage: platform darwin, python 3.11.13-final-0 ----------
+Name                                          Stmts   Miss  Cover   Missing
+---------------------------------------------------------------------------
+provider/__init__.py                              2      0   100%
+provider/api/__init__.py                          3      0   100%
+provider/api/models.py                           96     11    89%   29, 45-59
+provider/api/routes.py                          197      0   100%
+provider/config.py                              389    162    58%   26-27, 30-31, 37-38, 41, 45, 81-84, 94-97, 106, 113, 124, 202, 215, 221-226, 234-236, 243, 245, 253, 255, 282-283, 286-288, 294-310, 314, 318-322, 335-348, 356-358, 363-365, 375-377, 383-385, 430-432, 436-530, 547-549, 554-556, 564-587, 590-597
+provider/container.py                            33      0   100%
+provider/discovery/__init__.py                    5      0   100%
+provider/discovery/advertiser.py                 92     49    47%   19, 24, 29, 34, 53-61, 65-70, 74-77, 87-92, 103, 108-109, 113-115, 141-142, 149-151, 161-180
+provider/discovery/golem_base_advertiser.py      74     39    47%   23-30, 36-41, 45-47, 52, 56-57, 61-62, 92-95, 98-125, 130-131, 146
+provider/discovery/golem_base_utils.py            7      3    57%   7-10
+provider/discovery/multi_advertiser.py           18      6    67%   14-15, 18, 21, 24, 27
+provider/discovery/resource_monitor.py           20      3    85%   24, 29, 34
+provider/discovery/resource_tracker.py           66     42    36%   31-32, 40, 48-65, 69-88, 92, 96, 104-105, 114, 118-122, 130-152
+provider/discovery/service.py                    21     12    43%   11-12, 16-17, 21-24, 28-31
+provider/main.py                                323    194    40%   24-26, 36, 43, 60-61, 67-68, 80-86, 98-115, 124-126, 139-144, 157-193, 199-251, 257-295, 303, 308-310, 318, 327-336, 367-436, 439, 502-507
+provider/network/port_verifier.py               157    128    18%   50-105, 109-115, 129-230, 234-268, 280-310
+provider/payments/blockchain_service.py          58     23    60%   41, 44, 53-55, 59-60, 65-68, 81-94
+provider/payments/monitor.py                     59     18    69%   19-24, 27-32, 45-47, 58-59, 72-73, 76-77
+provider/payments/stream_map.py                  32     15    53%   15-16, 19-21, 24, 27-30, 33, 36-39
+provider/security/ethereum.py                    24     14    42%   12, 18-37
+provider/security/faucet.py                      80     28    65%   23-27, 39-41, 54, 60-61, 70, 84-88, 92, 96-100, 104-108
+provider/service.py                              56     44    21%   16-20, 24-66, 70-77, 81-86
+provider/utils/__init__.py                        0      0   100%
+provider/utils/ascii_art.py                      32     15    53%   31-32, 36-59
+provider/utils/logging.py                        28      1    96%   43
+provider/utils/port_display.py                  149    133    11%   28-32, 36-38, 47-53, 57-58, 66-91, 99-131, 141-164, 174-197, 207-259
+provider/utils/pricing.py                       102     32    69%   20, 24-39, 47, 84-85, 125, 153-155, 163-171
+provider/utils/retry.py                          49     15    69%   39-51, 80-91
+provider/utils/setup.py                          45     34    24%   20-45, 56-80, 89-94, 98-100
+provider/vm/__init__.py                           3      0   100%
+provider/vm/cloud_init.py                        57     20    65%   28-29, 32-34, 87, 90, 98, 113-124, 136-137
+provider/vm/models.py                           120     22    82%   35, 42, 48-54, 72-74, 79-81, 86-88, 106, 149, 153, 157, 161, 165, 169, 173, 177
+provider/vm/multipass.py                         15     15     0%   1-19
+provider/vm/multipass_adapter.py                144     26    82%   38-59, 76, 78-80, 93, 123, 134, 165-166, 188, 225-228, 233
+provider/vm/name_mapper.py                       52     27    48%   31-32, 41-45, 56, 67, 75-81, 85-100, 108
+provider/vm/port_manager.py                     156    114    27%   51, 69-71, 79-187, 199-203, 207-211, 215, 226-284, 292-296, 307, 311-314
+provider/vm/provider.py                          28      8    71%   13, 18, 23, 28, 33, 38, 43, 48
+provider/vm/proxy_manager.py                    205    165    20%   17-22, 26-27, 31-47, 51-55, 59-70, 76-77, 81, 85-87, 91-98, 111-114, 118-129, 133-142, 173, 177-216, 238-267, 271-296, 309-333, 341-349, 353, 357-378
+provider/vm/service.py                           73     11    85%   57-58, 68-70, 91-93, 104-105, 110
+---------------------------------------------------------------------------
+TOTAL                                          3070   1429    53%
+
+======================= 96 passed, 143 warnings in 1.15s =======================
