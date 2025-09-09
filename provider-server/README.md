@@ -191,13 +191,13 @@ GOLEM_PROVIDER_ADVERTISEMENT_INTERVAL=240
 GOLEM_PROVIDER_NETWORK="testnet"  # or "mainnet"
 ```
 
-### Streaming Payments (Polygon GLM)
+### Streaming Payments (Native ETH on L2)
 
-Enable on‑chain stream‑gated rentals by configuring the following (env prefix `GOLEM_PROVIDER_`):
+Enable on‑chain stream‑gated rentals funded in native ETH. Configure (env prefix `GOLEM_PROVIDER_`):
 
-- `POLYGON_RPC_URL` — Polygon PoS RPC URL (e.g., https://polygon-rpc.com)
+- `POLYGON_RPC_URL` — EVM RPC URL (default points to L2: https://l2.holesky.golemdb.io/rpc)
 - `STREAM_PAYMENT_ADDRESS` — StreamPayment contract address; if non‑zero, VM creation requires a valid `stream_id`
-- `GLM_TOKEN_ADDRESS` — GLM ERC20 address (for info endpoint)
+- `GLM_TOKEN_ADDRESS` — Token address; set to `0x0000000000000000000000000000000000000000` to indicate native ETH
 
 Optional background automation (all disabled by default):
 
@@ -210,7 +210,7 @@ Optional background automation (all disabled by default):
 
 Implementation notes:
 
-- The provider exposes `GET /api/v1/provider/info` returning `provider_id`, `stream_payment_address`, and `glm_token_address`. Requestors should prefer these values when opening streams.
+- The provider exposes `GET /api/v1/provider/info` returning `provider_id`, `stream_payment_address`, and `glm_token_address`. For ETH mode this field is the zero address (`0x000...000`). Requestors should prefer these values when opening streams.
 - On successful VM creation with a valid `stream_id`, the provider persists a VM→stream mapping in `streams.json`. This enables the background monitor to stop VMs with low remaining runway and to withdraw vested funds according to configured intervals.
 - When a VM is deleted, the VM→stream mapping is cleaned up.
 
@@ -277,7 +277,8 @@ Response:
 {
   "provider_id": "0xProviderEthereumAddress",
   "stream_payment_address": "0xStreamPayment",
-  "glm_token_address": "0xGLM"
+  "glm_token_address": "0x0000000000000000000000000000000000000000"  
+  
 }
 ```
 
@@ -321,6 +322,20 @@ The provider will:
 3. Start the proxy manager
 4. Begin resource advertisement
 5. Listen for VM requests
+
+### Faucet
+
+- L3 (Golem Base adverts): provider auto-requests funds on startup from `FAUCET_URL` (defaults to EthWarsaw Holesky) protected by CAPTCHA at `CAPTCHA_URL/05381a2cef5e`.
+- L2 (payments): Use the CLI to request native ETH:
+
+```bash
+poetry run golem-provider wallet faucet-l2
+```
+
+Defaults:
+- L2 faucet: `https://l2.holesky.golemdb.io/faucet`
+- CAPTCHA: `https://cap.gobas.me/05381a2cef5e`
+- Override with env: `GOLEM_PROVIDER_L2_FAUCET_URL`, `GOLEM_PROVIDER_L2_CAPTCHA_URL`, `GOLEM_PROVIDER_L2_CAPTCHA_API_KEY`.
 
 ### Resource Advertisement Flow
 

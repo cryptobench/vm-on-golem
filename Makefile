@@ -4,6 +4,7 @@ install: lock
 	poetry -C discovery-server install
 	poetry -C provider-server install
 	poetry -C requestor-server install
+	poetry -C shared-faucet install
 
 lock:
 	poetry -C discovery-server lock

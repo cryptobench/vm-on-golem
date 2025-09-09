@@ -25,9 +25,13 @@ class StreamPaymentClient:
         self.contract = self.web3.eth.contract(
             address=Web3.to_checksum_address(cfg.contract_address), abi=STREAM_PAYMENT_ABI
         )
-        self.erc20 = self.web3.eth.contract(
-            address=Web3.to_checksum_address(cfg.glm_token_address), abi=ERC20_ABI
-        )
+        self.token_address = Web3.to_checksum_address(cfg.glm_token_address)
+        self.native_eth = self.token_address.lower() == Web3.to_checksum_address("0x0000000000000000000000000000000000000000").lower()
+        self.erc20 = None
+        if not self.native_eth:
+            self.erc20 = self.web3.eth.contract(
+                address=self.token_address, abi=ERC20_ABI
+            )
 
     def _send(self, fn) -> Dict[str, Any]:
         base = {
@@ -69,27 +73,47 @@ class StreamPaymentClient:
         return {"transactionHash": tx_hash.hex(), "status": receipt.status, "logs": receipt.logs}
 
     def create_stream(self, provider_address: str, deposit_wei: int, rate_per_second_wei: int) -> int:
-        # 1) Approve deposit for the StreamPayment contract (only if needed)
-        try:
-            allowance = self.erc20.functions.allowance(self.account.address, self.contract.address).call()
-        except Exception:
-            allowance = 0
-        if int(allowance) < int(deposit_wei):
-            approve = self.erc20.functions.approve(self.contract.address, int(deposit_wei))
-            self._send(approve)
+        tx_value = None
+        token_param = self.token_address if not self.native_eth else Web3.to_checksum_address("0x0000000000000000000000000000000000000000")
 
-        # 2) Create stream
+        if not self.native_eth:
+            # Approve deposit for the StreamPayment contract (only if needed)
+            try:
+                allowance = self.erc20.functions.allowance(self.account.address, self.contract.address).call()
+            except Exception:
+                allowance = 0
+            if int(allowance) < int(deposit_wei):
+                approve = self.erc20.functions.approve(self.contract.address, int(deposit_wei))
+                self._send(approve)
+        else:
+            tx_value = int(deposit_wei)
+
+        # Create stream
         fn = self.contract.functions.createStream(
-            self.erc20.address,
+            token_param,
             Web3.to_checksum_address(provider_address),
             int(deposit_wei),
             int(rate_per_second_wei),
         )
-        receipt = self._send(fn)
+        # Include ETH value if native
+        if tx_value is not None:
+            # Build/send with value field
+            base = {
+                "from": self.account.address,
+                "nonce": self.web3.eth.get_transaction_count(self.account.address),
+                "value": tx_value,
+            }
+            tx = fn.build_transaction(base)
+            signed = self.account.sign_transaction(tx)
+            tx_hash = self.web3.eth.send_raw_transaction(signed.rawTransaction)
+            receipt = self.web3.eth.wait_for_transaction_receipt(tx_hash)
+            tx_receipt = {"transactionHash": tx_hash.hex(), "status": receipt.status, "logs": receipt.logs}
+        else:
+            tx_receipt = self._send(fn)
 
         # Try to parse StreamCreated event for streamId
         try:
-            for log in receipt["logs"]:
+            for log in tx_receipt["logs"]:
                 # very naive filter: topic0 = keccak256(StreamCreated(...))
                 # When ABI is attached to contract, use contract.events
                 ev = self.contract.events.StreamCreated().process_log(log)
@@ -110,15 +134,28 @@ class StreamPaymentClient:
         return receipt["transactionHash"]
 
     def top_up(self, stream_id: int, amount_wei: int) -> str:
-        # Approve first (only if needed)
-        try:
-            allowance = self.erc20.functions.allowance(self.account.address, self.contract.address).call()
-        except Exception:
-            allowance = 0
-        if int(allowance) < int(amount_wei):
-            approve = self.erc20.functions.approve(self.contract.address, int(amount_wei))
-            self._send(approve)
-        # Top up
-        fn = self.contract.functions.topUp(int(stream_id), int(amount_wei))
-        receipt = self._send(fn)
-        return receipt["transactionHash"]
+        if not self.native_eth:
+            # Approve first (only if needed)
+            try:
+                allowance = self.erc20.functions.allowance(self.account.address, self.contract.address).call()
+            except Exception:
+                allowance = 0
+            if int(allowance) < int(amount_wei):
+                approve = self.erc20.functions.approve(self.contract.address, int(amount_wei))
+                self._send(approve)
+            fn = self.contract.functions.topUp(int(stream_id), int(amount_wei))
+            receipt = self._send(fn)
+            return receipt["transactionHash"]
+        else:
+            # Native ETH mode: send value along with call
+            fn = self.contract.functions.topUp(int(stream_id), int(amount_wei))
+            base = {
+                "from": self.account.address,
+                "nonce": self.web3.eth.get_transaction_count(self.account.address),
+                "value": int(amount_wei),
+            }
+            tx = fn.build_transaction(base)
+            signed = self.account.sign_transaction(tx)
+            tx_hash = self.web3.eth.send_raw_transaction(signed.rawTransaction)
+            self.web3.eth.wait_for_transaction_receipt(tx_hash)
+            return tx_hash.hex()

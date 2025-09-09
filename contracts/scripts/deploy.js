@@ -2,10 +2,10 @@ const fs = require("fs");
 const path = require("path");
 
 async function main() {
-  const { ethers } = require("hardhat");
-  const glm = process.env.GLM_TOKEN_ADDRESS;
+  const hre = require("hardhat");
+  const { ethers, network } = hre;
+  const glm = process.env.GLM_TOKEN_ADDRESS || "0x0000000000000000000000000000000000000000";
   const oracle = process.env.ORACLE_ADDRESS || (await (await ethers.getSigners())[0].getAddress());
-  if (!glm) throw new Error("GLM_TOKEN_ADDRESS env var required");
 
   const StreamPayment = await ethers.getContractFactory("StreamPayment");
   const contract = await StreamPayment.deploy(oracle);
@@ -15,9 +15,10 @@ async function main() {
 
   const outDir = path.join(__dirname, "..", "deployments");
   fs.mkdirSync(outDir, { recursive: true });
-  const outFile = path.join(outDir, "polygon.json");
+  const netName = (network && network.name) ? network.name.toLowerCase() : (process.env.HARDHAT_NETWORK || "unknown");
+  const outFile = path.join(outDir, `${netName}.json`);
   const payload = {
-    network: "polygon",
+    network: netName,
     timestamp: new Date().toISOString(),
     StreamPayment: {
       address,
@@ -32,4 +33,3 @@ main().catch((e) => {
   console.error(e);
   process.exit(1);
 });
-

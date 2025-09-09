@@ -1,0 +1,18 @@
+[tool.poetry]
+name = "golem-faucet"
+version = "0.1.0"
+description = "Shared PoW faucet client for Golem environments"
+authors = ["VM on Golem Team <dev@golem.network>"]
+packages = [ { include = "golem_faucet" } ]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+httpx = ">=0.23,<1"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.2.0"
+pytest-asyncio = "^1.1.0"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"

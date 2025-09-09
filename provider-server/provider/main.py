@@ -122,7 +122,9 @@ except ImportError:
 
 cli = typer.Typer()
 pricing_app = typer.Typer(help="Configure USD pricing; auto-converts to GLM.")
+wallet_app = typer.Typer(help="Wallet utilities (funding, balance)")
 cli.add_typer(pricing_app, name="pricing")
+cli.add_typer(wallet_app, name="wallet")
 
 def print_version(ctx: typer.Context, value: bool):
     if not value:
@@ -140,6 +142,48 @@ def main(
 ):
     ensure_config()
     pass
+
+
+@wallet_app.command("faucet-l2")
+def wallet_faucet_l2():
+    """Request L2 faucet funds for the provider's payment address (native ETH)."""
+    from .config import settings
+    from golem_faucet import PowFaucetClient
+    from web3 import Web3
+    try:
+        addr = settings.PROVIDER_ID
+        faucet = PowFaucetClient(settings.L2_FAUCET_URL, settings.L2_CAPTCHA_URL, settings.L2_CAPTCHA_API_KEY)
+        # Check current L2 balance
+        w3 = Web3(Web3.HTTPProvider(settings.POLYGON_RPC_URL))
+        bal = 0.0
+        try:
+            bal = float(w3.from_wei(w3.eth.get_balance(Web3.to_checksum_address(addr)), 'ether'))
+        except Exception:
+            pass
+        if bal > 0.01:
+            print(f"Sufficient L2 funds ({bal} ETH); skipping faucet.")
+            return
+        async def _run():
+            chall = await faucet.get_challenge()
+            if not chall:
+                print("Failed to get challenge")
+                raise typer.Exit(code=1)
+            sols = []
+            for salt, target in chall.get('challenge') or []:
+                sols.append((salt, target, PowFaucetClient.solve_challenge(salt, target)))
+            redeemed = await faucet.redeem(chall.get('token'), sols)
+            if not redeemed:
+                print("Failed to redeem solutions")
+                raise typer.Exit(code=1)
+            tx = await faucet.request_funds(addr, redeemed)
+            if tx:
+                print(f"Faucet tx: {tx}")
+            else:
+                print("Faucet request failed")
+        asyncio.run(_run())
+    except Exception as e:
+        print(f"Error: {e}")
+        raise typer.Exit(code=1)
 
 @cli.command()
 def start(

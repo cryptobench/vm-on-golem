@@ -1,10 +1,9 @@
 import asyncio
-import hashlib
-import httpx
-from typing import Optional
+from typing import Optional, List, Tuple
 
 from golem_base_sdk import GolemBaseClient
 from provider.utils.logging import setup_logger
+from golem_faucet import PowFaucetClient
 
 logger = setup_logger(__name__)
 
@@ -13,11 +12,12 @@ class FaucetClient:
     """A client for interacting with a Proof of Work-protected faucet."""
 
     def __init__(self, faucet_url: str, captcha_url: str, captcha_api_key: str):
-        self.faucet_url = faucet_url
-        self.captcha_url = captcha_url
+        self.faucet_url = faucet_url.rstrip("/")
+        self.captcha_url = captcha_url.rstrip("/")
         self.captcha_api_key = captcha_api_key
-        self.api_endpoint = f"{faucet_url}/api"
+        self.api_endpoint = f"{self.faucet_url}/api"
         self.client: Optional[GolemBaseClient] = None
+        self._pow = PowFaucetClient(self.faucet_url, self.captcha_url, self.captcha_api_key)
 
     async def _ensure_client(self):
         if not self.client:
@@ -82,51 +82,27 @@ class FaucetClient:
     async def _get_challenge(self) -> Optional[dict]:
         """Get a PoW challenge from the faucet."""
         try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                url = f"{self.captcha_url}/{self.captcha_api_key}/api/challenge"
-                response = await client.post(url)
-                response.raise_for_status()
-                return response.json()
-        except httpx.HTTPStatusError as e:
-            logger.error(f"Failed to get PoW challenge: {e.response.text}")
+            return await self._pow.get_challenge()
+        except Exception as e:
+            logger.error(f"Failed to get PoW challenge: {e}")
             return None
 
     def _solve_challenge(self, salt: str, target: str) -> int:
         """Solve the PoW challenge."""
-        target_hash = bytes.fromhex(target)
-        nonce = 0
-        while True:
-            hasher = hashlib.sha256()
-            hasher.update(f"{salt}{nonce}".encode())
-            if hasher.digest().startswith(target_hash):
-                return nonce
-            nonce += 1
+        return PowFaucetClient.solve_challenge(salt, target)
 
     async def _redeem_solution(self, token: str, solutions: list) -> Optional[str]:
         """Redeem the PoW solution to get a CAPTCHA token."""
         try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                url = f"{self.captcha_url}/{self.captcha_api_key}/api/redeem"
-                response = await client.post(
-                    url,
-                    json={"token": token, "solutions": solutions}
-                )
-                response.raise_for_status()
-                return response.json().get("token")
-        except httpx.HTTPStatusError as e:
-            logger.error(f"Failed to redeem PoW solution: {e.response.text}")
+            return await self._pow.redeem(token, solutions)
+        except Exception as e:
+            logger.error(f"Failed to redeem PoW solution: {e}")
             return None
 
     async def _request_faucet(self, address: str, token: str) -> Optional[str]:
         """Request funds from the faucet with the CAPTCHA token."""
         try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                response = await client.post(
-                    f"{self.api_endpoint}/faucet",
-                    json={"address": address, "captchaToken": token}
-                )
-                response.raise_for_status()
-                return response.json().get("txHash")
-        except httpx.HTTPStatusError as e:
-            logger.error(f"Faucet request failed: {e.response.text}")
+            return await self._pow.request_funds(address, token)
+        except Exception as e:
+            logger.error(f"Faucet request failed: {e}")
             return None
