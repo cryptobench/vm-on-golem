@@ -17,6 +17,10 @@ class StreamMonitor:
 
     def start(self):
         if self.settings.STREAM_MONITOR_ENABLED or self.settings.STREAM_WITHDRAW_ENABLED:
+            logger.info(
+                f"⏱️ Stream monitor enabled (check={self.settings.STREAM_MONITOR_ENABLED}, withdraw={self.settings.STREAM_WITHDRAW_ENABLED}) "
+                f"interval={self.settings.STREAM_MONITOR_INTERVAL_SECONDS}s"
+            )
             self._task = asyncio.create_task(self._run(), name="stream-monitor")
 
     async def stop(self):
@@ -34,6 +38,7 @@ class StreamMonitor:
                 await asyncio.sleep(self.settings.STREAM_MONITOR_INTERVAL_SECONDS)
                 items = await self.stream_map.all_items()
                 now = int(self.reader.web3.eth.get_block("latest")["timestamp"]) if items else 0
+                logger.debug(f"stream monitor tick: {len(items)} streams, now={now}")
                 for vm_id, stream_id in items.items():
                     try:
                         s = self.reader.get_stream(stream_id)
@@ -42,6 +47,10 @@ class StreamMonitor:
                         continue
                     # Stop VM if remaining runway < threshold
                     remaining = max(s["stopTime"] - now, 0)
+                    logger.debug(
+                        f"stream {stream_id} for VM {vm_id}: start={s['startTime']} stop={s['stopTime']} "
+                        f"rate={s['ratePerSecond']} withdrawn={s['withdrawn']} halted={s['halted']} remaining={remaining}s"
+                    )
                     if self.settings.STREAM_MONITOR_ENABLED and remaining < self.settings.STREAM_MIN_REMAINING_SECONDS:
                         logger.info(f"Stopping VM {vm_id} due to low stream runway ({remaining}s)")
                         try:
@@ -52,6 +61,7 @@ class StreamMonitor:
                     if self.settings.STREAM_WITHDRAW_ENABLED and self.client:
                         vested = max(min(now, s["stopTime"]) - s["startTime"], 0) * s["ratePerSecond"]
                         withdrawable = max(vested - s["withdrawn"], 0)
+                        logger.debug(f"withdraw check stream {stream_id}: vested={vested} withdrawable={withdrawable}")
                         # Enforce a minimum interval between withdrawals
                         if withdrawable >= self.settings.STREAM_MIN_WITHDRAW_WEI and (
                             now - last_withdraw >= self.settings.STREAM_WITHDRAW_INTERVAL_SECONDS

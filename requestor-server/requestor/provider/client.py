@@ -103,3 +103,13 @@ class ProviderClient:
                 error_text = await response.text()
                 raise Exception(f"Failed to get VM access info: {error_text}")
             return await response.json()
+
+    async def get_vm_stream_status(self, vm_id: str) -> Dict:
+        """Get on-chain stream status for a VM from provider."""
+        async with self.session.get(
+            f"{self.provider_url}/api/v1/vms/{vm_id}/stream"
+        ) as response:
+            if not response.ok:
+                error_text = await response.text()
+                raise Exception(f"Failed to get VM stream status: {error_text}")
+            return await response.json()

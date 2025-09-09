@@ -117,6 +117,19 @@ poetry run golem vm stream topup --stream-id 123 --hours 3
 poetry run golem vm stream topup --stream-id 123 --glm 25.0
 ```
 
+- Check stream status via provider (by VM name recorded in your DB):
+
+```bash
+poetry run golem vm stream status my-vm
+# add --json for machine-readable output
+```
+
+- Inspect a stream directly on-chain:
+
+```bash
+poetry run golem vm stream inspect --stream-id 123
+```
+
 - Create a VM and attach an existing stream (no auto-streams are created by the requestor):
 
 ```bash
@@ -129,8 +142,9 @@ poetry run golem vm create my-vm \
 Environment (env prefix `GOLEM_REQUESTOR_`):
 
 - `polygon_rpc_url` — EVM RPC URL (default L2 RPC)
-- `stream_payment_address` — StreamPayment address (fallback if provider doesn’t advertise)
-- `glm_token_address` — Token address; set to zero address to use native ETH
+- `stream_payment_address` — StreamPayment address (defaults from `contracts/deployments/l2.json`; overridden by provider info)
+- `glm_token_address` — Token address (defaults from `contracts/deployments/l2.json`; zero address means native ETH)
+  - Optional override of deployments directory: set `GOLEM_DEPLOYMENTS_DIR` to a folder containing `l2.json`.
 - `provider_eth_address` — optional dev helper; in production always use `/provider/info`
 - `network` — Target network for discovery filtering: `testnet` (default) or `mainnet`
 

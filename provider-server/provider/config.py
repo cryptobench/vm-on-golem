@@ -1,4 +1,5 @@
 import os
+import json
 from pathlib import Path
 from typing import Optional
 import uuid
@@ -141,12 +142,12 @@ class Settings(BaseSettings):
         description="EVM RPC URL for streaming payments (L2 by default)"
     )
     STREAM_PAYMENT_ADDRESS: str = Field(
-        default="0x0000000000000000000000000000000000000000",
-        description="Deployed StreamPayment contract address"
+        default="",
+        description="Deployed StreamPayment contract address (defaults to contracts/deployments/l2.json)"
     )
     GLM_TOKEN_ADDRESS: str = Field(
-        default="0x0000000000000000000000000000000000000000",
-        description="Token address (0x0 means native ETH)"
+        default="",
+        description="Token address (0x0 means native ETH). Defaults from l2.json"
     )
     STREAM_MIN_REMAINING_SECONDS: int = Field(
         default=3600,
@@ -200,6 +201,55 @@ class Settings(BaseSettings):
             if os.environ.get(key):
                 return os.environ[key]
         return v
+
+    @staticmethod
+    def _load_l2_deployment() -> tuple[str | None, str | None]:
+        """Try to load default StreamPayment + token from contracts/deployments/l2.json.
+
+        Returns (stream_payment_address, glm_token_address) or (None, None) if not found.
+        """
+        try:
+            # Allow override via env
+            base = os.environ.get("GOLEM_DEPLOYMENTS_DIR")
+            if base:
+                path = Path(base) / "l2.json"
+            else:
+                # repo root = ../../ from this file
+                path = Path(__file__).resolve().parents[2] / "contracts" / "deployments" / "l2.json"
+            if not path.exists():
+                # Try package resource fallback
+                try:
+                    import importlib.resources as ir
+                    with ir.files("provider.data.deployments").joinpath("l2.json").open("r") as fh:  # type: ignore[attr-defined]
+                        data = json.load(fh)
+                except Exception:
+                    return None, None
+            else:
+                data = json.loads(path.read_text())
+            sp = data.get("StreamPayment", {})
+            addr = sp.get("address")
+            token = sp.get("glmToken")
+            if isinstance(addr, str) and addr:
+                return addr, token or "0x0000000000000000000000000000000000000000"
+        except Exception:
+            pass
+        return None, None
+
+    @field_validator("STREAM_PAYMENT_ADDRESS", mode='before')
+    @classmethod
+    def default_stream_addr(cls, v: str) -> str:
+        if v:
+            return v
+        addr, _ = Settings._load_l2_deployment()
+        return addr or "0x0000000000000000000000000000000000000000"
+
+    @field_validator("GLM_TOKEN_ADDRESS", mode='before')
+    @classmethod
+    def default_token_addr(cls, v: str) -> str:
+        if v:
+            return v
+        _, token = Settings._load_l2_deployment()
+        return token or "0x0000000000000000000000000000000000000000"
 
     # VM Settings
     MAX_VMS: int = 10

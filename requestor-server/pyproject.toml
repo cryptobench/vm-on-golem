@@ -21,6 +21,11 @@ packages = [
     { include = "requestor" }
 ]
 
+# Include package data (deployment JSON)
+include = [
+    { path = "requestor/data/deployments/l2.json", format = "wheel" },
+]
+
 [tool.poetry.dependencies]
 python = "^3.11"
 click = "^8.0.1"
