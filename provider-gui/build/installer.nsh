@@ -4,7 +4,7 @@
 
   ; Copy CLI binary bundled in app resources to bin
   ; App resources path at runtime: $INSTDIR\resources\cli\win\golem-provider.exe (electron-builder)
-  Copy "$INSTDIR\\resources\\cli\\win\\golem-provider.exe" "$INSTDIR\\bin\\golem-provider.exe"
+  CopyFiles "$INSTDIR\\resources\\cli\\win\\golem-provider.exe" "$INSTDIR\\bin\\golem-provider.exe"
 
   ; Add install dir/bin to PATH (system-wide)
   ReadRegStr $0 HKLM "SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment" "Path"
@@ -64,4 +64,3 @@ Function un.RemoveFromPath
   Pop $1
   Exch $0
 FunctionEnd
-
