@@ -14,7 +14,7 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": "",
+  "description": "Golem Provider desktop app with embedded CLI",
   "devDependencies": {
     "electron": "^35.1.2",
     "electron-builder": "^24.13.3"
@@ -56,10 +56,6 @@
       "artifactName": "${productName}-${version}-${arch}.${ext}",
       "extendInfo": {
         "LSBackgroundOnly": false
-      },
-      "pkg": {
-        "allowAnywhere": true,
-        "scripts": "build/macos"
       }
     },
     "win": {
@@ -85,11 +81,15 @@
         "AppImage"
       ],
       "category": "Utility",
-      "artifactName": "${productName}-${version}-${arch}.${ext}",
-      "deb": {
-        "afterInstall": "build/linux/after-install.sh",
-        "afterRemove": "build/linux/after-remove.sh"
-      }
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    },
+    "deb": {
+      "afterInstall": "build/linux/after-install.sh",
+      "afterRemove": "build/linux/after-remove.sh"
+    },
+    "pkg": {
+      "allowAnywhere": true,
+      "scripts": "build/macos"
     }
   }
 }
