@@ -81,6 +81,7 @@ jobs:
 
       - name: Determine version (for release tag)
         id: gui_meta
+        shell: bash
         run: |
           VERSION=$(node -p "require('./provider-gui/package.json').version")
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
@@ -158,6 +159,7 @@ jobs:
       # Determine tag name and version
       - name: Determine tag/version
         id: meta
+        shell: bash
         run: |
           # Prefer explicit input tag on manual runs
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.tag }}" ]; then
