@@ -53,6 +53,22 @@ jobs:
             builder_args: '--win nsis'
 
     steps:
+      - name: Determine version (for release tag)
+        id: gui_meta
+        run: |
+          VERSION=$(node -p "require('./provider-gui/package.json').version")
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Ensure draft GitHub Release exists (v{version})
+        if: ${{ matrix.os == 'ubuntu-latest' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.gui_meta.outputs.VERSION }}
+          name: Provider GUI ${{ steps.gui_meta.outputs.VERSION }}
+          draft: true
+          generate_release_notes: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       # Checkout for workflow_run (auto-tag completion)
       - name: Check out code (workflow_run)
         if: ${{ github.event_name == 'workflow_run' }}
@@ -148,30 +164,10 @@ jobs:
             VERSION="${TAG#provider-gui-v}"
           else
             VERSION=$(node -p "require('./provider-gui/package.json').version")
-            TAG="provider-gui-v${VERSION}"
+            TAG="v${VERSION}"
           fi
           echo "TAG=$TAG" >> $GITHUB_OUTPUT
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
-
-      # Checkout matching code for creating release notes context
-      - name: Check out code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || (github.event_name == 'workflow_dispatch' && inputs.tag != '' && inputs.tag || github.ref) }}
-      - name: Check out code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref }}
-
-      - name: Download all GUI artifacts
-        uses: actions/download-artifact@v4
-        with:
-          pattern: gui-dist-*
-          merge-multiple: true
-          path: release-assets
-
-      - name: Display collected assets
-        run: ls -R release-assets || true
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -181,7 +177,5 @@ jobs:
           # Use selected tag or derive from package.json
           tag_name: ${{ steps.meta.outputs.TAG }}
           prerelease: ${{ github.event_name == 'workflow_dispatch' && inputs.prerelease || false }}
-          files: |
-            release-assets/**
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
