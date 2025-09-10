@@ -7,10 +7,14 @@ import time
 import requests
 
 from ..vm.models import VMResources
-from ..config import settings
 from .logging import setup_logger
 
 logger = setup_logger(__name__)
+
+def _get_settings():
+    # Lazy import to avoid side effects during module import (e.g., JSON CLI quieting)
+    from ..config import settings as _s
+    return _s
 
 # Increase precision for financial calcs
 getcontext().prec = 28
@@ -21,6 +25,7 @@ def quantize_money(value: Decimal) -> Decimal:
 
 
 def _coingecko_simple_price(ids: str) -> Optional[Decimal]:
+    settings = _get_settings()
     base = settings.COINGECKO_API_URL.rstrip("/")
     url = f"{base}/simple/price"
     try:
@@ -44,6 +49,7 @@ def fetch_glm_usd_price() -> Optional[Decimal]:
 
     Tries multiple IDs to hedge against slug changes.
     """
+    settings = _get_settings()
     return _coingecko_simple_price(settings.COINGECKO_IDS)
 
 
@@ -70,6 +76,7 @@ def calculate_monthly_cost(resources: VMResources) -> Decimal:
 
     Uses the GLM-denominated price-per-unit values configured in settings.
     """
+    settings = _get_settings()
     core_price = Decimal(str(settings.PRICE_GLM_PER_CORE_MONTH))
     ram_price = Decimal(str(settings.PRICE_GLM_PER_GB_RAM_MONTH))
     storage_price = Decimal(str(settings.PRICE_GLM_PER_GB_STORAGE_MONTH))
@@ -98,6 +105,7 @@ def update_glm_unit_prices_from_usd(glm_usd: Decimal) -> Tuple[Decimal, Decimal,
 
     Returns a tuple of (core_glm, ram_glm, storage_glm).
     """
+    settings = _get_settings()
     core_usd = Decimal(str(settings.PRICE_USD_PER_CORE_MONTH))
     ram_usd = Decimal(str(settings.PRICE_USD_PER_GB_RAM_MONTH))
     storage_usd = Decimal(str(settings.PRICE_USD_PER_GB_STORAGE_MONTH))
@@ -107,6 +115,7 @@ def update_glm_unit_prices_from_usd(glm_usd: Decimal) -> Tuple[Decimal, Decimal,
     storage_glm = usd_to_glm(storage_usd, glm_usd)
 
     # Persist on settings instance (in-memory)
+    settings = _get_settings()
     settings.PRICE_GLM_PER_CORE_MONTH = float(core_glm)
     settings.PRICE_GLM_PER_GB_RAM_MONTH = float(ram_glm)
     settings.PRICE_GLM_PER_GB_STORAGE_MONTH = float(storage_glm)
@@ -129,6 +138,7 @@ class PricingAutoUpdater:
         self._last_price: Optional[Decimal] = None
 
     async def start(self):
+        settings = _get_settings()
         if not settings.PRICING_UPDATE_ENABLED:
             return
 
@@ -173,6 +183,7 @@ class PricingAutoUpdater:
             self._last_price = new_price
             return True
         delta = abs((new_price - old) / old) * Decimal("100")
+        settings = _get_settings()
         if delta >= Decimal(str(settings.PRICING_UPDATE_MIN_DELTA_PERCENT)):
             self._last_price = new_price
             return True

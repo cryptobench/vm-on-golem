@@ -4,6 +4,7 @@ import os
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, field_validator, ValidationInfo
 import os
+import sys
 
 
 def ensure_config() -> None:
@@ -33,7 +34,8 @@ def ensure_config() -> None:
         created = True
 
     if created:
-        print("Using default settings – run with --help to customize")
+        # Write to stderr so stdout stays clean for JSON outputs
+        print("Using default settings – run with --help to customize", file=sys.stderr)
 
 
 ensure_config()

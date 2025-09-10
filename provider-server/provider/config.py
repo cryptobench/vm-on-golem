@@ -38,7 +38,8 @@ def ensure_config() -> None:
         created = True
 
     if created:
-        print("Using default settings – run with --help to customize")
+        # Inform the user, but write to stderr so JSON outputs on stdout remain clean
+        logger.info("Using default settings – run with --help to customize")
 
 
 if not os.environ.get("GOLEM_PROVIDER_SKIP_BOOTSTRAP") and not os.environ.get("PYTEST_CURRENT_TEST"):

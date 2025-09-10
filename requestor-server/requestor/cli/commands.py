@@ -138,6 +138,8 @@ def vm():
 async def list_providers(cpu: Optional[int], memory: Optional[int], storage: Optional[int], country: Optional[str], driver: Optional[str], payments_network: Optional[str] = None, all_payments: bool = False, as_json: bool = False, network: Optional[str] = None):
     """List available providers matching requirements."""
     try:
+        if as_json:
+            os.environ["GOLEM_SILENCE_LOGS"] = "1"
         if network:
             config.network = network
         # Log search criteria if any
@@ -181,7 +183,10 @@ async def list_providers(cpu: Optional[int], memory: Optional[int], storage: Opt
 
         if not providers:
             logger.warning("No providers found matching criteria")
-            return {"providers": []}
+            result = {"providers": []}
+            if as_json:
+                click.echo(json.dumps(result, indent=2))
+            return result
 
         # If JSON requested and full spec provided, include estimates per provider
         if as_json and cpu and memory and storage:
@@ -216,6 +221,12 @@ async def list_providers(cpu: Optional[int], memory: Optional[int], storage: Opt
     except Exception as e:
         logger.error(f"Failed to list providers: {str(e)}")
         raise click.Abort()
+    finally:
+        if as_json:
+            try:
+                del os.environ["GOLEM_SILENCE_LOGS"]
+            except Exception:
+                pass
 
 
 @vm.command(name='create')
@@ -385,6 +396,8 @@ def vm_stream():
 async def stream_list(as_json: bool):
     """List payment stream status for all known VMs."""
     try:
+        if as_json:
+            os.environ["GOLEM_SILENCE_LOGS"] = "1"
         vms = await db_service.list_vms()
         if not vms:
             logger.warning("No VMs found in local database")
@@ -461,6 +474,12 @@ async def stream_list(as_json: bool):
     except Exception as e:
         logger.error(f"Failed to list streams: {e}")
         raise click.Abort()
+    finally:
+        if as_json:
+            try:
+                del os.environ["GOLEM_SILENCE_LOGS"]
+            except Exception:
+                pass
 
 
 @vm_stream.command('open')
@@ -550,6 +569,8 @@ async def stream_topup(stream_id: int, glm: float | None, hours: int | None):
 async def stream_status(name: str, as_json: bool):
     """Show the payment stream status for a VM by name."""
     try:
+        if as_json:
+            os.environ["GOLEM_SILENCE_LOGS"] = "1"
         # Resolve VM and provider
         vm = await db_service.get_vm(name)
         if not vm:
@@ -580,6 +601,12 @@ async def stream_status(name: str, as_json: bool):
     except Exception as e:
         logger.error(f"Failed to fetch stream status: {e}")
         raise click.Abort()
+    finally:
+        if as_json:
+            try:
+                del os.environ["GOLEM_SILENCE_LOGS"]
+            except Exception:
+                pass
 
 
 @vm_stream.command('inspect')
@@ -589,6 +616,8 @@ async def stream_status(name: str, as_json: bool):
 async def stream_inspect(stream_id: int, as_json: bool):
     """Inspect a stream directly on-chain (no provider required)."""
     try:
+        if as_json:
+            os.environ["GOLEM_SILENCE_LOGS"] = "1"
         from web3 import Web3
         from golem_streaming_abi import STREAM_PAYMENT_ABI
         w3 = Web3(Web3.HTTPProvider(config.polygon_rpc_url))
@@ -632,6 +661,12 @@ async def stream_inspect(stream_id: int, as_json: bool):
     except Exception as e:
         logger.error(f"Failed to inspect stream: {e}")
         raise click.Abort()
+    finally:
+        if as_json:
+            try:
+                del os.environ["GOLEM_SILENCE_LOGS"]
+            except Exception:
+                pass
 
 
 @cli.group()
@@ -726,6 +761,8 @@ def connect_vm(name: str):
 async def info_vm(name: str, as_json: bool):
     """Show information about a VM."""
     try:
+        if as_json:
+            os.environ["GOLEM_SILENCE_LOGS"] = "1"
         logger.command(f"ℹ️  Getting info for VM '{name}'")
 
         # Initialize VM service
@@ -767,6 +804,12 @@ async def info_vm(name: str, as_json: bool):
     except Exception as e:
         logger.error(f"Failed to get VM info: {str(e)}")
         raise click.Abort()
+    finally:
+        if as_json:
+            try:
+                del os.environ["GOLEM_SILENCE_LOGS"]
+            except Exception:
+                pass
 
 
 @vm.command(name='destroy')
@@ -1054,6 +1097,8 @@ def run_api_server(host: str, port: int, reload: bool):
 async def list_vms(as_json: bool):
     """List all VMs."""
     try:
+        if as_json:
+            os.environ["GOLEM_SILENCE_LOGS"] = "1"
         logger.command("📋 Listing your VMs")
         logger.process("Fetching VM details")
 
@@ -1086,7 +1131,6 @@ async def list_vms(as_json: bool):
                 tablefmt="grid"
             ))
             click.echo("\n" + "─" * 60)
-
         return result
 
     except Exception as e:
@@ -1095,6 +1139,13 @@ async def list_vms(as_json: bool):
             error_msg = "Failed to access local database (try running the command again)"
         logger.error(f"Failed to list VMs: {error_msg}")
         raise click.Abort()
+
+    finally:
+        if as_json:
+            try:
+                del os.environ["GOLEM_SILENCE_LOGS"]
+            except Exception:
+                pass
 
 
 def main():

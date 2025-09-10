@@ -1,6 +1,7 @@
 import logging
 import colorlog
 import sys
+import os
 from typing import Optional
 
 # Import standard logging levels
@@ -39,10 +40,23 @@ def setup_logger(name: Optional[str] = None, debug: bool = False) -> logging.Log
         Configured logger instance
     """
     logger = logging.getLogger(name or __name__)
-    if logger.handlers:
-        return logger  # Already configured
 
-    handler = colorlog.StreamHandler(sys.stdout)
+    # Global hard mute for JSON commands or other machine output scenarios
+    silence = os.getenv("GOLEM_SILENCE_LOGS", "").lower() in ("1", "true", "yes")
+
+    # If already configured, still adjust level according to silence/debug
+    if logger.handlers:
+        target_level = logging.CRITICAL if silence else (logging.DEBUG if debug else logging.INFO)
+        logger.setLevel(target_level)
+        for h in logger.handlers:
+            try:
+                h.setLevel(target_level)
+            except Exception:
+                pass
+        return logger  # Already configured (levels updated)
+
+    # Send logs to stderr so stdout can be reserved for machine output (e.g., --json)
+    handler = colorlog.StreamHandler(sys.stderr)
     formatter = colorlog.ColoredFormatter(
         "%(log_color)s[%(asctime)s] %(levelname)s: %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
@@ -58,7 +72,8 @@ def setup_logger(name: Optional[str] = None, debug: bool = False) -> logging.Log
     )
     handler.setFormatter(formatter)
     logger.addHandler(handler)
-    logger.setLevel(logging.DEBUG if debug else logging.INFO)
+    # Apply level based on silence/debug
+    logger.setLevel(logging.CRITICAL if silence else (logging.DEBUG if debug else logging.INFO))
     
     return logger
 

@@ -1,31 +1,42 @@
 import asyncio
 import os
+import sys as _sys
 import socket
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional
 
-from .config import settings, ensure_config
 from .utils.logging import setup_logger
-from .utils.ascii_art import startup_animation
-from .discovery.resource_tracker import ResourceTracker
-from .discovery.advertiser import DiscoveryServerAdvertiser
+
+
+# If the invocation includes --json, mute logs as early as possible
+if "--json" in _sys.argv:
+    os.environ["GOLEM_SILENCE_LOGS"] = "1"
+
+# Defer heavy local imports (may import config) until after we decide on silence
 from .container import Container
 from .service import ProviderService
-
 
 logger = setup_logger(__name__)
 
 app = FastAPI(title="VM on Golem Provider")
 container = Container()
-# Load configuration using a dict to avoid version-specific adapters
-try:
-    container.config.from_dict(settings.model_dump())
-except Exception:
-    # Fallback for environments without pydantic v2 model_dump
-    container.config.from_pydantic(settings)
 app.container = container
 container.wire(modules=[".api.routes"])
+
+# Minimal safe defaults so DI providers that rely on config have paths before runtime
+try:
+    from pathlib import Path as _Path
+    container.config.from_dict({
+        "VM_DATA_DIR": str(_Path.home() / ".golem" / "provider" / "vms"),
+        "PROXY_STATE_DIR": str(_Path.home() / ".golem" / "provider" / "proxy"),
+        "PORT_RANGE_START": 50800,
+        "PORT_RANGE_END": 50900,
+        "PORT": 7466,
+        "SKIP_PORT_VERIFICATION": True,
+    })
+except Exception:
+    pass
 
 from .vm.models import VMNotFoundError
 from fastapi import Request
@@ -57,6 +68,13 @@ app.add_middleware(
 @app.on_event("startup")
 async def startup_event():
     """Handle application startup."""
+    # Load configuration into container lazily at runtime
+    from .config import settings as _settings
+    try:
+        container.config.from_dict(_settings.model_dump())
+    except Exception:
+        # Fallback for environments without pydantic v2 model_dump
+        container.config.from_pydantic(_settings)
     provider_service = container.provider_service()
     await provider_service.setup(app)
 
@@ -136,9 +154,8 @@ config_app = typer.Typer(help="Configure stream monitoring and withdrawals")
 cli.add_typer(config_app, name="config")
 
 @cli.callback()
-def main():
+def main(ctx: typer.Context):
     """VM on Golem Provider CLI"""
-    ensure_config()
     # No-op callback to initialize config; avoid custom --version flag to keep help stable
     return
 
@@ -173,15 +190,24 @@ def status(json_out: bool = typer.Option(False, "--json", help="Output machine-r
     from rich.panel import Panel
     from rich import box
 
-    # Temporarily quiet info logs during checks for cleaner UI
+    # For JSON, set a process-wide mute env that setup_logger() respects
+    import os as _os
+    if json_out:
+        _os.environ["GOLEM_SILENCE_LOGS"] = "1"
+
+    # Temporarily quiet logs; when --json, suppress near everything
     prev_level = _logger.level
+    import logging as _logging
+    _root_logger = _logging.getLogger()
+    _prev_root_level = _root_logger.level
     try:
         _logger.setLevel("WARNING")
+        if json_out:
+            _root_logger.setLevel(_logging.CRITICAL)
     except Exception:
         pass
 
     # Silence port_verifier warnings during status checks for clean UI
-    import logging as _logging
     try:
         _pv_logger = _logging.getLogger("provider.network.port_verifier")
         _prev_pv_level = _pv_logger.level
@@ -507,6 +533,22 @@ def status(json_out: bool = typer.Option(False, "--json", help="Output machine-r
                 _cfg_logger.setLevel(_prev_cfg_level)
             except Exception:
                 pass
+        # Restore root logger
+        try:
+            _root_logger.setLevel(_prev_root_level)
+        except Exception:
+            pass
+        # Restore root logger
+        try:
+            _root_logger.setLevel(_prev_root_level)
+        except Exception:
+            pass
+        # Unset mute env if we set it
+        if json_out:
+            try:
+                del _os.environ["GOLEM_SILENCE_LOGS"]
+            except Exception:
+                pass
         return
 
     console = Console()
@@ -675,6 +717,16 @@ def status(json_out: bool = typer.Option(False, "--json", help="Output machine-r
             _cfg_logger.setLevel(_prev_cfg_level)
         except Exception:
             pass
+    try:
+        _root_logger.setLevel(_prev_root_level)
+    except Exception:
+        pass
+    # Unset mute env if we set it
+    if json_out:
+        try:
+            del _os.environ["GOLEM_SILENCE_LOGS"]
+        except Exception:
+            pass
 
 
 @wallet_app.command("faucet-l2")
@@ -712,8 +764,13 @@ def streams_list(json_out: bool = typer.Option(False, "--json", help="Output in 
     from web3 import Web3
     import json as _json
     try:
+        if json_out:
+            os.environ["GOLEM_SILENCE_LOGS"] = "1"
         if not settings.STREAM_PAYMENT_ADDRESS or settings.STREAM_PAYMENT_ADDRESS == "0x0000000000000000000000000000000000000000":
-            print("Streaming payments are disabled on this provider.")
+            if json_out:
+                print(_json.dumps({"error": "streaming_disabled"}, indent=2))
+            else:
+                print("Streaming payments are disabled on this provider.")
             raise typer.Exit(code=1)
         c = Container()
         c.config.from_pydantic(settings)
@@ -813,8 +870,17 @@ def streams_list(json_out: bool = typer.Option(False, "--json", help="Output in 
         for row in table_rows:
             print(fmt_row(row))
     except Exception as e:
-        print(f"Error: {e}")
+        if json_out:
+            print(_json.dumps({"error": str(e)}, indent=2))
+        else:
+            print(f"Error: {e}")
         raise typer.Exit(code=1)
+    finally:
+        if json_out:
+            try:
+                del os.environ["GOLEM_SILENCE_LOGS"]
+            except Exception:
+                pass
 
 
 @streams_app.command("show")
@@ -828,12 +894,17 @@ def streams_show(vm_id: str = typer.Argument(..., help="VM id (requestor_name)")
     from web3 import Web3
     import json as _json
     try:
+        if json_out:
+            os.environ["GOLEM_SILENCE_LOGS"] = "1"
         c = Container()
         c.config.from_pydantic(settings)
         stream_map = c.stream_map()
         sid = asyncio.run(stream_map.get(vm_id))
         if sid is None:
-            print("No stream mapped for this VM.")
+            if json_out:
+                print(_json.dumps({"error": "no_stream_mapping", "vm_id": vm_id}, indent=2))
+            else:
+                print("No stream mapped for this VM.")
             raise typer.Exit(code=1)
         reader = StreamPaymentReader(settings.POLYGON_RPC_URL, settings.STREAM_PAYMENT_ADDRESS)
         s = reader.get_stream(int(sid))
@@ -896,8 +967,17 @@ def streams_show(vm_id: str = typer.Argument(..., help="VM id (requestor_name)")
             print("  ".join("-" * wi for wi in w))
             print("  ".join(str(cols[i]).ljust(w[i]) for i in range(len(w))))
     except Exception as e:
-        print(f"Error: {e}")
+        if json_out:
+            print(_json.dumps({"error": str(e), "vm_id": vm_id}, indent=2))
+        else:
+            print(f"Error: {e}")
         raise typer.Exit(code=1)
+    finally:
+        if json_out:
+            try:
+                del os.environ["GOLEM_SILENCE_LOGS"]
+            except Exception:
+                pass
 
 @streams_app.command("earnings")
 def streams_earnings(json_out: bool = typer.Option(False, "--json", help="Output in JSON")):
@@ -910,6 +990,8 @@ def streams_earnings(json_out: bool = typer.Option(False, "--json", help="Output
     from web3 import Web3
     import json as _json
     try:
+        if json_out:
+            os.environ["GOLEM_SILENCE_LOGS"] = "1"
         c = Container()
         c.config.from_pydantic(settings)
         stream_map = c.stream_map()
@@ -1001,8 +1083,20 @@ def streams_earnings(json_out: bool = typer.Option(False, "--json", help="Output
             for row in table:
                 print("  ".join(str(row[i]).ljust(w2[i]) for i in range(4)))
     except Exception as e:
-        print(f"Error: {e}")
+        if json_out:
+            try:
+                print(_json.dumps({"error": str(e)}, indent=2))
+            except Exception:
+                print("{\"error\": \"unexpected\"}")
+        else:
+            print(f"Error: {e}")
         raise typer.Exit(code=1)
+    finally:
+        if json_out:
+            try:
+                del os.environ["GOLEM_SILENCE_LOGS"]
+            except Exception:
+                pass
 
 
 @streams_app.command("withdraw")
