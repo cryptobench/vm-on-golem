@@ -61,6 +61,8 @@ def setup_logger(name: Optional[str] = None) -> logging.Logger:
     
     # Check DEBUG environment variable
     debug = os.getenv('DEBUG', '').lower() in ('1', 'true', 'yes')
+    # Global silence switch for JSON/machine outputs
+    silence = os.getenv('GOLEM_SILENCE_LOGS', '').lower() in ('1', 'true', 'yes')
     
     # Prevent duplicate logs by removing root handlers
     root = logging.getLogger()
@@ -86,13 +88,22 @@ def setup_logger(name: Optional[str] = None) -> logging.Logger:
         style='%'
     )
     fancy_handler.setFormatter(fancy_formatter)
-    fancy_handler.addFilter(
-        lambda record: record.levelno != DEBUG or debug
-    )
+    # Suppress DEBUG unless DEBUG=1; suppress everything if silence
+    def _filter(record: logging.LogRecord) -> bool:
+        if silence:
+            return False
+        return (record.levelno != DEBUG) or debug
+    fancy_handler.addFilter(_filter)
     logger.addHandler(fancy_handler)
     logger.propagate = False  # Prevent propagation to avoid duplicates
     
-    if debug:
+    if silence:
+        logger.setLevel(CRITICAL)
+        # Silence common libraries and root logger
+        logging.getLogger().setLevel(CRITICAL)
+        logging.getLogger('asyncio').setLevel(CRITICAL)
+        logging.getLogger('aiosqlite').setLevel(CRITICAL)
+    elif debug:
         logger.setLevel(DEBUG)
         # Enable debug logging for other libraries
         logging.getLogger('asyncio').setLevel(DEBUG)

@@ -7,8 +7,7 @@ from fastapi import APIRouter, HTTPException, Request
 from dependency_injector.wiring import inject, Provide
 from fastapi import APIRouter, HTTPException, Depends
 
-from ..config import Settings
-from ..config import Settings as _Cfg
+from typing import TYPE_CHECKING, Any
 from ..container import Container
 from ..utils.logging import setup_logger
 from ..utils.ascii_art import vm_creation_animation, vm_status_change
@@ -27,7 +26,7 @@ router = APIRouter()
 async def create_vm(
     request: CreateVMRequest,
     vm_service: VMService = Depends(Provide[Container.vm_service]),
-    settings: Settings = Depends(Provide[Container.config]),
+    settings: Any = Depends(Provide[Container.config]),
     stream_map = Depends(Provide[Container.stream_map]),
 ) -> VMInfo:
     """Create a new VM."""
@@ -39,11 +38,12 @@ async def create_vm(
         # If payments are enabled, require a valid stream before starting
         # Determine if we should enforce gating
         enforce = False
-        spa = settings["STREAM_PAYMENT_ADDRESS"]
+        spa = (settings.get("STREAM_PAYMENT_ADDRESS") if isinstance(settings, dict) else getattr(settings, "STREAM_PAYMENT_ADDRESS", None))
         if spa and spa != "0x0000000000000000000000000000000000000000":
             if os.environ.get("PYTEST_CURRENT_TEST"):
                 # In pytest, skip gating only when using default deployment address
                 try:
+                    from ..config import Settings as _Cfg  # type: ignore
                     default_spa, _ = _Cfg._load_l2_deployment()  # type: ignore[attr-defined]
                 except Exception:
                     default_spa = None
@@ -54,8 +54,10 @@ async def create_vm(
         if enforce:
             if request.stream_id is None:
                 raise HTTPException(status_code=400, detail="stream_id required when payments are enabled")
-            reader = StreamPaymentReader(settings["POLYGON_RPC_URL"], settings["STREAM_PAYMENT_ADDRESS"])
-            ok, reason = reader.verify_stream(int(request.stream_id), settings["PROVIDER_ID"])
+            rpc_url = settings.get("POLYGON_RPC_URL") if isinstance(settings, dict) else getattr(settings, "POLYGON_RPC_URL", None)
+            reader = StreamPaymentReader(rpc_url, spa)
+            expected_recipient = settings.get("PROVIDER_ID") if isinstance(settings, dict) else getattr(settings, "PROVIDER_ID", None)
+            ok, reason = reader.verify_stream(int(request.stream_id), expected_recipient)
             try:
                 s = reader.get_stream(int(request.stream_id))
                 now = int(reader.web3.eth.get_block("latest")["timestamp"])  # type: ignore[attr-defined]
@@ -73,7 +75,7 @@ async def create_vm(
         # Create VM config
         config = VMConfig(
             name=request.name,
-            image=request.image or settings["DEFAULT_VM_IMAGE"],
+            image=request.image or (settings.get("DEFAULT_VM_IMAGE") if isinstance(settings, dict) else getattr(settings, "DEFAULT_VM_IMAGE", "")),
             resources=resources,
             ssh_key=request.ssh_key
         )
@@ -143,7 +145,7 @@ async def get_vm_status(
 async def get_vm_access(
     requestor_name: str,
     vm_service: VMService = Depends(Provide[Container.vm_service]),
-    settings: Settings = Depends(Provide[Container.config]),
+    settings: Any = Depends(Provide[Container.config]),
 ) -> VMAccessInfo:
     """Get VM access information."""
     try:
@@ -156,7 +158,7 @@ async def get_vm_access(
             raise HTTPException(404, "VM mapping not found")
         
         return VMAccessInfo(
-            ssh_host=settings["PUBLIC_IP"] or "localhost",
+            ssh_host=((settings.get("PUBLIC_IP") if isinstance(settings, dict) else getattr(settings, "PUBLIC_IP", None)) or "localhost"),
             ssh_port=vm.ssh_port,
             vm_id=requestor_name,
             multipass_name=multipass_name
@@ -222,7 +224,7 @@ async def delete_vm(
         raise HTTPException(status_code=500, detail="An unexpected error occurred")
 @router.get("/provider/info", response_model=ProviderInfoResponse)
 @inject
-async def provider_info(settings: Settings = Depends(Provide[Container.config])) -> ProviderInfoResponse:
+async def provider_info(settings: Any = Depends(Provide[Container.config])) -> ProviderInfoResponse:
     return ProviderInfoResponse(
         provider_id=settings["PROVIDER_ID"],
         stream_payment_address=settings["STREAM_PAYMENT_ADDRESS"],
@@ -234,7 +236,7 @@ async def provider_info(settings: Settings = Depends(Provide[Container.config]))
 @inject
 async def get_vm_stream_status(
     requestor_name: str,
-    settings: Settings = Depends(Provide[Container.config]),
+    settings: Any = Depends(Provide[Container.config]),
     stream_map = Depends(Provide[Container.stream_map]),
 ) -> StreamStatus:
     """Return on-chain stream status for a VM (if mapped)."""
@@ -266,7 +268,7 @@ async def get_vm_stream_status(
 @router.get("/payments/streams", response_model=List[StreamStatus])
 @inject
 async def list_stream_statuses(
-    settings: Settings = Depends(Provide[Container.config]),
+    settings: Any = Depends(Provide[Container.config]),
     stream_map = Depends(Provide[Container.stream_map]),
 ) -> List[StreamStatus]:
     """List stream status for all mapped VMs."""

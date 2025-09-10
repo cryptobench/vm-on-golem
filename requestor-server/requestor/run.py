@@ -4,6 +4,16 @@ import sys
 from pathlib import Path
 from dotenv import load_dotenv
 
+if "--json" in sys.argv:
+    os.environ["GOLEM_SILENCE_LOGS"] = "1"
+    try:
+        import logging as _logging
+        _logging.getLogger().setLevel(_logging.CRITICAL)
+        _logging.getLogger('rlp').setLevel(_logging.CRITICAL)
+        _logging.getLogger('rlp.codec').setLevel(_logging.CRITICAL)
+    except Exception:
+        pass
+
 from requestor.utils.logging import setup_logger
 
 # Configure logging with debug mode from environment variable

@@ -11,26 +11,27 @@ class Spinner:
         self.busy = False
         self.spinner_visible = False
         self.message = message
-        sys.stdout.write('\033[?25l')  # Hide cursor
+        # Use stderr so stdout can remain machine-readable (e.g., --json outputs)
+        sys.stderr.write('\033[?25l')  # Hide cursor
 
     def write_next(self):
         """Write the next spinner frame."""
         with self._screen_lock:
             if not self.spinner_visible:
-                sys.stdout.write(f"\r{next(self.spinner)} {self.message}")
+                sys.stderr.write(f"\r{next(self.spinner)} {self.message}")
                 self.spinner_visible = True
-                sys.stdout.flush()
+                sys.stderr.flush()
 
     def remove_spinner(self, cleanup=False):
         """Remove the spinner from the terminal."""
         with self._screen_lock:
             if self.spinner_visible:
-                sys.stdout.write('\r')
-                sys.stdout.write(' ' * (len(self.message) + 2))
-                sys.stdout.write('\r')
+                sys.stderr.write('\r')
+                sys.stderr.write(' ' * (len(self.message) + 2))
+                sys.stderr.write('\r')
                 if cleanup:
-                    sys.stdout.write('\033[?25h')  # Show cursor
-                sys.stdout.flush()
+                    sys.stderr.write('\033[?25h')  # Show cursor
+                sys.stderr.flush()
                 self.spinner_visible = False
 
     def spinner_task(self):
@@ -56,11 +57,11 @@ class Spinner:
         self.remove_spinner(cleanup=True)
         if exc_type is None:
             # Show checkmark on success
-            sys.stdout.write(f"\r✓ {self.message}\n")
+            sys.stderr.write(f"\r✓ {self.message}\n")
         else:
             # Show X on failure
-            sys.stdout.write(f"\r✗ {self.message}\n")
-        sys.stdout.flush()
+            sys.stderr.write(f"\r✗ {self.message}\n")
+        sys.stderr.flush()
 
 def step(message):
     """Decorator to add a spinning progress indicator to a function."""

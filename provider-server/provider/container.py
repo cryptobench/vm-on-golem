@@ -2,7 +2,6 @@ import os
 from dependency_injector import containers, providers
 from pathlib import Path
 
-from .config import settings
 from .discovery.resource_tracker import ResourceTracker
 from .discovery.golem_base_advertiser import GolemBaseAdvertiser
 from .discovery.advertiser import DiscoveryServerAdvertiser
@@ -49,12 +48,12 @@ class Container(containers.DeclarativeContainer):
 
     vm_name_mapper = providers.Singleton(
         VMNameMapper,
-        db_path=Path(settings.VM_DATA_DIR) / "vm_names.json",
+        db_path=providers.Callable(lambda base: Path(base) / "vm_names.json", config.VM_DATA_DIR),
     )
 
     stream_map = providers.Singleton(
         StreamMap,
-        storage_path=Path(settings.VM_DATA_DIR) / "streams.json",
+        storage_path=providers.Callable(lambda base: Path(base) / "streams.json", config.VM_DATA_DIR),
     )
 
     port_manager = providers.Singleton(
