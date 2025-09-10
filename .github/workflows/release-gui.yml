@@ -78,7 +78,8 @@ jobs:
         working-directory: provider-gui
         run: |
           npm cache clean --force
-          npm ci
+          # Use install instead of ci to avoid lock mismatch failures
+          npm install --no-audit --no-fund
 
       - name: Build GUI installer
         working-directory: provider-gui
@@ -118,7 +119,7 @@ jobs:
       - name: Read GUI version
         id: meta
         run: |
-          VERSION=$(jq -r .version provider-gui/package.json)
+          VERSION=$(node -p "require('./provider-gui/package.json').version")
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Create GitHub Release
