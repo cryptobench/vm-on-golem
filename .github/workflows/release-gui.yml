@@ -111,6 +111,8 @@ jobs:
       - name: Install GUI deps
         working-directory: provider-gui
         run: |
+          # Ensure a clean install (avoid stale committed node_modules on Windows)
+          node -e "require('fs').rmSync('node_modules', { recursive: true, force: true });"
           npm cache clean --force
           # Use install instead of ci to avoid lock mismatch failures
           npm install --no-audit --no-fund

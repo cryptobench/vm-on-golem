@@ -12,7 +12,15 @@
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
-  "author": "",
+  "author": {
+    "name": "Phillip Jensen",
+    "email": "phillip+vm-on-golem@golemgrid.com"
+  },
+  "homepage": "https://github.com/cryptobench/vm-on-golem",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cryptobench/vm-on-golem"
+  },
   "license": "ISC",
   "description": "Golem Provider desktop app with embedded CLI",
   "devDependencies": {
@@ -81,7 +89,8 @@
         "AppImage"
       ],
       "category": "Utility",
-      "artifactName": "${productName}-${version}-${arch}.${ext}"
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "maintainer": "GolemGrid <support@golemgrid.com>"
     },
     "deb": {
       "afterInstall": "build/linux/after-install.sh",
