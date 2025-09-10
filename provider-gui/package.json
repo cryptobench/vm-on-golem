@@ -45,6 +45,9 @@
     ],
     "mac": {
       "category": "public.app-category.developer-tools",
+      "hardenedRuntime": true,
+      "entitlements": "build/macos/entitlements.plist",
+      "entitlementsInherit": "build/macos/entitlements.plist",
       "target": [
         {
           "target": "dmg",
@@ -61,7 +64,7 @@
           ]
         }
       ],
-      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
       "extendInfo": {
         "LSBackgroundOnly": false
       }
@@ -75,7 +78,7 @@
           ]
         }
       ],
-      "artifactName": "${productName}-${version}-Setup.${ext}"
+      "artifactName": "${productName}-${version}-${os}-${arch}-Setup.${ext}"
     },
     "nsis": {
       "oneClick": false,
@@ -90,7 +93,7 @@
         "AppImage"
       ],
       "category": "Utility",
-      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
       "maintainer": "GolemGrid <support@golemgrid.com>"
     },
     "deb": {
