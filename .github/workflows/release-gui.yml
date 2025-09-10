@@ -6,6 +6,11 @@ on:
     tags:
       - 'provider-gui-v*'
       - 'gui-v*'
+  # Handle tags created by the auto-tag workflow (pushed with GITHUB_TOKEN),
+  # which do not trigger other workflows directly.
+  workflow_run:
+    workflows: ["Auto Bump & Tag Provider GUI"]
+    types: [completed]
 
 permissions:
   contents: write
@@ -14,6 +19,8 @@ jobs:
   build:
     name: Build (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    # Run on tag pushes, manual dispatch, or successful auto-tag completion
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     strategy:
       fail-fast: false
       matrix:
@@ -34,6 +41,9 @@ jobs:
     steps:
       - name: Check out code
         uses: actions/checkout@v4
+        with:
+          # For workflow_run, build the exact commit that was auto-tagged
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -66,7 +76,9 @@ jobs:
 
       - name: Install GUI deps
         working-directory: provider-gui
-        run: npm install --no-audit --no-fund
+        run: |
+          npm cache clean --force
+          npm ci
 
       - name: Build GUI installer
         working-directory: provider-gui
@@ -86,7 +98,13 @@ jobs:
     name: Create GitHub Release
     runs-on: ubuntu-latest
     needs: [build]
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref }}
+
       - name: Download all GUI artifacts
         uses: actions/download-artifact@v4
         with:
@@ -97,11 +115,19 @@ jobs:
       - name: Display collected assets
         run: ls -R release-assets || true
 
+      - name: Read GUI version
+        id: meta
+        run: |
+          VERSION=$(jq -r .version provider-gui/package.json)
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           draft: false
           generate_release_notes: true
+          # If triggered by a tag push, use that tag; otherwise synthesize from package.json
+          tag_name: ${{ github.event_name == 'push' && github.ref_name || format('provider-gui-v{0}', steps.meta.outputs.VERSION) }}
           files: |
             release-assets/**
         env:

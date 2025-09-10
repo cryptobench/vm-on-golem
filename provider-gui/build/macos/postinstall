@@ -1,0 +1,17 @@
+#!/bin/sh
+# Postinstall script for macOS PKG to install a CLI shim into /usr/local/bin
+set -e
+
+APP_NAME="Golem Provider.app"
+APP_PATH="/Applications/$APP_NAME"
+CLI_SRC="$APP_PATH/Contents/Resources/cli/macos/golem-provider"
+CLI_DEST="/usr/local/bin/golem-provider"
+
+if [ -x "$CLI_SRC" ]; then
+  mkdir -p /usr/local/bin
+  ln -sf "$CLI_SRC" "$CLI_DEST"
+  chmod +x "$CLI_SRC"
+fi
+
+exit 0
+
