@@ -1,9 +1,14 @@
 {
   "name": "provider-gui",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
+    "pack:cli": "python ../scripts/build_provider_cli.py --onefile",
+    "pack:win": "npm run pack:cli && electron-builder --win nsis",
+    "pack:mac": "npm run pack:cli && electron-builder --mac dmg pkg",
+    "pack:linux": "npm run pack:cli && electron-builder --linux deb AppImage",
+    "pack": "npm run pack:cli && electron-builder -mwl",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -19,20 +24,34 @@
     "productName": "Golem Provider",
     "files": [
       "**/*",
-      "!resources/cli/**"  
+      "!resources/cli/**"
     ],
     "extraResources": [
       {
         "from": "resources/cli",
         "to": "cli",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "mac": {
       "category": "public.app-category.developer-tools",
       "target": [
-        { "target": "dmg", "arch": ["x64", "arm64"] },
-        { "target": "pkg", "arch": ["x64", "arm64"] }
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "pkg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
       ],
       "artifactName": "${productName}-${version}-${arch}.${ext}",
       "extendInfo": {
@@ -40,14 +59,16 @@
       },
       "pkg": {
         "allowAnywhere": true,
-        "scripts": "build/macos"  
+        "scripts": "build/macos"
       }
     },
     "win": {
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "artifactName": "${productName}-${version}-Setup.${ext}"
@@ -56,10 +77,13 @@
       "oneClick": false,
       "perMachine": true,
       "allowToChangeInstallationDirectory": true,
-      "include": "build/installer.nsh"  
+      "include": "build/installer.nsh"
     },
     "linux": {
-      "target": ["deb", "AppImage"],
+      "target": [
+        "deb",
+        "AppImage"
+      ],
       "category": "Utility",
       "artifactName": "${productName}-${version}-${arch}.${ext}",
       "deb": {
@@ -67,14 +91,5 @@
         "afterRemove": "build/linux/after-remove.sh"
       }
     }
-  },
-  "scripts": {
-    "start": "electron .",
-    "pack:cli": "python ../scripts/build_provider_cli.py --onefile",
-    "pack:win": "npm run pack:cli && electron-builder --win nsis",
-    "pack:mac": "npm run pack:cli && electron-builder --mac dmg pkg",
-    "pack:linux": "npm run pack:cli && electron-builder --linux deb AppImage",
-    "pack": "npm run pack:cli && electron-builder -mwl",
-    "test": "echo \"Error: no test specified\" && exit 1"
   }
 }
