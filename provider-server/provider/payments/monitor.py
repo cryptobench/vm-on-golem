@@ -56,21 +56,41 @@ class StreamMonitor:
                         logger.warning(f"stream {stream_id} lookup failed: {e}")
                         continue
                     # Stop VM if remaining runway < threshold
-                    remaining = max(s["stopTime"] - now, 0)
+                    remaining = max(int(s["stopTime"]) - int(now), 0)
                     logger.debug(
                         f"stream {stream_id} for VM {vm_id}: start={s['startTime']} stop={s['stopTime']} "
                         f"rate={s['ratePerSecond']} withdrawn={s['withdrawn']} halted={s['halted']} remaining={remaining}s"
                     )
-                    if self._get("STREAM_MONITOR_ENABLED", False) and remaining < int(self._get("STREAM_MIN_REMAINING_SECONDS", 0)):
-                        logger.info(f"Stopping VM {vm_id} due to low stream runway ({remaining}s)")
+                    # If stream is force-halted, delete immediately to free all resources
+                    if bool(s.get("halted")):
+                        logger.info(
+                            f"Deleting VM {vm_id} due to halted stream (id={stream_id}, now={now})"
+                        )
+                        try:
+                            await self.vm_service.delete_vm(vm_id)
+                        except Exception as e:
+                            logger.warning(f"delete_vm failed for {vm_id}: {e}")
+                        try:
+                            await self.stream_map.remove(vm_id)
+                        except Exception as e:
+                            logger.debug(f"failed to remove vm {vm_id} from stream map: {e}")
+                        continue
+
+                    # Only stop a VM when runway is completely empty
+                    if remaining == 0:
+                        logger.info(
+                            f"Stopping VM {vm_id} as stream runway is exhausted (id={stream_id}, now={now}, stop={s.get('stopTime')})"
+                        )
                         try:
                             await self.vm_service.stop_vm(vm_id)
                         except Exception as e:
                             logger.warning(f"stop_vm failed for {vm_id}: {e}")
-                    else:
-                        logger.debug(
-                            f"VM {vm_id} stream {stream_id} healthy (remaining={remaining}s, threshold={self._get('STREAM_MIN_REMAINING_SECONDS', 0)}s)"
-                        )
+                        continue
+
+                    # Otherwise, do not stop; just log health and consider withdrawals
+                    logger.debug(
+                        f"VM {vm_id} stream {stream_id} healthy (remaining={remaining}s)"
+                    )
                     # Withdraw if enough vested and configured
                     if self._get("STREAM_WITHDRAW_ENABLED", False) and self.client:
                         vested = max(min(now, s["stopTime"]) - s["startTime"], 0) * s["ratePerSecond"]

@@ -465,6 +465,7 @@ sequenceDiagram
     participant DS as Discovery Service
 
     P->>RT: Initialize
+    P->>RT: Sync with existing VMs
     RT->>AD: Register Callback
     loop Every 4 minutes
         AD->>RT: Get Resources
@@ -473,6 +474,8 @@ sequenceDiagram
         DS-->>AD: Confirmation
     end
 ```
+
+On startup, the provider syncs the resource tracker with all VMs currently running on the host (via Multipass). This ensures advertisements reflect already-allocated CPU, RAM, and storage after restarts, preventing false “outdated advertisement” updates when existing VMs are consuming resources. The sync is based on actual VMs present, independent of any still-open payment streams.
 
 ### Monitoring
 
