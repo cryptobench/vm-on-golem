@@ -122,6 +122,7 @@ jobs:
         run: npx electron-builder ${{ matrix.builder_args }}
         env:
           CI: true
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload GUI artifacts
         uses: actions/upload-artifact@v4
