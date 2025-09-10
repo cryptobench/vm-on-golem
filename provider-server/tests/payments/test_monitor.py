@@ -10,13 +10,18 @@ class DummyStreamMap:
         self._mapping = mapping
     async def all_items(self):
         return dict(self._mapping)
+    async def remove(self, vm_id):
+        self._mapping.pop(vm_id, None)
 
 
 class DummyVMService:
     def __init__(self):
         self.stopped = []
+        self.deleted = []
     async def stop_vm(self, vm_id):
         self.stopped.append(vm_id)
+    async def delete_vm(self, vm_id):
+        self.deleted.append(vm_id)
 
 
 class DummyReader:
@@ -45,7 +50,7 @@ class DummySettings:
 
 
 @pytest.mark.asyncio
-async def test_monitor_stops_low_runway_and_withdraws(monkeypatch):
+async def test_monitor_does_not_stop_until_empty_and_withdraws(monkeypatch):
     # Prepare a stream that started long ago with small remaining runway and some withdrawable amount
     now = 1_000_000
     stream = {
@@ -78,8 +83,8 @@ async def test_monitor_stops_low_runway_and_withdraws(monkeypatch):
 
     await mon._run()
 
-    # VM should be stopped due to low remaining runway
-    assert vm_service.stopped == ["vm-1"]
+    # Should NOT stop while runway remains; but withdraw should occur
+    assert vm_service.stopped == []
     # Withdraw should have been attempted (vested - withdrawn threshold met)
     assert client.withdrawn == [42]
 
@@ -122,7 +127,7 @@ async def test_monitor_respects_withdraw_interval(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_monitor_accepts_dict_settings(monkeypatch):
+async def test_monitor_accepts_dict_settings_and_does_not_stop_until_empty(monkeypatch):
     now = 3_000_000
     stream = {
         "token": "0xglm",
@@ -161,5 +166,75 @@ async def test_monitor_accepts_dict_settings(monkeypatch):
     monkeypatch.setattr(asyncio, "sleep", fake_sleep)
 
     await mon._run()
-    assert vm_service.stopped == ["vm-1"]
+    assert vm_service.stopped == []
     assert client.withdrawn == [5]
+
+
+@pytest.mark.asyncio
+async def test_monitor_deletes_when_stream_halted(monkeypatch):
+    now = 4_000_000
+    stream = {
+        "token": "0xglm",
+        "sender": "0xreq",
+        "recipient": "0xprov",
+        "startTime": now - 10_000,
+        "stopTime": now + 10_000,
+        "ratePerSecond": 10,
+        "deposit": 200_000,
+        "withdrawn": 0,
+        "halted": True,
+    }
+    stream_map = DummyStreamMap({"vm-del": 11})
+    vm_service = DummyVMService()
+    reader = DummyReader(now, stream)
+    client = DummyClient()
+    settings = DummySettings()
+    mon = StreamMonitor(stream_map=stream_map, vm_service=vm_service, reader=reader, client=client, settings=settings)
+
+    calls = {"n": 0}
+    async def fake_sleep(_):
+        calls["n"] += 1
+        if calls["n"] >= 2:
+            raise asyncio.CancelledError
+    monkeypatch.setattr(asyncio, "sleep", fake_sleep)
+
+    await mon._run()
+    # VM deleted due to halted stream, not just stopped
+    assert vm_service.deleted == ["vm-del"]
+    # No withdraw attempt for inactive stream path
+    assert client.withdrawn == []
+
+
+@pytest.mark.asyncio
+async def test_monitor_stops_when_stream_ended(monkeypatch):
+    now = 5_000_000
+    stream = {
+        "token": "0xglm",
+        "sender": "0xreq",
+        "recipient": "0xprov",
+        "startTime": now - 10_000,
+        "stopTime": now,  # ended
+        "ratePerSecond": 10,
+        "deposit": 200_000,
+        "withdrawn": 0,
+        "halted": False,
+    }
+    stream_map = DummyStreamMap({"vm-end": 12})
+    vm_service = DummyVMService()
+    reader = DummyReader(now, stream)
+    client = DummyClient()
+    settings = DummySettings()
+    mon = StreamMonitor(stream_map=stream_map, vm_service=vm_service, reader=reader, client=client, settings=settings)
+
+    calls = {"n": 0}
+    async def fake_sleep(_):
+        calls["n"] += 1
+        if calls["n"] >= 2:
+            raise asyncio.CancelledError
+    monkeypatch.setattr(asyncio, "sleep", fake_sleep)
+
+    await mon._run()
+    # VM stopped (not deleted) due to exhausted runway
+    assert vm_service.stopped == ["vm-end"]
+    assert vm_service.deleted == []
+    assert client.withdrawn == []

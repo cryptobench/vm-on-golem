@@ -37,6 +37,68 @@ class ProviderService:
             # Initialize services
             await self.port_manager.initialize()
             await self.vm_service.provider.initialize()
+
+            # Before starting advertisement, sync allocated resources with existing VMs
+            try:
+                vm_resources = await self.vm_service.get_all_vms_resources()
+                await self.vm_service.resource_tracker.sync_with_multipass(vm_resources)
+            except Exception as e:
+                logger.warning(f"Failed to sync resources with existing VMs: {e}")
+
+            # Cross-check running VMs against payment streams. If a VM has no
+            # active stream, it is no longer rented: terminate it and free resources.
+            try:
+                # Only perform checks if payments are configured
+                if settings.STREAM_PAYMENT_ADDRESS and not settings.STREAM_PAYMENT_ADDRESS.lower().endswith("0000000000000000000000000000000000000000") and settings.POLYGON_RPC_URL:
+                    stream_map = app.container.stream_map()
+                    reader = app.container.stream_reader()
+
+                    # Use the most recent view of VMs from the previous sync
+                    vm_ids = list(vm_resources.keys()) if 'vm_resources' in locals() else []
+                    for vm_id in vm_ids:
+                        try:
+                            stream_id = await stream_map.get(vm_id)
+                        except Exception:
+                            stream_id = None
+
+                        if stream_id is None:
+                            reason = "no stream mapped"
+                            should_terminate = True
+                        else:
+                            try:
+                                ok, msg = reader.verify_stream(int(stream_id), settings.PROVIDER_ID)
+                                should_terminate = not ok
+                                reason = msg if not ok else "ok"
+                            except Exception as e:
+                                # If verification cannot be performed, be conservative and keep the VM
+                                logger.warning(f"Stream verification error for VM {vm_id} (stream {stream_id}): {e}")
+                                should_terminate = False
+                                reason = f"verification error: {e}"
+
+                        if should_terminate:
+                            logger.info(
+                                f"Deleting VM {vm_id}: inactive stream (stream_id={stream_id}, reason={reason})"
+                            )
+                            try:
+                                await self.vm_service.delete_vm(vm_id)
+                            except Exception as e:
+                                logger.warning(f"Failed to delete VM {vm_id}: {e}")
+                            try:
+                                await stream_map.remove(vm_id)
+                            except Exception:
+                                pass
+
+                    # Re-sync after any terminations to ensure ads reflect capacity
+                    try:
+                        vm_resources = await self.vm_service.get_all_vms_resources()
+                        await self.vm_service.resource_tracker.sync_with_multipass(vm_resources)
+                    except Exception as e:
+                        logger.warning(f"Post-termination resource sync failed: {e}")
+                else:
+                    logger.info("Payments not configured; skipping startup stream checks")
+            except Exception as e:
+                logger.warning(f"Failed to reconcile VMs with payment streams: {e}")
+
             await self.advertisement_service.start()
             # Start pricing auto-updater; trigger re-advertise after updates
             async def _on_price_updated(platform: str, glm_usd):
