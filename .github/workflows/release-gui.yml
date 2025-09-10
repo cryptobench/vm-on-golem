@@ -156,6 +156,10 @@ jobs:
     needs: [build]
     if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || (github.event_name == 'workflow_dispatch' && inputs.tag != '' && inputs.tag || github.ref) }}
       # Determine tag name and version
       - name: Determine tag/version
         id: meta
