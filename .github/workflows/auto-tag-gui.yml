@@ -1,6 +1,14 @@
 name: Auto Bump & Tag Provider GUI
 
 on:
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: "Version bump type (patch|minor|major)"
+        required: false
+        default: patch
+        type: choice
+        options: [patch, minor, major]
   push:
     branches: [ main ]
     paths:
@@ -25,19 +33,22 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Compute and bump GUI version (patch)
+      - name: Compute and bump GUI version
         id: bump
         run: |
           node -e '
             const fs=require("fs");
             const p="provider-gui/package.json";
             const pkg=JSON.parse(fs.readFileSync(p));
-            const v=(pkg.version||"1.0.0").split(".");
-            v[2]=String(Number(v[2]||0)+1);
+            const type=(process.env.RELEASE_TYPE||"patch").toLowerCase();
+            const v=(pkg.version||"1.0.0").split(".").map(n=>parseInt(n||0,10));
+            if(type==="major"){v[0]++; v[1]=0; v[2]=0;} else if(type==="minor"){v[1]++; v[2]=0;} else {v[2]++;}
             pkg.version=v.join(".");
             fs.writeFileSync(p, JSON.stringify(pkg, null, 2)+"\n");
             console.log("NEW_VERSION="+pkg.version);
           ' >> $GITHUB_OUTPUT
+        env:
+          RELEASE_TYPE: ${{ github.event_name == 'workflow_dispatch' && inputs.release_type || 'patch' }}
 
       - name: Configure git user
         run: |

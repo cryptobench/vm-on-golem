@@ -1,7 +1,21 @@
 name: Build and Release Provider GUI
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag or ref to build (e.g., provider-gui-v1.2.3)"
+        required: false
+        type: string
+      ref:
+        description: "Commit SHA or branch to build if no tag provided"
+        required: false
+        type: string
+      prerelease:
+        description: "Mark release as pre-release"
+        required: false
+        default: false
+        type: boolean
   push:
     tags:
       - 'provider-gui-v*'
@@ -39,11 +53,31 @@ jobs:
             builder_args: '--win nsis'
 
     steps:
-      - name: Check out code
+      # Checkout for workflow_run (auto-tag completion)
+      - name: Check out code (workflow_run)
+        if: ${{ github.event_name == 'workflow_run' }}
         uses: actions/checkout@v4
         with:
-          # For workflow_run, build the exact commit that was auto-tagged
-          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref }}
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      # Checkout for manual dispatch with specific tag
+      - name: Check out code (manual tag)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.tag != '' }}
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+
+      # Checkout for manual dispatch with specific ref
+      - name: Check out code (manual ref)
+        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.tag == '' || !inputs.tag) && inputs.ref != '' }}
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      # Fallback checkout for tag push or default behavior
+      - name: Check out code (default)
+        if: ${{ github.event_name != 'workflow_run' && !(github.event_name == 'workflow_dispatch' && (inputs.tag != '' || inputs.ref != '')) }}
+        uses: actions/checkout@v4
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -101,6 +135,26 @@ jobs:
     needs: [build]
     if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     steps:
+      # Determine tag name and version
+      - name: Determine tag/version
+        id: meta
+        run: |
+          # Prefer explicit input tag on manual runs
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.tag }}" ]; then
+            TAG="${{ inputs.tag }}"
+            VERSION="${TAG#provider-gui-v}"
+          else
+            VERSION=$(node -p "require('./provider-gui/package.json').version")
+            TAG="provider-gui-v${VERSION}"
+          fi
+          echo "TAG=$TAG" >> $GITHUB_OUTPUT
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+
+      # Checkout matching code for creating release notes context
+      - name: Check out code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || (github.event_name == 'workflow_dispatch' && inputs.tag != '' && inputs.tag || github.ref) }}
       - name: Check out code
         uses: actions/checkout@v4
         with:
@@ -116,19 +170,14 @@ jobs:
       - name: Display collected assets
         run: ls -R release-assets || true
 
-      - name: Read GUI version
-        id: meta
-        run: |
-          VERSION=$(node -p "require('./provider-gui/package.json').version")
-          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
-
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           draft: false
           generate_release_notes: true
-          # If triggered by a tag push, use that tag; otherwise synthesize from package.json
-          tag_name: ${{ github.event_name == 'push' && github.ref_name || format('provider-gui-v{0}', steps.meta.outputs.VERSION) }}
+          # Use selected tag or derive from package.json
+          tag_name: ${{ steps.meta.outputs.TAG }}
+          prerelease: ${{ github.event_name == 'workflow_dispatch' && inputs.prerelease || false }}
           files: |
             release-assets/**
         env:
