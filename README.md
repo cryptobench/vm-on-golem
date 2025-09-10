@@ -149,15 +149,6 @@ Check your pricing:
 golem-provider pricing show
 ```
 
-### Tips
-
-* Start simple with the example numbers, adjust later.
-* Use `--dev` to save settings to `.env.dev`.
-* Manage payouts:
-  `golem-provider streams list`
-  `golem-provider streams withdraw --all`
-
-More details in `provider-server/README.md`.
 
 ---
 
