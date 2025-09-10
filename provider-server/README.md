@@ -16,6 +16,69 @@ pip install golem-vm-provider
 golem-provider start --network testnet
 ```
 
+Verify your environment and connectivity anytime:
+
+```bash
+golem-provider status
+```
+This checks Multipass availability, local/external port reachability, and whether an update is available on PyPI.
+
+### Status Command (TTY and JSON)
+
+Use `golem-provider status` to quickly assess health.
+
+TTY output highlights
+
+```
+Overall         Error | Issues detected | Healthy
+
+Multipass       ✅ OK | ❌ Missing
+
+Provider Port   0.0.0.0:7466
+  Local         ✅ service is listening | ❌ port unavailable
+  External      ✅ reachable | ❌ unreachable — <reason>
+
+SSH Ports       <start>-<end> — OK | limited — N issue(s) | blocked
+  Usable free   <count>   # free AND externally reachable
+  In use        <count>
+  Issues        e.g. "100 not reachable externally" or "3 unreachable, 1 not listening"
+```
+
+Severity rules
+
+- Overall is Error when any critical prerequisite fails:
+  - Provider API port not externally reachable (or external check fails).
+  - No externally reachable SSH ports in the configured range.
+  - Multipass missing or provider local port not ready.
+- Otherwise it shows Issues detected or Healthy.
+
+Machine‑readable JSON
+
+```bash
+golem-provider status --json
+```
+
+Key fields:
+
+- `overall.status`: "healthy" | "issues" | "error"
+- `overall.issues`: list of concise issue strings
+- `ports.provider`:
+  - `port`: int, `host`: string
+  - `status`: "reachable" | "unreachable" (external check failures are treated as "unreachable")
+- `ports.ssh`:
+  - `range`: [start, end)
+  - `status`: "ok" | "limited" | "blocked"
+  - `usable_free`: integer — free AND externally reachable
+  - `in_use`: integer
+  - `issues`: `{ unreachable: int, not_listening: int }`
+  - `ports`: array of per‑port summaries:
+    - `{ port: int, status: "reachable" | "unreachable" | "unknown", listening: bool }`
+
+Notes
+
+- The concept of "free" in JSON is replaced by `usable_free` (free + externally reachable) to avoid misleading counts when ports are blocked.
+- When the external checker is unavailable, per‑port `status` is `"unknown"` and `listening` still reflects local state.
+
 3) Set pricing in USD (GLM rates auto‑compute):
 
 ```bash
@@ -547,13 +610,16 @@ The provider includes real-time port verification status:
 
 Example status output:
 
-```bash
-🌟 Port Verification Status
-==========================
-[✅] Provider Port {provider_port}: External ✓ | Internal ✓
-[✅] VM Access Ports: 3 ports available ({start_port}-{start_port+2})
-[✅] Overall Status: Provider Ready
-└─ Can handle up to {n} concurrent VMs
+```
+Overall         Healthy
+
+Provider Port   {host}:{provider_port}
+  Local         ✅ service is listening
+  External      ✅ reachable
+
+SSH Ports       {start_port}-{end_port_minus_one} — OK
+  Usable free   {usable_free}
+  In use        {in_use}
 ```
 
 ### Resource Allocation Issues

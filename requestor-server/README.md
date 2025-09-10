@@ -28,6 +28,12 @@ golem vm create my-vm --provider-id 0xProvider --cpu 2 --memory 4 --storage 20
 golem vm ssh my-vm
 ```
 
+Check your installed version and whether an update is available:
+
+```bash
+golem version
+```
+
 5) Stop or destroy when done:
 
 ```bash
