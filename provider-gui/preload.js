@@ -1,11 +1,17 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
-// Expose protected methods that allow the renderer process to use
-// the ipcRenderer without exposing the entire object
+// Expose minimal config and IPC hooks
+contextBridge.exposeInMainWorld('config', {
+  apiBaseUrl: process.env.PROVIDER_API_URL || 'http://127.0.0.1:7466/api/v1'
+});
+
 contextBridge.exposeInMainWorld('electronAPI', {
-  startProvider: () => ipcRenderer.send('start-provider'),
-  stopProvider: () => ipcRenderer.send('stop-provider'),
-  onProviderStatusUpdate: (callback) => ipcRenderer.on('provider-status-update', (_event, status) => callback(status))
+  onProviderStatusUpdate: (callback) => ipcRenderer.on('provider-status-update', (_event, status) => callback(status)),
+  requestShutdown: () => ipcRenderer.send('shutdown-provider'),
+  providerStart: () => ipcRenderer.invoke('provider-start'),
+  providerStop: () => ipcRenderer.invoke('provider-stop'),
+  checkMultipass: () => ipcRenderer.invoke('multipass-check'),
+  openExternal: (url) => ipcRenderer.invoke('open-external', url)
 });
 
 console.log('Preload script loaded.');

@@ -3,38 +3,60 @@
 <head>
     <meta charset="UTF-8">
     <title>Golem Provider GUI</title>
-    <!-- Basic styling -->
     <style>
-        body { font-family: sans-serif; padding: 1em; }
-        #controls button { margin-right: 1em; padding: 0.5em 1em; }
-        #status { margin-top: 1em; font-weight: bold; }
-        #logs {
-            margin-top: 1em;
-            padding: 0.5em;
-            border: 1px solid #ccc;
-            background-color: #f9f9f9;
-            height: 300px;
-            overflow-y: scroll;
-            white-space: pre-wrap; /* Preserve whitespace and wrap lines */
-            font-family: monospace;
-        }
-        .error { color: red; }
+        body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; padding: 16px; color: #222; }
+        h1 { margin: 0 0 12px 0; font-size: 20px; }
+        .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+        .card { border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px; background: #fff; }
+        .muted { color: #666; font-size: 12px; }
+        #controls { margin: 12px 0; }
+        #controls button { margin-right: 8px; padding: 8px 12px; }
+        #status { font-weight: 600; }
+        .ok { color: #0a7a26; }
+        .warn { color: #a56600; }
+        .err { color: #a11; }
+        .section { margin-top: 16px; }
+        .vm-list { border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden; }
+        .vm-row { display: grid; grid-template-columns: 24px 1fr 120px 120px; gap: 8px; align-items: center; padding: 8px 12px; border-bottom: 1px solid #eee; }
+        .vm-row:last-child { border-bottom: 0; }
+        .vm-id { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+        .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; background: #eee; }
+        .pill.running { background: #e6f7ed; color: #0a7a26; }
+        .pill.stopped { background: #fdeaea; color: #a11; }
+        .small { font-size: 12px; color: #555; }
     </style>
-    <!-- CSP allows only local scripts and inline styles -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://127.0.0.1:* http://localhost:* https://*">
 </head>
 <body>
-    <h1>Golem Provider Control</h1>
+    <h1>Golem Provider</h1>
+    <div id="banner" style="display:none;padding:8px 12px;margin:10px 0;border:1px solid #f0c36d;background:#fff7e6;border-radius:6px;color:#7a5100"></div>
 
-    <div id="controls">
-        <button id="startBtn">Start Provider</button>
-        <button id="stopBtn">Stop Provider</button>
+    <div class="grid">
+      <div class="card">
+        <div class="muted">Status</div>
+        <div id="status" class="ok">Running</div>
+        <div class="muted" id="env"></div>
+      </div>
+      <div class="card">
+        <div class="muted">Resources (available / total)</div>
+        <div id="resources"></div>
+      </div>
+      <div class="card">
+        <div class="muted">Pricing (per month)</div>
+        <div id="pricing"></div>
+      </div>
     </div>
 
-    <div id="status">Status: Idle</div>
+    <div id="controls">
+      <button id="stopBtn">Stop Provider</button>
+      <button id="startBtn">Start Provider</button>
+      <span class="muted small" id="actionMsg"></span>
+    </div>
 
-    <h2>Logs</h2>
-    <div id="logs"></div>
+    <div class="section">
+      <div class="muted">Virtual Machines</div>
+      <div class="vm-list" id="vmList"></div>
+    </div>
 
     <!-- Link to the renderer script -->
     <script src="./renderer.js"></script>

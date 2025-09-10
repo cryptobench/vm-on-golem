@@ -1,0 +1,67 @@
+name: Auto Bump & Tag Provider GUI
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'provider-gui/**'
+      - 'provider-server/**'
+      - 'scripts/build_provider_cli.py'
+
+jobs:
+  bump_and_tag:
+    if: ${{ !contains(github.event.head_commit.message, '[skip ci]') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Compute and bump GUI version (patch)
+        id: bump
+        run: |
+          node -e '
+            const fs=require("fs");
+            const p="provider-gui/package.json";
+            const pkg=JSON.parse(fs.readFileSync(p));
+            const v=(pkg.version||"1.0.0").split(".");
+            v[2]=String(Number(v[2]||0)+1);
+            pkg.version=v.join(".");
+            fs.writeFileSync(p, JSON.stringify(pkg, null, 2)+"\n");
+            console.log("NEW_VERSION="+pkg.version);
+          ' >> $GITHUB_OUTPUT
+
+      - name: Configure git user
+        run: |
+          git config user.email "actions@users.noreply.github.com"
+          git config user.name "GitHub Actions"
+
+      - name: Commit version bump
+        run: |
+          ver=${{ steps.bump.outputs.NEW_VERSION }}
+          git add provider-gui/package.json
+          git commit -m "provider-gui: release v$ver [skip ci]" || echo "No changes to commit"
+
+      - name: Push commit
+        run: |
+          git push origin HEAD:main
+
+      - name: Create and push tag
+        run: |
+          ver=${{ steps.bump.outputs.NEW_VERSION }}
+          tag="provider-gui-v$ver"
+          # Skip if tag already exists
+          if git rev-parse "$tag" >/dev/null 2>&1; then
+            echo "Tag $tag already exists; skipping"
+            exit 0
+          fi
+          git tag -a "$tag" -m "Provider GUI $ver"
+          git push origin "$tag"

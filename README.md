@@ -196,6 +196,24 @@ See `port-checker-server/README.md` for examples and systemd usage.
 - `streaming-abi/` – Shared ABI package
 - `scripts/` – Utilities (e.g., version bumps)
 
+## Packaging GUI + CLI (Single Installer)
+
+Goal: ship an installer (EXE/DMG/PKG/DEB) that includes the Electron GUI and a ready-to-use `golem-provider` CLI.
+
+Build steps:
+- Build standalone Provider CLI (PyInstaller):
+  - `python scripts/build_provider_cli.py --onefile`
+  - This stages binaries under `provider-gui/resources/cli/<platform>/golem-provider[.exe]`.
+- Build Electron installers (from `provider-gui/`):
+  - Windows (NSIS, adds CLI to PATH): `npm run pack:win`
+  - macOS (DMG + PKG; PKG installs `/usr/local/bin/golem-provider`): `npm run pack:mac`
+  - Linux (deb + AppImage; embeds CLI under app resources): `npm run pack:linux`
+
+Notes:
+- macOS: Use the PKG artifact to get the CLI symlink; DMG is drag-and-drop and won’t modify PATH.
+- Windows: NSIS copies the CLI to `…/Golem Provider/bin` and puts that directory on PATH.
+- Linux: The CLI binary is embedded under `Resources/cli/linux`. You can add a symlink to `/usr/local/bin` via a post-install step or surface an in-app “Install CLI” helper.
+
 ## Development / Run From Source
 
 - Tooling: Poetry, Node (for GUIs), Make.

@@ -11,6 +11,70 @@
   "license": "ISC",
   "description": "",
   "devDependencies": {
-    "electron": "^35.1.2"
+    "electron": "^35.1.2",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.golemgrid.provider",
+    "productName": "Golem Provider",
+    "files": [
+      "**/*",
+      "!resources/cli/**"  
+    ],
+    "extraResources": [
+      {
+        "from": "resources/cli",
+        "to": "cli",
+        "filter": ["**/*"]
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": [
+        { "target": "dmg", "arch": ["x64", "arm64"] },
+        { "target": "pkg", "arch": ["x64", "arm64"] }
+      ],
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "extendInfo": {
+        "LSBackgroundOnly": false
+      },
+      "pkg": {
+        "allowAnywhere": true,
+        "scripts": "build/macos"  
+      }
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "artifactName": "${productName}-${version}-Setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": true,
+      "allowToChangeInstallationDirectory": true,
+      "include": "build/installer.nsh"  
+    },
+    "linux": {
+      "target": ["deb", "AppImage"],
+      "category": "Utility",
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "deb": {
+        "afterInstall": "build/linux/after-install.sh",
+        "afterRemove": "build/linux/after-remove.sh"
+      }
+    }
+  },
+  "scripts": {
+    "start": "electron .",
+    "pack:cli": "python ../scripts/build_provider_cli.py --onefile",
+    "pack:win": "npm run pack:cli && electron-builder --win nsis",
+    "pack:mac": "npm run pack:cli && electron-builder --mac dmg pkg",
+    "pack:linux": "npm run pack:cli && electron-builder --linux deb AppImage",
+    "pack": "npm run pack:cli && electron-builder -mwl",
+    "test": "echo \"Error: no test specified\" && exit 1"
   }
 }

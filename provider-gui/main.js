@@ -1,158 +1,142 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
-const path = require('path');
+const { app, BrowserWindow, ipcMain, shell } = require('electron');
 const { spawn } = require('child_process');
+const path = require('path');
 
 let mainWindow;
-let providerProcess = null; // To hold the spawned provider process
 
 function createWindow () {
-  mainWindow = new BrowserWindow({ // Assign to global mainWindow
-    width: 800,
-    height: 600,
+  mainWindow = new BrowserWindow({
+    width: 1000,
+    height: 720,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
-      contextIsolation: true, // Recommended for security
-      nodeIntegration: false // Recommended for security
+      contextIsolation: true,
+      nodeIntegration: false
     }
   });
 
   mainWindow.loadFile('index.html');
-
-  // Optional: Open DevTools for debugging
   // mainWindow.webContents.openDevTools();
 
   mainWindow.on('closed', () => {
-    mainWindow = null; // Dereference window object
-    // Ensure provider process is killed if window is closed
-    if (providerProcess) {
-      console.log('Window closed, stopping provider process...');
-      providerProcess.kill();
-      providerProcess = null;
-    }
+    mainWindow = null;
   });
 }
 
+// Relay minimal notifications to renderer if needed later
 function sendStatusUpdate(status) {
-  if (mainWindow && mainWindow.webContents) {
-    // Check if webContents is not destroyed before sending
-    if (!mainWindow.webContents.isDestroyed()) {
-        mainWindow.webContents.send('provider-status-update', status);
-    } else {
-        console.log("WebContents destroyed, cannot send status update.");
-    }
+  if (mainWindow && mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
+    mainWindow.webContents.send('provider-status-update', status);
   }
 }
 
-ipcMain.on('start-provider', () => {
-  if (providerProcess) {
-    console.log('Provider process already running.');
-    sendStatusUpdate({ type: 'status', message: 'Provider already running.' });
-    return;
-  }
-
-  console.log('Starting provider process...');
-  sendStatusUpdate({ type: 'status', message: 'Starting provider...' });
-
-  const providerDir = path.resolve(__dirname, '../provider-server'); // Path to provider-server directory
-
-  try {
-    // Spawn poetry run golem-provider in the provider-server directory
-    // Set GOLEM_PROVIDER_DEBUG=true to disable port checking
-    // Use shell: true for better cross-platform compatibility with commands like poetry
-    providerProcess = spawn('poetry', ['run', 'golem-provider'], {
-      cwd: providerDir,
-      env: { ...process.env, GOLEM_PROVIDER_DEBUG: 'true' },
-      shell: true // Use shell to handle potential path issues with poetry/commands
-    });
-
-    providerProcess.stdout.on('data', (data) => {
-      const logMessage = data.toString();
-      console.log(`Provider stdout: ${logMessage}`);
-      sendStatusUpdate({ type: 'log', message: logMessage });
-      // Optionally check for specific messages indicating readiness
-      if (logMessage.includes("Starting provider server on")) {
-         sendStatusUpdate({ type: 'status', message: 'Provider running.' });
-      }
-    });
-
-    providerProcess.stderr.on('data', (data) => {
-      const errorMessage = data.toString();
-      console.error(`Provider stderr: ${errorMessage}`);
-      // Send stderr as 'log' type for display, but also log as error in main process
-      sendStatusUpdate({ type: 'log', message: `[ERROR] ${errorMessage}` });
-    });
-
-    providerProcess.on('close', (code) => {
-      console.log(`Provider process exited with code ${code}`);
-      const wasRunning = providerProcess !== null; // Check if we thought it was running
-      providerProcess = null; // Clear the process reference immediately
-
-      if (wasRunning) { // Only send update if we weren't already stopped
-          let finalStatusMessage;
-          if (code === 0 || code === null) { // Treat null exit code (often from SIGTERM/kill) as clean stop
-              finalStatusMessage = 'Provider stopped.';
-              sendStatusUpdate({ type: 'status', message: finalStatusMessage });
-          } else {
-              // Non-zero exit code means it crashed or exited with an error
-              finalStatusMessage = `Provider stopped unexpectedly (exit code: ${code}). Check logs.`;
-              // Send as 'error' type so renderer highlights it and adds the detailed message to logs
-              sendStatusUpdate({ type: 'error', message: finalStatusMessage });
-          }
-          console.log(`Final status sent: ${finalStatusMessage}`);
-      } else {
-          console.log("Process already marked as stopped, ignoring close event.");
-      }
-    });
-
-    providerProcess.on('error', (err) => {
-      console.error('Failed to start provider process:', err);
-      sendStatusUpdate({ type: 'error', message: `Failed to start provider: ${err.message}` });
-      providerProcess = null;
-    });
-
-  } catch (error) {
-      console.error('Error spawning provider process:', error);
-      sendStatusUpdate({ type: 'error', message: `Error spawning provider: ${error.message}` });
-      providerProcess = null;
-  }
+// Optional: receive shutdown requests from renderer and just pass-through
+ipcMain.on('shutdown-provider', () => {
+  sendStatusUpdate({ type: 'status', message: 'Shutdown requested...' });
 });
-
-ipcMain.on('stop-provider', () => {
-  if (providerProcess) {
-    console.log('Stopping provider process...');
-    sendStatusUpdate({ type: 'status', message: 'Stopping provider...' });
-    providerProcess.kill('SIGTERM'); // Send SIGTERM for graceful shutdown
-    // Status update will be sent via the 'close' event handler
-  } else {
-    console.log('Provider process not running.');
-    sendStatusUpdate({ type: 'status', message: 'Provider already stopped.' });
-  }
-});
-
 
 app.whenReady().then(() => {
   createWindow();
-
   app.on('activate', function () {
-    // On macOS it's common to re-create a window in the app when the
-    // dock icon is clicked and there are no other windows open.
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
+  // Optionally auto-start provider in background when GUI launches
+  // startProviderSafe();
 });
 
 app.on('window-all-closed', function () {
-  // Quit when all windows are closed, except on macOS. There, it's common
-  // for applications and their menu bar to stay active until the user quits
-  // explicitly with Cmd + Q.
   if (process.platform !== 'darwin') {
     app.quit();
   }
 });
 
-// Ensure provider process is killed on app quit
-app.on('will-quit', () => {
-  if (providerProcess) {
-    console.log('App quitting, stopping provider process...');
-    providerProcess.kill('SIGTERM');
+// --- Provider CLI helpers -------------------------------------------------
+
+function cliBinaryPath() {
+  const resBase = process.resourcesPath; // points to app.asar/../Resources on packaged builds
+  const plat = process.platform;
+  try {
+    if (plat === 'win32') {
+      const p = path.join(resBase, 'cli', 'win', 'golem-provider.exe');
+      return p;
+    }
+    if (plat === 'darwin') {
+      const p = path.join(resBase, 'cli', 'macos', 'golem-provider');
+      return p;
+    }
+    // linux
+    return path.join(resBase, 'cli', 'linux', 'golem-provider');
+  } catch (_) {
+    return null;
+  }
+}
+
+function providerCommand() {
+  // Prefer embedded CLI; fallback to PATH
+  const embedded = cliBinaryPath();
+  return embedded;
+}
+
+function startProviderSafe() {
+  const cmd = providerCommand() || 'golem-provider';
+  const args = ['start', '--daemon'];
+  const opts = {
+    detached: true,
+    stdio: 'ignore'
+  };
+  try {
+    const child = spawn(cmd, args, opts);
+    child.unref();
+    sendStatusUpdate({ type: 'started', message: 'Provider started in background' });
+  } catch (e) {
+    sendStatusUpdate({ type: 'error', message: 'Failed to start provider: ' + e.message });
+  }
+}
+
+function stopProviderSafe() {
+  const cmd = providerCommand() || 'golem-provider';
+  const args = ['stop'];
+  const opts = { detached: true, stdio: 'ignore' };
+  try {
+    const child = spawn(cmd, args, opts);
+    child.unref();
+    sendStatusUpdate({ type: 'stopped', message: 'Provider stop requested' });
+  } catch (e) {
+    sendStatusUpdate({ type: 'error', message: 'Failed to stop provider: ' + e.message });
+  }
+}
+
+ipcMain.handle('provider-start', async () => {
+  startProviderSafe();
+  return { ok: true };
+});
+
+ipcMain.handle('provider-stop', async () => {
+  stopProviderSafe();
+  return { ok: true };
+});
+
+// Multipass check and helpers
+ipcMain.handle('multipass-check', async () => {
+  try {
+    const child = spawn('multipass', ['--version'], { stdio: ['ignore', 'pipe', 'pipe'] });
+    let out = '';
+    await new Promise((resolve) => {
+      child.stdout.on('data', (d) => (out += d.toString()));
+      child.on('close', () => resolve());
+      child.on('error', () => resolve());
+    });
+    return { ok: true, version: (out || '').trim() };
+  } catch (e) {
+    return { ok: false };
+  }
+});
+
+ipcMain.handle('open-external', async (_e, url) => {
+  try {
+    await shell.openExternal(url);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: String(e) };
   }
 });
