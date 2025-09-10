@@ -126,8 +126,8 @@ class PortVerifier:
         Returns:
             Dictionary mapping ports to their verification results
         """
-        results = {}
-        attempts = []
+        results: Dict[int, PortVerificationResult] = {}
+        attempts: List[ServerAttempt] = []
         
         # Try each server
         for server in self.port_check_servers:
@@ -146,27 +146,29 @@ class PortVerifier:
                     
                     if response.status == 200:
                         data = await response.json()
-                        if data["success"]:
-                            # Convert server results to PortVerificationResult objects
-                            for port_str, result in data["results"].items():
-                                port = int(port_str)
-                                if port not in results or not results[port].accessible:
-                                    # Only update if we haven't found a successful verification yet
-                                    results[port] = PortVerificationResult(
-                                        port=port,
-                                        accessible=result["accessible"],
-                                        error=result.get("error"),
-                                        verified_by=server if result["accessible"] else None,
-                                        attempts=[]  # Will be filled at the end
-                                    )
-                            attempts.append(ServerAttempt(server=server, success=True))
-                            logger.info(f"Port verification completed using {server}")
-                        else:
-                            attempts.append(ServerAttempt(
-                                server=server,
-                                success=False,
-                                error=f"Server {server} returned unsuccessful response"
-                            ))
+                        # Treat a 200 response as a successful attempt regardless of overall success flag.
+                        # The 'success' field in the checker indicates if any port was reachable, not server health.
+                        raw_results = data.get("results", {}) or {}
+                        for port_key, result in raw_results.items():
+                            try:
+                                port = int(port_key)
+                            except Exception:
+                                # Some implementations might already use ints
+                                port = int(result.get("port", 0)) if isinstance(result, dict) else 0
+                            if not port:
+                                continue
+                            accessible = bool(result.get("accessible"))
+                            err = result.get("error")
+                            if port not in results or (accessible and not results[port].accessible):
+                                results[port] = PortVerificationResult(
+                                    port=port,
+                                    accessible=accessible,
+                                    error=err,
+                                    verified_by=server if accessible else None,
+                                    attempts=[],
+                                )
+                        attempts.append(ServerAttempt(server=server, success=True))
+                        logger.info(f"Port verification completed using {server}")
                     else:
                         attempts.append(ServerAttempt(
                             server=server,
@@ -198,7 +200,7 @@ class PortVerifier:
                 ))
                 logger.warning(error_msg)
         
-        # If no servers were successful, fail verification
+        # If no servers responded successfully, fail verification
         if not any(attempt.success for attempt in attempts):
             error_msg = (
                 "Failed to connect to any port check servers. Please ensure:\n"
@@ -209,19 +211,15 @@ class PortVerifier:
             logger.error(error_msg)
             raise RuntimeError(error_msg)
 
-        # If no successful verifications but servers were reachable, mark ports as inaccessible
-        if not any(result.accessible for result in results.values()):
-            error_msg = "No ports were verified as accessible"
-            logger.error(error_msg)
-            results = {
-                port: PortVerificationResult(
+        # Ensure all requested ports are present in results; default to inaccessible
+        for port in ports:
+            if port not in results:
+                results[port] = PortVerificationResult(
                     port=port,
                     accessible=False,
-                    error=error_msg,
-                    attempts=[]  # Will be filled below
+                    error=None,
+                    attempts=[],
                 )
-                for port in ports
-            }
         
         # Add attempts to all results
         for result in results.values():

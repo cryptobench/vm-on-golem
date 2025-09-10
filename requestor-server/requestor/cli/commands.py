@@ -5,6 +5,7 @@ import json
 from typing import Optional
 from pathlib import Path
 import subprocess
+import os
 import aiohttp
 from tabulate import tabulate
 import uvicorn
@@ -87,6 +88,33 @@ def cli(network: str | None):
         except Exception:
             pass
     pass
+
+
+@cli.command(name="version")
+def version_cmd():
+    """Show installed and latest versions from PyPI."""
+    pkg = "request-vm-on-golem"
+    try:
+        current = metadata.version(pkg)
+    except Exception:
+        current = "unknown"
+    latest = None
+    # Avoid network during pytest
+    if not os.environ.get("PYTEST_CURRENT_TEST"):
+        try:
+            import json as _json
+            from urllib.request import urlopen
+            with urlopen(f"https://pypi.org/pypi/{pkg}/json", timeout=5) as resp:
+                data = _json.loads(resp.read().decode("utf-8"))
+                latest = data.get("info", {}).get("version")
+        except Exception:
+            latest = None
+
+    if latest and latest != current:
+        click.echo(f"Requestor CLI: {current} (update available: {latest})")
+        click.echo("Update: pip install -U request-vm-on-golem")
+    else:
+        click.echo(f"Requestor CLI: {current} (up-to-date)" if latest else f"Requestor CLI: {current}")
 
 
 @cli.group()
