@@ -425,6 +425,19 @@ golem-provider start
 GOLEM_PROVIDER_ENVIRONMENT=development golem-provider start --network testnet
 ```
 
+Run as a background service (no terminal):
+
+```bash
+# Start in background and write a PID file
+golem-provider start --daemon [--network testnet|mainnet]
+
+# Stop the background process
+golem-provider stop
+
+# Check environment and port health (unchanged)
+golem-provider status [--json]
+```
+
 ### Mode vs. Network
 
 - Development Mode (`GOLEM_PROVIDER_ENVIRONMENT=development`)

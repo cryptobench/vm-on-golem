@@ -137,6 +137,11 @@ async def verify_provider_port(port: int) -> bool:
 
 
 import typer
+import platform as _platform
+import signal as _signal
+import time as _time
+import shutil as _shutil
+import psutil
 try:
     from importlib import metadata
 except ImportError:
@@ -171,6 +176,91 @@ def _get_latest_version_from_pypi(pkg_name: str) -> Optional[str]:
     # Avoid network in pytest runs
     if os.environ.get("PYTEST_CURRENT_TEST"):
         return None
+
+
+# ---------------------------
+# Daemon/PID file management
+# ---------------------------
+
+def _pid_dir() -> str:
+    from pathlib import Path
+    plat = _platform.system().lower()
+    if plat.startswith("darwin"):
+        base = Path.home() / "Library" / "Application Support" / "Golem Provider"
+    elif plat.startswith("windows"):
+        base = Path(os.environ.get("APPDATA", str(Path.home() / "AppData" / "Roaming"))) / "Golem Provider"
+    else:
+        base = Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local" / "state"))) / "golem-provider"
+    base.mkdir(parents=True, exist_ok=True)
+    return str(base)
+
+
+def _pid_path() -> str:
+    from pathlib import Path
+    return str(Path(_pid_dir()) / "provider.pid")
+
+
+def _write_pid(pid: int) -> None:
+    with open(_pid_path(), "w") as fh:
+        fh.write(str(pid))
+
+
+def _read_pid() -> int | None:
+    try:
+        with open(_pid_path(), "r") as fh:
+            c = fh.read().strip()
+            return int(c)
+    except Exception:
+        return None
+
+
+def _remove_pid_file() -> None:
+    try:
+        os.remove(_pid_path())
+    except Exception:
+        pass
+
+
+def _is_running(pid: int) -> bool:
+    try:
+        return psutil.pid_exists(pid) and psutil.Process(pid).is_running()
+    except Exception:
+        return False
+
+
+def _spawn_detached(argv: list[str], env: dict | None = None) -> int:
+    import subprocess
+    popen_kwargs = {
+        "stdin": subprocess.DEVNULL,
+        "stdout": subprocess.DEVNULL,
+        "stderr": subprocess.DEVNULL,
+        "env": env or os.environ.copy(),
+    }
+    if _platform.system().lower().startswith("windows"):
+        creationflags = 0
+        for flag in ("CREATE_NEW_PROCESS_GROUP", "DETACHED_PROCESS"):
+            v = getattr(subprocess, flag, 0)
+            if v:
+                creationflags |= v
+        if creationflags:
+            popen_kwargs["creationflags"] = creationflags  # type: ignore[assignment]
+    else:
+        popen_kwargs["preexec_fn"] = os.setsid  # type: ignore[assignment]
+    proc = subprocess.Popen(argv, **popen_kwargs)
+    return int(proc.pid)
+
+
+def _self_command(base_args: list[str]) -> list[str]:
+    import sys
+    # When frozen (PyInstaller), sys.executable is the CLI binary
+    if getattr(sys, "frozen", False):
+        return [sys.executable] + base_args
+    # Prefer the console_script when available
+    exe = _shutil.which("golem-provider")
+    if exe:
+        return [exe] + base_args
+    # Fallback to module execution
+    return [sys.executable, "-m", "provider.main"] + base_args
     try:
         import json as _json
         from urllib.request import urlopen
@@ -1149,10 +1239,77 @@ def streams_withdraw(
 @cli.command()
 def start(
     no_verify_port: bool = typer.Option(False, "--no-verify-port", help="Skip provider port verification."),
-    network: str = typer.Option(None, "--network", help="Target network: 'testnet' or 'mainnet' (overrides env)")
+    network: str = typer.Option(None, "--network", help="Target network: 'testnet' or 'mainnet' (overrides env)"),
+    gui: Optional[bool] = typer.Option(None, "--gui/--no-gui", help="Auto-launch Electron GUI (default: auto)"),
+    daemon: bool = typer.Option(False, "--daemon", help="Start in background and write a PID file"),
 ):
     """Start the provider server."""
-    run_server(dev_mode=False, no_verify_port=no_verify_port, network=network)
+    if daemon:
+        # If a previous daemon is active, do not start another
+        pid = _read_pid()
+        if pid and _is_running(pid):
+            print(f"Provider already running (pid={pid})")
+            raise typer.Exit(code=0)
+        # Build child command and detach
+        args = ["start"]
+        if no_verify_port:
+            args.append("--no-verify-port")
+        if network:
+            args += ["--network", network]
+        # Force no GUI for daemonized child to avoid duplicates
+        args.append("--no-gui")
+        cmd = _self_command(args)
+        # Ensure GUI not auto-launched via env, regardless of defaults
+        env = {**os.environ, "GOLEM_PROVIDER_LAUNCH_GUI": "0"}
+        child_pid = _spawn_detached(cmd, env)
+        _write_pid(child_pid)
+        print(f"Started provider in background (pid={child_pid})")
+        raise typer.Exit(code=0)
+    else:
+        run_server(dev_mode=False, no_verify_port=no_verify_port, network=network, launch_gui=gui)
+
+
+@cli.command()
+def stop(timeout: int = typer.Option(15, "--timeout", help="Seconds to wait for graceful shutdown")):
+    """Stop a background provider started with --daemon."""
+    pid = _read_pid()
+    if not pid:
+        print("No PID file found; nothing to stop")
+        raise typer.Exit(code=0)
+    if not _is_running(pid):
+        print("No running provider process; cleaning up PID file")
+        _remove_pid_file()
+        raise typer.Exit(code=0)
+    try:
+        p = psutil.Process(pid)
+        p.terminate()
+    except Exception:
+        # Fallback to signal/kill
+        try:
+            if _platform.system().lower().startswith("windows"):
+                os.system(f"taskkill /PID {pid} /T /F >NUL 2>&1")
+            else:
+                os.kill(pid, _signal.SIGTERM)
+        except Exception:
+            pass
+    # Wait for exit
+    start_ts = _time.time()
+    while _time.time() - start_ts < max(0, int(timeout)):
+        if not _is_running(pid):
+            break
+        _time.sleep(0.2)
+    if _is_running(pid):
+        print("Process did not exit in time; sending kill")
+        try:
+            psutil.Process(pid).kill()
+        except Exception:
+            try:
+                if not _platform.system().lower().startswith("windows"):
+                    os.kill(pid, _signal.SIGKILL)
+            except Exception:
+                pass
+    _remove_pid_file()
+    print("Provider stopped")
 
 # Removed separate 'dev' command; use environment GOLEM_PROVIDER_ENVIRONMENT=development instead.
 
@@ -1288,7 +1445,83 @@ def _print_pricing_examples(glm_usd):
             f"- {name} ({res.cpu}C, {res.memory}GB RAM, {res.storage}GB Disk): ~{usd_str} per month (~{glm_str})"
         )
 
-def run_server(dev_mode: bool | None = None, no_verify_port: bool = False, network: str | None = None):
+def _can_launch_gui() -> bool:
+    import shutil
+    plat = _sys.platform
+    # Basic headless checks
+    if plat.startswith("linux"):
+        if not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
+            return False
+    # Require npm (or electron) available
+    return bool(shutil.which("npm") or shutil.which("electron"))
+
+
+def _maybe_launch_gui(port: int):
+    import subprocess, shutil
+    import os as _os
+    from pathlib import Path
+    root = Path(__file__).parent.parent.parent
+    gui_dir = root / "provider-gui"
+    if not gui_dir.exists():
+        logger.info("GUI directory not found; running headless")
+        return
+    cmd = None
+    npm = shutil.which("npm")
+    electron_bin = gui_dir / "node_modules" / "electron" / "dist" / ("electron.exe" if _sys.platform.startswith("win") else "electron")
+    try:
+        # Ensure dependencies (electron) are present
+        if npm and not electron_bin.exists():
+            install_cmd = [npm, "ci", "--silent"] if (gui_dir / "package-lock.json").exists() else [npm, "install", "--silent"]
+            logger.info("Installing Provider GUI dependencies…")
+            subprocess.run(install_cmd, cwd=str(gui_dir), env=os.environ, check=True)
+    except Exception as e:
+        logger.warning(f"GUI dependencies install failed: {e}")
+
+    if npm:
+        cmd = [npm, "start", "--silent"]
+    elif shutil.which("electron"):
+        cmd = ["electron", "."]
+    else:
+        logger.info("No npm/electron found; skipping GUI")
+        return
+    env = {**os.environ, "PROVIDER_API_URL": f"http://127.0.0.1:{port}/api/v1"}
+    try:
+        # Detach GUI so it won't receive terminal signals (e.g., Ctrl+C) or
+        # be terminated when the provider process exits.
+        popen_kwargs = {
+            "cwd": str(gui_dir),
+            "env": env,
+            "stdin": subprocess.DEVNULL,
+            "stdout": subprocess.DEVNULL,
+            "stderr": subprocess.DEVNULL,
+        }
+        if _sys.platform.startswith("win"):
+            # Create a new process group and detach from console on Windows
+            creationflags = 0
+            try:
+                creationflags |= getattr(subprocess, "CREATE_NEW_PROCESS_GROUP")
+            except Exception:
+                pass
+            try:
+                creationflags |= getattr(subprocess, "DETACHED_PROCESS")
+            except Exception:
+                pass
+            if creationflags:
+                popen_kwargs["creationflags"] = creationflags  # type: ignore[assignment]
+        else:
+            # Start a new session/process group on POSIX
+            try:
+                popen_kwargs["preexec_fn"] = _os.setsid  # type: ignore[assignment]
+            except Exception:
+                pass
+
+        subprocess.Popen(cmd, **popen_kwargs)
+        logger.info("Launched Provider GUI")
+    except Exception as e:
+        logger.warning(f"Failed to launch GUI: {e}")
+
+
+def run_server(dev_mode: bool | None = None, no_verify_port: bool = False, network: str | None = None, launch_gui: Optional[bool] = None):
     """Helper to run the uvicorn server."""
     import sys
     from pathlib import Path
@@ -1344,9 +1577,24 @@ def run_server(dev_mode: bool | None = None, no_verify_port: bool = False, netwo
         log_config = uvicorn.config.LOGGING_CONFIG
         log_config["formatters"]["access"]["fmt"] = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
+        # Optionally launch GUI (non-blocking)
+        want_gui: bool
+        if launch_gui is None:
+            env_flag = os.environ.get("GOLEM_PROVIDER_LAUNCH_GUI")
+            if env_flag is not None:
+                want_gui = env_flag.strip().lower() in ("1", "true", "yes")
+            else:
+                want_gui = _can_launch_gui()
+        else:
+            want_gui = bool(launch_gui)
+        if want_gui:
+            try:
+                _maybe_launch_gui(int(settings.PORT))
+            except Exception:
+                logger.warning("GUI launch attempt failed; continuing headless")
+
         # Run server
-        logger.process(
-            f"🚀 Starting provider server on {settings.HOST}:{settings.PORT}")
+        logger.process(f"🚀 Starting provider server on {settings.HOST}:{settings.PORT}")
         uvicorn.run(
             "provider:app",
             host=settings.HOST,

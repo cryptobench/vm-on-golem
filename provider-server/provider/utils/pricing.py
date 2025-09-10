@@ -165,7 +165,8 @@ class PricingAutoUpdater:
                         update_glm_unit_prices_from_usd(glm_usd)
                         if callable(self._on_updated):
                             # Inform callback which advertising platform is active
-                            platform = getattr(settings, "ADVERTISER_TYPE", "discovery_server")
+                            _s = _get_settings()
+                            platform = getattr(_s, "ADVERTISER_TYPE", "discovery_server")
                             await self._on_updated(platform=platform, glm_usd=glm_usd)
                 else:
                     logger.warning("Skipping pricing update; failed to fetch GLM price")

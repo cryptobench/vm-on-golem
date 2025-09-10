@@ -12,7 +12,13 @@ from ..container import Container
 from ..utils.logging import setup_logger
 from ..utils.ascii_art import vm_creation_animation, vm_status_change
 from ..vm.models import VMInfo, VMAccessInfo, VMConfig, VMResources, VMNotFoundError
-from .models import CreateVMRequest, ProviderInfoResponse, StreamStatus, StreamOnChain, StreamComputed
+from .models import (
+    CreateVMRequest,
+    ProviderInfoResponse,
+    StreamStatus,
+    StreamOnChain,
+    StreamComputed,
+)
 from ..payments.blockchain_service import StreamPaymentReader
 from ..vm.service import VMService
 from ..vm.multipass_adapter import MultipassError
@@ -299,3 +305,83 @@ async def list_stream_statuses(
             logger.warning(f"stream {stream_id} lookup failed: {e}")
             continue
     return resp
+
+
+# --- GUI support endpoints ---
+@router.get("/summary")
+@inject
+async def provider_summary(
+    vm_service: VMService = Depends(Provide[Container.vm_service]),
+    settings: Any = Depends(Provide[Container.config]),
+    container: Container = Depends(Provide[Container]),
+):
+    """Concise provider summary for GUI: status, resources, pricing, VMs."""
+    try:
+        # Resources
+        rt = container.resource_tracker()
+        total = getattr(rt, "total_resources", {})
+        available = rt.get_available_resources() if hasattr(rt, "get_available_resources") else {}
+
+        # Pricing (both USD and GLM per month per unit)
+        pricing = {
+            "usd_per_core_month": float(settings["PRICE_USD_PER_CORE_MONTH"]) if isinstance(settings, dict) else float(getattr(settings, "PRICE_USD_PER_CORE_MONTH", 0)),
+            "usd_per_gb_ram_month": float(settings["PRICE_USD_PER_GB_RAM_MONTH"]) if isinstance(settings, dict) else float(getattr(settings, "PRICE_USD_PER_GB_RAM_MONTH", 0)),
+            "usd_per_gb_storage_month": float(settings["PRICE_USD_PER_GB_STORAGE_MONTH"]) if isinstance(settings, dict) else float(getattr(settings, "PRICE_USD_PER_GB_STORAGE_MONTH", 0)),
+            "glm_per_core_month": float(settings["PRICE_GLM_PER_CORE_MONTH"]) if isinstance(settings, dict) else float(getattr(settings, "PRICE_GLM_PER_CORE_MONTH", 0)),
+            "glm_per_gb_ram_month": float(settings["PRICE_GLM_PER_GB_RAM_MONTH"]) if isinstance(settings, dict) else float(getattr(settings, "PRICE_GLM_PER_GB_RAM_MONTH", 0)),
+            "glm_per_gb_storage_month": float(settings["PRICE_GLM_PER_GB_STORAGE_MONTH"]) if isinstance(settings, dict) else float(getattr(settings, "PRICE_GLM_PER_GB_STORAGE_MONTH", 0)),
+        }
+
+        # VMs
+        vms = []
+        try:
+            items = await vm_service.list_vms()
+            for vm in items:
+                vms.append({
+                    "id": vm.id,
+                    "status": vm.status.value if hasattr(vm, "status") else str(getattr(vm, "status", "")),
+                    "ssh_port": getattr(vm, "ssh_port", None),
+                    "resources": {
+                        "cpu": getattr(getattr(vm, "resources", None), "cpu", None),
+                        "memory": getattr(getattr(vm, "resources", None), "memory", None),
+                        "storage": getattr(getattr(vm, "resources", None), "storage", None),
+                    },
+                })
+        except Exception:
+            vms = []
+
+        # Basic environment info
+        env = {
+            "environment": settings["ENVIRONMENT"] if isinstance(settings, dict) else getattr(settings, "ENVIRONMENT", None),
+            "network": settings.get("NETWORK") if isinstance(settings, dict) else getattr(settings, "NETWORK", None),
+        }
+
+        return {
+            "status": "running",
+            "resources": {"total": total, "available": available},
+            "pricing": pricing,
+            "vms": vms,
+            "env": env,
+        }
+    except Exception as e:
+        logger.error(f"summary endpoint failed: {e}")
+        raise HTTPException(status_code=500, detail="failed to collect summary")
+
+
+@router.post("/admin/shutdown")
+async def admin_shutdown():
+    """Schedule a graceful provider shutdown. Returns immediately."""
+    try:
+        import asyncio, os, signal
+        loop = asyncio.get_running_loop()
+        # Try to signal our own process for a clean exit shortly after responding
+        def _sig():
+            try:
+                os.kill(os.getpid(), signal.SIGTERM)
+            except Exception:
+                os._exit(0)  # last resort
+        loop.call_later(0.2, _sig)
+        return {"ok": True}
+    except Exception as e:
+        logger.error(f"shutdown scheduling failed: {e}")
+        raise HTTPException(status_code=500, detail="failed to schedule shutdown")

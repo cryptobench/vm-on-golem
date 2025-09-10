@@ -157,13 +157,25 @@ class MultipassAdapter(VMProvider):
     async def list_vms(self) -> List[VMInfo]:
         """List all VMs."""
         all_mappings = self.name_mapper.list_mappings()
-        vms = []
-        for requestor_name in all_mappings.keys():
+        vms: List[VMInfo] = []
+        for requestor_name, multipass_name in list(all_mappings.items()):
             try:
-                vm_info = await self.get_vm_status(requestor_name)
+                # get_vm_status expects multipass_name
+                vm_info = await self.get_vm_status(multipass_name)
                 vms.append(vm_info)
             except VMNotFoundError:
-                logger.warning(f"VM {requestor_name} not found, but a mapping exists. It may have been deleted externally.")
+                logger.warning(
+                    f"VM {requestor_name} not found, but a mapping exists. It may have been deleted externally."
+                )
+                # Cleanup stale mapping and proxy allocation to avoid repeated warnings
+                try:
+                    await self.proxy_manager.remove_vm(multipass_name)
+                except Exception:
+                    pass
+                try:
+                    await self.name_mapper.remove_mapping(requestor_name)
+                except Exception:
+                    pass
         return vms
 
     async def start_vm(self, multipass_name: str) -> VMInfo:
@@ -211,8 +223,8 @@ class MultipassAdapter(VMProvider):
     async def get_all_vms_resources(self) -> Dict[str, VMResources]:
         """Get resources for all running VMs."""
         all_mappings = self.name_mapper.list_mappings()
-        vm_resources = {}
-        for requestor_name, multipass_name in all_mappings.items():
+        vm_resources: Dict[str, VMResources] = {}
+        for requestor_name, multipass_name in list(all_mappings.items()):
             try:
                 info = await self._get_vm_info(multipass_name)
                 disks_info = info.get("disks", {})
@@ -223,7 +235,18 @@ class MultipassAdapter(VMProvider):
                     storage=round(total_storage / (1024**3)) if total_storage > 0 else 10
                 )
             except (MultipassError, VMNotFoundError):
-                logger.warning(f"Could not retrieve resources for VM {requestor_name} ({multipass_name}). It may have been deleted.")
+                logger.warning(
+                    f"Could not retrieve resources for VM {requestor_name} ({multipass_name}). It may have been deleted."
+                )
+                # Cleanup stale mapping and proxy allocation
+                try:
+                    await self.proxy_manager.remove_vm(multipass_name)
+                except Exception:
+                    pass
+                try:
+                    await self.name_mapper.remove_mapping(requestor_name)
+                except Exception:
+                    pass
             except Exception as e:
                 logger.error(f"Failed to get info for VM {requestor_name}: {e}")
         return vm_resources
