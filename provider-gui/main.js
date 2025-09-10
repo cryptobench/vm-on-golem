@@ -71,35 +71,42 @@ function cliBinaryPath() {
   }
 }
 
-function providerCommand() {
-  // Prefer embedded CLI; fallback to PATH
-  const embedded = cliBinaryPath();
-  return embedded;
+function providerInvoker(baseArgs) {
+  // When packaged, prefer embedded CLI
+  if (app.isPackaged) {
+    const embedded = cliBinaryPath();
+    if (embedded) return { cmd: embedded, args: baseArgs, opts: { detached: true, stdio: 'ignore' } };
+  }
+
+  // Allow override via env to support custom launchers
+  const override = process.env.PROVIDER_CLI_CMD; // e.g., "poetry -C provider-server run golem-provider"
+  if (override && override.trim().length > 0) {
+    // Use shell to support full command strings
+    return { cmd: override + ' ' + baseArgs.join(' '), args: [], opts: { shell: true, detached: true, stdio: 'ignore' } };
+  }
+
+  // Dev-friendly default: invoke via Poetry from repo
+  // Requires Poetry and provider-server deps installed locally
+  const poetryArgs = ['-C', 'provider-server', 'run', 'golem-provider', ...baseArgs];
+  return { cmd: 'poetry', args: poetryArgs, opts: { detached: true, stdio: 'ignore' } };
 }
 
 function startProviderSafe() {
-  const cmd = providerCommand() || 'golem-provider';
-  const args = ['start', '--daemon'];
-  const opts = {
-    detached: true,
-    stdio: 'ignore'
-  };
+  const { cmd, args, opts } = providerInvoker(['start', '--daemon']);
   try {
     const child = spawn(cmd, args, opts);
-    child.unref();
-    sendStatusUpdate({ type: 'started', message: 'Provider started in background' });
+    if (child && typeof child.unref === 'function') child.unref();
+    sendStatusUpdate({ type: 'started', message: 'Provider start requested' });
   } catch (e) {
     sendStatusUpdate({ type: 'error', message: 'Failed to start provider: ' + e.message });
   }
 }
 
 function stopProviderSafe() {
-  const cmd = providerCommand() || 'golem-provider';
-  const args = ['stop'];
-  const opts = { detached: true, stdio: 'ignore' };
+  const { cmd, args, opts } = providerInvoker(['stop']);
   try {
     const child = spawn(cmd, args, opts);
-    child.unref();
+    if (child && typeof child.unref === 'function') child.unref();
     sendStatusUpdate({ type: 'stopped', message: 'Provider stop requested' });
   } catch (e) {
     sendStatusUpdate({ type: 'error', message: 'Failed to stop provider: ' + e.message });
