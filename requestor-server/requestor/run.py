@@ -48,9 +48,15 @@ def check_requirements() -> bool:
 def main():
     """Run the requestor CLI."""
     try:
-        # Load environment variables from .env.dev file if it exists, otherwise use .env
-        dev_env_path = Path(__file__).parent.parent / '.env.dev'
-        env_path = dev_env_path if dev_env_path.exists() else Path(__file__).parent.parent / '.env'
+        # Load environment variables based on unified environment
+        env_mode = (os.environ.get('GOLEM_ENVIRONMENT') or os.environ.get('GOLEM_REQUESTOR_ENVIRONMENT') or '').lower()
+        base_dir = Path(__file__).parent.parent
+        env_file = '.env.dev' if env_mode == 'development' else '.env'
+        env_path = base_dir / env_file
+        # If chosen file does not exist, fallback to the other
+        if not env_path.exists():
+            alt = base_dir / ('.env' if env_file == '.env.dev' else '.env.dev')
+            env_path = alt if alt.exists() else env_path
         load_dotenv(dotenv_path=env_path)
         logger.info(f"Loading environment variables from: {env_path}")
 

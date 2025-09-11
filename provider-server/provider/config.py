@@ -27,7 +27,7 @@ def ensure_config() -> None:
             created = True
 
     if not env_file.exists():
-        env_file.write_text("GOLEM_PROVIDER_ENVIRONMENT=production\n")
+        env_file.write_text("GOLEM_ENVIRONMENT=production\n")
         created = True
 
     from .security.ethereum import EthereumIdentity
@@ -55,8 +55,12 @@ class Settings(BaseSettings):
     PORT: int = 7466
     SKIP_PORT_VERIFICATION: bool = False
     ENVIRONMENT: str = "production"
-    # Logical network selector for annotation and client defaults
-    NETWORK: str = "mainnet"  # one of: "testnet", "mainnet"
+    # Logical network selector for advertisement scope and client defaults
+    # If not explicitly provided, computed by validator below (dev -> testnet, else -> mainnet)
+    NETWORK: str = Field(
+        default="",
+        description="Logical Golem network: 'testnet' or 'mainnet'"
+    )
 
     # Payments chain selection (modular network profiles). Keep default on l2.holesky
     PAYMENTS_NETWORK: str = Field(
@@ -72,6 +76,37 @@ class Settings(BaseSettings):
     @property
     def DEV_MODE(self) -> bool:
         return self.ENVIRONMENT == "development"
+
+    @field_validator("ENVIRONMENT", mode='before')
+    @classmethod
+    def prefer_global_env(cls, v: str) -> str:
+        """Prefer unified GOLEM_ENVIRONMENT when provided; fallback to service-specific env."""
+        ge = os.environ.get("GOLEM_ENVIRONMENT")
+        if ge:
+            return ge
+        return v
+
+    @field_validator("NETWORK", mode='before')
+    @classmethod
+    def resolve_network(cls, v: str, values: dict) -> str:
+        """Resolve logical network with sensible defaults.
+
+        Priority:
+        1) Explicit override via GOLEM_PROVIDER_NETWORK env or provided value
+        2) If ENVIRONMENT == development -> 'testnet'
+        3) Otherwise -> 'mainnet'
+        """
+        # Prefer explicit provider-scoped env override
+        env_override = os.environ.get("GOLEM_PROVIDER_NETWORK")
+        if env_override:
+            return env_override
+        # If value provided (via settings or direct assignment), keep it
+        val = (v or "").strip()
+        if val:
+            return val
+        # Default based on environment
+        env = (values.data.get("ENVIRONMENT") or "").lower()
+        return "testnet" if env == "development" else "mainnet"
 
     @field_validator("SKIP_PORT_VERIFICATION", mode='before')
     def set_skip_verification(cls, v: bool, values: dict) -> bool:
@@ -184,6 +219,16 @@ class Settings(BaseSettings):
     STREAM_MIN_WITHDRAW_WEI: int = Field(
         default=0,
         description="Min withdrawable amount (wei) before triggering withdraw"
+    )
+
+    # Behavior on exhausted runway
+    STREAM_REMOVE_MAPPING_ON_EXHAUSTED: bool = Field(
+        default=True,
+        description="When true, remove the VM->stream mapping after a successful stop on exhausted runway to prevent repeated stop attempts."
+    )
+    STREAM_DELETE_ON_EXHAUSTED: bool = Field(
+        default=False,
+        description="When true, delete the VM entirely once runway is exhausted and the VM has been stopped."
     )
 
     # Shutdown behavior

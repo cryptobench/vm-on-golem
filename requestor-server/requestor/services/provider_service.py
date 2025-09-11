@@ -272,13 +272,22 @@ class ProviderService:
             )
 
     async def _format_block_timestamp(self, block_number: int) -> str:
-        """Format a block number into a human-readable 'time ago' string."""
+        """Format a block number into a human-readable 'time ago' string.
+
+        The Golem Base chain uses ~2 seconds per block.
+        We also guard against negative diffs that can occur when adverts are
+        extended before expiry (expires_at increases), which would otherwise
+        make the derived "created_at" appear in the future.
+        """
         if not self.golem_base_client:
             return "N/A"
         try:
             latest_block = await self.golem_base_client.http_client().eth.get_block('latest')
             block_diff = latest_block.number - block_number
-            seconds_ago = block_diff * 2  # Approximate block time
+            if block_diff < 0:
+                block_diff = 0
+            # Approximate time: ~2s per block
+            seconds_ago = block_diff * 2
             
             if seconds_ago < 60:
                 return f"{int(seconds_ago)}s ago"

@@ -255,12 +255,12 @@ Then, run any `golem` command. For example: `golem vm providers`
 Alternatively, you can prepend the environment variables directly to the command:
 
 ```bash
-GOLEM_REQUESTOR_ENVIRONMENT="development" GOLEM_REQUESTOR_FORCE_LOCALHOST="true" poetry run golem vm providers
+GOLEM_ENVIRONMENT="development" GOLEM_REQUESTOR_FORCE_LOCALHOST="true" poetry run golem vm providers
 ```
 
 ### Mode vs. Network
 
-- Development Mode (`GOLEM_REQUESTOR_ENVIRONMENT=development`)
+- Development Mode (`GOLEM_ENVIRONMENT=development`)
   - Improves local workflows: prefixes central discovery URL with `DEVMODE-` and, when using the central driver, maps provider IPs to `localhost` for easier testing.
   - Does not determine chain selection.
 
@@ -387,7 +387,7 @@ export GOLEM_REQUESTOR_SSH_KEY_DIR="/path/to/keys"
 export GOLEM_REQUESTOR_DB_PATH="/path/to/database.db"
 
 # Environment Mode (defaults to "production")
-export GOLEM_REQUESTOR_ENVIRONMENT="development"  # Optional: Switch to development mode
+export GOLEM_ENVIRONMENT="development"  # Optional: Switch to development mode
 export GOLEM_REQUESTOR_FORCE_LOCALHOST="true"    # Optional: Force localhost in development mode
 export GOLEM_REQUESTOR_NETWORK="testnet"         # Or "mainnet"; optional filter for listing/creation
 ```

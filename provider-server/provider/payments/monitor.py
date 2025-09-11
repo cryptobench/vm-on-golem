@@ -54,7 +54,18 @@ class StreamMonitor:
                     try:
                         s = self.reader.get_stream(stream_id)
                     except Exception as e:
-                        logger.warning(f"stream {stream_id} lookup failed: {e}")
+                        # No payment info available; delete the VM and remove mapping per unified policy
+                        logger.info(
+                            f"Deleting VM {vm_id} due to missing/unavailable payment stream (id={stream_id}): {e}"
+                        )
+                        try:
+                            await self.vm_service.delete_vm(vm_id)
+                        except Exception as del_err:
+                            logger.warning(f"delete_vm failed for {vm_id} after stream lookup failure: {del_err}")
+                        try:
+                            await self.stream_map.remove(vm_id)
+                        except Exception as rem_err:
+                            logger.debug(f"failed to remove vm {vm_id} from stream map: {rem_err}")
                         continue
                     # Stop VM if remaining runway < threshold
                     remaining = max(int(s["stopTime"]) - int(now), 0)
@@ -69,33 +80,72 @@ class StreamMonitor:
                         )
                         try:
                             await self.vm_service.delete_vm(vm_id)
+                            # Best-effort verification of deletion for investigation
+                            try:
+                                _ = await self.vm_service.get_vm_status(vm_id)
+                                logger.info(
+                                    f"Post-delete status check: VM {vm_id} still present after delete request"
+                                )
+                            except VMNotFoundError:
+                                logger.info(
+                                    f"Post-delete status check: VM {vm_id} not found (expected)"
+                                )
+                            except Exception as chk_err:
+                                logger.debug(
+                                    f"Post-delete status check failed for {vm_id}: {chk_err}"
+                                )
                         except Exception as e:
                             logger.warning(f"delete_vm failed for {vm_id}: {e}")
                         try:
                             await self.stream_map.remove(vm_id)
+                            logger.debug(f"Removed {vm_id} from stream map after delete")
                         except Exception as e:
                             logger.debug(f"failed to remove vm {vm_id} from stream map: {e}")
                         continue
 
-                    # Only stop a VM when runway is completely empty
+                    # If runway is exhausted, delete the VM and remove mapping
                     if remaining == 0:
                         logger.info(
-                            f"Stopping VM {vm_id} as stream runway is exhausted (id={stream_id}, now={now}, stop={s.get('stopTime')})"
+                            f"Deleting VM {vm_id} as stream runway is exhausted (id={stream_id}, now={now}, stop={s.get('stopTime')})"
                         )
+                        # Capture pre-delete status for context
                         try:
-                            await self.vm_service.stop_vm(vm_id)
-                        except VMNotFoundError as e:
-                            # If the VM cannot be found, remove it from the stream map
-                            # to avoid repeated stop attempts and log spam.
-                            logger.warning(f"stop_vm failed for {vm_id}: {e}")
+                            pre = await self.vm_service.get_vm_status(vm_id)
+                            logger.info(
+                                f"Pre-delete status for {vm_id}: status={getattr(pre, 'status', '?')} ip={getattr(pre, 'ip_address', '?')}"
+                            )
+                        except VMNotFoundError:
+                            logger.info(
+                                f"Pre-delete status for {vm_id}: not found (will remove mapping)"
+                            )
+                        except Exception as pre_err:
+                            logger.debug(f"Pre-delete status check failed for {vm_id}: {pre_err}")
+
+                        try:
+                            await self.vm_service.delete_vm(vm_id)
+                            # Verify deletion
                             try:
-                                await self.stream_map.remove(vm_id)
-                            except Exception as rem_err:
+                                _ = await self.vm_service.get_vm_status(vm_id)
+                                logger.info(
+                                    f"Post-delete status check: VM {vm_id} still present after delete request"
+                                )
+                            except VMNotFoundError:
+                                logger.info(
+                                    f"Post-delete status check: VM {vm_id} not found (expected)"
+                                )
+                            except Exception as chk_err:
                                 logger.debug(
-                                    f"failed to remove vm {vm_id} from stream map after not-found: {rem_err}"
+                                    f"Post-delete status check failed for {vm_id}: {chk_err}"
                                 )
                         except Exception as e:
-                            logger.warning(f"stop_vm failed for {vm_id}: {e}")
+                            logger.warning(f"delete_vm failed for {vm_id}: {e}")
+                        try:
+                            await self.stream_map.remove(vm_id)
+                            logger.info(f"Removed mapping for {vm_id} after delete on exhausted runway")
+                        except Exception as rem_err:
+                            logger.debug(
+                                f"failed to remove vm {vm_id} from stream map after delete: {rem_err}"
+                            )
                         continue
 
                     # Otherwise, do not stop; just log health and consider withdrawals

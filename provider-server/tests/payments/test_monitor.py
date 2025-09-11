@@ -206,7 +206,7 @@ async def test_monitor_deletes_when_stream_halted(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_monitor_stops_when_stream_ended(monkeypatch):
+async def test_monitor_deletes_when_stream_ended(monkeypatch):
     now = 5_000_000
     stream = {
         "token": "0xglm",
@@ -234,7 +234,7 @@ async def test_monitor_stops_when_stream_ended(monkeypatch):
     monkeypatch.setattr(asyncio, "sleep", fake_sleep)
 
     await mon._run()
-    # VM stopped (not deleted) due to exhausted runway
-    assert vm_service.stopped == ["vm-end"]
-    assert vm_service.deleted == []
+    # VM deleted due to exhausted runway
+    assert vm_service.stopped == []
+    assert vm_service.deleted == ["vm-end"]
     assert client.withdrawn == []

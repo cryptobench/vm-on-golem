@@ -411,7 +411,7 @@ Response (per stream):
 
 Notes:
 - Endpoints return 400 when streaming is disabled (zero `STREAM_PAYMENT_ADDRESS`).
-- In development mode (`GOLEM_PROVIDER_ENVIRONMENT=development`) additional debug logs are emitted around stream verification and monitor ticks.
+- In development mode (`GOLEM_ENVIRONMENT=development`) additional debug logs are emitted around stream verification and monitor ticks.
 
  ## Operations
  
@@ -422,7 +422,7 @@ Notes:
 golem-provider start
 
 # Development mode with extra logs and reload
-GOLEM_PROVIDER_ENVIRONMENT=development golem-provider start --network testnet
+GOLEM_ENVIRONMENT=development golem-provider start --network testnet
 ```
 
 Run as a background service (no terminal):
@@ -440,7 +440,7 @@ golem-provider status [--json]
 
 ### Mode vs. Network
 
-- Development Mode (`GOLEM_PROVIDER_ENVIRONMENT=development`)
+- Development Mode (`GOLEM_ENVIRONMENT=development`)
   - Optimizes for local iteration: enables reload + debug logging and uses local defaults (e.g., local port check servers). May derive a local/LAN IP automatically and prefix the provider name with `DEVMODE-`.
   - Does not decide which chain you target.
 
@@ -453,7 +453,7 @@ golem-provider status [--json]
   - Selects the payments chain profile (e.g., `l2.holesky`, `mainnet`). Determines default payments RPC, faucet enablement, and symbols.
 
 Common setups:
-- Local dev on testnet: `GOLEM_PROVIDER_ENVIRONMENT=development` plus `--network testnet`.
+- Local dev on testnet: `GOLEM_ENVIRONMENT=development` plus `--network testnet`.
 - Staging on testnet: keep `ENVIRONMENT=production`, set `--network testnet` and testnet RPCs.
 - Production on mainnet: `ENVIRONMENT=production` with `--network mainnet` and mainnet RPCs.
 
