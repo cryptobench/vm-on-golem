@@ -16,13 +16,15 @@ class AdvertisementRepository:
         ip_address: str,
         country: str,
         resources: Dict[str, Any],
-        pricing: Optional[Dict[str, Any]] = None
+        pricing: Optional[Dict[str, Any]] = None,
+        platform: Optional[str] = None,
     ) -> Advertisement:
         """Create or update a provider advertisement."""
         stmt = insert(Advertisement).values(
             provider_id=provider_id,
             ip_address=ip_address,
             country=country,
+            platform=platform,
             resources=resources,
             pricing=pricing,
             updated_at=datetime.utcnow()
@@ -34,6 +36,7 @@ class AdvertisementRepository:
             set_={
                 'ip_address': stmt.excluded.ip_address,
                 'country': stmt.excluded.country,
+                'platform': stmt.excluded.platform,
                 'resources': stmt.excluded.resources,
                 'pricing': stmt.excluded.pricing,
                 'updated_at': stmt.excluded.updated_at
@@ -54,7 +57,8 @@ class AdvertisementRepository:
         cpu: Optional[int] = None,
         memory: Optional[int] = None,
         storage: Optional[int] = None,
-        country: Optional[str] = None
+        country: Optional[str] = None,
+        platform: Optional[str] = None,
     ) -> List[Advertisement]:
         """Find providers matching resource requirements."""
         query = select(Advertisement)
@@ -70,6 +74,8 @@ class AdvertisementRepository:
         # Add country filter if specified
         if country is not None:
             query = query.where(Advertisement.country == country)
+        if platform is not None:
+            query = query.where(Advertisement.platform == platform)
             
         # Only return non-expired advertisements
         five_minutes_ago = datetime.utcnow() - timedelta(minutes=5)

@@ -13,6 +13,7 @@ class Advertisement(Base):
     provider_id = Column(String, primary_key=True)
     ip_address = Column(String, nullable=False)
     country = Column(String(2), nullable=False)  # ISO 3166-1 alpha-2
+    platform = Column(String(32), nullable=True)  # e.g., x86_64, arm64
     resources = Column(JSON, nullable=False)  # CPU, memory, storage
     pricing = Column(JSON, nullable=True)  # Optional pricing info
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)

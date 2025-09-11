@@ -27,9 +27,23 @@ AsyncSessionLocal = sessionmaker(
 )
 
 async def init_db():
-    """Initialize database tables."""
+    """Initialize database tables and apply lightweight migrations."""
     async with engine.begin() as conn:
+        # Create tables if not exist
         await conn.run_sync(Base.metadata.create_all)
+
+        # Lightweight migrations for SQLite: add missing columns
+        try:
+            url = str(engine.url)
+            if url.startswith("sqlite"):
+                # Ensure 'platform' column exists on 'advertisements'
+                res = await conn.exec_driver_sql("PRAGMA table_info(advertisements)")
+                cols = [row[1] for row in res.fetchall()]  # second field is name
+                if 'platform' not in cols:
+                    await conn.exec_driver_sql("ALTER TABLE advertisements ADD COLUMN platform TEXT NULL")
+        except Exception:
+            # Do not fail startup if migration probing fails; better to continue
+            pass
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """Dependency for getting database sessions."""

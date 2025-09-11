@@ -54,7 +54,8 @@ async def create_advertisement(
             ip_address=advertisement.ip_address,
             country=advertisement.country,
             resources=advertisement.resources,
-            pricing=advertisement.pricing
+            pricing=advertisement.pricing,
+            platform=advertisement.platform,
         )
         return db_advertisement
     except Exception as e:
@@ -78,6 +79,7 @@ async def list_advertisements(
     memory: Optional[int] = None,
     storage: Optional[int] = None,
     country: Optional[str] = None,
+    platform: Optional[str] = None,
     repo: AdvertisementRepository = Depends(get_repository)
 ) -> List[AdvertisementResponse]:
     """List all active advertisements matching the criteria."""
@@ -96,7 +98,8 @@ async def list_advertisements(
             cpu=cpu,
             memory=memory,
             storage=storage,
-            country=country
+            country=country,
+            platform=platform,
         )
         return advertisements
     except HTTPException:

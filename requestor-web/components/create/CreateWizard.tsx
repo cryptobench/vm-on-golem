@@ -7,7 +7,7 @@ import { fetchAllProviders, computePriceRange, computeEstimate, loadSettings, ty
 
 type Step = 0 | 1 | 2 | 3 | 4;
 
-export function CreateWizard({ open, onClose, onComplete }: { open: boolean; onClose: () => void; onComplete: (data: { countries?: string[]; cpu?: number; memory?: number; storage?: number; sshKeyId?: string; max_usd_per_month?: number; provider_id?: string }) => void }) {
+export function CreateWizard({ open, onClose, onComplete }: { open: boolean; onClose: () => void; onComplete: (data: { countries?: string[]; cpu?: number; memory?: number; storage?: number; platform?: string; sshKeyId?: string; max_usd_per_month?: number; provider_id?: string }) => void }) {
   const { ads } = useAds();
   const settings = loadSettings();
   const keys: SSHKey[] = settings.ssh_keys || (settings.ssh_public_key ? [{ id: 'default', name: 'Default', value: settings.ssh_public_key }] : []);
@@ -23,6 +23,7 @@ export function CreateWizard({ open, onClose, onComplete }: { open: boolean; onC
   const [cpu, setCpu] = React.useState<number | undefined>();
   const [memory, setMemory] = React.useState<number | undefined>();
   const [storage, setStorage] = React.useState<number | undefined>();
+  const [platform, setPlatform] = React.useState<string>("");
 
   const [priceMin, setPriceMin] = React.useState<number | null>(null);
   const [priceMax, setPriceMax] = React.useState<number | null>(null);
@@ -33,7 +34,7 @@ export function CreateWizard({ open, onClose, onComplete }: { open: boolean; onC
   const [selectedProvider, setSelectedProvider] = React.useState<string | null>(null);
 
   // Reset on open
-  React.useEffect(() => { if (open) { setStep(0); setAnyCountry(true); setCountries([]); setMode('specific'); setCpu(undefined); setMemory(undefined); setStorage(undefined); setMaxPrice(null); } }, [open]);
+  React.useEffect(() => { if (open) { setStep(0); setAnyCountry(true); setCountries([]); setMode('specific'); setCpu(undefined); setMemory(undefined); setStorage(undefined); setPlatform(""); setMaxPrice(null); } }, [open]);
 
   // Fetch countries and all providers
   React.useEffect(() => {
@@ -77,6 +78,7 @@ export function CreateWizard({ open, onClose, onComplete }: { open: boolean; onC
         const cc = (p.country || '').toUpperCase();
         if (!cc || !setC.has(cc)) return false;
       }
+      if (platform && (p.platform || '').trim() !== platform.trim()) return false;
       if (mode === 'specific') {
         if (cpu != null && (p.resources.cpu < cpu)) return false;
         if (memory != null && (p.resources.memory < memory)) return false;
@@ -88,7 +90,7 @@ export function CreateWizard({ open, onClose, onComplete }: { open: boolean; onC
       }
       return true;
     });
-  }, [allProviders, anyCountry, countries, mode, cpu, memory, storage, maxPrice]);
+  }, [allProviders, anyCountry, countries, platform, mode, cpu, memory, storage, maxPrice]);
 
   const next = () => setStep((s) => (s < 4 ? ((s + 1) as Step) : s));
   const back = () => setStep((s) => (s > 0 ? ((s - 1) as Step) : s));
@@ -110,6 +112,7 @@ export function CreateWizard({ open, onClose, onComplete }: { open: boolean; onC
               cpu: mode === 'specific' ? cpu : undefined,
               memory: mode === 'specific' ? memory : undefined,
               storage: mode === 'specific' ? storage : undefined,
+              platform: platform || undefined,
               max_usd_per_month: (mode === 'specific' && maxPrice != null) ? maxPrice : undefined,
             }));
             localStorage.setItem('requestor_pending_rent', selectedProvider);
@@ -127,6 +130,7 @@ export function CreateWizard({ open, onClose, onComplete }: { open: boolean; onC
         cpu: mode === 'specific' ? cpu : undefined,
         memory: mode === 'specific' ? memory : undefined,
         storage: mode === 'specific' ? storage : undefined,
+        platform: platform || undefined,
         sshKeyId,
         max_usd_per_month: (mode === 'specific' && maxPrice != null) ? maxPrice : undefined,
         provider_id: selectedProvider,
@@ -143,7 +147,7 @@ export function CreateWizard({ open, onClose, onComplete }: { open: boolean; onC
       <div className="relative z-10 flex items-center justify-between border-b px-4 sm:px-6 py-4">
         <div>
           <h3 id={headerId} className="text-lg font-semibold">Create — guided setup</h3>
-          <div className="text-sm text-gray-600">{step === 0 ? 'Select countries (multi-select) or choose Any.' : step === 1 ? 'Choose specific specs or explore without constraints.' : step === 2 ? 'Set your monthly price cap.' : step === 3 ? 'Pick a provider' : 'Select an SSH key.'}</div>
+          <div className="text-sm text-gray-600">{step === 0 ? 'Select countries (multi-select) or choose Any.' : step === 1 ? 'Choose specific specs or explore without constraints. Optionally pick platform.' : step === 2 ? 'Set your monthly price cap.' : step === 3 ? 'Pick a provider' : 'Select an SSH key.'}</div>
         </div>
         <button className="btn btn-secondary" onClick={onClose}>Close</button>
       </div>
@@ -214,6 +218,16 @@ export function CreateWizard({ open, onClose, onComplete }: { open: boolean; onC
                       <input className="input" type="number" min={1} value={storage ?? ''} onChange={e => { setMode('specific'); setStorage(e.target.value ? Number(e.target.value) : undefined); }} placeholder="e.g., 50" />
                     </div>
                   </div>
+                  <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="label">Platform</label>
+                      <select className="input" value={platform} onChange={e => setPlatform(e.target.value)}>
+                        <option value="">Any</option>
+                        <option value="x86_64">x86_64</option>
+                        <option value="arm64">arm64</option>
+                      </select>
+                    </div>
+                  </div>
                 </div>
                 <button
                   className="group flex flex-col justify-center rounded-xl border p-4 text-left transition hover:bg-gray-50"
@@ -270,6 +284,10 @@ export function CreateWizard({ open, onClose, onComplete }: { open: boolean; onC
               <div className="divide-y rounded-xl border overflow-hidden">
                 {matches.map((p) => {
                   const est = (mode === 'specific' && cpu != null && memory != null && storage != null) ? computeEstimate(p, cpu!, memory!, storage!) : null;
+                  const pr = (p.pricing || {}) as any;
+                  const coreH = pr.usd_per_core_month != null ? +(Number(pr.usd_per_core_month) / 730).toFixed(6) : null;
+                  const ramH = pr.usd_per_gb_ram_month != null ? +(Number(pr.usd_per_gb_ram_month) / 730).toFixed(6) : null;
+                  const stoH = pr.usd_per_gb_storage_month != null ? +(Number(pr.usd_per_gb_storage_month) / 730).toFixed(6) : null;
                   return (
                     <div key={p.provider_id} className="grid grid-cols-12 items-center gap-3 px-4 py-3 hover:bg-gray-50">
                       <div className="col-span-4">
@@ -289,8 +307,22 @@ export function CreateWizard({ open, onClose, onComplete }: { open: boolean; onC
                       </div>
                       <div className="col-span-2 flex items-center justify-end gap-3">
                         <div className="text-right">
-                          <div className="text-sm font-medium">{est ? `$${est.usd_per_month}/mo` : '—'}</div>
-                          {est && <div className="text-xs text-gray-500">${est.usd_per_hour}/h</div>}
+                          {est ? (
+                            <>
+                              <div className="text-sm font-medium">${est.usd_per_month}/mo</div>
+                              <div className="text-xs text-gray-500">${est.usd_per_hour}/h</div>
+                            </>
+                          ) : (
+                            <div className="text-xs text-gray-700 space-y-0.5">
+                              {(coreH != null || ramH != null || stoH != null) ? (
+                                <>
+                                  {coreH != null && (<div>Core: ${coreH}/h</div>)}
+                                  {ramH != null && (<div>RAM: ${ramH}/GB·h</div>)}
+                                  {stoH != null && (<div>Storage: ${stoH}/GB·h</div>)}
+                                </>
+                              ) : '—'}
+                            </div>
+                          )}
                         </div>
                         <input
                           type="radio"

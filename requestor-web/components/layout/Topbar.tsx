@@ -11,7 +11,7 @@ export function Topbar({ busy = false }: { busy?: boolean }) {
   const router = useRouter();
   const pathname = usePathname();
   React.useEffect(() => { if (open) setOpen(false); }, [pathname]);
-  const onComplete = (data: { countries?: string[]; cpu?: number; memory?: number; storage?: number; sshKeyId?: string; max_usd_per_month?: number; provider_id?: string }) => {
+  const onComplete = (data: { countries?: string[]; cpu?: number; memory?: number; storage?: number; platform?: string; sshKeyId?: string; max_usd_per_month?: number; provider_id?: string }) => {
     try {
       localStorage.setItem('requestor_pending_create', JSON.stringify(data));
       if (data.provider_id) localStorage.setItem('requestor_pending_rent', data.provider_id);

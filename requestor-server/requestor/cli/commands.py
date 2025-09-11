@@ -128,6 +128,7 @@ def vm():
 @click.option('--memory', type=int, help='Minimum memory (GB) required')
 @click.option('--storage', type=int, help='Minimum disk (GB) required')
 @click.option('--country', help='Preferred provider country')
+@click.option('--platform', help='Preferred platform/arch (e.g., x86_64, arm64)')
 @click.option('--driver', type=click.Choice(['central', 'golem-base']), default=None, help='Discovery driver to use')
 @click.option('--payments-network', type=str, default=None, help='Filter by payments network profile (default: current config)')
 @click.option('--all-payments', is_flag=True, help='Do not filter by payments network (show all)')
@@ -135,7 +136,7 @@ def vm():
 @click.option('--network', type=click.Choice(['testnet', 'mainnet']), default=None,
               help='Override network filter for this command')
 @async_command
-async def list_providers(cpu: Optional[int], memory: Optional[int], storage: Optional[int], country: Optional[str], driver: Optional[str], payments_network: Optional[str] = None, all_payments: bool = False, as_json: bool = False, network: Optional[str] = None):
+async def list_providers(cpu: Optional[int], memory: Optional[int], storage: Optional[int], country: Optional[str], platform: Optional[str], driver: Optional[str], payments_network: Optional[str] = None, all_payments: bool = False, as_json: bool = False, network: Optional[str] = None):
     """List available providers matching requirements."""
     try:
         if as_json:
@@ -143,7 +144,7 @@ async def list_providers(cpu: Optional[int], memory: Optional[int], storage: Opt
         if network:
             config.network = network
         # Log search criteria if any
-        if any([cpu, memory, storage, country]):
+        if any([cpu, memory, storage, country, platform]):
             logger.command("🔍 Searching for providers with criteria:")
             if cpu:
                 logger.detail(f"CPU Cores: {cpu}+")
@@ -153,6 +154,8 @@ async def list_providers(cpu: Optional[int], memory: Optional[int], storage: Opt
                 logger.detail(f"Disk: {storage}GB+")
             if country:
                 logger.detail(f"Country: {country}")
+            if platform:
+                logger.detail(f"Platform: {platform}")
 
         # Determine the discovery driver being used
         discovery_driver = driver or config.discovery_driver
@@ -171,6 +174,7 @@ async def list_providers(cpu: Optional[int], memory: Optional[int], storage: Opt
                     memory=memory,
                     storage=storage,
                     country=country,
+                    platform=platform,
                     driver=driver,
                     payments_network=eff_pn,
                     include_all_payments=bool(all_payments),
@@ -178,7 +182,7 @@ async def list_providers(cpu: Optional[int], memory: Optional[int], storage: Opt
             except TypeError:
                 # Backward compatibility with older/dummy service stubs in tests
                 providers = await provider_service.find_providers(
-                    cpu=cpu, memory=memory, storage=storage, country=country, driver=driver
+                    cpu=cpu, memory=memory, storage=storage, country=country, platform=platform, driver=driver
                 )
 
         if not providers:
