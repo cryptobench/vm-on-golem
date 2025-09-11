@@ -90,6 +90,7 @@ export default function VmDetailsClient() {
   const [tokenDecimals, setTokenDecimals] = React.useState<number>(18);
   const [usdPrice, setUsdPrice] = React.useState<number | null>(null);
   const [customTopup, setCustomTopup] = React.useState<string>("");
+  const displayCurrency = (loadSettings().display_currency === 'token' ? 'token' : 'fiat');
 
   const rentals = loadRentals();
   const vmId = search.get('id') || '';
@@ -318,6 +319,11 @@ export default function VmDetailsClient() {
                       const dec = tokenDecimals || 18;
                       const rps = Number(stream.chain.ratePerSecond) / 10 ** dec;
                       const rph = rps * 3600;
+                      if (displayCurrency === 'fiat' && usdPrice != null) {
+                        const usdS = rps * usdPrice;
+                        const usdH = rph * usdPrice;
+                        return `$${usdS.toFixed(6)}/s ($${usdH.toFixed(6)}/h)`;
+                      }
                       return `${rps.toFixed(6)} ${tokenSymbol || ''}/s (${rph.toFixed(6)} ${tokenSymbol || ''}/h)`;
                     })()}
                   </div>
@@ -330,8 +336,10 @@ export default function VmDetailsClient() {
                       const dep = Number(stream.chain.deposit) / 10 ** dec;
                       const wid = Number(stream.chain.withdrawn) / 10 ** dec;
                       const remTok = Math.max(0, dep - wid);
-                      const usd = usdPrice != null ? ` ≈ $${(remTok * usdPrice).toFixed(2)}` : '';
-                      return `${remTok.toFixed(6)} ${tokenSymbol || ''}${usd}`;
+                      if (displayCurrency === 'fiat' && usdPrice != null) {
+                        return `$${(remTok * usdPrice).toFixed(2)}`;
+                      }
+                      return `${remTok.toFixed(6)} ${tokenSymbol || ''}`;
                     })()}
                   </div>
                 </div>

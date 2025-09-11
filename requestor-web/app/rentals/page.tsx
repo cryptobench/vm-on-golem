@@ -11,7 +11,7 @@ export default function RentalsPage() {
   const [error, setError] = React.useState<string | null>(null);
   const [busyId, setBusyId] = React.useState<string | null>(null);
   const { ads } = useAds();
-  const { projects, activeId } = useProjects();
+  const { activeId } = useProjects();
 
   const refresh = () => setItems(loadRentals());
 
@@ -58,7 +58,6 @@ export default function RentalsPage() {
               <thead className="bg-gray-50">
                 <tr>
                   <th className="th">Name</th>
-                  <th className="th">Project</th>
                   <th className="th">Provider</th>
                   <th className="th">VM ID</th>
                   <th className="th">Stream</th>
@@ -69,20 +68,6 @@ export default function RentalsPage() {
                 {items.filter(r => (r.project_id || 'default') === activeId).map(r => (
                   <tr key={r.vm_id} className="hover:bg-gray-50/50">
                     <td className="td">{r.name}</td>
-                    <td className="td">
-                      <select
-                        className="input"
-                        value={r.project_id || 'default'}
-                        onChange={(e) => {
-                          const pid = e.target.value;
-                          const next = (items || []).map(it => it.vm_id === r.vm_id ? { ...it, project_id: pid } : it);
-                          saveRentals(next);
-                          setItems(next);
-                        }}
-                      >
-                        {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                      </select>
-                    </td>
                     <td className="td font-mono text-xs sm:text-sm">{r.provider_id}</td>
                     <td className="td font-mono text-xs sm:text-sm">{r.vm_id}</td>
                     <td className="td">{r.stream_id || '—'}</td>

@@ -14,6 +14,7 @@ export default function SettingsPage() {
   const [sshKeys, setSshKeys] = React.useState<SSHKey[]>(initial.ssh_keys || (initial.ssh_public_key ? [{ id: 'default', name: 'Default', value: initial.ssh_public_key }] : []));
   const [defaultKeyId, setDefaultKeyId] = React.useState<string | undefined>(initial.default_ssh_key_id || (initial.ssh_keys && initial.ssh_keys[0]?.id) || (initial.ssh_public_key ? 'default' : undefined));
   const [saved, setSaved] = React.useState(false);
+  const [displayCurrency, setDisplayCurrency] = React.useState<'fiat'|'token'>(initial.display_currency === 'token' ? 'token' : 'fiat');
   const [mode, setMode] = React.useState<"golem-base"|"central">(ads.mode);
   const [disc, setDisc] = React.useState<string>(ads.discovery_url);
   const [rpc, setRpc] = React.useState<string>(ads.golem_base_rpc_url);
@@ -36,7 +37,7 @@ export default function SettingsPage() {
   }, []);
 
   const save = () => {
-    saveSettings({ ssh_keys: sshKeys, default_ssh_key_id: defaultKeyId, stream_payment_address: sp, glm_token_address: glm });
+    saveSettings({ ssh_keys: sshKeys, default_ssh_key_id: defaultKeyId, stream_payment_address: sp, glm_token_address: glm, display_currency: displayCurrency });
     // Parse chain id from text (accept hex 0x.. or decimal)
     let cid = ads.chain_id;
     const t = (chainIdText || '').trim();
@@ -128,8 +129,15 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        <div className="card">
-          <div className="card-body grid gap-3">
+          <div className="card">
+            <div className="card-body grid gap-3">
+            <div>
+              <label className="label">Price display</label>
+              <select className="input w-48" value={displayCurrency} onChange={(e) => setDisplayCurrency((e.target.value as 'fiat'|'token'))}>
+                <option value="fiat">Fiat (USD)</option>
+                <option value="token">Token (native / GLM)</option>
+              </select>
+            </div>
             <div>
               <div className="text-sm font-medium">SSH Keys</div>
               <div className="mt-2 text-sm text-gray-600">Add keys, pick a default, Hetzner-style tiles.</div>
@@ -231,8 +239,8 @@ export default function SettingsPage() {
                 const newDefault = defaultKeyId || id;
                 setSshKeys(next);
                 if (!defaultKeyId) setDefaultKeyId(id);
-                // Auto-save settings after adding
-                saveSettings({ ssh_keys: next, default_ssh_key_id: newDefault, stream_payment_address: sp, glm_token_address: glm });
+                // Auto-save settings after adding (preserve currency)
+                saveSettings({ ssh_keys: next, default_ssh_key_id: newDefault, stream_payment_address: sp, glm_token_address: glm, display_currency: displayCurrency });
                 setSaved(true);
                 setTimeout(() => setSaved(false), 1500);
                 setShowAddKey(false);
