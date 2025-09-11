@@ -14,6 +14,7 @@ from .vm.name_mapper import VMNameMapper
 from .vm.port_manager import PortManager
 from .vm.proxy_manager import PythonProxyManager
 from .payments.stream_map import StreamMap
+from .jobs.store import JobStore
 from .payments.blockchain_service import StreamPaymentReader, StreamPaymentClient, StreamPaymentConfig as _SPC
 from .payments.monitor import StreamMonitor
 
@@ -118,4 +119,10 @@ class Container(containers.DeclarativeContainer):
         vm_service=vm_service,
         advertisement_service=advertisement_service,
         port_manager=port_manager,
+    )
+
+    # Async job store for VM creations
+    job_store = providers.Singleton(
+        JobStore,
+        db_path=providers.Callable(lambda base: Path(base) / "jobs.sqlite", config.VM_DATA_DIR),
     )

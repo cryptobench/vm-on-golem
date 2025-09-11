@@ -116,6 +116,9 @@ class ProviderInfoResponse(BaseModel):
     provider_id: str
     stream_payment_address: str
     glm_token_address: str
+    ip_address: Optional[str] = None
+    country: Optional[str] = None
+    platform: Optional[str] = None
 
 
 class StreamOnChain(BaseModel):
@@ -144,3 +147,10 @@ class StreamStatus(BaseModel):
     computed: StreamComputed
     verified: bool
     reason: str
+
+
+class CreateVMJobResponse(BaseModel):
+    """Lightweight response for async VM creation scheduling."""
+    job_id: str = Field(..., description="Server-side job identifier for creation task")
+    vm_id: str = Field(..., description="Requestor VM identifier (name)")
+    status: str = Field("creating", description="Initial status indicator")
