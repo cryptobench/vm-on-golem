@@ -1,7 +1,14 @@
 import asyncio
 from typing import Optional
 
-from golem_base_sdk import GolemBaseClient, GolemBaseCreate, GolemBaseUpdate, GolemBaseDelete, Annotation
+from golem_base_sdk import (
+    GolemBaseClient,
+    GolemBaseCreate,
+    GolemBaseUpdate,
+    GolemBaseDelete,
+    Annotation,
+    GolemBaseExtend,
+)
 from .advertiser import Advertiser
 from .golem_base_utils import get_provider_entity_keys
 from ..config import settings
@@ -36,7 +43,9 @@ class GolemBaseAdvertiser(Advertiser):
         try:
             while not self._stop_event.is_set():
                 await self.post_advertisement()
-                await asyncio.sleep(settings.GOLEM_BASE_ADVERTISEMENT_INTERVAL)
+                # Check more frequently than full TTL to ensure seamless renewal
+                interval = max(30, int(settings.GOLEM_BASE_ADVERTISEMENT_INTERVAL // 3))
+                await asyncio.sleep(interval)
         finally:
             await self.stop()
 
@@ -122,14 +131,36 @@ class GolemBaseAdvertiser(Advertiser):
                 logger.info(f"Current on-chain annotations: {current_annotations}")
                 logger.info(f"Expected annotations based on current config: {expected_annotations}")
 
+                desired_btl_blocks = int(settings.GOLEM_BASE_ADVERTISEMENT_INTERVAL) * 2  # ~2 blocks/sec
+
                 if sorted(current_annotations.items()) == sorted(expected_annotations.items()):
-                    logger.info("Advertisement is up-to-date. Waiting for expiration.")
+                    # Refresh TTL proactively if nearing expiry
+                    try:
+                        current_block = await self.client.http_client().eth.get_block_number()
+                        remaining_blocks = int(metadata.expires_at_block) - int(current_block)
+                    except Exception:
+                        # If we cannot determine remaining blocks, extend defensively
+                        remaining_blocks = 0
+
+                    # Refresh when below 20% of desired TTL (or if unknown/negative)
+                    refresh_threshold = max(10, desired_btl_blocks // 5)
+                    if remaining_blocks <= refresh_threshold:
+                        logger.info(
+                            f"Extending advertisement TTL (remaining_blocks={remaining_blocks}, threshold={refresh_threshold})."
+                        )
+                        ext = GolemBaseExtend(entity_key=entity_key, number_of_blocks=desired_btl_blocks)
+                        await self.client.extend_entities([ext])
+                        logger.info(f"Extended advertisement. Entity key: {entity_key}")
+                    else:
+                        logger.info(
+                            f"Advertisement up-to-date; TTL sufficient (remaining_blocks={remaining_blocks})."
+                        )
                 else:
                     logger.info("Advertisement is outdated. Updating.")
                     update = GolemBaseUpdate(
                         entity_key=entity_key,
                         data=b"",
-                        btl=settings.ADVERTISEMENT_INTERVAL * 2,
+                        btl=desired_btl_blocks,
                         string_annotations=string_annotations,
                         numeric_annotations=numeric_annotations,
                     )
@@ -144,9 +175,10 @@ class GolemBaseAdvertiser(Advertiser):
 
     async def _create_advertisement(self, string_annotations, numeric_annotations):
         """Helper to create a new advertisement."""
+        desired_btl_blocks = int(settings.GOLEM_BASE_ADVERTISEMENT_INTERVAL) * 2  # ~2 blocks/sec
         entity = GolemBaseCreate(
             data=b"",
-            btl=settings.ADVERTISEMENT_INTERVAL * 2,
+            btl=desired_btl_blocks,
             string_annotations=string_annotations,
             numeric_annotations=numeric_annotations,
         )

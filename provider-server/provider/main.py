@@ -325,8 +325,8 @@ def status(json_out: bool = typer.Option(False, "--json", help="Output machine-r
     latest = _get_latest_version_from_pypi(pkg)
     update_available = bool(latest and current != latest)
 
-    # Environment
-    env = os.environ.get("GOLEM_PROVIDER_ENVIRONMENT", _settings.ENVIRONMENT)
+    # Environment (use unified GOLEM_ENVIRONMENT only)
+    env = os.environ.get("GOLEM_ENVIRONMENT", _settings.ENVIRONMENT)
     net = getattr(_settings, "NETWORK", None)
     dev_mode = env == "development" or bool(getattr(_settings, "DEV_MODE", False))
 
@@ -1324,7 +1324,7 @@ def stop(timeout: int = typer.Option(15, "--timeout", help="Seconds to wait for 
     _remove_pid_file()
     print("Provider stopped")
 
-# Removed separate 'dev' command; use environment GOLEM_PROVIDER_ENVIRONMENT=development instead.
+# Removed separate 'dev' command; use environment GOLEM_ENVIRONMENT=development instead.
 
 def _env_path_for(dev_mode: Optional[bool]) -> str:
     from pathlib import Path
@@ -1535,9 +1535,10 @@ def run_server(
     from pathlib import Path
     from dotenv import load_dotenv
     import uvicorn
-    # Decide dev mode from explicit arg or environment
+    # Decide dev mode from explicit arg or environment (unified only)
     if dev_mode is None:
-        dev_mode = os.environ.get("GOLEM_PROVIDER_ENVIRONMENT", "").lower() == "development"
+        env_val = os.environ.get("GOLEM_ENVIRONMENT", "")
+        dev_mode = env_val.lower() == "development"
 
     # Load appropriate .env file based on mode
     env_file = ".env.dev" if dev_mode else ".env"

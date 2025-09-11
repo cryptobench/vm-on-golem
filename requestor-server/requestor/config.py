@@ -22,7 +22,7 @@ def ensure_config() -> None:
         created = True
 
     if not env_file.exists():
-        env_file.write_text("GOLEM_REQUESTOR_ENVIRONMENT=production\n")
+        env_file.write_text("GOLEM_ENVIRONMENT=production\n")
         created = True
 
     private_key = ssh_dir / "id_rsa"
@@ -91,6 +91,29 @@ class RequestorConfig(BaseSettings):
             return f"DEVMODE-{v}"
         return v
 
+    @field_validator("environment", mode="before")
+    @classmethod
+    def prefer_global_env(cls, v: str) -> str:
+        """Prefer unified GOLEM_ENVIRONMENT when provided; fallback to service-specific env."""
+        ge = os.environ.get("GOLEM_ENVIRONMENT")
+        if ge:
+            return ge
+        return v
+
+    @field_validator("network", mode="before")
+    @classmethod
+    def default_network_for_dev(cls, v: str, info: ValidationInfo) -> str:
+        """Use 'testnet' by default when in development environment unless explicitly set."""
+        if v:
+            return v
+        try:
+            env = info.data.get("environment")
+        except Exception:
+            env = os.environ.get("GOLEM_ENVIRONMENT")
+        if (env or "").lower() == "development":
+            return "testnet"
+        return v or "mainnet"
+
     # Golem Base Settings
     golem_base_rpc_url: str = Field(
         default="https://ethwarsaw.holesky.golemdb.io/rpc",
@@ -101,8 +124,8 @@ class RequestorConfig(BaseSettings):
         description="Golem Base WebSocket URL"
     )
     advertisement_interval: int = Field(
-        default=240,
-        description="Advertisement interval in seconds (should match provider)"
+        default=3600,
+        description="Advertisement interval in seconds (should match provider's GOLEM_BASE_ADVERTISEMENT_INTERVAL)"
     )
     ethereum_private_key: str = Field(
         default="0x0000000000000000000000000000000000000000000000000000000000000001",
@@ -323,6 +346,10 @@ class RequestorConfig(BaseSettings):
         # Allow overriding to dev mode with golem_dev_mode
         if os.environ.get('golem_dev_mode', 'false').lower() in ('true', '1', 't'):
             kwargs['environment'] = "development"
+        # Fallback: if requestor env not provided but provider env signals development, mirror it
+        if not kwargs.get('environment') and os.environ.get('GOLEM_ENVIRONMENT'):
+            # Mirror unified GOLEM_ENVIRONMENT into requestor environment if not explicitly provided
+            kwargs['environment'] = os.environ.get('GOLEM_ENVIRONMENT')
 
         # Set dependent paths before validation
         if 'ssh_key_dir' not in kwargs:

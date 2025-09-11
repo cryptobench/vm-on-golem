@@ -35,5 +35,5 @@ This monorepo contains services and GUIs for running virtual machines on the Gol
 - Releases: CI bumps versions on `main` for changed services; avoid manual version edits. For advanced use, see `scripts/bump_versions.py`.
 
 ## Security & Configuration Tips
-- Do not commit secrets. Use per-service `.env.dev` and environment vars (`GOLEM_PROVIDER_ENVIRONMENT`, `GOLEM_REQUESTOR_ENVIRONMENT`).
+- Do not commit secrets. Use per-service `.env.dev` and the unified environment var `GOLEM_ENVIRONMENT`.
 - Use the Python version specified in each service’s `pyproject.toml`. Install via Poetry to isolate environments.

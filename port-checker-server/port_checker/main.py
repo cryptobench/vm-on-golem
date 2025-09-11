@@ -41,7 +41,8 @@ PROXY_SHARED_TOKEN = os.getenv("PORT_CHECKER_PROXY_TOKEN", "")
 GOLEM_BASE_RPC_URL = os.getenv("GOLEM_BASE_RPC_URL", "")
 GOLEM_BASE_WS_URL = os.getenv("GOLEM_BASE_WS_URL", "")
 # Dev mode flag: prefer dev_ annotation keys when resolving on-chain adverts
-PROVIDER_ENV = os.getenv("GOLEM_PROVIDER_ENVIRONMENT", "").lower()
+# Unified environment variable only
+PROVIDER_ENV = (os.getenv("GOLEM_ENVIRONMENT") or "").lower()
 IS_PROVIDER_DEV = PROVIDER_ENV == "development"
 # Align expected network with provider env: dev → testnet, else mainnet
 EXPECTED_NETWORK = "testnet" if IS_PROVIDER_DEV else "mainnet"

@@ -59,6 +59,7 @@ class VMService:
 
         try:
             vm_info = await self.provider.get_vm_status(multipass_name)
+            logger.info(f"Deleting VM {vm_id} (multipass={multipass_name}) with status={vm_info.status}")
             await self.provider.delete_vm(multipass_name)
             await self.resource_tracker.deallocate(vm_info.resources, vm_id)
             # Optional: best-effort on-chain termination if we have a mapping
@@ -83,7 +84,9 @@ class VMService:
         multipass_name = await self.name_mapper.get_multipass_name(vm_id)
         if not multipass_name:
             raise VMNotFoundError(f"VM {vm_id} not found")
+        logger.info(f"Stopping VM {vm_id} (multipass={multipass_name})")
         vm = await self.provider.stop_vm(multipass_name)
+        logger.info(f"Stopped VM {vm_id} result status={getattr(vm, 'status', '?')}")
         # Optional: best-effort withdraw for active stream
         try:
             if self.blockchain_client:

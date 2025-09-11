@@ -164,7 +164,7 @@ Environment variables:
 Golem Base (default; if using `source=golem-base`):
 - `GOLEM_BASE_RPC_URL` (required if not provided per-request)
 - `GOLEM_BASE_WS_URL` (required if not provided per-request)
- - `GOLEM_PROVIDER_ENVIRONMENT` (optional; set `development` to prefer `dev_*` annotations)
+ - `GOLEM_ENVIRONMENT` (optional; set `development` to prefer `dev_*` annotations)
 
 Per-request overrides (headers):
 - `X-Proxy-Golem-Base-Rpc`: override RPC URL for this request

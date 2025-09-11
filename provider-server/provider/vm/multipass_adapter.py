@@ -87,7 +87,8 @@ class MultipassAdapter(VMProvider):
         """Get detailed information about a VM."""
         try:
             result = await self._run_multipass(["info", vm_id, "--format", "json"])
-            logger.info(f"Raw multipass info for {vm_id}: {result.stdout}")
+            # Only log raw multipass output in debug mode to avoid noisy logs
+            logger.debug(f"Raw multipass info for {vm_id}: {result.stdout}")
             info = json.loads(result.stdout)
             vm_info = info["info"][vm_id]
             essential_fields = ["state", "ipv4", "cpu_count", "memory", "disks"]
