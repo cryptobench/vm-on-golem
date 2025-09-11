@@ -1,5 +1,7 @@
 "use client";
 import React from "react";
+import { ensureNetwork, getPaymentsChain } from "../lib/chain";
+// import { useAds } from "./AdsContext";
 
 type WalletState = {
   isInstalled: boolean;
@@ -74,6 +76,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     }
     try {
       const accounts: string[] = await ethereum.request({ method: "eth_requestAccounts" });
+      // After connect, ensure we are on the L2 payments chain
+      await ensureNetwork(ethereum, getPaymentsChain()).catch(() => {});
       const chainId: string = await ethereum.request({ method: "eth_chainId" });
       setState({ isInstalled: true, isConnected: accounts.length > 0, account: accounts?.[0] || null, chainId: chainId || null });
     } catch (e) {
@@ -89,4 +93,3 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 export function useWallet() {
   return React.useContext(WalletContext);
 }
-

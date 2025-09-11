@@ -1,0 +1,133 @@
+"use client";
+import React from "react";
+import { BrowserProvider, Contract } from "ethers";
+import streamPayment from "../../public/abi/StreamPayment.json";
+import { loadRentals, loadSettings, type Rental } from "../../lib/api";
+import { useToast } from "../ui/Toast";
+import { Spinner } from "../ui/Spinner";
+import { ensureNetwork, getPaymentsChain } from "../../lib/chain";
+import { useWallet } from "../../context/WalletContext";
+
+type ChainStream = {
+  token: string; sender: string; recipient: string;
+  startTime: bigint; stopTime: bigint; ratePerSecond: bigint;
+  deposit: bigint; withdrawn: bigint; halted: boolean;
+};
+
+async function fetchStream(spAddr: string, id: bigint) {
+  const { ethereum } = window as any;
+  const provider = new BrowserProvider(ethereum);
+  const contract = new Contract(spAddr, (streamPayment as any).abi, provider);
+  const res = (await contract.streams(id)) as ChainStream;
+  const now = BigInt((await provider.getBlock("latest"))!.timestamp!);
+  const remaining = res.stopTime > now ? (res.stopTime - now) : 0n;
+  const vested = (res.stopTime > now ? now : res.stopTime) - res.startTime;
+  const vestedWei = (vested > 0n ? vested : 0n) * res.ratePerSecond;
+  const withdrawable = vestedWei > res.withdrawn ? (vestedWei - res.withdrawn) : 0n;
+  return { chain: res, remaining, withdrawable };
+}
+
+export function StreamsMini({ projectId }: { projectId: string }) {
+  const rentals = (loadRentals() || []).filter(r => r.stream_id && (r.project_id || 'default') === projectId);
+  const { show } = useToast();
+  const [rows, setRows] = React.useState<any[] | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+  const [busy, setBusy] = React.useState<string | null>(null);
+  const spAddr = (loadSettings().stream_payment_address || process.env.NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS || '').trim();
+  const { account } = useWallet();
+
+  const load = async () => {
+    if (!spAddr || !rentals.length) { setRows([]); return; }
+    setError(null);
+    try {
+      setRows(null);
+      const list = await Promise.all(rentals.map(async r => {
+        try {
+          const data = await fetchStream(spAddr, BigInt(r.stream_id!));
+          return { ok: true, r, data };
+        } catch (e: any) {
+          return { ok: false, r, error: e?.message || String(e) };
+        }
+      }));
+      setRows(list);
+    } catch (e: any) { setError(e?.message || String(e)); }
+  };
+
+  React.useEffect(() => { load(); }, [projectId]);
+
+  const needsTopUp = (remaining: bigint) => remaining < 3600n; // < 1h runway
+
+  const topUpOneHour = async (r: Rental, rate: bigint, token: string) => {
+    try {
+      const addWei = rate * 3600n;
+      setBusy(r.vm_id);
+      const { ethereum } = window as any;
+      await ensureNetwork(ethereum, getPaymentsChain());
+      const provider = new BrowserProvider(ethereum);
+      const signer = await provider.getSigner(account ?? undefined);
+      const contract = new Contract(spAddr, (streamPayment as any).abi, signer);
+      const streamId = BigInt(r.stream_id!);
+      const tx = await contract.topUp(streamId, addWei, {
+        value: token === '0x0000000000000000000000000000000000000000' ? addWei : 0n,
+        gasLimit: 150000n,
+      });
+      await tx.wait();
+      show("Top-up sent");
+      await load();
+    } catch (e) {
+      show("Top-up failed");
+    } finally { setBusy(null); }
+  };
+
+  return (
+    <div className="space-y-3">
+      <h2>Streams</h2>
+      {!rentals.length && <div className="text-gray-600 text-sm">No streams in this project.</div>}
+      {error && <div className="text-sm text-red-600">{error}</div>}
+      <div className="grid gap-4 sm:grid-cols-2">
+        {rows === null ? (
+          Array.from({ length: Math.min(4, Math.max(1, rentals.length)) }).map((_, i) => (
+            <div key={i} className="card"><div className="card-body"><div className="h-4 w-48 bg-gray-100 rounded" /></div></div>
+          ))
+        ) : (
+          rows.map((row, i) => (
+            <div key={i} className="card">
+              <div className="card-body">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="font-semibold">{row.r.name} — Stream {row.r.stream_id}</div>
+                  {!row.ok ? null : needsTopUp(row.data.remaining) && (
+                    <span className="rounded-md bg-amber-100 px-2 py-0.5 text-xs text-amber-800">Needs top-up</span>
+                  )}
+                </div>
+                {!row.ok ? (
+                  <div className="mt-2 text-sm text-red-600">{row.error}</div>
+                ) : (
+                  <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 text-sm text-gray-700">
+                    <div>
+                      <div><span className="text-gray-500">Recipient:</span> {row.data.chain.recipient}</div>
+                      <div><span className="text-gray-500">Rate/s (wei):</span> {row.data.chain.ratePerSecond.toString()}</div>
+                      <div><span className="text-gray-500">Remaining:</span> {row.data.remaining.toString()}s</div>
+                    </div>
+                    <div>
+                      <div><span className="text-gray-500">Deposit:</span> {row.data.chain.deposit.toString()}</div>
+                      <div><span className="text-gray-500">Withdrawn:</span> {row.data.chain.withdrawn.toString()}</div>
+                      <div><span className="text-gray-500">Status:</span> {row.data.chain.halted ? 'halted' : 'active'}</div>
+                    </div>
+                  </div>
+                )}
+                <div className="mt-3 flex items-center gap-2">
+                  <a href="/streams" className="btn btn-secondary">Details</a>
+                  {row.ok && !row.data.chain.halted && (
+                    <button className="btn btn-primary" disabled={busy === row.r.vm_id} onClick={() => topUpOneHour(row.r, row.data.chain.ratePerSecond, row.data.chain.token)}>
+                      {busy === row.r.vm_id ? <><Spinner className="h-4 w-4" /> Top up</> : 'Top up +1h'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}

@@ -33,9 +33,7 @@ Env vars (public)
 Notes and alignment with backend
 
 - Discovery uses GET /advertisements from discovery-server (central).
-- Advertisement Server profiles (selectable in Settings) control how provider IPs are resolved by the proxy:
-  - golem-base (default): the app sends X-Proxy-Source: golem-base with Golem Base RPC/WS to port-checker for provider resolution.
-  - central: the app sends X-Proxy-Source: discovery to port-checker.
+- By default, provider IP resolution for proxy calls uses Golem Base (X-Proxy-Source: golem-base) and requires the proxy server to have Golem Base support (golem-base-sdk) and L3 RPC/WS configured. You can switch the profile to "central" in Settings to use legacy discovery instead.
 - Provider access goes through port-checker /proxy/provider/{provider_id}/... with X-Proxy-Token.
 - Only HTTP is proxied; SSH is shown as host:port for your terminal client.
 - Streams use the same StreamPayment ABI as requestor (createStream, streams, topUp, terminate). MetaMask signs transactions.
@@ -44,6 +42,6 @@ Notes and alignment with backend
 Limitations
 
 - VM ownership isn’t globally queryable; the app tracks “your rentals” in localStorage.
-- ERC20 streaming (approve/allowance flows) is not implemented yet; native token mode works out of the box.
+- ERC20 streaming is supported with a basic approve/allowance flow; native token mode also works.
 - The proxy token is public in a static site; use a token suitable for public use and rely on the port-checker’s IP/port allowlist and timeouts. Consider rate limiting.
 - Provider listing currently uses central discovery even when “Golem Base” is selected; only per-provider resolution switches to Golem Base. A future enhancement can add a Golem Base listing backend.

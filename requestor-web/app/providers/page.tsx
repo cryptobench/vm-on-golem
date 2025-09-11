@@ -210,14 +210,16 @@ function RentInline({ provider, defaultSpec, adsMode }: { provider: any; default
 
 import { BrowserProvider, Contract, parseEther } from "ethers";
 import streamPayment from "../../public/abi/StreamPayment.json";
-import { createVm, loadSettings, saveRentals, loadRentals, type AdsConfig, type SSHKey } from "../../lib/api";
+import erc20 from "../../public/abi/ERC20.json";
+import { createVm, loadSettings, saveRentals, loadRentals, saveSettings, type AdsConfig, type SSHKey } from "../../lib/api";
 import { Modal } from "../../components/ui/Modal";
 import { useWallet } from "../../context/WalletContext";
 import { useProjects } from "../../context/ProjectsContext";
+import { ensureNetwork, getPaymentsChain } from "../../lib/chain";
 
 function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provider: any; defaultSpec: { cpu?: number; memory?: number; storage?: number }; onClose: () => void; adsMode: AdsConfig; }) {
   const router = useRouter();
-  const { isInstalled, isConnected, connect } = useWallet();
+  const { isInstalled, isConnected, connect, account } = useWallet();
   const { activeId: activeProjectId } = useProjects();
   const [name, setName] = React.useState("");
   const [cpu, setCpu] = React.useState<number>(defaultSpec.cpu || 1);
@@ -226,12 +228,16 @@ function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provider: any
   const settings = loadSettings();
   const initialKeys: SSHKey[] = settings.ssh_keys || (settings.ssh_public_key ? [{ id: 'default', name: 'Default', value: settings.ssh_public_key }] : []);
   const defaultKeyId = settings.default_ssh_key_id || initialKeys[0]?.id || '';
-  const [sshKeys] = React.useState<SSHKey[]>(initialKeys);
+  const [sshKeys, setSshKeys] = React.useState<SSHKey[]>(initialKeys);
   const [selectedKeyId, setSelectedKeyId] = React.useState<string>(defaultKeyId);
   const [sshKey, setSshKey] = React.useState<string>(() => {
     const found = initialKeys.find(k => k.id === defaultKeyId);
     return found?.value || settings.ssh_public_key || "";
   });
+  const [showAddKey, setShowAddKey] = React.useState(false);
+  const [newKeyName, setNewKeyName] = React.useState("");
+  const [newKeyValue, setNewKeyValue] = React.useState("");
+  const [addError, setAddError] = React.useState<string | null>(null);
   const [creating, setCreating] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [streamId, setStreamId] = React.useState<string | null>(null);
@@ -243,6 +249,8 @@ function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provider: any
     setError(null);
     const { ethereum } = window as any;
     if (!ethereum) throw new Error("MetaMask not detected");
+    // Ensure wallet is on the expected payments chain (align with CLI defaults)
+    await ensureNetwork(ethereum, getPaymentsChain());
     const providerInfoJson = await providerInfo(provider.provider_id, adsMode).catch(() => null);
     const cfg = loadSettings();
     const spAddr = (providerInfoJson?.stream_payment_address || cfg.stream_payment_address || process.env.NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS || '').trim();
@@ -256,15 +264,29 @@ function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provider: any
     const depositWei = ratePerSecondWei * BigInt(3600);
 
     const web3 = new BrowserProvider(ethereum);
-    const signer = await web3.getSigner();
+    // Use the currently selected wallet account, not index 0
+    const signer = await web3.getSigner(account ?? undefined);
+    const sender = await signer.getAddress();
     const contract = new Contract(spAddr, (streamPayment as any).abi, signer);
     const recipient = provider.provider_id;
     const token = glmAddr;
-    setUsingNative(token === '0x0000000000000000000000000000000000000000');
+    const ZERO = '0x0000000000000000000000000000000000000000';
+    const isNative = token === ZERO;
+    setUsingNative(isNative);
 
-    // If using ERC20, in a full app we would check allowance and approve. Out of scope for minimal MVP.
+    // If using ERC20, ensure allowance covers the intended deposit
+    if (!isNative) {
+      const erc20c = new Contract(token, (erc20 as any).abi, signer);
+      const current: bigint = await erc20c.allowance(sender, spAddr);
+      if (current < depositWei) {
+        const txApprove = await erc20c.approve(spAddr, depositWei);
+        await txApprove.wait();
+      }
+    }
+
     const tx = await contract.createStream(token, recipient, depositWei, ratePerSecondWei, {
-      value: token === '0x0000000000000000000000000000000000000000' ? depositWei : 0n,
+      value: isNative ? depositWei : 0n,
+      gasLimit: 350000n,
     });
     const receipt = await tx.wait();
     let newStreamId: string | null = null;
@@ -307,6 +329,7 @@ function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provider: any
   };
 
   return (
+    <>
     <Modal open={true} onClose={onClose}>
       <div className="w-full max-w-lg">
         <div className="border-b px-5 py-4">
@@ -344,31 +367,69 @@ function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provider: any
             </div>
           </div>
           <div className="mt-3 space-y-2">
-            {sshKeys.length === 0 ? (
-              <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-                No SSH keys found. Go to Settings to add one.
-                <div className="mt-2 flex gap-2">
-                  <button className="btn btn-primary" onClick={goToSettings}>Go to Settings</button>
+            <div className="text-sm text-gray-700">SSH key</div>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {/* Add new key tile */}
+              <button
+                className="relative flex h-32 items-center justify-center rounded-xl border-2 border-dashed border-gray-300 bg-white text-gray-600 hover:border-brand-400 hover:text-brand-700"
+                onClick={() => { setNewKeyName(""); setNewKeyValue(""); setAddError(null); setShowAddKey(true); }}
+              >
+                <div className="text-center">
+                  <div className="text-2xl">＋</div>
+                  <div className="mt-1 text-sm font-medium">Add SSH Key</div>
                 </div>
-              </div>
-            ) : (
-              <div className="grid gap-2 sm:grid-cols-2">
-                <div>
-                  <label className="label">SSH key</label>
-                  <select className="input" value={selectedKeyId} onChange={(e) => {
-                    const id = e.target.value;
-                    setSelectedKeyId(id);
-                    const k = sshKeys.find(x => x.id === id);
-                    if (k) setSshKey(k.value);
-                  }}>
-                    {sshKeys.map(k => <option key={k.id} value={k.id}>{k.name}</option>)}
-                  </select>
-                </div>
-                <div className="flex items-end justify-end gap-2">
-                  <button className="btn btn-secondary" onClick={goToSettings}>Manage in Settings</button>
-                </div>
-              </div>
-            )}
+              </button>
+
+              {/* Existing keys */}
+              {sshKeys.map((k) => {
+                const sel = selectedKeyId === k.id;
+                const parts = (k.value || '').split(' ');
+                const type = parts[0] || '';
+                const short = parts[1] ? `${parts[1].slice(0, 12)}…${parts[1].slice(-8)}` : '';
+                return (
+                  <button
+                    key={k.id}
+                    className={
+                      "relative h-32 rounded-xl border bg-white p-3 text-left shadow-sm transition-colors " +
+                      (sel ? 'border-brand-500 ring-1 ring-brand-300' : 'hover:border-gray-300')
+                    }
+                    onClick={() => { setSelectedKeyId(k.id); setSshKey(k.value); }}
+                    title={sel ? 'Selected SSH key' : 'Select this key'}
+                  >
+                    <div className={"absolute right-2 top-2 h-6 w-6 rounded-full border-2 " + (sel ? 'border-brand-500 bg-brand-500 text-white' : 'border-gray-300 bg-white text-transparent')}>
+                      <svg viewBox="0 0 20 20" className="h-full w-full p-0.5"><path fill="currentColor" d="M7.629 13.233L4.4 10.004l1.414-1.414l1.815 1.815l0.001-0.001L14.186 3.85l1.414 1.414l-7.971 7.971z"/></svg>
+                    </div>
+                    <div className="mt-1 text-sm font-medium truncate pr-8">{k.name || 'Unnamed key'}</div>
+                    <div className="mt-1 text-xs text-gray-500">{type}</div>
+                    <div className="mt-1 text-xs font-mono text-gray-600 truncate">{short}</div>
+                    <div className="absolute bottom-2 right-2 flex gap-2">
+                      <button
+                        className="rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-700 hover:bg-red-100"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const next = sshKeys.filter(x => x.id !== k.id);
+                          setSshKeys(next);
+                          if (selectedKeyId === k.id) {
+                            setSelectedKeyId(next[0]?.id || '');
+                            setSshKey(next[0]?.value || '');
+                          }
+                          const prev = loadSettings();
+                          saveSettings({
+                            ssh_keys: next,
+                            default_ssh_key_id: (prev.default_ssh_key_id && next.some(x => x.id === prev.default_ssh_key_id)) ? prev.default_ssh_key_id : next[0]?.id,
+                            stream_payment_address: prev.stream_payment_address,
+                            glm_token_address: prev.glm_token_address,
+                          });
+                        }}
+                      >Delete</button>
+                    </div>
+                  </button>
+                );
+              })}
+              {!sshKeys.length && (
+                <div className="col-span-full text-sm text-gray-500">No SSH keys yet. Add one to continue.</div>
+              )}
+            </div>
           </div>
           <div className="mt-4">
             <div className="text-sm font-medium">Estimated costs</div>
@@ -411,5 +472,48 @@ function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provider: any
         </div>
       </div>
     </Modal>
+
+    {/* Add SSH Key Modal */}
+    <Modal open={showAddKey} onClose={() => setShowAddKey(false)}>
+      <div className="p-4">
+        <h3 className="text-lg font-medium">Add SSH Key</h3>
+        <div className="mt-3">
+          <label className="label">Name</label>
+          <input className="input" value={newKeyName} onChange={(e) => setNewKeyName(e.target.value)} placeholder="Work Laptop" />
+        </div>
+        <div className="mt-3">
+          <label className="label">Public key</label>
+          <textarea className="input" rows={3} value={newKeyValue} onChange={(e) => setNewKeyValue(e.target.value)} placeholder="ssh-ed25519 AAAA... user@host" />
+        </div>
+        {addError && <div className="mt-2 text-sm text-red-600">{addError}</div>}
+        <div className="mt-4 flex justify-end gap-2">
+          <button className="btn btn-secondary" onClick={() => setShowAddKey(false)}>Cancel</button>
+          <button
+            className="btn btn-primary"
+            onClick={() => {
+              const name = newKeyName.trim();
+              const value = newKeyValue.trim();
+              const validType = /^(ssh-(ed25519|rsa)|ecdsa-sha2-nistp(256|384|521))\s+/.test(value);
+              if (!name) { setAddError('Enter a name'); return; }
+              if (!value || !validType || value.split(' ').length < 2) { setAddError('Enter a valid SSH public key'); return; }
+              const id = Math.random().toString(36).slice(2, 10);
+              const next = [...sshKeys, { id, name, value }];
+              setSshKeys(next);
+              setSelectedKeyId(id);
+              setSshKey(value);
+              const prev = loadSettings();
+              saveSettings({
+                ssh_keys: next,
+                default_ssh_key_id: prev.default_ssh_key_id || id,
+                stream_payment_address: prev.stream_payment_address,
+                glm_token_address: prev.glm_token_address,
+              });
+              setShowAddKey(false);
+            }}
+          >Add</button>
+        </div>
+      </div>
+    </Modal>
+    </>
   );
 }

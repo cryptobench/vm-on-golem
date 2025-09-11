@@ -14,12 +14,13 @@ export type AdsConfig = {
 const DEFAULTS: AdsConfig = {
   mode: 'golem-base',
   discovery_url: process.env.NEXT_PUBLIC_DISCOVERY_API_URL || 'http://195.201.39.101:9001/api/v1',
-  // Defaults aligned with requestor config
+  // Defaults for provider discovery on L3 (EthWarsaw Holesky)
   golem_base_rpc_url: 'https://ethwarsaw.holesky.golemdb.io/rpc',
   golem_base_ws_url: 'wss://ethwarsaw.holesky.golemdb.io/rpc/ws',
   chain_id: (() => {
-    const hex = (process.env.NEXT_PUBLIC_EVM_CHAIN_ID || '0x4268').toString();
-    try { return parseInt(hex, 16); } catch { return 17000; }
+    // Keep existing default for backward compat; payments chain handled separately in UI
+    const def = process.env.NEXT_PUBLIC_EVM_CHAIN_ID || '0x6013a';
+    try { return parseInt(def, 16); } catch { return 393530; }
   })(),
   advertisement_interval_seconds: 240,
 };

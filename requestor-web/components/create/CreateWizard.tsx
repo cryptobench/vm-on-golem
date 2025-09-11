@@ -3,14 +3,15 @@ import React from "react";
 import { Spinner } from "../ui/Spinner";
 import { Skeleton } from "../ui/Skeleton";
 import { useAds } from "../../context/AdsContext";
-import { fetchAllProviders, computePriceRange, computeEstimate, loadSettings, type SSHKey, type ProviderAd } from "../../lib/api";
+import { fetchAllProviders, computePriceRange, computeEstimate, loadSettings, saveSettings, type SSHKey, type ProviderAd } from "../../lib/api";
+import { Modal } from "../ui/Modal";
 
 type Step = 0 | 1 | 2 | 3 | 4;
 
 export function CreateWizard({ open, onClose, onComplete }: { open: boolean; onClose: () => void; onComplete: (data: { countries?: string[]; cpu?: number; memory?: number; storage?: number; platform?: string; sshKeyId?: string; max_usd_per_month?: number; provider_id?: string }) => void }) {
   const { ads } = useAds();
   const settings = loadSettings();
-  const keys: SSHKey[] = settings.ssh_keys || (settings.ssh_public_key ? [{ id: 'default', name: 'Default', value: settings.ssh_public_key }] : []);
+  const initialKeys: SSHKey[] = settings.ssh_keys || (settings.ssh_public_key ? [{ id: 'default', name: 'Default', value: settings.ssh_public_key }] : []);
 
   const [step, setStep] = React.useState<Step>(0);
   const [allProviders, setAllProviders] = React.useState<ProviderAd[] | null>(null);
@@ -29,12 +30,26 @@ export function CreateWizard({ open, onClose, onComplete }: { open: boolean; onC
   const [priceMax, setPriceMax] = React.useState<number | null>(null);
   const [maxPrice, setMaxPrice] = React.useState<number | null>(null);
 
-  const [sshKeyId, setSshKeyId] = React.useState<string | undefined>(settings.default_ssh_key_id || keys[0]?.id);
+  const [sshKeys, setSshKeys] = React.useState<SSHKey[]>(initialKeys);
+  const [sshKeyId, setSshKeyId] = React.useState<string | undefined>(settings.default_ssh_key_id || initialKeys[0]?.id);
   const [busy, setBusy] = React.useState(false);
   const [selectedProvider, setSelectedProvider] = React.useState<string | null>(null);
+  const [showAddKey, setShowAddKey] = React.useState(false);
+  const [newKeyName, setNewKeyName] = React.useState("");
+  const [newKeyValue, setNewKeyValue] = React.useState("");
+  const [addError, setAddError] = React.useState<string | null>(null);
 
   // Reset on open
-  React.useEffect(() => { if (open) { setStep(0); setAnyCountry(true); setCountries([]); setMode('specific'); setCpu(undefined); setMemory(undefined); setStorage(undefined); setPlatform(""); setMaxPrice(null); } }, [open]);
+  React.useEffect(() => {
+    if (open) {
+      setStep(0); setAnyCountry(true); setCountries([]); setMode('specific'); setCpu(undefined); setMemory(undefined); setStorage(undefined); setPlatform(""); setMaxPrice(null);
+      // Refresh SSH keys from settings when opening
+      const s = loadSettings();
+      const ks: SSHKey[] = s.ssh_keys || (s.ssh_public_key ? [{ id: 'default', name: 'Default', value: s.ssh_public_key }] : []);
+      setSshKeys(ks);
+      setSshKeyId(s.default_ssh_key_id || ks[0]?.id);
+    }
+  }, [open]);
 
   // Fetch countries and all providers
   React.useEffect(() => {
@@ -103,7 +118,7 @@ export function CreateWizard({ open, onClose, onComplete }: { open: boolean; onC
         return;
       }
       // If no SSH key is present/selected, prompt to add one first
-      if (!sshKeyId || keys.length === 0) {
+      if (!sshKeyId || sshKeys.length === 0) {
         const go = confirm('No SSH key found. You need an SSH key to provision. Go to Settings to add one now?');
         if (go) {
           try {
@@ -345,16 +360,67 @@ export function CreateWizard({ open, onClose, onComplete }: { open: boolean; onC
 
           {step === 4 && (
             <div className="grid gap-3">
-              {keys.length === 0 ? (
-                <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">No SSH keys found. Add one in Settings before creating.</div>
-              ) : (
-                <>
-                  <label className="label">SSH key</label>
-                  <select className="input" value={sshKeyId} onChange={(e) => setSshKeyId(e.target.value)}>
-                    {keys.map(k => <option key={k.id} value={k.id}>{k.name}</option>)}
-                  </select>
-                </>
-              )}
+              <div className="text-sm text-gray-700">Select an SSH key</div>
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {/* Add new key tile */}
+                <button
+                  className="relative flex h-36 items-center justify-center rounded-xl border-2 border-dashed border-gray-300 bg-white text-gray-600 hover:border-brand-400 hover:text-brand-700"
+                  onClick={() => { setNewKeyName(""); setNewKeyValue(""); setAddError(null); setShowAddKey(true); }}
+                >
+                  <div className="text-center">
+                    <div className="text-2xl">＋</div>
+                    <div className="mt-1 text-sm font-medium">Add SSH Key</div>
+                  </div>
+                </button>
+
+                {/* Existing keys as selectable tiles */}
+                {sshKeys.map((k) => {
+                  const sel = sshKeyId === k.id;
+                  const parts = (k.value || '').split(' ');
+                  const type = parts[0] || '';
+                  const short = parts[1] ? `${parts[1].slice(0, 12)}…${parts[1].slice(-8)}` : '';
+                  return (
+                    <button
+                      key={k.id}
+                      className={
+                        "relative h-36 rounded-xl border bg-white p-3 text-left shadow-sm transition-colors " +
+                        (sel ? 'border-brand-500 ring-1 ring-brand-300' : 'hover:border-gray-300')
+                      }
+                      onClick={() => setSshKeyId(k.id)}
+                      title={sel ? 'Selected SSH key' : 'Select this key'}
+                    >
+                      <div className={"absolute right-2 top-2 h-6 w-6 rounded-full border-2 " + (sel ? 'border-brand-500 bg-brand-500 text-white' : 'border-gray-300 bg-white text-transparent')}>
+                        <svg viewBox="0 0 20 20" className="h-full w-full p-0.5"><path fill="currentColor" d="M7.629 13.233L4.4 10.004l1.414-1.414l1.815 1.815l0.001-0.001L14.186 3.85l1.414 1.414l-7.971 7.971z"/></svg>
+                      </div>
+                      <div className="mt-1 text-sm font-medium truncate pr-8">{k.name || 'Unnamed key'}</div>
+                      <div className="mt-1 text-xs text-gray-500">{type}</div>
+                      <div className="mt-1 text-xs font-mono text-gray-600 truncate">{short}</div>
+                      <div className="absolute bottom-2 right-2 flex gap-2">
+                        <button
+                          className="rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-700 hover:bg-red-100"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const next = sshKeys.filter(x => x.id !== k.id);
+                            setSshKeys(next);
+                            if (sshKeyId === k.id) setSshKeyId(next[0]?.id);
+                            // persist
+                            const prev = loadSettings();
+                            saveSettings({
+                              ssh_keys: next,
+                              default_ssh_key_id: (sshKeyId === k.id ? next[0]?.id : (prev.default_ssh_key_id || sshKeyId)),
+                              stream_payment_address: prev.stream_payment_address,
+                              glm_token_address: prev.glm_token_address,
+                            });
+                          }}
+                        >Delete</button>
+                      </div>
+                    </button>
+                  );
+                })}
+                {!sshKeys.length && (
+                  <div className="col-span-full text-sm text-gray-500">No SSH keys yet. Add one to continue.</div>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -375,9 +441,54 @@ export function CreateWizard({ open, onClose, onComplete }: { open: boolean; onC
 
       {/* Subtle fade-in background */}
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-gray-50/50 to-transparent" />
+
+      {/* Add SSH Key Modal */}
+      <Modal open={showAddKey} onClose={() => setShowAddKey(false)}>
+        <div className="p-4">
+          <h3 className="text-lg font-medium">Add SSH Key</h3>
+          <div className="mt-3">
+            <label className="label">Name</label>
+            <input className="input" value={newKeyName} onChange={(e) => setNewKeyName(e.target.value)} placeholder="Work Laptop" />
+          </div>
+          <div className="mt-3">
+            <label className="label">Public key</label>
+            <textarea className="input" rows={3} value={newKeyValue} onChange={(e) => setNewKeyValue(e.target.value)} placeholder="ssh-ed25519 AAAA... user@host" />
+          </div>
+          {addError && <div className="mt-2 text-sm text-red-600">{addError}</div>}
+          <div className="mt-4 flex justify-end gap-2">
+            <button className="btn btn-secondary" onClick={() => setShowAddKey(false)}>Cancel</button>
+            <button
+              className="btn btn-primary"
+              onClick={() => {
+                const name = newKeyName.trim();
+                const value = newKeyValue.trim();
+                const validType = /^(ssh-(ed25519|rsa)|ecdsa-sha2-nistp(256|384|521))\s+/.test(value);
+                if (!name) { setAddError('Enter a name'); return; }
+                if (!value || !validType || value.split(' ').length < 2) { setAddError('Enter a valid SSH public key'); return; }
+                const id = Math.random().toString(36).slice(2, 10);
+                const next = [...sshKeys, { id, name, value }];
+                setSshKeys(next);
+                setSshKeyId(id);
+                // persist, merging with existing settings
+                const prev = loadSettings();
+                saveSettings({
+                  ssh_keys: next,
+                  default_ssh_key_id: prev.default_ssh_key_id || id,
+                  stream_payment_address: prev.stream_payment_address,
+                  glm_token_address: prev.glm_token_address,
+                });
+                setShowAddKey(false);
+              }}
+            >Add</button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
+
+// Add SSH Key Modal — placed outside main return for clarity is not necessary; inline below
+// Rendered near the end of main return
 
 function countryFlagEmoji(code: string): string {
   const cc = (code || '').toUpperCase();

@@ -3,12 +3,12 @@ import React from "react";
 import { useRouter } from "next/navigation";
 import { loadSettings, saveSettings, type SSHKey } from "../../lib/api";
 import { useAds } from "../../context/AdsContext";
+import { Modal } from "../../components/ui/Modal";
 
 export default function SettingsPage() {
   const router = useRouter();
   const { ads, setAds, profiles, activeId, setActive, addProfile, removeProfile, renameProfile } = useAds();
   const initial = loadSettings();
-  const [ssh, setSsh] = React.useState(initial.ssh_public_key || "");
   const [sp, setSp] = React.useState(loadSettings().stream_payment_address || (process.env.NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS || ""));
   const [glm, setGlm] = React.useState(loadSettings().glm_token_address || (process.env.NEXT_PUBLIC_GLM_TOKEN_ADDRESS || ""));
   const [sshKeys, setSshKeys] = React.useState<SSHKey[]>(initial.ssh_keys || (initial.ssh_public_key ? [{ id: 'default', name: 'Default', value: initial.ssh_public_key }] : []));
@@ -17,9 +17,16 @@ export default function SettingsPage() {
   const [mode, setMode] = React.useState<"golem-base"|"central">(ads.mode);
   const [disc, setDisc] = React.useState<string>(ads.discovery_url);
   const [rpc, setRpc] = React.useState<string>(ads.golem_base_rpc_url);
+  const [chainIdText, setChainIdText] = React.useState<string>(() => {
+    try { return '0x' + ads.chain_id.toString(16); } catch { return String(ads.chain_id || ''); }
+  });
   const [ws, setWs] = React.useState<string>(ads.golem_base_ws_url);
   const [profileName, setProfileName] = React.useState<string>(profiles.find(p => p.id === activeId)?.name || "");
   const [pendingProvider, setPendingProvider] = React.useState<string | null>(null);
+  const [showAddKey, setShowAddKey] = React.useState(false);
+  const [newKeyName, setNewKeyName] = React.useState("");
+  const [newKeyValue, setNewKeyValue] = React.useState("");
+  const [addError, setAddError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     try {
@@ -29,13 +36,19 @@ export default function SettingsPage() {
   }, []);
 
   const save = () => {
-    saveSettings({ ssh_public_key: ssh, ssh_keys: sshKeys, default_ssh_key_id: defaultKeyId, stream_payment_address: sp, glm_token_address: glm });
+    saveSettings({ ssh_keys: sshKeys, default_ssh_key_id: defaultKeyId, stream_payment_address: sp, glm_token_address: glm });
+    // Parse chain id from text (accept hex 0x.. or decimal)
+    let cid = ads.chain_id;
+    const t = (chainIdText || '').trim();
+    if (t) {
+      try { cid = t.startsWith('0x') ? parseInt(t, 16) : parseInt(t, 10); } catch {}
+    }
     setAds({
       mode,
       discovery_url: disc,
       golem_base_rpc_url: rpc,
       golem_base_ws_url: ws,
-      chain_id: ads.chain_id,
+      chain_id: Number.isFinite(cid) && cid > 0 ? cid : ads.chain_id,
       advertisement_interval_seconds: ads.advertisement_interval_seconds,
     });
     if (profileName.trim().length) renameProfile(activeId, profileName.trim());
@@ -95,6 +108,10 @@ export default function SettingsPage() {
               ) : (
                 <>
                   <div>
+                    <label className="label">Payments Chain ID (hex or decimal)</label>
+                    <input className="input" value={chainIdText} onChange={e => setChainIdText(e.target.value)} placeholder="0x6013a" />
+                  </div>
+                  <div>
                     <label className="label">Golem Base RPC URL</label>
                     <input className="input" value={rpc} onChange={e => setRpc(e.target.value)} placeholder="https://.../rpc" />
                   </div>
@@ -115,16 +132,12 @@ export default function SettingsPage() {
           <div className="card-body grid gap-3">
             <div>
               <div className="text-sm font-medium">SSH Keys</div>
-              <div className="mt-2 text-sm text-gray-600">Hetzner-style: add a key, set a default, and manage multiple keys.</div>
+              <div className="mt-2 text-sm text-gray-600">Add keys, pick a default, Hetzner-style tiles.</div>
               <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {/* Add new key tile */}
+                {/* Add new key tile (opens modal) */}
                 <button
-                  className="flex h-36 items-center justify-center rounded-xl border-2 border-dashed border-gray-300 bg-white text-gray-600 hover:border-brand-400 hover:text-brand-700"
-                  onClick={() => {
-                    const id = Math.random().toString(36).slice(2, 10);
-                    setSshKeys([...sshKeys, { id, name: `Key ${sshKeys.length + 1}`, value: '' }]);
-                    if (!defaultKeyId) setDefaultKeyId(id);
-                  }}
+                  className="relative flex h-36 items-center justify-center rounded-xl border-2 border-dashed border-gray-300 bg-white text-gray-600 hover:border-brand-400 hover:text-brand-700"
+                  onClick={() => { setNewKeyName(""); setNewKeyValue(""); setAddError(null); setShowAddKey(true); }}
                 >
                   <div className="text-center">
                     <div className="text-2xl">＋</div>
@@ -132,51 +145,44 @@ export default function SettingsPage() {
                   </div>
                 </button>
 
-                {/* Existing keys */}
-                {sshKeys.map((k, idx) => (
-                  <div key={k.id} className="relative rounded-xl border bg-white p-3 shadow-sm">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex-1">
-                        <input
-                          className="input"
-                          value={k.name}
-                          onChange={(e) => { const copy=[...sshKeys]; copy[idx] = { ...k, name: e.target.value }; setSshKeys(copy); }}
-                        />
+                {/* Existing keys as tiles */}
+                {sshKeys.map((k) => {
+                  const sel = defaultKeyId === k.id;
+                  const parts = (k.value || '').split(' ');
+                  const type = parts[0] || '';
+                  const short = parts[1] ? `${parts[1].slice(0, 12)}…${parts[1].slice(-8)}` : '';
+                  return (
+                    <button
+                      key={k.id}
+                      className={
+                        "relative h-36 rounded-xl border bg-white p-3 text-left shadow-sm transition-colors " +
+                        (sel ? 'border-brand-500 ring-1 ring-brand-300' : 'hover:border-gray-300')
+                      }
+                      onClick={() => setDefaultKeyId(k.id)}
+                      title={sel ? 'Default SSH key' : 'Set as default'}
+                    >
+                      {/* Checkmark */}
+                      <div className={"absolute right-2 top-2 h-6 w-6 rounded-full border-2 " + (sel ? 'border-brand-500 bg-brand-500 text-white' : 'border-gray-300 bg-white text-transparent')}>
+                        <svg viewBox="0 0 20 20" className="h-full w-full p-0.5"><path fill="currentColor" d="M7.629 13.233L4.4 10.004l1.414-1.414l1.815 1.815l0.001-0.001L14.186 3.85l1.414 1.414l-7.971 7.971z"/></svg>
                       </div>
-                      <button
-                        className={"rounded-md px-2 py-1 text-xs " + (defaultKeyId === k.id ? 'bg-brand-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200')}
-                        title={defaultKeyId === k.id ? 'Default key' : 'Set as default'}
-                        onClick={() => setDefaultKeyId(k.id)}
-                      >
-                        {defaultKeyId === k.id ? '★ Default' : '☆ Default'}
-                      </button>
-                    </div>
-                    <div className="mt-2">
-                      <textarea
-                        className="input"
-                        rows={3}
-                        value={k.value}
-                        onChange={(e) => { const copy=[...sshKeys]; copy[idx] = { ...k, value: e.target.value }; setSshKeys(copy); }}
-                        placeholder="ssh-ed25519 AAAA... user@host"
-                      />
-                    </div>
-                    <div className="mt-2 flex items-center justify-between">
-                      <div className="text-xs text-gray-500 truncate max-w-[70%]">
-                        {(k.value || '').slice(0, 50)}{(k.value || '').length > 50 ? '…' : ''}
+                      <div className="mt-1 text-sm font-medium truncate pr-8">{k.name || 'Unnamed key'}</div>
+                      <div className="mt-1 text-xs text-gray-500">{type}</div>
+                      <div className="mt-1 text-xs font-mono text-gray-600 truncate">{short}</div>
+                      <div className="absolute bottom-2 right-2 flex gap-2">
+                        <button
+                          className="rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-700 hover:bg-red-100"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const next = sshKeys.filter(x => x.id !== k.id);
+                            setSshKeys(next);
+                            if (defaultKeyId === k.id) setDefaultKeyId(next[0]?.id);
+                          }}
+                        >Delete</button>
                       </div>
-                      <button className="btn btn-danger" onClick={() => {
-                        const next = sshKeys.filter(x => x.id !== k.id);
-                        setSshKeys(next);
-                        if (defaultKeyId === k.id) setDefaultKeyId(next[0]?.id);
-                      }}>Delete</button>
-                    </div>
-                  </div>
-                ))}
+                    </button>
+                  );
+                })}
               </div>
-            </div>
-            <div className="pt-2">
-              <label className="label">Legacy single SSH public key (optional)</label>
-              <textarea className="input" value={ssh} onChange={e => setSsh(e.target.value)} rows={3} placeholder="ssh-ed25519 AAAA... user@host"/>
             </div>
             <div>
               <label className="label">StreamPayment address</label>
@@ -196,6 +202,45 @@ export default function SettingsPage() {
           </div>
         </div>
       </div>
+      {/* Add SSH Key Modal */}
+      <Modal open={showAddKey} onClose={() => setShowAddKey(false)}>
+        <div className="p-4">
+          <h3 id="add-ssh-key-title" className="text-lg font-medium">Add SSH Key</h3>
+          <div className="mt-3">
+            <label className="label">Name</label>
+            <input className="input" value={newKeyName} onChange={(e) => setNewKeyName(e.target.value)} placeholder="Work Laptop" />
+          </div>
+          <div className="mt-3">
+            <label className="label">Public key</label>
+            <textarea className="input" rows={3} value={newKeyValue} onChange={(e) => setNewKeyValue(e.target.value)} placeholder="ssh-ed25519 AAAA... user@host" />
+          </div>
+          {addError && <div className="mt-2 text-sm text-red-600">{addError}</div>}
+          <div className="mt-4 flex justify-end gap-2">
+            <button className="btn btn-secondary" onClick={() => setShowAddKey(false)}>Cancel</button>
+            <button
+              className="btn btn-primary"
+              onClick={() => {
+                const name = newKeyName.trim();
+                const value = newKeyValue.trim();
+                // Basic validation: type and base64 part present
+                const validType = /^(ssh-(ed25519|rsa)|ecdsa-sha2-nistp(256|384|521))\s+/.test(value);
+                if (!name) { setAddError('Enter a name'); return; }
+                if (!value || !validType || value.split(' ').length < 2) { setAddError('Enter a valid SSH public key'); return; }
+                const id = Math.random().toString(36).slice(2, 10);
+                const next = [...sshKeys, { id, name, value }];
+                const newDefault = defaultKeyId || id;
+                setSshKeys(next);
+                if (!defaultKeyId) setDefaultKeyId(id);
+                // Auto-save settings after adding
+                saveSettings({ ssh_keys: next, default_ssh_key_id: newDefault, stream_payment_address: sp, glm_token_address: glm });
+                setSaved(true);
+                setTimeout(() => setSaved(false), 1500);
+                setShowAddKey(false);
+              }}
+            >Add</button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

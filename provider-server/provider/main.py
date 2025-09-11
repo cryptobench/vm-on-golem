@@ -1240,7 +1240,7 @@ def streams_withdraw(
 def start(
     no_verify_port: bool = typer.Option(False, "--no-verify-port", help="Skip provider port verification."),
     network: str = typer.Option(None, "--network", help="Target network: 'testnet' or 'mainnet' (overrides env)"),
-    gui: Optional[bool] = typer.Option(None, "--gui/--no-gui", help="Auto-launch Electron GUI (default: auto)"),
+    gui: bool = typer.Option(False, "--gui/--no-gui", help="Launch Electron GUI (default: no)"),
     daemon: bool = typer.Option(False, "--daemon", help="Start in background and write a PID file"),
 ):
     """Start the provider server."""
@@ -1445,17 +1445,6 @@ def _print_pricing_examples(glm_usd):
             f"- {name} ({res.cpu}C, {res.memory}GB RAM, {res.storage}GB Disk): ~{usd_str} per month (~{glm_str})"
         )
 
-def _can_launch_gui() -> bool:
-    import shutil
-    plat = _sys.platform
-    # Basic headless checks
-    if plat.startswith("linux"):
-        if not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
-            return False
-    # Require npm (or electron) available
-    return bool(shutil.which("npm") or shutil.which("electron"))
-
-
 def _maybe_launch_gui(port: int):
     import subprocess, shutil
     import os as _os
@@ -1521,7 +1510,7 @@ def _maybe_launch_gui(port: int):
         logger.warning(f"Failed to launch GUI: {e}")
 
 
-def run_server(dev_mode: bool | None = None, no_verify_port: bool = False, network: str | None = None, launch_gui: Optional[bool] = None):
+def run_server(dev_mode: bool | None = None, no_verify_port: bool = False, network: str | None = None, launch_gui: bool = False):
     """Helper to run the uvicorn server."""
     import sys
     from pathlib import Path
@@ -1577,17 +1566,8 @@ def run_server(dev_mode: bool | None = None, no_verify_port: bool = False, netwo
         log_config = uvicorn.config.LOGGING_CONFIG
         log_config["formatters"]["access"]["fmt"] = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
-        # Optionally launch GUI (non-blocking)
-        want_gui: bool
-        if launch_gui is None:
-            env_flag = os.environ.get("GOLEM_PROVIDER_LAUNCH_GUI")
-            if env_flag is not None:
-                want_gui = env_flag.strip().lower() in ("1", "true", "yes")
-            else:
-                want_gui = _can_launch_gui()
-        else:
-            want_gui = bool(launch_gui)
-        if want_gui:
+        # Optionally launch GUI (non-blocking) — disabled by default
+        if bool(launch_gui):
             try:
                 _maybe_launch_gui(int(settings.PORT))
             except Exception:

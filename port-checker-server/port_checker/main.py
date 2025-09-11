@@ -6,7 +6,7 @@ from ipaddress import ip_address, IPv4Address, IPv6Address
 
 from fastapi import FastAPI, HTTPException, Request, Response, Header, Query
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 import aiohttp
 
 # Configure logging
@@ -40,8 +40,33 @@ DISCOVERY_API_URL = os.getenv("DISCOVERY_API_URL", "http://localhost:9001/api/v1
 PROXY_SHARED_TOKEN = os.getenv("PORT_CHECKER_PROXY_TOKEN", "")
 GOLEM_BASE_RPC_URL = os.getenv("GOLEM_BASE_RPC_URL", "")
 GOLEM_BASE_WS_URL = os.getenv("GOLEM_BASE_WS_URL", "")
+# Dev mode flag: prefer dev_ annotation keys when resolving on-chain adverts
+PROVIDER_ENV = os.getenv("GOLEM_PROVIDER_ENVIRONMENT", "").lower()
+IS_PROVIDER_DEV = PROVIDER_ENV == "development"
+# Allow local/private IPs when developing or when explicitly enabled. This keeps
+# production safe-by-default while unblocking localhost/private-net workflows.
+ALLOW_LOCAL_IPS = os.getenv("PORT_CHECKER_ALLOW_LOCAL_IPS", "false").lower() == "true"
+ALLOW_LOCAL_IPS = ALLOW_LOCAL_IPS or IS_PROVIDER_DEV
+
+# Compatibility shim for web3 provider symbol changes:
+# Some versions of web3 expose `WebsocketProvider` (lowercase 's') while
+# golem-base-sdk imports `WebSocketProvider` (uppercase 'S'). If the SDK is
+# present alongside a newer/older web3, the import may fail. To improve
+# robustness, alias the symbol when possible before importing the SDK.
+try:  # pragma: no cover - environment-specific import guard
+    import web3 as _web3  # type: ignore
+    if not hasattr(_web3, "WebSocketProvider") and hasattr(_web3, "WebsocketProvider"):
+        setattr(_web3, "WebSocketProvider", getattr(_web3, "WebsocketProvider"))
+except Exception:  # pragma: no cover - best-effort shim
+    pass
 
 try:
+    # Prefer read-only client for provider lookups
+    try:
+        from golem_base_sdk import GolemBaseROClient as _GolemBaseROClient  # type: ignore
+    except Exception:  # pragma: no cover - SDK variants
+        _GolemBaseROClient = None  # type: ignore
+
     from golem_base_sdk import GolemBaseClient  # type: ignore
     from golem_base_sdk.types import EntityKey, GenericBytes  # type: ignore
     _HAS_GOLEM_BASE = True
@@ -50,6 +75,10 @@ except Exception:  # pragma: no cover - optional
     EntityKey = None  # type: ignore
     GenericBytes = None  # type: ignore
     _HAS_GOLEM_BASE = False
+
+
+# Note: Golem Base SDK is an explicit package dependency. If it's not available
+# at runtime, the proxy will respond with 501 for Golem Base lookups.
 
 
 def _parse_allowed_ports(spec: str) -> List[Tuple[int, int]]:
@@ -102,7 +131,7 @@ class PortCheckRequest(BaseModel):
     provider_ip: str = Field(..., description="Provider's public IP address")
     ports: List[int] = Field(..., description="List of ports to check")
 
-    @validator('ports')
+    @field_validator('ports')
     def validate_ports(cls, ports):
         """Validate port numbers."""
         for port in ports:
@@ -245,8 +274,8 @@ async def http_proxy_provider(
     if port is None or not _is_allowed_port(int(port)):
         raise HTTPException(status_code=403, detail="Target port not allowed")
 
-    # Resolve IP from source
-    src = (x_proxy_source or "discovery").lower()
+    # Resolve IP from source; default to Golem Base
+    src = (x_proxy_source or "golem-base").lower()
     if src not in {"discovery", "golem-base"}:
         raise HTTPException(status_code=400, detail="Invalid source; use 'discovery' or 'golem-base'")
 
@@ -273,11 +302,27 @@ async def http_proxy_provider(
         if not rpc_url or not ws_url:
             raise HTTPException(status_code=500, detail="Golem Base RPC/WS URLs not configured")
         try:
-            # Build client; private key optional for reads
+            # Build client (read-only). Prefer RO client if available.
             kwargs = {"rpc_url": rpc_url, "ws_url": ws_url}
-            client = await GolemBaseClient.create(**kwargs)  # type: ignore
-            query = f'golem_provider_id="{provider_id}"'
-            results = await client.query_entities(query)
+            client = None
+            if '_GolemBaseROClient' in globals() and _GolemBaseROClient is not None:
+                client = await _GolemBaseROClient.create_ro_client(**kwargs)  # type: ignore
+            elif hasattr(GolemBaseClient, 'create_ro_client'):
+                client = await GolemBaseClient.create_ro_client(**kwargs)  # type: ignore[attr-defined]
+            elif hasattr(GolemBaseClient, 'create'):
+                # Legacy path – some SDKs supported create(rpc_url, ws_url) without key
+                client = await GolemBaseClient.create(**kwargs)  # type: ignore
+            else:
+                raise RuntimeError("No suitable Golem Base client constructor found")
+            # In dev, prefer dev_golem_provider_id but fall back to canonical key
+            queries: List[str] = [f'golem_provider_id="{provider_id}"']
+            if IS_PROVIDER_DEV:
+                queries = [f'dev_golem_provider_id="{provider_id}"'] + queries
+            results = []
+            for q in queries:
+                results = await client.query_entities(q)
+                if results:
+                    break
             if not results:
                 await client.disconnect()
                 raise HTTPException(status_code=404, detail="Provider not found on Golem Base")
@@ -285,12 +330,21 @@ async def http_proxy_provider(
             md = await client.get_entity_metadata(ek)
             await client.disconnect()
             anns = {a.key: a.value for a in md.string_annotations}
-            ip = anns.get("golem_ip_address")
+            # Prefer dev_ prefixed keys in development; fall back to standard keys
+            def pick(key: str) -> Optional[str]:
+                if IS_PROVIDER_DEV and ("dev_" + key) in anns and str(anns["dev_" + key]).strip():
+                    return str(anns["dev_" + key]).strip()
+                v = anns.get(key)
+                return str(v).strip() if v is not None else None
+            ip = pick("golem_ip_address")
         except HTTPException:
             raise
         except Exception as e:
             raise HTTPException(status_code=502, detail=f"Golem Base error: {e}")
-    if not ip or not _is_public_ip(ip):
+    if not ip:
+        raise HTTPException(status_code=400, detail="Resolved IP invalid or not public")
+    # In development, allow forwarding to local/private IPs to support local setups
+    if not _is_public_ip(ip) and not ALLOW_LOCAL_IPS:
         raise HTTPException(status_code=400, detail="Resolved IP invalid or not public")
 
     # Build provider URL
@@ -393,7 +447,8 @@ async def http_proxy(
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid port in target")
 
-    if not _is_public_ip(host_part):
+    # In development, allow forwarding to local/private IPs to support local setups
+    if not _is_public_ip(host_part) and not ALLOW_LOCAL_IPS:
         raise HTTPException(status_code=400, detail="Target must be a public IP address")
 
     if not _is_allowed_port(port):

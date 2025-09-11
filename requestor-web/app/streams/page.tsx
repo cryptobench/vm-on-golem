@@ -15,7 +15,7 @@ type ChainStream = {
 async function fetchStream(spAddr: string, id: bigint) {
   const { ethereum } = window as any;
   const provider = new BrowserProvider(ethereum);
-  const contract = new Contract(spAddr, (streamPayment as any).abi, await provider.getSigner());
+  const contract = new Contract(spAddr, (streamPayment as any).abi, provider);
   const res = (await contract.streams(id)) as ChainStream;
   return { chain: res };
 }
