@@ -2,6 +2,7 @@ import asyncio
 from typing import Optional
 
 from ..utils.logging import setup_logger
+from ..vm.models import VMNotFoundError
 
 logger = setup_logger(__name__)
 
@@ -83,6 +84,16 @@ class StreamMonitor:
                         )
                         try:
                             await self.vm_service.stop_vm(vm_id)
+                        except VMNotFoundError as e:
+                            # If the VM cannot be found, remove it from the stream map
+                            # to avoid repeated stop attempts and log spam.
+                            logger.warning(f"stop_vm failed for {vm_id}: {e}")
+                            try:
+                                await self.stream_map.remove(vm_id)
+                            except Exception as rem_err:
+                                logger.debug(
+                                    f"failed to remove vm {vm_id} from stream map after not-found: {rem_err}"
+                                )
                         except Exception as e:
                             logger.warning(f"stop_vm failed for {vm_id}: {e}")
                         continue

@@ -1,6 +1,7 @@
 "use client";
 import React from "react";
 import Link from "next/link";
+import { ProjectDashboard } from "../components/dashboard/ProjectDashboard";
 
 export default function Home() {
   return (
@@ -44,6 +45,9 @@ export default function Home() {
           </div>
         </Link>
       </div>
+
+      {/* Project-focused dashboard sections */}
+      <ProjectDashboard />
     </div>
   );
 }

@@ -133,7 +133,7 @@ There are two modes. For better security, use provider-based routing.
 - Provider-based (recommended):
   - `ANY /proxy/provider/{provider_id}/{path}?port=<port>`
   - Headers:
-    - `X-Proxy-Source: discovery|golem-base` (required)
+  - `X-Proxy-Source: discovery|golem-base` (required; defaults to `golem-base` if omitted)
     - `X-Proxy-Token: <shared secret>` (required)
   - Resolves provider IP via Discovery (default in docs) or Golem Base and forwards over HTTP to `port` (default 80).
 
@@ -161,9 +161,10 @@ Environment variables:
 - `PORT_CHECKER_PROXY_ALLOW_DIRECT_IP` (default `false`)
  - `PORT_CHECKER_PROXY_TOKEN` (required to enable proxying)
   
-Golem Base (if using `source=golem-base`):
+Golem Base (default; if using `source=golem-base`):
 - `GOLEM_BASE_RPC_URL` (required if not provided per-request)
 - `GOLEM_BASE_WS_URL` (required if not provided per-request)
+ - `GOLEM_PROVIDER_ENVIRONMENT` (optional; set `development` to prefer `dev_*` annotations)
 
 Per-request overrides (headers):
 - `X-Proxy-Golem-Base-Rpc`: override RPC URL for this request
