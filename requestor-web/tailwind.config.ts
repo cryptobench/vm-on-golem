@@ -9,17 +9,18 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        // Hetzner-like red palette
         brand: {
-          50: '#eef6ff',
-          100: '#d9ecff',
-          200: '#bfe0ff',
-          300: '#94cdff',
-          400: '#5db1ff',
-          500: '#328fff',
-          600: '#1f6fff',
-          700: '#1458f5',
-          800: '#1245c4',
-          900: '#123b9a',
+          50: '#fff1f2',
+          100: '#ffe4e6',
+          200: '#fecdd3',
+          300: '#fda4af',
+          400: '#fb7185',
+          500: '#f43f5e',
+          600: '#e11d48',
+          700: '#be123c',
+          800: '#9f1239',
+          900: '#881337',
         },
       },
     },
@@ -28,4 +29,3 @@ const config: Config = {
 }
 
 export default config
-

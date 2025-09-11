@@ -1,18 +1,16 @@
 "use client";
 import React from "react";
-import { Wallet } from "../components/Wallet";
 import Link from "next/link";
 
 export default function Home() {
   return (
     <div className="space-y-6">
       <div className="card">
-        <div className="card-body flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="card-body flex flex-col gap-4 sm:flex-row sm:items-center">
           <div>
             <h1>VM on Golem — Requestor Portal</h1>
             <p className="mt-1 text-gray-600">Discover providers, open payment streams, rent and manage your VMs.</p>
           </div>
-          <Wallet />
         </div>
       </div>
 
