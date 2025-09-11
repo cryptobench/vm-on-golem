@@ -15,6 +15,10 @@ class AdvertisementCreate(BaseModel):
         ...,
         description="ISO 3166-1 alpha-2 country code"
     )
+    platform: Optional[str] = Field(
+        None,
+        description="Provider platform/architecture (e.g., x86_64, arm64)"
+    )
     resources: Dict[str, int] = Field(
         ...,
         description="Available resources (cpu, memory, storage)"
@@ -46,6 +50,7 @@ class AdvertisementResponse(BaseModel):
     provider_id: str
     ip_address: str
     country: str
+    platform: Optional[str]
     resources: Dict[str, int]
     pricing: Optional[Dict]
     created_at: datetime

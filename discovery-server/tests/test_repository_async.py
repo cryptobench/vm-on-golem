@@ -22,12 +22,14 @@ async def test_repository_filters_and_cleanup():
             provider_id="PX",
             ip_address="10.0.0.1",
             country="US",
+            platform="arm64",
             resources={"cpu": 2, "memory": 4, "storage": 10},
         )
         await repo.upsert_advertisement(
             provider_id="PY",
             ip_address="10.0.0.2",
             country="SE",
+            platform="x86_64",
             resources={"cpu": 4, "memory": 8, "storage": 20},
         )
 
@@ -37,6 +39,10 @@ async def test_repository_filters_and_cleanup():
 
         # Filters: country
         res = await repo.find_by_requirements(country="US")
+        assert {r.provider_id for r in res} == {"PX"}
+
+        # Filters: platform
+        res = await repo.find_by_requirements(platform="arm64")
         assert {r.provider_id for r in res} == {"PX"}
 
         # get_by_id
@@ -62,4 +68,3 @@ async def test_repository_filters_and_cleanup():
         # Now both should be gone
         all_rows = (await session.execute(select(Advertisement))).scalars().all()
         assert all_rows == []
-

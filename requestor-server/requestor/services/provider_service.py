@@ -66,6 +66,7 @@ class ProviderService:
         memory: Optional[int] = None,
         storage: Optional[int] = None,
         country: Optional[str] = None,
+        platform: Optional[str] = None,
         driver: Optional[str] = None,
         payments_network: Optional[str] = None,
         include_all_payments: bool = False,
@@ -82,12 +83,12 @@ class ProviderService:
                     private_key=private_key_bytes,
                 )
             return await self._find_providers_golem_base(
-                cpu, memory, storage, country,
+                cpu, memory, storage, country, platform,
                 payments_network=payments_network,
                 include_all_payments=include_all_payments,
             )
         else:
-            return await self._find_providers_central(cpu, memory, storage, country)
+            return await self._find_providers_central(cpu, memory, storage, country, platform)
 
     async def _find_providers_golem_base(
         self,
@@ -95,6 +96,7 @@ class ProviderService:
         memory: Optional[int] = None,
         storage: Optional[int] = None,
         country: Optional[str] = None,
+        platform: Optional[str] = None,
         payments_network: Optional[str] = None,
         include_all_payments: bool = False,
     ) -> List[Dict]:
@@ -124,6 +126,8 @@ class ProviderService:
                 query += f' && golem_storage>={storage}'
             if country:
                 query += f' && golem_country="{country}"'
+            if platform:
+                query += f' && golem_platform="{platform}"'
 
             results = await self.golem_base_client.query_entities(query)
 
@@ -142,6 +146,7 @@ class ProviderService:
                     'provider_name': annotations.get('golem_provider_name'),
                     'ip_address': annotations.get('golem_ip_address'),
                     'country': annotations.get('golem_country'),
+                    'platform': annotations.get('golem_platform') or None,
                     'payments_network': annotations.get('golem_payments_network'),
                     'resources': {
                         'cpu': int(annotations.get('golem_cpu', 0)),
@@ -171,7 +176,8 @@ class ProviderService:
         cpu: Optional[int] = None,
         memory: Optional[int] = None,
         storage: Optional[int] = None,
-        country: Optional[str] = None
+        country: Optional[str] = None,
+        platform: Optional[str] = None
     ) -> List[Dict]:
         """Find providers using the central discovery service."""
         try:
@@ -181,7 +187,8 @@ class ProviderService:
                     'cpu': cpu,
                     'memory': memory,
                     'storage': storage,
-                    'country': country
+                    'country': country,
+                    'platform': platform,
                 }.items() if v is not None
             }
 
@@ -328,6 +335,7 @@ class ProviderService:
             usd_storage if usd_storage is not None else '—',
             est_usd,
             est_glm,
+            (provider.get('platform') or '—'),
             updated_at_str
         ]
 
@@ -358,6 +366,10 @@ class ProviderService:
             # Format location info
             row[3] = style(f"🌍 {row[3]}", fg="green", bold=True)
 
+            # Platform column: dim label
+            if row[12] != '—':
+                row[12] = style(f"{row[12]}", fg="white")
+
         return row
 
     @property
@@ -376,5 +388,6 @@ class ProviderService:
             "USD/GB Disk/mo",
             "Est. $/mo",
             "Est. GLM/mo",
+            "Platform",
             "Updated"
         ]

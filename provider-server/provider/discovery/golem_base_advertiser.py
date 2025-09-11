@@ -65,6 +65,16 @@ class GolemBaseAdvertiser(Advertiser):
             existing_keys = await get_provider_entity_keys(self.client, settings.PROVIDER_ID)
 
             # String annotations (metadata + prices as strings; on-chain numeric annotations must be ints)
+            import platform as _plat
+            raw = (_plat.machine() or '').lower()
+            platform_str = None
+            if raw:
+                if 'aarch64' in raw or 'arm64' in raw or raw.startswith('arm'):
+                    platform_str = 'arm64'
+                elif 'x86_64' in raw or 'amd64' in raw or 'x64' in raw:
+                    platform_str = 'x86_64'
+                else:
+                    platform_str = raw
             string_annotations = [
                 Annotation(key="golem_type", value="provider"),
                 Annotation(key="golem_network", value=settings.NETWORK),
@@ -73,6 +83,7 @@ class GolemBaseAdvertiser(Advertiser):
                 Annotation(key="golem_ip_address", value=ip_address),
                 Annotation(key="golem_country", value=settings.PROVIDER_COUNTRY),
                 Annotation(key="golem_provider_name", value=settings.PROVIDER_NAME),
+                Annotation(key="golem_platform", value=platform_str or ""),
                 Annotation(key="golem_price_currency", value="USD/GLM"),
                 # Prices must be strings to avoid RLP sedes errors (ints only allowed for numeric annotations)
                 Annotation(key="golem_price_usd_core_month", value=str(float(settings.PRICE_USD_PER_CORE_MONTH))),

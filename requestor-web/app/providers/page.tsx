@@ -11,6 +11,7 @@ export default function ProvidersPage() {
   const [memory, setMemory] = React.useState<number | undefined>();
   const [storage, setStorage] = React.useState<number | undefined>();
   const [country, setCountry] = React.useState<string>("");
+  const [platform, setPlatform] = React.useState<string>("");
   const [countries, setCountries] = React.useState<string[] | undefined>(undefined);
   const [maxUsd, setMaxUsd] = React.useState<number | undefined>(undefined);
   const [loading, setLoading] = React.useState(false);
@@ -22,7 +23,7 @@ export default function ProvidersPage() {
   const search = async () => {
     setLoading(true); setError(null);
     try {
-      let data = await fetchProviders({ cpu, memory, storage, country: (countries && countries.length && !country) ? undefined : (country || undefined) }, ads);
+      let data = await fetchProviders({ cpu, memory, storage, country: (countries && countries.length && !country) ? undefined : (country || undefined), platform: platform || undefined }, ads);
       // Apply multi-country filter client-side if provided
       if (countries && countries.length) {
         const setC = new Set(countries.map(c => c.trim().toUpperCase()));
@@ -52,6 +53,7 @@ export default function ProvidersPage() {
         if (data.storage != null) setStorage(Number(data.storage));
         if (Array.isArray(data.countries) && data.countries.length) { setCountries(data.countries); setCountry(""); }
         else if (data.country) setCountry(String(data.country));
+        if (data.platform) setPlatform(String(data.platform));
         if (data.max_usd_per_month != null) setMaxUsd(Number(data.max_usd_per_month));
         localStorage.removeItem('requestor_pending_create');
         // trigger search after state applied
@@ -87,6 +89,14 @@ export default function ProvidersPage() {
               <input className="input" value={country} onChange={e => setCountry(e.target.value)} placeholder="US, PL, ..." />
             </div>
             <div>
+              <label className="label">Platform</label>
+              <select className="input" value={platform} onChange={e => setPlatform(e.target.value)}>
+                <option value="">Any</option>
+                <option value="x86_64">x86_64</option>
+                <option value="arm64">arm64</option>
+              </select>
+            </div>
+            <div>
               <label className="label">Max $/mo</label>
               <input className="input w-28" type="number" min={0} value={maxUsd ?? ''} onChange={e => setMaxUsd(e.target.value ? Number(e.target.value) : undefined)} placeholder="cap" />
             </div>
@@ -112,6 +122,7 @@ export default function ProvidersPage() {
                 <th className="th">Provider</th>
                 <th className="th">IP</th>
                 <th className="th">Country</th>
+                <th className="th">Platform</th>
                 <th className="th text-right">CPU</th>
                 <th className="th text-right">RAM</th>
                 <th className="th text-right">Disk</th>
@@ -136,6 +147,7 @@ export default function ProvidersPage() {
                     <td className="td font-mono text-xs sm:text-sm">{p.provider_id}</td>
                     <td className="td">{p.ip_address || '—'}</td>
                     <td className="td">{p.country || '—'}</td>
+                    <td className="td">{p.platform || '—'}</td>
                     <td className="td text-right">{p.resources?.cpu}</td>
                     <td className="td text-right">{p.resources?.memory}</td>
                     <td className="td text-right">{p.resources?.storage}</td>

@@ -115,6 +115,16 @@ class DiscoveryServerAdvertiser(Advertiser):
             return
 
         try:
+            import platform as _plat
+            raw = (_plat.machine() or '').lower()
+            platform_str = None
+            if raw:
+                if 'aarch64' in raw or 'arm64' in raw or raw.startswith('arm'):
+                    platform_str = 'arm64'
+                elif 'x86_64' in raw or 'amd64' in raw or 'x64' in raw:
+                    platform_str = 'x86_64'
+                else:
+                    platform_str = raw
             async with self.session.post(
                 f"{self.discovery_url}/api/v1/advertisements",
                 headers={
@@ -125,6 +135,7 @@ class DiscoveryServerAdvertiser(Advertiser):
                 json={
                     "ip_address": ip_address,
                     "country": settings.PROVIDER_COUNTRY,
+                    "platform": platform_str,
                     "resources": resources,
                     "pricing": {
                         "usd_per_core_month": settings.PRICE_USD_PER_CORE_MONTH,
