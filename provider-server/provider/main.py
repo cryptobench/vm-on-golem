@@ -15,6 +15,7 @@ if "--json" in _sys.argv:
 
 # Defer heavy local imports (may import config) until after we decide on silence
 from .container import Container
+from .config import settings  # used by pricing CLI and server commands
 from .service import ProviderService
 
 logger = setup_logger(__name__)

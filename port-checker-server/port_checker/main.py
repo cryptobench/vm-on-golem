@@ -43,6 +43,8 @@ GOLEM_BASE_WS_URL = os.getenv("GOLEM_BASE_WS_URL", "")
 # Dev mode flag: prefer dev_ annotation keys when resolving on-chain adverts
 PROVIDER_ENV = os.getenv("GOLEM_PROVIDER_ENVIRONMENT", "").lower()
 IS_PROVIDER_DEV = PROVIDER_ENV == "development"
+# Align expected network with provider env: dev → testnet, else mainnet
+EXPECTED_NETWORK = "testnet" if IS_PROVIDER_DEV else "mainnet"
 # Allow local/private IPs when developing or when explicitly enabled. This keeps
 # production safe-by-default while unblocking localhost/private-net workflows.
 ALLOW_LOCAL_IPS = os.getenv("PORT_CHECKER_ALLOW_LOCAL_IPS", "false").lower() == "true"
@@ -314,10 +316,11 @@ async def http_proxy_provider(
                 client = await GolemBaseClient.create(**kwargs)  # type: ignore
             else:
                 raise RuntimeError("No suitable Golem Base client constructor found")
-            # In dev, prefer dev_golem_provider_id but fall back to canonical key
-            queries: List[str] = [f'golem_provider_id="{provider_id}"']
+            # Prefer dev_golem_provider_id in dev; always constrain by expected network
+            net_clause = f' && golem_network="{EXPECTED_NETWORK}"'
+            queries: List[str] = [f'golem_provider_id="{provider_id}"{net_clause}']
             if IS_PROVIDER_DEV:
-                queries = [f'dev_golem_provider_id="{provider_id}"'] + queries
+                queries = [f'dev_golem_provider_id="{provider_id}"{net_clause}'] + queries
             results = []
             for q in queries:
                 results = await client.query_entities(q)

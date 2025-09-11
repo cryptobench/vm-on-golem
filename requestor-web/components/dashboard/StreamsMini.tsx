@@ -81,7 +81,7 @@ export function StreamsMini({ projectId }: { projectId: string }) {
 
   return (
     <div className="space-y-3">
-      <h2>Streams</h2>
+      <h2>Payment Streams</h2>
       {!rentals.length && <div className="text-gray-600 text-sm">No streams in this project.</div>}
       {error && <div className="text-sm text-red-600">{error}</div>}
       <div className="grid gap-4 sm:grid-cols-2">
