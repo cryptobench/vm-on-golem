@@ -298,3 +298,45 @@ async def test_get_all_vms_resources(multipass_adapter):
     assert resources["test-vm"].cpu == 2
     assert resources["test-vm"].memory == 2
     assert resources["test-vm"].storage == 10
+
+
+@pytest.mark.asyncio
+async def test_get_vm_status_handles_empty_numeric_fields(multipass_adapter):
+    # Arrange: simulate multipass returning empty strings/objects for numeric fields when stopped
+    multipass_adapter._get_vm_info = AsyncMock(return_value={
+        "state": "STOPPED",
+        "ipv4": [],
+        "cpu_count": "",
+        "memory": {},
+        "disks": {"sda1": {}}
+    })
+
+    # Act
+    status = await multipass_adapter.get_vm_status("test-vm")
+
+    # Assert: falls back to sensible defaults without raising
+    assert status.status.value == "stopped"
+    assert status.resources.cpu == 1
+    assert status.resources.memory == 1
+    assert status.resources.storage == 10
+
+
+@pytest.mark.asyncio
+async def test_get_all_vms_resources_handles_empty_numeric_fields(multipass_adapter):
+    # Arrange
+    multipass_adapter._get_vm_info = AsyncMock(return_value={
+        "state": "STOPPED",
+        "ipv4": [],
+        "cpu_count": "",
+        "memory": {},
+        "disks": {"sda1": {}}
+    })
+
+    # Act
+    resources = await multipass_adapter.get_all_vms_resources()
+
+    # Assert
+    assert "test-vm" in resources
+    assert resources["test-vm"].cpu == 1
+    assert resources["test-vm"].memory == 1
+    assert resources["test-vm"].storage == 10

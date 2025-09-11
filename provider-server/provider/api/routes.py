@@ -31,6 +31,12 @@ from ..vm.multipass_adapter import MultipassError
 logger = setup_logger(__name__)
 router = APIRouter()
 
+# Expose Settings class at module scope for tests to monkeypatch default deployment lookup
+try:
+    from ..config import Settings as _Cfg  # type: ignore
+except Exception:  # noqa: BLE001
+    _Cfg = None  # type: ignore
+
 # Job status persisted in SQLite via JobStore (see Container.job_store)
 
 
@@ -56,8 +62,10 @@ async def create_vm(
         if spa and spa != "0x0000000000000000000000000000000000000000":
             if os.environ.get("PYTEST_CURRENT_TEST"):
                 try:
-                    from ..config import Settings as _Cfg  # type: ignore
-                    default_spa, _ = _Cfg._load_l2_deployment()  # type: ignore[attr-defined]
+                    if _Cfg is not None:
+                        default_spa, _ = _Cfg._load_l2_deployment()  # type: ignore[attr-defined]
+                    else:
+                        default_spa = None
                 except Exception:
                     default_spa = None
                 if not default_spa or spa.lower() != default_spa.lower():
@@ -302,6 +310,8 @@ async def provider_info(settings: Any = Depends(Provide[Container.config])) -> P
         provider_id=settings["PROVIDER_ID"],
         stream_payment_address=settings["STREAM_PAYMENT_ADDRESS"],
         glm_token_address=settings["GLM_TOKEN_ADDRESS"],
+        # Provide ETH-focused alias for clients; keep legacy field too
+        eth_token_address=settings["GLM_TOKEN_ADDRESS"],
         ip_address=ip_addr,
         country=(settings.get("PROVIDER_COUNTRY") if isinstance(settings, dict) else getattr(settings, "PROVIDER_COUNTRY", None)),
         platform=platform_str,

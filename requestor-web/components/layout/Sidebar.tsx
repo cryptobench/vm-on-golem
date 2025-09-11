@@ -11,7 +11,7 @@ export function Sidebar() {
     { href: "/", label: "Dashboard", Icon: IcDashboard },
     { href: "/providers", label: "Providers", Icon: IcProviders },
     { href: "/rentals", label: "Servers", Icon: IcServers },
-    { href: "/streams", label: "Streams", Icon: IcStreams },
+    { href: "/streams", label: "Payment Streams", Icon: IcStreams },
     { href: "/settings", label: "Settings", Icon: IcSettings },
   ];
   return (
