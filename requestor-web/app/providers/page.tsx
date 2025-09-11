@@ -3,12 +3,16 @@ import React from "react";
 import { useRouter } from "next/navigation";
 import { fetchProviders, computeEstimate, providerInfo } from "../../lib/api";
 import { useAds } from "../../context/AdsContext";
+import { Spinner } from "../../components/ui/Spinner";
+import { TableSkeleton } from "../../components/ui/Skeleton";
 
 export default function ProvidersPage() {
   const [cpu, setCpu] = React.useState<number | undefined>();
   const [memory, setMemory] = React.useState<number | undefined>();
   const [storage, setStorage] = React.useState<number | undefined>();
   const [country, setCountry] = React.useState<string>("");
+  const [countries, setCountries] = React.useState<string[] | undefined>(undefined);
+  const [maxUsd, setMaxUsd] = React.useState<number | undefined>(undefined);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [rows, setRows] = React.useState<any[]>([]);
@@ -18,14 +22,45 @@ export default function ProvidersPage() {
   const search = async () => {
     setLoading(true); setError(null);
     try {
-      const data = await fetchProviders({ cpu, memory, storage, country: country || undefined }, ads);
+      let data = await fetchProviders({ cpu, memory, storage, country: (countries && countries.length && !country) ? undefined : (country || undefined) }, ads);
+      // Apply multi-country filter client-side if provided
+      if (countries && countries.length) {
+        const setC = new Set(countries.map(c => c.trim().toUpperCase()));
+        data = data.filter(p => (p.country ? setC.has(p.country.toUpperCase()) : false));
+      }
+      // Apply price cap if specified and we have full spec
+      if (maxUsd != null && cpu != null && memory != null && storage != null) {
+        data = data.filter(p => {
+          const est = computeEstimate(p, cpu, memory, storage);
+          return est && est.usd_per_month <= maxUsd;
+        });
+      }
       setRows(data);
     } catch (e: any) {
       setError(e?.message || String(e));
     } finally { setLoading(false); }
   };
 
-  React.useEffect(() => { search(); }, []);
+  React.useEffect(() => {
+    // Pre-fill from quick create wizard if present
+    try {
+      const raw = localStorage.getItem('requestor_pending_create');
+      if (raw) {
+        const data = JSON.parse(raw);
+        if (data.cpu != null) setCpu(Number(data.cpu));
+        if (data.memory != null) setMemory(Number(data.memory));
+        if (data.storage != null) setStorage(Number(data.storage));
+        if (Array.isArray(data.countries) && data.countries.length) { setCountries(data.countries); setCountry(""); }
+        else if (data.country) setCountry(String(data.country));
+        if (data.max_usd_per_month != null) setMaxUsd(Number(data.max_usd_per_month));
+        localStorage.removeItem('requestor_pending_create');
+        // trigger search after state applied
+        setTimeout(() => search(), 0);
+        return;
+      }
+    } catch {}
+    search();
+  }, []);
 
   return (
     <div className="space-y-4">
@@ -51,15 +86,26 @@ export default function ProvidersPage() {
               <label className="label">Country</label>
               <input className="input" value={country} onChange={e => setCountry(e.target.value)} placeholder="US, PL, ..." />
             </div>
-            <div className="ml-auto">
+            <div>
+              <label className="label">Max $/mo</label>
+              <input className="input w-28" type="number" min={0} value={maxUsd ?? ''} onChange={e => setMaxUsd(e.target.value ? Number(e.target.value) : undefined)} placeholder="cap" />
+            </div>
+            <div className="ml-auto flex items-center gap-3">
+              {loading && <Spinner />}
               <button className="btn btn-primary" onClick={search} disabled={loading}>{loading ? 'Searching…' : 'Search'}</button>
             </div>
           </div>
+          {countries && countries.length > 0 && (
+            <div className="mt-2 text-xs text-gray-500">Countries: {countries.join(', ')}</div>
+          )}
           {error && <div className="mt-3 text-sm text-red-600">{error}</div>}
         </div>
       </div>
       <div className="card">
         <div className="card-body overflow-x-auto">
+          {loading && rows.length === 0 ? (
+            <TableSkeleton rows={6} cols={6} />
+          ) : (
           <table className="table">
             <thead className="bg-gray-50">
               <tr>
@@ -124,6 +170,7 @@ export default function ProvidersPage() {
               })}
             </tbody>
           </table>
+          )}
         </div>
       </div>
     </div>
@@ -152,18 +199,27 @@ function RentInline({ provider, defaultSpec, adsMode }: { provider: any; default
 import { BrowserProvider, Contract, parseEther } from "ethers";
 import streamPayment from "../../public/abi/StreamPayment.json";
 import { createVm, loadSettings, saveRentals, loadRentals, type AdsConfig, type SSHKey } from "../../lib/api";
+import { Modal } from "../../components/ui/Modal";
+import { useWallet } from "../../context/WalletContext";
+import { useProjects } from "../../context/ProjectsContext";
 
 function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provider: any; defaultSpec: { cpu?: number; memory?: number; storage?: number }; onClose: () => void; adsMode: AdsConfig; }) {
   const router = useRouter();
+  const { isInstalled, isConnected, connect } = useWallet();
+  const { activeId: activeProjectId } = useProjects();
   const [name, setName] = React.useState("");
   const [cpu, setCpu] = React.useState<number>(defaultSpec.cpu || 1);
   const [memory, setMemory] = React.useState<number>(defaultSpec.memory || 2);
   const [storage, setStorage] = React.useState<number>(defaultSpec.storage || 20);
   const settings = loadSettings();
   const initialKeys: SSHKey[] = settings.ssh_keys || (settings.ssh_public_key ? [{ id: 'default', name: 'Default', value: settings.ssh_public_key }] : []);
+  const defaultKeyId = settings.default_ssh_key_id || initialKeys[0]?.id || '';
   const [sshKeys] = React.useState<SSHKey[]>(initialKeys);
-  const [selectedKeyId, setSelectedKeyId] = React.useState<string>(initialKeys[0]?.id || "");
-  const [sshKey, setSshKey] = React.useState<string>(initialKeys[0]?.value || settings.ssh_public_key || "");
+  const [selectedKeyId, setSelectedKeyId] = React.useState<string>(defaultKeyId);
+  const [sshKey, setSshKey] = React.useState<string>(() => {
+    const found = initialKeys.find(k => k.id === defaultKeyId);
+    return found?.value || settings.ssh_public_key || "";
+  });
   const [creating, setCreating] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [streamId, setStreamId] = React.useState<string | null>(null);
@@ -224,7 +280,7 @@ function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provider: any
       const payload = { name: name || `vm-${Math.random().toString(36).slice(2, 7)}`, resources: { cpu, memory, storage }, ssh_key: sshKey, stream_id: Number(sid) };
       const vm = await createVm(provider.provider_id, payload, adsMode);
       const rentals = loadRentals();
-      rentals.push({ name: payload.name, provider_id: provider.provider_id, provider_ip: provider.ip_address, vm_id: vm.id || vm.vm_id || payload.name, ssh_port: vm?.config?.ssh_port || null, stream_id: String(sid) });
+      rentals.push({ name: payload.name, provider_id: provider.provider_id, provider_ip: provider.ip_address, vm_id: vm.id || vm.vm_id || payload.name, ssh_port: vm?.config?.ssh_port || null, stream_id: String(sid), project_id: activeProjectId || 'default' });
       saveRentals(rentals);
       onClose();
       alert(`VM created. VM ID: ${vm.id || vm.vm_id}`);
@@ -239,13 +295,24 @@ function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provider: any
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-lg rounded-xl bg-white shadow-lg ring-1 ring-gray-200">
+    <Modal open={true} onClose={onClose}>
+      <div className="w-full max-w-lg">
         <div className="border-b px-5 py-4">
           <h3>Rent from <span className="font-mono text-sm">{provider.provider_id}</span></h3>
           {est && <div className="mt-1 text-sm text-gray-600">Estimated: ~${est.usd_per_month} / mo (~{est.usd_per_hour}/hr)</div>}
         </div>
         <div className="px-5 py-4">
+          {!isInstalled && (
+            <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+              MetaMask not detected. You can browse, but to rent you must install and connect MetaMask.
+            </div>
+          )}
+          {isInstalled && !isConnected && (
+            <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 flex items-center justify-between">
+              <div>Connect MetaMask to continue with renting.</div>
+              <button className="btn btn-secondary" onClick={connect}>Connect</button>
+            </div>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="label">Name</label>
@@ -328,9 +395,9 @@ function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provider: any
         </div>
         <div className="flex items-center justify-end gap-2 border-t px-5 py-4">
           <button className="btn btn-secondary" onClick={onClose} disabled={creating}>Cancel</button>
-          <button className="btn btn-primary" onClick={create} disabled={creating || sshKeys.length === 0 || !sshKey.trim()}>{creating ? 'Creating…' : (streamId ? 'Create VM' : 'Open Stream + Create VM')}</button>
+          <button className="btn btn-primary" onClick={create} disabled={!isConnected || creating || sshKeys.length === 0 || !sshKey.trim()}>{creating ? 'Creating…' : (streamId ? 'Create VM' : 'Open Stream + Create VM')}</button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
