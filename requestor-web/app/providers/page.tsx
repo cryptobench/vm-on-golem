@@ -211,7 +211,7 @@ function RentInline({ provider, defaultSpec, adsMode }: { provider: any; default
 import { BrowserProvider, Contract, parseEther } from "ethers";
 import streamPayment from "../../public/abi/StreamPayment.json";
 import erc20 from "../../public/abi/ERC20.json";
-import { createVm, loadSettings, saveRentals, loadRentals, saveSettings, type AdsConfig, type SSHKey } from "../../lib/api";
+import { createVm, loadSettings, saveRentals, loadRentals, saveSettings, vmAccess, vmJobStatus, type AdsConfig, type SSHKey } from "../../lib/api";
 import { Modal } from "../../components/ui/Modal";
 import { useWallet } from "../../context/WalletContext";
 import { useProjects } from "../../context/ProjectsContext";
@@ -314,10 +314,51 @@ function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provider: any
       const payload = { name: name || `vm-${Math.random().toString(36).slice(2, 7)}`, resources: { cpu, memory, storage }, ssh_key: sshKey, stream_id: Number(sid) };
       const vm = await createVm(provider.provider_id, payload, adsMode);
       const rentals = loadRentals();
-      rentals.push({ name: payload.name, provider_id: provider.provider_id, provider_ip: provider.ip_address, vm_id: vm.id || vm.vm_id || payload.name, ssh_port: vm?.config?.ssh_port || null, stream_id: String(sid), project_id: activeProjectId || 'default' });
+      const vmId = vm.id || vm.vm_id || payload.name;
+      const jobId: string | undefined = vm.job_id;
+      rentals.push({ name: payload.name, provider_id: provider.provider_id, provider_ip: provider.ip_address, vm_id: vmId, ssh_port: vm?.config?.ssh_port || null, stream_id: String(sid), project_id: activeProjectId || 'default', status: 'creating' });
       saveRentals(rentals);
       onClose();
       alert(`VM created. VM ID: ${vm.id || vm.vm_id}`);
+
+      // Lightweight background poll: wait until access becomes available, then update rentals
+      (async () => {
+        const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
+        const maxAttempts = 300; // ~10 minutes at 2s
+        for (let i = 0; i < maxAttempts; i++) {
+          try {
+            // If we have a job id, optionally check it (non-fatal if it 404s on old providers)
+            if (jobId) {
+              try {
+                const js = await vmJobStatus(provider.provider_id, jobId, adsMode);
+                if (js.status === 'failed') break; // stop polling; user can retry
+              } catch {}
+            }
+            const acc = await vmAccess(provider.provider_id, vmId, adsMode);
+            if (acc && acc.ssh_port) {
+              const list = loadRentals();
+              const idx = list.findIndex(r => r.vm_id === vmId && r.provider_id === provider.provider_id);
+              if (idx >= 0) {
+                list[idx] = { ...list[idx], ssh_port: acc.ssh_port, status: 'running' };
+                saveRentals(list);
+              }
+              break;
+            }
+          } catch {}
+          await sleep(2000);
+        }
+        // If a job exists and fails, record an error state
+        if (jobId) {
+          try {
+            const js = await vmJobStatus(provider.provider_id, jobId, adsMode);
+            if (js.status === 'failed') {
+              const list = loadRentals();
+              const idx = list.findIndex(r => r.vm_id === vmId && r.provider_id === provider.provider_id);
+              if (idx >= 0) { list[idx] = { ...list[idx], status: 'error' }; saveRentals(list); }
+            }
+          } catch {}
+        }
+      })();
     } catch (e: any) {
       setError(e?.message || String(e));
     } finally { setCreating(false); }

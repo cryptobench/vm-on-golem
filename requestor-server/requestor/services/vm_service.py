@@ -39,8 +39,8 @@ class VMService:
             if existing_vm:
                 raise VMError(f"VM with name '{name}' already exists")
 
-            # Create VM on provider
-            vm = await self.provider_client.create_vm(
+            # Create VM on provider (returns job envelope)
+            job = await self.provider_client.create_vm(
                 name=name,
                 cpu=cpu,
                 memory=memory,
@@ -49,8 +49,41 @@ class VMService:
                 stream_id=stream_id
             )
 
-            # Get VM access info
-            access_info = await self.provider_client.get_vm_access(vm['id'])
+            vm_id = job.get('vm_id') or name
+
+            # Save initial record with 'creating' status (no port yet)
+            await self.db.save_vm(
+                name=name,
+                provider_ip=provider_ip,
+                vm_id=vm_id,
+                config={
+                    'cpu': cpu,
+                    'memory': memory,
+                    'storage': storage,
+                    **({"stream_id": stream_id} if stream_id is not None else {}),
+                },
+                status='creating'
+            )
+
+            # Poll provider until VM is ready, then fetch access info
+            import asyncio as _asyncio
+            deadline = _asyncio.get_event_loop().time() + 600.0  # 10 minutes max
+            last_status = 'creating'
+            while _asyncio.get_event_loop().time() < deadline:
+                try:
+                    info = await self.provider_client.get_vm_info(vm_id)
+                    last_status = (info.get('status') or '').lower() or last_status
+                    if last_status == 'running':
+                        break
+                except Exception:
+                    # Best-effort: ignore transient errors during startup
+                    pass
+                await _asyncio.sleep(2.0)
+            if last_status != 'running':
+                raise VMError(f"VM did not become ready in time (status={last_status})")
+
+            # Get VM access info (ssh port)
+            access_info = await self.provider_client.get_vm_access(vm_id)
 
             # Preserve any provided stream_id; do not auto-create streams here
             # Stream creation should be explicit via CLI `vm stream open` command.
@@ -67,7 +100,8 @@ class VMService:
                 name=name,
                 provider_ip=provider_ip,
                 vm_id=access_info['vm_id'],
-                config=config
+                config=config,
+                status='running'
             )
 
             return {

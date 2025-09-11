@@ -24,7 +24,7 @@ class ProviderClient:
         ssh_key: str,
         stream_id: int | None = None,
     ) -> Dict:
-        """Create a VM on the provider."""
+        """Create a VM on the provider (async job semantics)."""
         payload = {
             "name": name,
             "resources": {
@@ -37,12 +37,29 @@ class ProviderClient:
         if stream_id is not None:
             payload["stream_id"] = int(stream_id)
         async with self.session.post(
-            f"{self.provider_url}/api/v1/vms",
+            f"{self.provider_url}/api/v1/vms?async=true",
             json=payload
         ) as response:
             if not response.ok:
                 error_text = await response.text()
                 raise Exception(f"Failed to create VM: {error_text}")
+            data = await response.json()
+            # Normalize: support both old (VMInfo) and new (job) responses
+            # New shape: { job_id, vm_id, status }
+            # Old shape: { id, ... }
+            if isinstance(data, dict) and "job_id" in data:
+                return data
+            # Fallback: synthesize a job-like envelope from immediate VM info
+            vm_id = data.get("id") or data.get("name") or name
+            return {"job_id": "", "vm_id": vm_id, "status": data.get("status", "ready"), "_vm": data}
+
+    async def get_vm_info(self, vm_id: str) -> Dict:
+        async with self.session.get(
+            f"{self.provider_url}/api/v1/vms/{vm_id}"
+        ) as response:
+            if not response.ok:
+                error_text = await response.text()
+                raise Exception(f"Failed to get VM info: {error_text}")
             return await response.json()
 
     async def get_provider_info(self) -> Dict:

@@ -2,13 +2,17 @@ import json
 import os
 from typing import List
 from pathlib import Path
-from fastapi import APIRouter, HTTPException, Request
+import asyncio
+import uuid
+from fastapi import APIRouter, HTTPException, Request, Query
+from fastapi.responses import JSONResponse
 
 from dependency_injector.wiring import inject, Provide
 from fastapi import APIRouter, HTTPException, Depends
 
 from typing import TYPE_CHECKING, Any
 from ..container import Container
+from ..jobs.store import JobStore
 from ..utils.logging import setup_logger
 from ..utils.ascii_art import vm_creation_animation, vm_status_change
 from ..vm.models import VMInfo, VMAccessInfo, VMConfig, VMResources, VMNotFoundError
@@ -18,6 +22,7 @@ from .models import (
     StreamStatus,
     StreamOnChain,
     StreamComputed,
+    CreateVMJobResponse,
 )
 from ..payments.blockchain_service import StreamPaymentReader
 from ..vm.service import VMService
@@ -26,28 +31,30 @@ from ..vm.multipass_adapter import MultipassError
 logger = setup_logger(__name__)
 router = APIRouter()
 
+# Job status persisted in SQLite via JobStore (see Container.job_store)
 
-@router.post("/vms", response_model=VMInfo)
+
+@router.post("/vms")
 @inject
 async def create_vm(
     request: CreateVMRequest,
     vm_service: VMService = Depends(Provide[Container.vm_service]),
     settings: Any = Depends(Provide[Container.config]),
     stream_map = Depends(Provide[Container.stream_map]),
-) -> VMInfo:
-    """Create a new VM."""
+    job_store: JobStore = Depends(Provide[Container.job_store]),
+    async_mode: bool = Query(default=False, alias="async"),
+) -> Any:
+    """Create a VM (sync by default; async when `?async=true`)."""
     try:
-        logger.info(f"📥 Received VM creation request for '{request.name}'")
-        
+        logger.info(f"📥 Received VM creation request for '{request.name}' (async={async_mode})")
+
         resources = request.resources or VMResources()
 
         # If payments are enabled, require a valid stream before starting
-        # Determine if we should enforce gating
         enforce = False
         spa = (settings.get("STREAM_PAYMENT_ADDRESS") if isinstance(settings, dict) else getattr(settings, "STREAM_PAYMENT_ADDRESS", None))
         if spa and spa != "0x0000000000000000000000000000000000000000":
             if os.environ.get("PYTEST_CURRENT_TEST"):
-                # In pytest, skip gating only when using default deployment address
                 try:
                     from ..config import Settings as _Cfg  # type: ignore
                     default_spa, _ = _Cfg._load_l2_deployment()  # type: ignore[attr-defined]
@@ -73,37 +80,68 @@ async def create_vm(
                     f"start={s['startTime']} stop={s['stopTime']} rate={s['ratePerSecond']} deposit={s['deposit']} withdrawn={s['withdrawn']} remaining={remaining}s"
                 )
             except Exception:
-                # Best-effort logging; creation will continue/fail based on ok
                 pass
             if not ok:
                 raise HTTPException(status_code=400, detail=f"invalid stream: {reason}")
-        
-        # Create VM config
+
         config = VMConfig(
             name=request.name,
             image=request.image or (settings.get("DEFAULT_VM_IMAGE") if isinstance(settings, dict) else getattr(settings, "DEFAULT_VM_IMAGE", "")),
             resources=resources,
-            ssh_key=request.ssh_key
+            ssh_key=request.ssh_key,
         )
-        
-        vm_info = await vm_service.create_vm(config)
-        # Persist VM->stream mapping if provided
-        if request.stream_id is not None:
+
+        if not async_mode:
+            vm_info = await vm_service.create_vm(config)
+            if request.stream_id is not None:
+                try:
+                    await stream_map.set(vm_info.id, int(request.stream_id))
+                except Exception as e:  # noqa: BLE001
+                    logger.warning(f"failed to persist stream mapping for {vm_info.id}: {e}")
+            await vm_creation_animation(request.name)
+            return vm_info
+
+        # Async path
+        job_id = str(uuid.uuid4())
+        await job_store.create_job(job_id, request.name, status="creating")
+
+        async def _run_creation():
             try:
-                await stream_map.set(vm_info.id, int(request.stream_id))
-            except Exception as e:
-                logger.warning(f"failed to persist stream mapping for {vm_info.id}: {e}")
-        await vm_creation_animation(request.name)
-        return vm_info
+                vm_info = await vm_service.create_vm(config)
+                if request.stream_id is not None:
+                    try:
+                        await stream_map.set(vm_info.id, int(request.stream_id))
+                    except Exception as e:  # noqa: BLE001
+                        logger.warning(f"failed to persist stream mapping for {vm_info.id}: {e}")
+                await vm_creation_animation(request.name)
+                await job_store.update_job(job_id, status="ready")
+            except Exception as e:  # noqa: BLE001
+                logger.error(f"Create VM job failed: {e}")
+                await job_store.update_job(job_id, status="failed", error=str(e))
+
+        asyncio.create_task(_run_creation(), name=f"create-vm:{request.name}")
+
+        env = CreateVMJobResponse(job_id=job_id, vm_id=request.name, status="creating")
+        return JSONResponse(status_code=202, content=env.model_json_schema() and env.model_dump())
+
     except MultipassError as e:
         logger.error(f"Failed to create VM: {e}")
         raise HTTPException(status_code=500, detail=str(e))
     except HTTPException:
-        # Propagate explicit HTTP errors (e.g., payment gating)
         raise
     except Exception as e:
         logger.error(f"An unexpected error occurred: {e}")
         raise HTTPException(status_code=500, detail="An unexpected error occurred")
+
+
+@router.get("/vms/jobs/{job_id}")
+@inject
+async def get_create_job(job_id: str, job_store: JobStore = Depends(Provide[Container.job_store])):
+    """Return async creation job status."""
+    job = await job_store.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="job not found")
+    return job
 
 
 @router.get("/vms", response_model=List[VMInfo])
@@ -163,9 +201,18 @@ async def get_vm_access(
         if not multipass_name:
             raise HTTPException(404, "VM mapping not found")
         
+        # If ssh_port is not yet assigned, return 202 with a simple status payload
+        if vm.ssh_port is None:
+            return JSONResponse(status_code=202, content={
+                "vm_id": requestor_name,
+                "multipass_name": multipass_name,
+                "status": "creating",
+                "ssh_port": None,
+            })
+
         return VMAccessInfo(
             ssh_host=((settings.get("PUBLIC_IP") if isinstance(settings, dict) else getattr(settings, "PUBLIC_IP", None)) or "localhost"),
-            ssh_port=vm.ssh_port,
+            ssh_port=int(vm.ssh_port),
             vm_id=requestor_name,
             multipass_name=multipass_name
         )
@@ -231,10 +278,33 @@ async def delete_vm(
 @router.get("/provider/info", response_model=ProviderInfoResponse)
 @inject
 async def provider_info(settings: Any = Depends(Provide[Container.config])) -> ProviderInfoResponse:
+    # Derive platform similar to advertiser
+    import platform as _plat
+    raw = _plat.machine().lower()
+    platform_str = None
+    try:
+        if 'arm' in raw:
+            platform_str = 'arm64'
+        elif 'x86_64' in raw or 'amd64' in raw or 'x64' in raw:
+            platform_str = 'x86_64'
+        else:
+            platform_str = raw
+    except Exception:
+        platform_str = None
+
+    ip_addr = None
+    try:
+        ip_addr = settings.get("PUBLIC_IP") if isinstance(settings, dict) else getattr(settings, "PUBLIC_IP", None)
+    except Exception:
+        ip_addr = None
+
     return ProviderInfoResponse(
         provider_id=settings["PROVIDER_ID"],
         stream_payment_address=settings["STREAM_PAYMENT_ADDRESS"],
         glm_token_address=settings["GLM_TOKEN_ADDRESS"],
+        ip_address=ip_addr,
+        country=(settings.get("PROVIDER_COUNTRY") if isinstance(settings, dict) else getattr(settings, "PROVIDER_COUNTRY", None)),
+        platform=platform_str,
     )
 
 
