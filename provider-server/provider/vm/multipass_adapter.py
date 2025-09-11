@@ -32,6 +32,26 @@ class MultipassAdapter(VMProvider):
         self.proxy_manager = proxy_manager
         self.name_mapper = name_mapper
 
+    @staticmethod
+    def _safe_int(value, default: int = 0) -> int:
+        """Best-effort int conversion that treats missing/blank values as default.
+
+        Multipass may return empty strings for numeric fields (e.g., when a VM is
+        stopped). This helper prevents ValueError by mapping '', None, or
+        unparsable values to a sensible default.
+        """
+        try:
+            if value is None:
+                return default
+            if isinstance(value, str):
+                v = value.strip()
+                if v == "":
+                    return default
+                return int(v)
+            return int(value)
+        except (ValueError, TypeError):
+            return default
+
     async def _run_multipass(self, args: List[str], check: bool = True) -> subprocess.CompletedProcess:
         """Run a multipass command."""
         # Commands that produce JSON or version info that we need to parse.
@@ -160,8 +180,8 @@ class MultipassAdapter(VMProvider):
         vms: List[VMInfo] = []
         for requestor_name, multipass_name in list(all_mappings.items()):
             try:
-                # get_vm_status expects multipass_name
-                vm_info = await self.get_vm_status(multipass_name)
+                # Pass requestor id; get_vm_status accepts either id
+                vm_info = await self.get_vm_status(requestor_name)
                 vms.append(vm_info)
             except VMNotFoundError:
                 logger.warning(
@@ -188,30 +208,40 @@ class MultipassAdapter(VMProvider):
         await self._run_multipass(["stop", multipass_name])
         return await self.get_vm_status(multipass_name)
 
-    async def get_vm_status(self, multipass_name: str) -> VMInfo:
-        """Get the status of a VM."""
+    async def get_vm_status(self, name_or_id: str) -> VMInfo:
+        """Get VM status by multipass name or requestor id."""
+        # Resolve identifiers flexibly
+        requestor_name = await self.name_mapper.get_requestor_name(name_or_id)
+        if requestor_name:
+            multipass_name = name_or_id
+        else:
+            multipass_name = await self.name_mapper.get_multipass_name(name_or_id)
+            if not multipass_name:
+                raise VMNotFoundError(f"VM {name_or_id} mapping not found")
+            requestor_name = name_or_id
         try:
             info = await self._get_vm_info(multipass_name)
         except MultipassError:
             raise VMNotFoundError(f"VM {multipass_name} not found in multipass")
-
-        requestor_name = await self.name_mapper.get_requestor_name(multipass_name)
-        if not requestor_name:
-            raise VMNotFoundError(f"Mapping for VM {multipass_name} not found")
 
         ipv4 = info.get("ipv4")
         ip_address = ipv4[0] if ipv4 else None
         logger.debug(f"Parsed VM info for {requestor_name}: {info}")
         
         disks_info = info.get("disks", {})
-        total_storage = sum(int(disk.get("total", 0)) for disk in disks_info.values())
+        total_storage = 0
+        for disk in disks_info.values():
+            total_storage += self._safe_int(disk.get("total"), 0)
+
+        # Memory reported by multipass is in bytes; default to 1 GiB if missing/blank
+        mem_total_bytes = self._safe_int(info.get("memory", {}).get("total"), 1024**3)
         vm_info_obj = VMInfo(
             id=requestor_name,
             name=requestor_name,
             status=VMStatus(info["state"].lower()),
             resources=VMResources(
-                cpu=int(info.get("cpu_count", "1")),
-                memory=round(info.get("memory", {}).get("total", 1024**3) / (1024**3)),
+                cpu=self._safe_int(info.get("cpu_count"), 1),
+                memory=round(mem_total_bytes / (1024**3)),
                 storage=round(total_storage / (1024**3)) if total_storage > 0 else 10
             ),
             ip_address=ip_address,
@@ -228,10 +258,13 @@ class MultipassAdapter(VMProvider):
             try:
                 info = await self._get_vm_info(multipass_name)
                 disks_info = info.get("disks", {})
-                total_storage = sum(int(disk.get("total", 0)) for disk in disks_info.values())
+                total_storage = 0
+                for disk in disks_info.values():
+                    total_storage += self._safe_int(disk.get("total"), 0)
+                mem_total_bytes = self._safe_int(info.get("memory", {}).get("total"), 1024**3)
                 vm_resources[requestor_name] = VMResources(
-                    cpu=int(info.get("cpu_count", "1")),
-                    memory=round(info.get("memory", {}).get("total", 1024**3) / (1024**3)),
+                    cpu=self._safe_int(info.get("cpu_count"), 1),
+                    memory=round(mem_total_bytes / (1024**3)),
                     storage=round(total_storage / (1024**3)) if total_storage > 0 else 10
                 )
             except (MultipassError, VMNotFoundError):
