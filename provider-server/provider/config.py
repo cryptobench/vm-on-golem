@@ -186,6 +186,12 @@ class Settings(BaseSettings):
         description="Min withdrawable amount (wei) before triggering withdraw"
     )
 
+    # Shutdown behavior
+    STOP_VMS_ON_EXIT: bool = Field(
+        default=False,
+        description="When true, stop all running VMs on provider shutdown. Default keeps VMs running."
+    )
+
     # Faucet settings (L3 for Golem Base adverts)
     FAUCET_URL: str = "https://ethwarsaw.holesky.golemdb.io/faucet"
     CAPTCHA_URL: str = "https://cap.gobas.me"

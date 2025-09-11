@@ -20,7 +20,10 @@ class AdvertisementService:
         """Stop the advertiser."""
         if self._task:
             self._task.cancel()
-            await self._task
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
         await self.advertiser.stop()
 
     async def trigger_update(self):

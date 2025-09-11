@@ -7,6 +7,7 @@ import { Spinner } from "../../components/ui/Spinner";
 import { TableSkeleton } from "../../components/ui/Skeleton";
 
 export default function ProvidersPage() {
+  const displayCurrency = ((typeof window !== 'undefined' && (JSON.parse(localStorage.getItem('requestor_settings_v1') || '{}')?.display_currency === 'token')) ? 'token' : 'fiat');
   const [cpu, setCpu] = React.useState<number | undefined>();
   const [memory, setMemory] = React.useState<number | undefined>();
   const [storage, setStorage] = React.useState<number | undefined>();
@@ -152,25 +153,49 @@ export default function ProvidersPage() {
                     <td className="td text-right">{p.resources?.memory}</td>
                     <td className="td text-right">{p.resources?.storage}</td>
                     <td className="td">
-                      {(coreM == null && ramM == null && stoM == null) ? '—' : (
-                        <div className="text-xs text-gray-700 space-y-0.5">
-                          {coreM != null && (
-                            <div>Core: ${coreM}/mo <span className="text-gray-500">({coreH}/hr)</span></div>
-                          )}
-                          {ramM != null && (
-                            <div>RAM: ${ramM}/GB·mo <span className="text-gray-500">({ramH}/GB·hr)</span></div>
-                          )}
-                          {stoM != null && (
-                            <div>Storage: ${stoM}/GB·mo <span className="text-gray-500">({stoH}/GB·hr)</span></div>
-                          )}
-                        </div>
-                      )}
+                      {(() => {
+                        const pr = p.pricing || {} as any;
+                        if (displayCurrency === 'token') {
+                          const gCoreM = pr.glm_per_core_month != null ? Number(pr.glm_per_core_month).toFixed(6) : null;
+                          const gRamM = pr.glm_per_gb_ram_month != null ? Number(pr.glm_per_gb_ram_month).toFixed(6) : null;
+                          const gStoM = pr.glm_per_gb_storage_month != null ? Number(pr.glm_per_gb_storage_month).toFixed(6) : null;
+                          const gCoreH = gCoreM != null ? (Number(gCoreM) / 730).toFixed(8) : null;
+                          const gRamH = gRamM != null ? (Number(gRamM) / 730).toFixed(8) : null;
+                          const gStoH = gStoM != null ? (Number(gStoM) / 730).toFixed(8) : null;
+                          if (gCoreM == null && gRamM == null && gStoM == null) return '—';
+                          return (
+                            <div className="text-xs text-gray-700 space-y-0.5">
+                              {gCoreM != null && (<div>Core: {gCoreM} GLM/mo <span className="text-gray-500">({gCoreH} GLM/hr)</span></div>)}
+                              {gRamM != null && (<div>RAM: {gRamM} GLM/GB·mo <span className="text-gray-500">({gRamH} GLM/GB·hr)</span></div>)}
+                              {gStoM != null && (<div>Storage: {gStoM} GLM/GB·mo <span className="text-gray-500">({gStoH} GLM/GB·hr)</span></div>)}
+                            </div>
+                          );
+                        } else {
+                          const uCoreM = pr.usd_per_core_month != null ? Number(pr.usd_per_core_month).toFixed(4) : null;
+                          const uRamM = pr.usd_per_gb_ram_month != null ? Number(pr.usd_per_gb_ram_month).toFixed(4) : null;
+                          const uStoM = pr.usd_per_gb_storage_month != null ? Number(pr.usd_per_gb_storage_month).toFixed(4) : null;
+                          const uCoreH = uCoreM != null ? (Number(uCoreM) / 730).toFixed(6) : null;
+                          const uRamH = uRamM != null ? (Number(uRamM) / 730).toFixed(6) : null;
+                          const uStoH = uStoM != null ? (Number(uStoM) / 730).toFixed(6) : null;
+                          if (uCoreM == null && uRamM == null && uStoM == null) return '—';
+                          return (
+                            <div className="text-xs text-gray-700 space-y-0.5">
+                              {uCoreM != null && (<div>Core: ${uCoreM}/mo <span className="text-gray-500">({uCoreH}/hr)</span></div>)}
+                              {uRamM != null && (<div>RAM: ${uRamM}/GB·mo <span className="text-gray-500">({uRamH}/GB·hr)</span></div>)}
+                              {uStoM != null && (<div>Storage: ${uStoM}/GB·mo <span className="text-gray-500">({uStoH}/GB·hr)</span></div>)}
+                            </div>
+                          );
+                        }
+                      })()}
                     </td>
                     <td className="td">
                       {est ? (
                         <div className="text-xs sm:text-sm">
-                          <div>~${est.usd_per_month} <span className="text-gray-500">({est.usd_per_hour}/hr)</span></div>
-                          {est.glm_per_month != null && (<div className="text-gray-600">~{est.glm_per_month} GLM/mo</div>)}
+                          {displayCurrency === 'token' && est.glm_per_month != null ? (
+                            <div>~{est.glm_per_month} GLM/mo <span className="text-gray-500">({(est.glm_per_month/730).toFixed(8)} GLM/hr)</span></div>
+                          ) : (
+                            <div>~${est.usd_per_month} <span className="text-gray-500">({est.usd_per_hour}/hr)</span></div>
+                          )}
                         </div>
                       ) : '—'}
                     </td>
@@ -219,6 +244,7 @@ import { ensureNetwork, getPaymentsChain } from "../../lib/chain";
 
 function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provider: any; defaultSpec: { cpu?: number; memory?: number; storage?: number }; onClose: () => void; adsMode: AdsConfig; }) {
   const router = useRouter();
+  const displayCurrency = ((typeof window !== 'undefined' && (JSON.parse(localStorage.getItem('requestor_settings_v1') || '{}')?.display_currency === 'token')) ? 'token' : 'fiat');
   const { isInstalled, isConnected, connect, account } = useWallet();
   const { activeId: activeProjectId } = useProjects();
   const [name, setName] = React.useState("");
@@ -375,7 +401,13 @@ function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provider: any
       <div className="w-full max-w-lg">
         <div className="border-b px-5 py-4">
           <h3>Rent from <span className="font-mono text-sm">{provider.provider_id}</span></h3>
-          {est && <div className="mt-1 text-sm text-gray-600">Estimated: ~${est.usd_per_month} / mo (~{est.usd_per_hour}/hr)</div>}
+          {est && (
+            displayCurrency === 'token' && est.glm_per_month != null ? (
+              <div className="mt-1 text-sm text-gray-600">Estimated: ~{est.glm_per_month} GLM / mo (~{(est.glm_per_month/730).toFixed(8)} GLM/hr)</div>
+            ) : (
+              <div className="mt-1 text-sm text-gray-600">Estimated: ~${est.usd_per_month} / mo (~{est.usd_per_hour}/hr)</div>
+            )
+          )}
         </div>
         <div className="px-5 py-4">
           {!isInstalled && (
@@ -476,33 +508,53 @@ function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provider: any
             <div className="text-sm font-medium">Estimated costs</div>
             {(() => {
               const p = provider?.pricing || {} as any;
-              const usdCore = p.usd_per_core_month, usdRam = p.usd_per_gb_ram_month, usdSto = p.usd_per_gb_storage_month;
-              if (usdCore == null || usdRam == null || usdSto == null) return <div className="text-sm text-gray-600">Pricing not available for this provider.</div>;
-              const core = Number(usdCore) * cpu;
-              const memC = Number(usdRam) * memory;
-              const stoC = Number(usdSto) * storage;
-              const total = core + memC + stoC;
-              const perHour = total / 730.0;
-              const glmCore = p.glm_per_core_month, glmRam = p.glm_per_gb_ram_month, glmSto = p.glm_per_gb_storage_month;
-              const glm = (glmCore != null && glmRam != null && glmSto != null) ? (Number(glmCore) * cpu + Number(glmRam) * memory + Number(glmSto) * storage) : null;
-              return (
-                <div className="mt-2 rounded-lg border bg-gray-50 p-3 text-sm">
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    <div className="text-gray-700">
-                      <div>CPU: {cpu} × ${usdCore}/mo = <span className="font-medium">${core.toFixed(4)}</span>/mo</div>
-                      <div>RAM: {memory} GB × ${usdRam}/GB·mo = <span className="font-medium">${memC.toFixed(4)}</span>/mo</div>
-                      <div>Storage: {storage} GB × ${usdSto}/GB·mo = <span className="font-medium">${stoC.toFixed(4)}</span>/mo</div>
-                    </div>
-                    <div className="text-gray-700">
-                      <div>Total: <span className="font-semibold">${total.toFixed(4)}</span> per month</div>
-                      <div>Hourly: <span className="font-semibold">${perHour.toFixed(6)}</span> per hour</div>
-                      {glm != null && (
-                        <div>GLM: <span className="font-semibold">{glm.toFixed(8)} GLM/mo</span></div>
-                      )}
+              if (displayCurrency === 'token') {
+                const gCore = p.glm_per_core_month, gRam = p.glm_per_gb_ram_month, gSto = p.glm_per_gb_storage_month;
+                if (gCore == null || gRam == null || gSto == null) return <div className="text-sm text-gray-600">Token pricing not available for this provider.</div>;
+                const core = Number(gCore) * cpu;
+                const memC = Number(gRam) * memory;
+                const stoC = Number(gSto) * storage;
+                const total = core + memC + stoC;
+                const perHour = total / 730.0;
+                return (
+                  <div className="mt-2 rounded-lg border bg-gray-50 p-3 text-sm">
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      <div className="text-gray-700">
+                        <div>CPU: {cpu} × {Number(gCore).toFixed(6)} GLM/mo = <span className="font-medium">{core.toFixed(6)}</span> GLM/mo</div>
+                        <div>RAM: {memory} GB × {Number(gRam).toFixed(6)} GLM/GB·mo = <span className="font-medium">{memC.toFixed(6)}</span> GLM/mo</div>
+                        <div>Storage: {storage} GB × {Number(gSto).toFixed(6)} GLM/GB·mo = <span className="font-medium">{stoC.toFixed(6)}</span> GLM/mo</div>
+                      </div>
+                      <div className="text-gray-700">
+                        <div>Total: <span className="font-semibold">{total.toFixed(6)}</span> GLM per month</div>
+                        <div>Hourly: <span className="font-semibold">{perHour.toFixed(8)}</span> GLM per hour</div>
+                      </div>
                     </div>
                   </div>
-                </div>
-              );
+                );
+              } else {
+                const usdCore = p.usd_per_core_month, usdRam = p.usd_per_gb_ram_month, usdSto = p.usd_per_gb_storage_month;
+                if (usdCore == null || usdRam == null || usdSto == null) return <div className="text-sm text-gray-600">Pricing not available for this provider.</div>;
+                const core = Number(usdCore) * cpu;
+                const memC = Number(usdRam) * memory;
+                const stoC = Number(usdSto) * storage;
+                const total = core + memC + stoC;
+                const perHour = total / 730.0;
+                return (
+                  <div className="mt-2 rounded-lg border bg-gray-50 p-3 text-sm">
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      <div className="text-gray-700">
+                        <div>CPU: {cpu} × ${usdCore}/mo = <span className="font-medium">${core.toFixed(4)}</span>/mo</div>
+                        <div>RAM: {memory} GB × ${usdRam}/GB·mo = <span className="font-medium">${memC.toFixed(4)}</span>/mo</div>
+                        <div>Storage: {storage} GB × ${usdSto}/GB·mo = <span className="font-medium">${stoC.toFixed(4)}</span>/mo</div>
+                      </div>
+                      <div className="text-gray-700">
+                        <div>Total: <span className="font-semibold">${total.toFixed(4)}</span> per month</div>
+                        <div>Hourly: <span className="font-semibold">${perHour.toFixed(6)}</span> per hour</div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
             })()}
           </div>
           {error && <div className="mt-3 text-sm text-red-600">{error}</div>}

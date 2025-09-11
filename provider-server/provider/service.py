@@ -17,6 +17,7 @@ class ProviderService:
         self.advertisement_service = advertisement_service
         self.port_manager = port_manager
         self._pricing_updater: PricingAutoUpdater | None = None
+        self._pricing_task: asyncio.Task | None = None
         self._stream_monitor = None
 
     async def setup(self, app: FastAPI):
@@ -104,7 +105,8 @@ class ProviderService:
             async def _on_price_updated(platform: str, glm_usd):
                 await self.advertisement_service.trigger_update()
             self._pricing_updater = PricingAutoUpdater(on_updated_callback=_on_price_updated)
-            asyncio.create_task(self._pricing_updater.start())
+            # Keep a handle to the background task so we can cancel it promptly on shutdown
+            self._pricing_task = asyncio.create_task(self._pricing_updater.start(), name="pricing-updater")
 
             # Start stream monitor if enabled
             from .container import Container
@@ -130,10 +132,49 @@ class ProviderService:
     async def cleanup(self):
         """Cleanup provider components."""
         logger.process("🔄 Cleaning up provider...")
-        await self.advertisement_service.stop()
-        await self.vm_service.provider.cleanup()
+        from .config import settings
+
+        # Stop advertising loop
+        try:
+            await self.advertisement_service.stop()
+        except Exception:
+            pass
+
+        # Optionally stop all running VMs based on configuration (default: keep running)
+        try:
+            if bool(getattr(settings, "STOP_VMS_ON_EXIT", False)):
+                try:
+                    vms = await self.vm_service.list_vms()
+                except Exception:
+                    vms = []
+                for vm in vms:
+                    try:
+                        await self.vm_service.stop_vm(vm.id)
+                    except Exception as e:
+                        logger.warning(f"Failed to stop VM {getattr(vm, 'id', '?')}: {e}")
+        except Exception:
+            pass
+
+        # Provider cleanup hook
+        try:
+            await self.vm_service.provider.cleanup()
+        except Exception:
+            pass
+
+        # Stop pricing updater promptly (cancel background task and set stop flag)
         if self._pricing_updater:
-            self._pricing_updater.stop()
+            try:
+                self._pricing_updater.stop()
+            except Exception:
+                pass
+        if self._pricing_task:
+            try:
+                self._pricing_task.cancel()
+                await self._pricing_task
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                pass
         if self._stream_monitor:
             await self._stream_monitor.stop()
         logger.success("✨ Provider cleanup complete")

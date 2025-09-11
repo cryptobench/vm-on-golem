@@ -1242,6 +1242,10 @@ def start(
     network: str = typer.Option(None, "--network", help="Target network: 'testnet' or 'mainnet' (overrides env)"),
     gui: bool = typer.Option(False, "--gui/--no-gui", help="Launch Electron GUI (default: no)"),
     daemon: bool = typer.Option(False, "--daemon", help="Start in background and write a PID file"),
+    stop_vms_on_exit: Optional[bool] = typer.Option(
+        None, "--stop-vms-on-exit/--keep-vms-on-exit",
+        help="On shutdown: stop all VMs (default: keep VMs running)"
+    ),
 ):
     """Start the provider server."""
     if daemon:
@@ -1258,6 +1262,8 @@ def start(
             args += ["--network", network]
         # Force no GUI for daemonized child to avoid duplicates
         args.append("--no-gui")
+        if stop_vms_on_exit is not None:
+            args.append("--stop-vms-on-exit" if stop_vms_on_exit else "--keep-vms-on-exit")
         cmd = _self_command(args)
         # Ensure GUI not auto-launched via env, regardless of defaults
         env = {**os.environ, "GOLEM_PROVIDER_LAUNCH_GUI": "0"}
@@ -1266,7 +1272,13 @@ def start(
         print(f"Started provider in background (pid={child_pid})")
         raise typer.Exit(code=0)
     else:
-        run_server(dev_mode=False, no_verify_port=no_verify_port, network=network, launch_gui=gui)
+        run_server(
+            dev_mode=False,
+            no_verify_port=no_verify_port,
+            network=network,
+            launch_gui=gui,
+            stop_vms_on_exit=stop_vms_on_exit,
+        )
 
 
 @cli.command()
@@ -1510,7 +1522,13 @@ def _maybe_launch_gui(port: int):
         logger.warning(f"Failed to launch GUI: {e}")
 
 
-def run_server(dev_mode: bool | None = None, no_verify_port: bool = False, network: str | None = None, launch_gui: bool = False):
+def run_server(
+    dev_mode: bool | None = None,
+    no_verify_port: bool = False,
+    network: str | None = None,
+    launch_gui: bool = False,
+    stop_vms_on_exit: bool | None = None,
+):
     """Helper to run the uvicorn server."""
     import sys
     from pathlib import Path
@@ -1528,6 +1546,9 @@ def run_server(dev_mode: bool | None = None, no_verify_port: bool = False, netwo
     # Apply network override early (affects settings and annotations)
     if network:
         os.environ["GOLEM_PROVIDER_NETWORK"] = network
+    # Apply shutdown behavior override early so it is reflected in settings
+    if stop_vms_on_exit is not None:
+        os.environ["GOLEM_PROVIDER_STOP_VMS_ON_EXIT"] = "1" if stop_vms_on_exit else "0"
     
     # The logic for setting the public IP in dev mode is now handled in config.py
     # The following lines are no longer needed and have been removed.
