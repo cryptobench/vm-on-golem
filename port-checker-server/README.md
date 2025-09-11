@@ -122,6 +122,79 @@ Response:
 }
 ```
 
+### Proxy (optional)
+
+```bash
+ANY /proxy/{path}
+```
+
+There are two modes. For better security, use provider-based routing.
+
+- Provider-based (recommended):
+  - `ANY /proxy/provider/{provider_id}/{path}?port=<port>`
+  - Headers:
+    - `X-Proxy-Source: discovery|golem-base` (required)
+    - `X-Proxy-Token: <shared secret>` (required)
+  - Resolves provider IP via Discovery (default in docs) or Golem Base and forwards over HTTP to `port` (default 80).
+
+- Direct IP (optional, disabled by default):
+  - `ANY /proxy/{path}` with headers:
+    - `X-Forward-To: <ip>:<port>` (required)
+    - `X-Forward-Protocol: http` (optional)
+    - `X-Proxy-Token: <shared secret>` (required)
+  - Enable with `PORT_CHECKER_PROXY_ALLOW_DIRECT_IP=true`.
+
+Security controls:
+- Target must be a public IP (private/loopback/link-local/multicast are rejected).
+- Target port must be allowed (configurable via env; default `80,443,1024-65535`; set `*` to allow all).
+- Max request body size is limited (default 2 MiB).
+- Connection and read timeouts are enforced.
+
+Environment variables:
+- `PORT_CHECKER_PROXY_ENABLED` (default `true`)
+- `PORT_CHECKER_PROXY_ALLOWED_PORTS` e.g. `80,443,10000-11000`
+- `PORT_CHECKER_PROXY_MAX_BODY_BYTES` (default `2097152`)
+- `PORT_CHECKER_PROXY_CONNECT_TIMEOUT` (seconds, default `5.0`)
+- `PORT_CHECKER_PROXY_READ_TIMEOUT` (seconds, default `10.0`)
+- `PORT_CHECKER_CORS_ORIGINS` (comma-separated, default `*`)
+- `DISCOVERY_API_URL` (default `http://localhost:9001/api/v1`)
+- `PORT_CHECKER_PROXY_ALLOW_DIRECT_IP` (default `false`)
+ - `PORT_CHECKER_PROXY_TOKEN` (required to enable proxying)
+  
+Golem Base (if using `source=golem-base`):
+- `GOLEM_BASE_RPC_URL` (required if not provided per-request)
+- `GOLEM_BASE_WS_URL` (required if not provided per-request)
+
+Per-request overrides (headers):
+- `X-Proxy-Golem-Base-Rpc`: override RPC URL for this request
+- `X-Proxy-Golem-Base-Ws`: override WS URL for this request
+
+Forwarded tracing headers to providers:
+- `X-Forwarded-For` includes the original client IP (appends to chain)
+- `X-Real-IP` set to the immediate client IP
+
+Examples:
+```bash
+# Provider-based (Discovery)
+curl -i \
+  -H "X-Proxy-Source: discovery" \
+  -H "X-Proxy-Token: $TOKEN" \
+  "http://localhost:9000/proxy/provider/PROVIDER123/status?port=8080"
+
+# Provider-based (Golem Base)
+curl -i \
+  -H "X-Proxy-Source: golem-base" \
+  -H "X-Proxy-Token: $TOKEN" \
+  "http://localhost:9000/proxy/provider/PROVIDER123/status?port=8080"
+
+# Direct IP (if explicitly enabled)
+curl -i \
+  -H "X-Forward-To: 203.0.113.42:8080" \
+  -H "X-Forward-Protocol: http" \
+  -H "X-Proxy-Token: $TOKEN" \
+  "http://localhost:9000/proxy/status"
+```
+
 ## Technical Details
 
 ### Port Verification Process

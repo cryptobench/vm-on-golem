@@ -168,3 +168,5 @@ provider-gui/resources/cli/
 ## Do not track GUI dependencies (prevents cross-OS breakage in CI)
 provider-gui/node_modules/
 requestor-gui/node_modules/
+python-sdk/
+typescript-sdk/

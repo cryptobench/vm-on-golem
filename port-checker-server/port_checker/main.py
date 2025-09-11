@@ -1,7 +1,11 @@
 import asyncio
 import logging
-from typing import List, Dict
-from fastapi import FastAPI, HTTPException
+import os
+from typing import Dict, List, Optional, Tuple
+from ipaddress import ip_address, IPv4Address, IPv6Address
+
+from fastapi import FastAPI, HTTPException, Request, Response, Header, Query
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, validator
 import aiohttp
 
@@ -13,6 +17,85 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Golem Port Checker")
+
+# CORS configuration (can be restricted via env)
+ALLOW_ORIGINS = os.getenv("PORT_CHECKER_CORS_ORIGINS", "*").split(",")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[o.strip() for o in ALLOW_ORIGINS if o.strip()],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"]
+)
+
+# Proxy configuration
+PROXY_ENABLED = os.getenv("PORT_CHECKER_PROXY_ENABLED", "true").lower() == "true"
+PROXY_ALLOW_DIRECT_IP = os.getenv("PORT_CHECKER_PROXY_ALLOW_DIRECT_IP", "false").lower() == "true"
+MAX_BODY_BYTES = int(os.getenv("PORT_CHECKER_PROXY_MAX_BODY_BYTES", str(2 * 1024 * 1024)))  # 2 MiB
+DEFAULT_ALLOWED_PORTS = "80,443,1024-65535"
+ALLOWED_PORTS_SPEC = os.getenv("PORT_CHECKER_PROXY_ALLOWED_PORTS", DEFAULT_ALLOWED_PORTS)
+CONNECT_TIMEOUT = float(os.getenv("PORT_CHECKER_PROXY_CONNECT_TIMEOUT", "5.0"))
+READ_TIMEOUT = float(os.getenv("PORT_CHECKER_PROXY_READ_TIMEOUT", "10.0"))
+DISCOVERY_API_URL = os.getenv("DISCOVERY_API_URL", "http://localhost:9001/api/v1")
+PROXY_SHARED_TOKEN = os.getenv("PORT_CHECKER_PROXY_TOKEN", "")
+GOLEM_BASE_RPC_URL = os.getenv("GOLEM_BASE_RPC_URL", "")
+GOLEM_BASE_WS_URL = os.getenv("GOLEM_BASE_WS_URL", "")
+
+try:
+    from golem_base_sdk import GolemBaseClient  # type: ignore
+    from golem_base_sdk.types import EntityKey, GenericBytes  # type: ignore
+    _HAS_GOLEM_BASE = True
+except Exception:  # pragma: no cover - optional
+    GolemBaseClient = None  # type: ignore
+    EntityKey = None  # type: ignore
+    GenericBytes = None  # type: ignore
+    _HAS_GOLEM_BASE = False
+
+
+def _parse_allowed_ports(spec: str) -> List[Tuple[int, int]]:
+    ranges: List[Tuple[int, int]] = []
+    s = (spec or "").strip()
+    if s == "*":
+        return [(1, 65535)]
+    for part in (p.strip() for p in spec.split(",") if p.strip()):
+        if "-" in part:
+            a, b = part.split("-", 1)
+            try:
+                start, end = int(a), int(b)
+            except ValueError:
+                continue
+            if 1 <= start <= 65535 and 1 <= end <= 65535 and start <= end:
+                ranges.append((start, end))
+        else:
+            try:
+                port = int(part)
+            except ValueError:
+                continue
+            if 1 <= port <= 65535:
+                ranges.append((port, port))
+    return ranges or [(80, 80), (443, 443)]
+
+
+ALLOWED_PORT_RANGES = _parse_allowed_ports(ALLOWED_PORTS_SPEC)
+
+
+def _is_allowed_port(port: int) -> bool:
+    for start, end in ALLOWED_PORT_RANGES:
+        if start <= port <= end:
+            return True
+    return False
+
+
+def _is_public_ip(ip_str: str) -> bool:
+    try:
+        ip = ip_address(ip_str)
+    except ValueError:
+        return False
+    if isinstance(ip, (IPv4Address, IPv6Address)):
+        # Disallow private, loopback, link-local, multicast, reserved
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved:
+            return False
+    return True
 
 class PortCheckRequest(BaseModel):
     """Request model for port checking."""
@@ -30,7 +113,7 @@ class PortCheckRequest(BaseModel):
 class PortStatus(BaseModel):
     """Status of a single port."""
     accessible: bool = Field(..., description="Whether the port is accessible")
-    error: str = Field(None, description="Error message if port is not accessible")
+    error: Optional[str] = Field(None, description="Error message if port is not accessible")
 
 class PortCheckResponse(BaseModel):
     """Response model for port checking."""
@@ -134,6 +217,260 @@ async def check_ports(request: PortCheckRequest) -> PortCheckResponse:
 async def health_check():
     """Health check endpoint."""
     return {"status": "ok"}
+
+
+@app.api_route("/proxy/provider/{provider_id}/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"])
+async def http_proxy_provider(
+    request: Request,
+    provider_id: str,
+    path: str,
+    port: Optional[int] = Query(default=80),
+    x_proxy_source: Optional[str] = Header(default=None),
+    x_proxy_token: Optional[str] = Header(default=None),
+    x_proxy_golem_base_rpc: Optional[str] = Header(default=None),
+    x_proxy_golem_base_ws: Optional[str] = Header(default=None),
+) -> Response:
+    """Proxy to a provider resolved by provider_id via the discovery service.
+
+    - Resolves IP using DISCOVERY_API_URL `/advertisements/{provider_id}`.
+    - Only supports `http` to the provider (providers typically do not serve HTTPS).
+    - Port defaults to 80; may be overridden with `?port=NNNN` but must be in allowed range.
+    """
+    if not PROXY_ENABLED:
+        raise HTTPException(status_code=404, detail="Proxy is disabled")
+    if not PROXY_SHARED_TOKEN or x_proxy_token != PROXY_SHARED_TOKEN:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    # Validate port
+    if port is None or not _is_allowed_port(int(port)):
+        raise HTTPException(status_code=403, detail="Target port not allowed")
+
+    # Resolve IP from source
+    src = (x_proxy_source or "discovery").lower()
+    if src not in {"discovery", "golem-base"}:
+        raise HTTPException(status_code=400, detail="Invalid source; use 'discovery' or 'golem-base'")
+
+    ip: Optional[str] = None
+    if src == "discovery":
+        adv_url = f"{DISCOVERY_API_URL.rstrip('/')}/advertisements/{provider_id}"
+        timeout = aiohttp.ClientTimeout(total=None, connect=CONNECT_TIMEOUT, sock_read=READ_TIMEOUT)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            try:
+                async with session.get(adv_url) as adv_resp:
+                    if adv_resp.status != 200:
+                        raise HTTPException(status_code=404, detail="Provider not found")
+                    data = await adv_resp.json()
+                    ip = data.get("ip_address") if isinstance(data, dict) else None
+            except asyncio.TimeoutError:
+                raise HTTPException(status_code=504, detail="Discovery timeout")
+            except aiohttp.ClientError as e:
+                raise HTTPException(status_code=502, detail=f"Discovery error: {e}")
+    else:
+        if not _HAS_GOLEM_BASE:
+            raise HTTPException(status_code=501, detail="Golem Base support not installed on server")
+        rpc_url = (x_proxy_golem_base_rpc or GOLEM_BASE_RPC_URL).strip()
+        ws_url = (x_proxy_golem_base_ws or GOLEM_BASE_WS_URL).strip()
+        if not rpc_url or not ws_url:
+            raise HTTPException(status_code=500, detail="Golem Base RPC/WS URLs not configured")
+        try:
+            # Build client; private key optional for reads
+            kwargs = {"rpc_url": rpc_url, "ws_url": ws_url}
+            client = await GolemBaseClient.create(**kwargs)  # type: ignore
+            query = f'golem_provider_id="{provider_id}"'
+            results = await client.query_entities(query)
+            if not results:
+                await client.disconnect()
+                raise HTTPException(status_code=404, detail="Provider not found on Golem Base")
+            ek = EntityKey(GenericBytes.from_hex_string(results[0].entity_key))  # type: ignore
+            md = await client.get_entity_metadata(ek)
+            await client.disconnect()
+            anns = {a.key: a.value for a in md.string_annotations}
+            ip = anns.get("golem_ip_address")
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"Golem Base error: {e}")
+    if not ip or not _is_public_ip(ip):
+        raise HTTPException(status_code=400, detail="Resolved IP invalid or not public")
+
+    # Build provider URL
+    qs = request.url.query
+    if qs:
+        parts = [p for p in qs.split("&") if not p.startswith("port=")]
+        qs_forward = "&".join(parts) if parts else ""
+    else:
+        qs_forward = ""
+    url = f"http://{ip}:{int(port)}/{path}"
+    if qs_forward:
+        url = f"{url}?{qs_forward}"
+
+    # Read body with size limit
+    body = await request.body()
+    if len(body) > MAX_BODY_BYTES:
+        raise HTTPException(status_code=413, detail="Request body too large")
+
+    hop_by_hop = {
+        "connection",
+        "keep-alive",
+        "proxy-authenticate",
+        "proxy-authorization",
+        "te",
+        "trailers",
+        "transfer-encoding",
+        "upgrade",
+        "host",
+        "content-length",
+        "accept-encoding",
+    }
+    fwd_headers = {k: v for k, v in request.headers.items() if k.lower() not in hop_by_hop}
+    # Attach client IPs for tracing
+    client_ip = request.client.host if request.client else ""
+    prior_xff = request.headers.get("x-forwarded-for")
+    chain = f"{prior_xff}, {client_ip}" if prior_xff and client_ip else (client_ip or prior_xff)
+    if chain:
+        fwd_headers["X-Forwarded-For"] = chain
+    if client_ip:
+        fwd_headers["X-Real-IP"] = client_ip
+
+    timeout = aiohttp.ClientTimeout(total=None, connect=CONNECT_TIMEOUT, sock_read=READ_TIMEOUT)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        try:
+            async with session.request(
+                method=request.method,
+                url=url,
+                headers=fwd_headers,
+                data=body if body else None,
+                allow_redirects=False,
+            ) as resp:
+                content = await resp.read()
+                resp_headers = {}
+                for k, v in resp.headers.items():
+                    if k.lower() in hop_by_hop:
+                        continue
+                    resp_headers[k] = v
+                resp_headers["X-Proxy"] = "golem-port-checker"
+                resp_headers["X-Proxy-Provider-Id"] = provider_id
+                return Response(content=content, status_code=resp.status, headers=resp_headers)
+        except asyncio.TimeoutError:
+            raise HTTPException(status_code=504, detail="Upstream timeout")
+        except aiohttp.ClientError as e:
+            raise HTTPException(status_code=502, detail=f"Upstream error: {e}")
+
+
+@app.api_route("/proxy/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"])
+async def http_proxy(
+    request: Request,
+    path: str,
+    x_forward_to: Optional[str] = Header(default=None),
+    x_forward_protocol: Optional[str] = Header(default=None),
+    x_proxy_token: Optional[str] = Header(default=None),
+    target: Optional[str] = Query(default=None),
+) -> Response:
+    """Secure HTTP proxy to reach provider HTTP endpoints from HTTPS clients.
+
+    Usage:
+      - Set header `X-Forward-To: <ip>:<port>` (preferred), and optional `X-Forward-Protocol: http`.
+      - Or provide query `?target=<ip>:<port>`.
+
+    The proxy validates public IPs, allowed ports, request size and timeouts to avoid abuse.
+    """
+    if not PROXY_ENABLED:
+        raise HTTPException(status_code=404, detail="Proxy is disabled")
+    if not PROXY_SHARED_TOKEN or x_proxy_token != PROXY_SHARED_TOKEN:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    # Determine target host:port and protocol
+    forward = (x_forward_to or target or "").strip()
+    if not PROXY_ALLOW_DIRECT_IP:
+        # Hardened default: do not allow direct IP forwarding
+        raise HTTPException(status_code=404, detail="Direct IP proxying is disabled. Use /proxy/provider/{provider_id}/...")
+    if not forward or ":" not in forward:
+        raise HTTPException(status_code=400, detail="Missing X-Forward-To header or target query (expected <ip>:<port>)")
+
+    host_part, port_part = forward.rsplit(":", 1)
+    try:
+        port = int(port_part)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid port in target")
+
+    if not _is_public_ip(host_part):
+        raise HTTPException(status_code=400, detail="Target must be a public IP address")
+
+    if not _is_allowed_port(port):
+        raise HTTPException(status_code=403, detail="Target port not allowed")
+
+    protocol = (x_forward_protocol or "http").lower()
+    if protocol not in {"http"}:  # explicit
+        raise HTTPException(status_code=400, detail="Only 'http' protocol is supported")
+
+    # Construct target URL, preserving query string except our own params
+    qs = request.url.query
+    if qs:
+        # Remove our own 'target=' param from forwarded query string if present
+        # Do a simple safe filter
+        parts = [p for p in qs.split("&") if not p.startswith("target=")]
+        qs_forward = "&".join(parts) if parts else ""
+    else:
+        qs_forward = ""
+
+    url = f"{protocol}://{host_part}:{port}/{path}"
+    if qs_forward:
+        url = f"{url}?{qs_forward}"
+
+    # Read body with size limit
+    body = await request.body()
+    if len(body) > MAX_BODY_BYTES:
+        raise HTTPException(status_code=413, detail="Request body too large")
+
+    # Prepare headers to forward (strip hop-by-hop and proxy-specific)
+    hop_by_hop = {
+        "connection",
+        "keep-alive",
+        "proxy-authenticate",
+        "proxy-authorization",
+        "te",
+        "trailers",
+        "transfer-encoding",
+        "upgrade",
+        "host",
+        "content-length",
+        "accept-encoding",
+        "x-forward-to",
+        "x-forward-protocol",
+    }
+    fwd_headers = {k: v for k, v in request.headers.items() if k.lower() not in hop_by_hop}
+    # Attach client IPs for tracing
+    client_ip = request.client.host if request.client else ""
+    prior_xff = request.headers.get("x-forwarded-for")
+    chain = f"{prior_xff}, {client_ip}" if prior_xff and client_ip else (client_ip or prior_xff)
+    if chain:
+        fwd_headers["X-Forwarded-For"] = chain
+    if client_ip:
+        fwd_headers["X-Real-IP"] = client_ip
+
+    timeout = aiohttp.ClientTimeout(total=None, connect=CONNECT_TIMEOUT, sock_read=READ_TIMEOUT)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        try:
+            async with session.request(
+                method=request.method,
+                url=url,
+                headers=fwd_headers,
+                data=body if body else None,
+                allow_redirects=False,
+            ) as resp:
+                content = await resp.read()
+                # Sanitize response headers
+                resp_headers = {}
+                for k, v in resp.headers.items():
+                    if k.lower() in hop_by_hop:
+                        continue
+                    resp_headers[k] = v
+                resp_headers["X-Proxy"] = "golem-port-checker"
+                return Response(content=content, status_code=resp.status, headers=resp_headers)
+        except asyncio.TimeoutError:
+            raise HTTPException(status_code=504, detail="Upstream timeout")
+        except aiohttp.ClientError as e:
+            raise HTTPException(status_code=502, detail=f"Upstream error: {e}")
 
 def start():
     """Entry point for the port checker service."""
