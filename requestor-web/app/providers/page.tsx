@@ -436,8 +436,8 @@ function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provider: any
 
   return (
     <>
-    <Modal open={true} onClose={onClose}>
-      <div className="w-full max-w-lg">
+    <Modal open={true} onClose={onClose} size="3xl">
+      <div className="w-full">
         <div className="border-b px-5 py-4">
           <h3>Rent from <span className="font-mono text-sm">{provider.provider_id}</span></h3>
           {est && (
