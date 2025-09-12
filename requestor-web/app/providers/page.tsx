@@ -289,12 +289,44 @@ function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provider: any
     const spAddr = (providerInfoJson?.stream_payment_address || cfg.stream_payment_address || process.env.NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS || '').trim();
     const glmAddr = (providerInfoJson?.glm_token_address || cfg.glm_token_address || process.env.NEXT_PUBLIC_GLM_TOKEN_ADDRESS || '').trim();
     if (!spAddr) throw new Error("StreamPayment address missing (set in Settings or provided by provider)");
-    if (!est || est.glm_per_month == null) throw new Error("Provider does not advertise GLM pricing; cannot compute streaming rate");
-    // Compute ratePerSecond (GLM per second -> wei)
-    const glmPerSecond = est.glm_per_month / (730.0 * 3600.0);
-    const ratePerSecondWei = BigInt(Math.floor(glmPerSecond * 1e18));
-    // Simple default: deposit 1 hour
-    const depositWei = ratePerSecondWei * BigInt(3600);
+    if (!est) throw new Error("Cannot compute streaming rate: pricing unavailable");
+    // Determine token mode and compute ratePerSecond accordingly
+    const ZERO = '0x0000000000000000000000000000000000000000';
+    const token = glmAddr;
+    const isNative = token === ZERO;
+
+    // Compute ratePerSecond in 18-decimals (wei-like), deposit = 1 hour by default
+    let ratePerSecondWei: bigint;
+    let depositWei: bigint;
+    if (isNative) {
+      // Native ETH mode: derive ETH rate from USD price (or eth_per_month if advertised)
+      let ethPerMonth: number | null = (est as any).eth_per_month ?? null;
+      if (ethPerMonth == null) {
+        // Convert USD → ETH using CoinGecko
+        const usdPerMonth = est.usd_per_month;
+        try {
+          const r = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd');
+          const js = await r.json().catch(() => ({} as any));
+          const ethUsd = js?.ethereum?.usd;
+          if (!ethUsd || !Number.isFinite(ethUsd)) throw new Error('bad price');
+          ethPerMonth = usdPerMonth / Number(ethUsd);
+        } catch {
+          throw new Error("Cannot fetch ETH/USD price to compute streaming rate");
+        }
+      }
+      const ethPerSecond = (ethPerMonth as number) / (730.0 * 3600.0);
+      // Use parseEther on a fixed-precision string to avoid float drift
+      ratePerSecondWei = parseEther(ethPerSecond.toFixed(18));
+      depositWei = ratePerSecondWei * BigInt(3600);
+    } else {
+      // ERC20 GLM mode: require GLM pricing and compute GLM/sec
+      if (est.glm_per_month == null) {
+        throw new Error("Provider does not advertise GLM pricing; cannot compute streaming rate for ERC20 mode");
+      }
+      const glmPerSecond = est.glm_per_month / (730.0 * 3600.0);
+      ratePerSecondWei = parseEther(glmPerSecond.toFixed(18));
+      depositWei = ratePerSecondWei * BigInt(3600);
+    }
 
     const web3 = new BrowserProvider(ethereum);
     // Use the currently selected wallet account, not index 0
@@ -302,9 +334,6 @@ function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provider: any
     const sender = await signer.getAddress();
     const contract = new Contract(spAddr, (streamPayment as any).abi, signer);
     const recipient = provider.provider_id;
-    const token = glmAddr;
-    const ZERO = '0x0000000000000000000000000000000000000000';
-    const isNative = token === ZERO;
     setUsingNative(isNative);
 
     // If using ERC20, ensure allowance covers the intended deposit
@@ -342,9 +371,11 @@ function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provider: any
   const create = async () => {
     setCreating(true); setError(null);
     try {
+      const nm = name.trim();
+      if (!nm) { setError('Enter a VM name'); return; }
       if (!sshKey) throw new Error("Provide your SSH public key in the form");
       const sid = streamId || await openStream();
-      const payload = { name: name || `vm-${Math.random().toString(36).slice(2, 7)}`, resources: { cpu, memory, storage }, ssh_key: sshKey, stream_id: Number(sid) };
+      const payload = { name: nm, resources: { cpu, memory, storage }, ssh_key: sshKey, stream_id: Number(sid) };
       const vm = await createVm(provider.provider_id, payload, adsMode);
       const rentals = loadRentals();
       const vmId = vm.id || vm.vm_id || payload.name;
@@ -438,7 +469,7 @@ function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provider: any
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="label">Name</label>
-              <input className="input" value={name} onChange={e => setName(e.target.value)} placeholder="my-vm"/>
+              <input className="input" value={name} onChange={e => setName(e.target.value)} placeholder="my-vm" />
             </div>
             <div>
               <label className="label">CPU</label>
@@ -578,7 +609,7 @@ function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provider: any
           <button
             className="btn btn-primary"
             onClick={create}
-            disabled={!isConnected || creating || sshKeys.length === 0 || !sshKey.trim()}
+            disabled={!isConnected || creating || sshKeys.length === 0 || !sshKey.trim() || !name.trim()}
           >
             {creating ? (
               <span className="inline-flex items-center gap-2"><Spinner className="h-4 w-4 text-white" /> Creating…</span>
