@@ -9,6 +9,7 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "@metamask/logo": "^4.0.0",
     "@headlessui/react": "^2.2.8",
     "@headlessui/tailwindcss": "^0.2.2",
     "@remixicon/react": "^4.6.0",
