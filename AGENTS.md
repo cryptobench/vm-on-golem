@@ -22,6 +22,15 @@ This monorepo contains services and GUIs for running virtual machines on the Gol
 - Python: format with Black (88 cols), import-order via isort (profile `black`), type-hint new/changed code. 4-space indents. Names: `snake_case` (functions), `PascalCase` (classes), `lower_snake` (modules).
 - Lint/type-check (service-local): `poetry -C <svc> run black . && poetry -C <svc> run isort . && poetry -C <svc> run pylint <pkg> && poetry -C <svc> run mypy <pkg>`.
 - JS (Electron): follow existing patterns; keep modules small and pure where possible.
+ - Web UI (requestor-web): whenever a view has asynchronous data fetching or deferred computation, render skeleton placeholders instead of raw "Loading…" text. Use `Skeleton` and `TableSkeleton` components for page-level and table views; spinners are reserved for inline button actions (e.g., submitting, connecting). Ensure fallbacks for `Suspense` also use skeletons.
+
+### Loading UX (requestor-web)
+- Use `Skeleton`/`TableSkeleton` for all async view loading, including `Suspense` fallbacks. Do not show generic "Loading…" strings for page content.
+- Use `Spinner` only inside interactive controls for short, inline actions (e.g., Create, Connect, Copy, Stop). Never use spinners for entire sections/pages.
+- When showing a spinner on a button, disable the control and keep the label present (e.g., "Creating…").
+- Ensure spinner contrast on primary buttons; set `text-white` (or an appropriate contrasting color) so the spinner is visible against the button background.
+- Keep spinners compact near text: typically `h-4 w-4`; use `h-3.5 w-3.5` in badges.
+- Do not mix skeletons and spinners for the same content area at the same time. Prefer skeletons for content; spinners only augment action buttons.
 
 ## Testing Guidelines
 - Framework: `pytest` (+ `pytest-asyncio`, `pytest-cov`).

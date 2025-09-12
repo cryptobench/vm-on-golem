@@ -5,12 +5,15 @@ import { loadRentals, vmAccess, vmStop, vmDestroy, loadSettings, providerInfo as
 import { useAds } from "../../context/AdsContext";
 import { useToast } from "../../components/ui/Toast";
 import { Spinner } from "../../components/ui/Spinner";
+import { Skeleton } from "../../components/ui/Skeleton";
 import { BrowserProvider, Contract } from "ethers";
 import streamPayment from "../../public/abi/StreamPayment.json";
 import erc20 from "../../public/abi/ERC20.json";
 import { ensureNetwork, getPaymentsChain } from "../../lib/chain";
 import { useWallet } from "../../context/WalletContext";
 import { buildSshCommand } from "../../lib/ssh";
+import { humanDuration } from "../../lib/streams";
+import { StreamCard } from "../../components/streams/StreamCard";
 
 type ChainStream = {
   token: string; sender: string; recipient: string;
@@ -43,19 +46,7 @@ function countryFullName(code: string): string {
   } catch { return (code || '').toUpperCase(); }
 }
 
-function humanDuration(totalSec: number): string {
-  const s = Math.max(0, Math.floor(totalSec));
-  const d = Math.floor(s / 86400);
-  const h = Math.floor((s % 86400) / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const sec = s % 60;
-  const parts: string[] = [];
-  if (d) parts.push(`${d} day${d!==1?'s':''}`);
-  if (h) parts.push(`${h} hour${h!==1?'s':''}`);
-  if (m) parts.push(`${m} minute${m!==1?'s':''}`);
-  if (sec && parts.length < 2) parts.push(`${sec} second${sec!==1?'s':''}`);
-  return parts.length ? parts.join(', ') : '0 seconds';
-}
+// humanDuration provided by lib/streams
 
 function parseTimeInput(v: string): number | null {
   // Accept inputs like "90", "30m", "2h", "1h 30m", "2h 30m 20s"
@@ -93,13 +84,21 @@ export default function VmDetailsClient() {
   const [customTopup, setCustomTopup] = React.useState<string>("");
   const displayCurrency = (loadSettings().display_currency === 'token' ? 'token' : 'fiat');
 
-  const rentals = loadRentals();
   const vmId = search.get('id') || '';
-  const vm = rentals.find(r => r.vm_id === vmId);
+  const [vm, setVm] = React.useState<ReturnType<typeof loadRentals>[number] | null>(null);
 
   const spAddr = (loadSettings().stream_payment_address || process.env.NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS || '').trim();
 
   React.useEffect(() => { setMounted(true); }, []);
+
+  // Resolve VM from local storage after mount to avoid SSR hydration mismatches
+  React.useEffect(() => {
+    try {
+      const list = loadRentals();
+      const rec = list.find(r => r.vm_id === vmId) || null;
+      setVm(rec as any);
+    } catch { setVm(null); }
+  }, [vmId]);
 
   React.useEffect(() => {
     if (!vm) return;
@@ -171,8 +170,8 @@ export default function VmDetailsClient() {
         setStream(null);
       }
     })();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vmId]);
+  // Re-run when VM context is available or changes
+  }, [vm?.vm_id, vm?.provider_id, vm?.stream_id, ads, spAddr]);
 
   // Countdown ticker for remaining seconds
   React.useEffect(() => {
@@ -185,7 +184,62 @@ export default function VmDetailsClient() {
   }, [stream?.chain?.stopTime]);
 
   if (!mounted) {
-    return <div className="text-sm text-gray-600">Loading VM…</div>;
+    // Full-page skeleton to align with Suspense fallback and prevent hydration mismatch
+    return (
+      <div className="space-y-6">
+        <div className="card"><div className="card-body">
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <Skeleton className="h-5 w-24" />
+                <Skeleton className="h-7 w-40" />
+              </div>
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                <Skeleton className="h-4 w-24" />
+                <Skeleton className="h-4 w-16" />
+                <Skeleton className="h-4 w-24" />
+              </div>
+            </div>
+            <div className="flex flex-col items-start gap-2 sm:items-end">
+              <Skeleton className="h-4 w-40" />
+              <div className="flex gap-2">
+                <Skeleton className="h-9 w-24" />
+                <Skeleton className="h-9 w-24" />
+                <Skeleton className="h-9 w-24" />
+              </div>
+            </div>
+          </div>
+        </div></div>
+        <div className="grid gap-4 sm:grid-cols-3">
+          <div className="card"><div className="card-body"><Skeleton className="h-6 w-24" /></div></div>
+          <div className="card"><div className="card-body"><Skeleton className="h-6 w-24" /></div></div>
+          <div className="card"><div className="card-body"><Skeleton className="h-6 w-24" /></div></div>
+        </div>
+        <div className="card"><div className="card-body">
+          <div className="grid gap-6 sm:grid-cols-2">
+            <div className="grid gap-3">
+              <Skeleton className="h-4 w-24" />
+              <Skeleton className="h-4 w-48" />
+              <Skeleton className="h-4 w-24" />
+              <Skeleton className="h-4 w-28" />
+              <Skeleton className="h-4 w-20" />
+            </div>
+            <div className="grid gap-3 content-start">
+              <Skeleton className="h-4 w-32" />
+              <div className="flex gap-2">
+                <Skeleton className="h-9 w-20" />
+                <Skeleton className="h-9 w-20" />
+                <Skeleton className="h-9 w-20" />
+              </div>
+              <div className="flex items-center gap-2">
+                <Skeleton className="h-9 w-full" />
+                <Skeleton className="h-9 w-16" />
+              </div>
+            </div>
+          </div>
+        </div></div>
+      </div>
+    );
   }
 
   if (!vm) {
@@ -261,17 +315,34 @@ export default function VmDetailsClient() {
               <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-gray-600">
                 <div className="flex items-center gap-1"><span className="font-mono">{vm.vm_id}</span></div>
                 <span>•</span>
-                <div className="flex items-center gap-1">
-                  <span className="text-lg leading-none">{provider?.country ? countryFlagEmoji(provider.country) : '🏳️'}</span>
-                  <span>{provider?.country ? countryFullName(provider.country) : 'Unknown region'}</span>
-                </div>
-                {provider?.platform && (<><span>•</span><div>{provider.platform}</div></>)}
+                {(!mounted || provider === null) ? (
+                  <div className="flex items-center gap-2">
+                    <Skeleton className="h-4 w-6" />
+                    <Skeleton className="h-4 w-32" />
+                    <span>•</span>
+                    <Skeleton className="h-4 w-16" />
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-1">
+                      <span className="text-lg leading-none">{provider?.country ? countryFlagEmoji(provider.country) : '🏳️'}</span>
+                      <span>{provider?.country ? countryFullName(provider.country) : 'Unknown region'}</span>
+                    </div>
+                    {provider?.platform && (<><span>•</span><div>{provider.platform}</div></>)}
+                  </>
+                )}
                 <span>•</span>
                 <div className="font-mono text-xs sm:text-sm">{vm.provider_id}</div>
               </div>
             </div>
             <div className="flex flex-col items-start gap-2 sm:items-end">
-              <div className="text-sm text-gray-700">SSH: {sshHost}:{sshPort ?? '—'}</div>
+              <div className="text-sm text-gray-700">
+                {(!mounted || access === null) ? (
+                  <div className="flex items-center gap-2"><Skeleton className="h-4 w-36" /></div>
+                ) : (
+                  <>SSH: {sshHost}:{sshPort ?? '—'}</>
+                )}
+              </div>
               <div className="flex gap-2">
                 <button className="btn btn-secondary" onClick={copySSH} disabled={!sshCmd}>Copy SSH</button>
                 <button className="btn btn-secondary" onClick={stopVm} disabled={busy}>{busy ? <><Spinner className="h-4 w-4" /> Stop</> : 'Stop'}</button>
@@ -286,97 +357,63 @@ export default function VmDetailsClient() {
       <div className="grid gap-4 sm:grid-cols-3">
         <div className="card"><div className="card-body">
           <div className="text-sm text-gray-500">CPU</div>
-          <div className="mt-1 text-lg font-semibold">{(provider as any)?.resources?.cpu ?? '—'} vCPU</div>
+          <div className="mt-1 text-lg font-semibold">
+            {(!mounted || provider === null || !(provider as any)?.resources?.cpu) ? (<Skeleton className="h-6 w-24" />) : (<>{(provider as any)?.resources?.cpu} vCPU</>)}
+          </div>
         </div></div>
         <div className="card"><div className="card-body">
           <div className="text-sm text-gray-500">Memory</div>
-          <div className="mt-1 text-lg font-semibold">{(provider as any)?.resources?.memory ?? '—'} GB</div>
+          <div className="mt-1 text-lg font-semibold">
+            {(!mounted || provider === null || !(provider as any)?.resources?.memory) ? (<Skeleton className="h-6 w-24" />) : (<>{(provider as any)?.resources?.memory} GB</>)}
+          </div>
         </div></div>
         <div className="card"><div className="card-body">
           <div className="text-sm text-gray-500">Storage</div>
-          <div className="mt-1 text-lg font-semibold">{(provider as any)?.resources?.storage ?? '—'} GB</div>
+          <div className="mt-1 text-lg font-semibold">
+            {(!mounted || provider === null || !(provider as any)?.resources?.storage) ? (<Skeleton className="h-6 w-24" />) : (<>{(provider as any)?.resources?.storage} GB</>)}
+          </div>
         </div></div>
       </div>
 
-      {/* Stream + Top-up */}
-      <div className="card">
-        <div className="card-body">
-          {!vm.stream_id ? (
-            <div className="text-sm text-gray-600">No stream mapped for this VM.</div>
-          ) : !stream ? (
-            <div className="text-sm text-gray-600">Loading stream…</div>
-          ) : (
-            <div className="grid gap-6 sm:grid-cols-2">
-              <div className="grid gap-2 text-sm text-gray-700">
-                <div className="flex items-center justify-between">
-                  <div className="text-gray-500">Token</div>
-                  <div className="font-mono">{tokenSymbol || (stream.chain.token?.toLowerCase()==='0x0000000000000000000000000000000000000000' ? 'ETH' : 'TOKEN')}</div>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div className="text-gray-500">Rate</div>
-                  <div>
-                    {(() => {
-                      const dec = tokenDecimals || 18;
-                      const rps = Number(stream.chain.ratePerSecond) / 10 ** dec;
-                      const rph = rps * 3600;
-                      if (displayCurrency === 'fiat' && usdPrice != null) {
-                        const usdS = rps * usdPrice;
-                        const usdH = rph * usdPrice;
-                        return `$${usdS.toFixed(6)}/s ($${usdH.toFixed(6)}/h)`;
-                      }
-                      return `${rps.toFixed(6)} ${tokenSymbol || ''}/s (${rph.toFixed(6)} ${tokenSymbol || ''}/h)`;
-                    })()}
-                  </div>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div className="text-gray-500">Deposit</div>
-                  <div>
-                    {(() => {
-                      const dec = tokenDecimals || 18;
-                      const dep = Number(stream.chain.deposit) / 10 ** dec;
-                      const wid = Number(stream.chain.withdrawn) / 10 ** dec;
-                      const remTok = Math.max(0, dep - wid);
-                      if (displayCurrency === 'fiat' && usdPrice != null) {
-                        return `$${(remTok * usdPrice).toFixed(2)}`;
-                      }
-                      return `${remTok.toFixed(6)} ${tokenSymbol || ''}`;
-                    })()}
-                  </div>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div className="text-gray-500">Remaining</div>
-                  <div className="font-medium">{humanDuration(remaining)}</div>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div className="text-gray-500">Status</div>
-                  <div>{stream.chain.halted ? <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">● Halted</span> : <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">● Active</span>}</div>
-                </div>
+      {/* Stream section via shared component */}
+      {!vm.stream_id ? (
+        <div className="card"><div className="card-body"><div className="text-sm text-gray-600">No stream mapped for this VM.</div></div></div>
+      ) : (!mounted || !stream) ? (
+        <div className="card"><div className="card-body">
+          <div className="grid gap-6 sm:grid-cols-2">
+            <div className="grid gap-3">
+              <Skeleton className="h-4 w-24" />
+              <Skeleton className="h-4 w-48" />
+              <Skeleton className="h-4 w-24" />
+              <Skeleton className="h-4 w-28" />
+              <Skeleton className="h-4 w-20" />
+            </div>
+            <div className="grid gap-3 content-start">
+              <Skeleton className="h-4 w-32" />
+              <div className="flex gap-2">
+                <Skeleton className="h-9 w-20" />
+                <Skeleton className="h-9 w-20" />
+                <Skeleton className="h-9 w-20" />
               </div>
-              <div className="grid gap-3 content-start">
-                <div className="text-sm text-gray-700">Top up stream</div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <button className="btn btn-secondary" onClick={() => topUp(1800)} disabled={busy}>+30 min</button>
-                  <button className="btn btn-secondary" onClick={() => topUp(3600)} disabled={busy}>{busy ? <><Spinner className="h-4 w-4" /> +1 h</> : '+1 h'}</button>
-                  <button className="btn btn-secondary" onClick={() => topUp(7200)} disabled={busy}>+2 h</button>
-                </div>
-                <div className="flex items-center gap-2">
-                  <input
-                    className="input flex-1"
-                    placeholder="Custom (e.g. 90, 45m, 2h 30m, 20s)"
-                    value={customTopup}
-                    onChange={(e) => setCustomTopup(e.target.value)}
-                  />
-                  <button
-                    className="btn btn-secondary"
-                    onClick={() => { const sec = parseTimeInput(customTopup); if (sec) topUp(sec); }}
-                    disabled={busy || !customTopup.trim().length}
-                  >Add</button>
-                </div>
+              <div className="flex items-center gap-2">
+                <Skeleton className="h-9 w-full" />
+                <Skeleton className="h-9 w-16" />
               </div>
             </div>
-          )}
-        </div>
-      </div>
+          </div>
+        </div></div>
+      ) : (
+        <StreamCard
+          title={`Stream`}
+          streamId={vm.stream_id}
+          chain={stream.chain as any}
+          remaining={remaining}
+          meta={{ tokenSymbol, tokenDecimals, usdPrice }}
+          displayCurrency={displayCurrency}
+          onTopUp={(secs) => topUp(secs)}
+          busy={busy}
+        />
+      )}
     </div>
   );
 }

@@ -261,7 +261,15 @@ export function CreateWizard({ open, onClose, onComplete }: { open: boolean; onC
               <div>
                 <div className="text-sm text-gray-700">Max monthly price</div>
                 {priceMin == null || priceMax == null ? (
-                  <div className="mt-2 flex items-center gap-3"><Spinner /><div className="text-sm text-gray-500">Calculating from advertiser…</div></div>
+                  <div className="mt-2 space-y-3">
+                    <Skeleton className="h-4 w-40" />
+                    <Skeleton className="h-2 w-full" />
+                    <div className="flex items-center justify-between">
+                      <Skeleton className="h-4 w-16" />
+                      <Skeleton className="h-4 w-24" />
+                      <Skeleton className="h-4 w-16" />
+                    </div>
+                  </div>
                 ) : (
                   <div className="mt-2 space-y-3">
                     <input
