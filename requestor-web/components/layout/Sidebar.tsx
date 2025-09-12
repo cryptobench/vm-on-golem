@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ProjectSwitcher } from "./ProjectSwitcher";
 import { IcDashboard, IcProviders, IcServers, IcStreams, IcSettings } from "../icons";
+import { Wallet } from "../Wallet";
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -45,7 +46,18 @@ export function Sidebar() {
           );
         })}
       </nav>
-      <div className="p-4 text-xs text-gray-500">v0.1</div>
+      <div className="sticky bottom-0 p-4 border-t bg-white/80 backdrop-blur space-y-3">
+        <Wallet />
+        <button
+          className="btn btn-primary w-full"
+          onClick={() => {
+            try { window.dispatchEvent(new CustomEvent('requestor-open-create-wizard')); } catch {}
+          }}
+        >
+          Rent a VM
+        </button>
+        <div className="text-xs text-gray-500">v0.1</div>
+      </div>
     </aside>
   );
 }

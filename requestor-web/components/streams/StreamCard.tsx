@@ -119,19 +119,23 @@ export function StreamCard({ title, streamId, chain, remaining, meta, displayCur
             </div>
           </div>
 
-          <div className="mt-4 flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded bg-gray-50 px-2.5 py-1 text-xs font-medium text-gray-700" onClick={(e) => e.stopPropagation()}>
-              Recipient
-              <span className="font-mono text-[11px] text-gray-600 truncate max-w-[10rem] sm:max-w-[16rem]" title={chain.recipient}>{chain.recipient}</span>
-            </span>
-            <span className="inline-flex items-center gap-1.5 rounded bg-gray-50 px-2.5 py-1 text-xs font-medium text-gray-700">
-              Balance
-              <span className="text-[11px] text-gray-600 truncate" title={remStr}>{remStr}</span>
-            </span>
-            <span className="inline-flex items-center gap-1.5 rounded bg-gray-50 px-2.5 py-1 text-xs font-medium text-gray-700" onClick={(e) => e.stopPropagation()}>
-              Rate
-              <span className="text-[11px] text-gray-600 truncate" title={`${ratePerHour}`}>{ratePerHour}</span>
-            </span>
+          <div className="mt-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 rounded bg-gray-50 px-2.5 py-1 text-xs font-medium text-gray-700" onClick={(e) => e.stopPropagation()}>
+                Recipient
+                <span className="font-mono text-[11px] text-gray-600 truncate max-w-[10rem] sm:max-w-[16rem]" title={chain.recipient}>{chain.recipient}</span>
+              </span>
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 rounded bg-gray-50 px-2.5 py-1 text-xs font-medium text-gray-700">
+                Remaining balance
+                <span className="text-[11px] text-gray-600 truncate" title={remStr}>{remStr}</span>
+              </span>
+              <span className="inline-flex items-center gap-1.5 rounded bg-gray-50 px-2.5 py-1 text-xs font-medium text-gray-700" onClick={(e) => e.stopPropagation()}>
+                Rate
+                <span className="text-[11px] text-gray-600 truncate" title={`${ratePerHour}`}>{ratePerHour}</span>
+              </span>
+            </div>
           </div>
 
           <Tracker data={trackerData} className="mt-5 hidden sm:flex" />

@@ -12,6 +12,7 @@ import { useWallet } from "../../context/WalletContext";
 import { fetchStreamWithMeta } from "../../lib/streams";
 import { getPriceUSD, onPricesUpdated } from "../../lib/prices";
 import { StreamCard } from "../../components/streams/StreamCard";
+import { RiCheckboxCircleFill, RiTimeFill, RiStackLine } from "@remixicon/react";
 
 type ChainStream = {
   token: string; sender: string; recipient: string;
@@ -191,7 +192,7 @@ export default function StreamsPage() {
         <div className="grid gap-4 sm:grid-cols-3">
           {/* Active / Ended count */}
           <div className="card"><div className="card-body">
-            <div className="text-sm text-gray-600">Active streams</div>
+            <div className="text-sm text-gray-600 inline-flex items-center gap-1.5"><RiCheckboxCircleFill className="h-4 w-4 text-gray-500" /> Active streams</div>
             <div className="mt-1 text-2xl font-semibold text-gray-900">{active.length}</div>
             {ended.length > 0 && (
               <div className="mt-1 text-xs text-gray-600">Ended: {ended.length}</div>
@@ -199,7 +200,7 @@ export default function StreamsPage() {
           </div></div>
           {/* Hourly burn */}
           <div className="card"><div className="card-body">
-            <div className="text-sm text-gray-600">Hourly burn</div>
+            <div className="text-sm text-gray-600 inline-flex items-center gap-1.5"><RiTimeFill className="h-4 w-4 text-gray-500" /> Hourly burn</div>
             {(() => {
               // Compute sums for active only
               const unknown: string[] = [];
@@ -213,7 +214,7 @@ export default function StreamsPage() {
                 }
                 return (
                   <>
-                    <div className="mt-1 text-2xl font-semibold text-gray-900">${totalUsd.toFixed(4)}/h</div>
+                    <div className="mt-1 text-2xl font-semibold text-gray-900">${totalUsd.toFixed(6)}/h</div>
                     {unknown.length > 0 && (
                       <div className="mt-1 text-xs text-gray-600">+ ? from {unknown.length} stream{unknown.length===1?'':'s'}</div>
                     )}
@@ -243,9 +244,9 @@ export default function StreamsPage() {
               }
             })()}
           </div></div>
-          {/* Remaining budget */}
+          {/* Remaining balance */}
           <div className="card"><div className="card-body">
-            <div className="text-sm text-gray-600">Remaining budget</div>
+            <div className="text-sm text-gray-600 inline-flex items-center gap-1.5"><RiStackLine className="h-4 w-4 text-gray-500" /> Remaining balance</div>
             {(() => {
               const unknown: string[] = [];
               if (displayCurrency === 'fiat') {

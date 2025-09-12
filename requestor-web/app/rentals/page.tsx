@@ -213,7 +213,7 @@ export default function RentalsPage() {
                     showStreamMeta={true}
                     showCopy={false}
                     showStop={false}
-                    showDestroy={true}
+                    showDestroy={false}
                   />
                 ))}
               </div>

@@ -1,23 +1,33 @@
 "use client";
 import React from "react";
 import { useWallet } from "../context/WalletContext";
+import { MetaMaskLogo } from "./ui/MetaMaskLogo";
 
 export function Wallet() {
-  const { isInstalled, isConnected, account, chainId, connect } = useWallet();
+  const { isInstalled, isConnected, account, connect } = useWallet();
+  const label = account
+    ? `${account.slice(0, 12)}…${account.slice(-8)}`
+    : "";
+  if (!isInstalled) {
+    return (
+      <button onClick={() => alert('MetaMask not detected')} className="btn btn-secondary w-full inline-flex items-center justify-center gap-2">
+        <MetaMaskLogo />
+        Install MetaMask
+      </button>
+    );
+  }
+  if (!isConnected) {
+    return (
+      <button onClick={connect} className="btn btn-primary w-full inline-flex items-center justify-center gap-2">
+        <MetaMaskLogo />
+        Connect
+      </button>
+    );
+  }
   return (
-    <div className="flex items-center gap-3">
-      {!isInstalled ? (
-        <button onClick={() => alert('MetaMask not detected')} className="btn btn-secondary">No MetaMask</button>
-      ) : isConnected ? (
-        <>
-          <span className="inline-flex items-center rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm">
-            Wallet: {account?.slice(0, 6)}…{account?.slice(-4)}
-          </span>
-          <span className="text-sm text-gray-600">Chain: {chainId || '—'}</span>
-        </>
-      ) : (
-        <button onClick={connect} className="btn btn-primary">Connect MetaMask</button>
-      )}
-    </div>
+    <span className="w-full inline-flex items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm">
+      <MetaMaskLogo />
+      {label}
+    </span>
   );
 }

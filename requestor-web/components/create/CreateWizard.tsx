@@ -5,6 +5,7 @@ import { Skeleton } from "../ui/Skeleton";
 import { useAds } from "../../context/AdsContext";
 import { fetchAllProviders, computePriceRange, computeEstimate, loadSettings, saveSettings, type SSHKey, type ProviderAd } from "../../lib/api";
 import { Modal } from "../ui/Modal";
+import { ProviderRow } from "../providers/ProviderRow";
 
 type Step = 0 | 1 | 2 | 3 | 4;
 
@@ -38,6 +39,7 @@ export function CreateWizard({ open, onClose, onComplete }: { open: boolean; onC
   const [newKeyName, setNewKeyName] = React.useState("");
   const [newKeyValue, setNewKeyValue] = React.useState("");
   const [addError, setAddError] = React.useState<string | null>(null);
+  const displayCurrency: 'fiat' | 'token' = ((typeof window !== 'undefined' && (JSON.parse(localStorage.getItem('requestor_settings_v1') || '{}')?.display_currency === 'token')) ? 'token' : 'fiat');
 
   // Reset on open
   React.useEffect(() => {
@@ -154,6 +156,8 @@ export function CreateWizard({ open, onClose, onComplete }: { open: boolean; onC
   };
 
   if (!open) return null;
+  const contentPad = step === 3 ? "px-4 sm:px-6 pt-2 pb-6" : "px-4 sm:px-6 py-6";
+  const contentWidth = step === 3 ? "" : "mx-auto max-w-5xl";
 
   return (
     <div className="fixed inset-0 z-50 lg:left-[16rem]" role="dialog" aria-modal="true" aria-labelledby={headerId}>
@@ -167,7 +171,7 @@ export function CreateWizard({ open, onClose, onComplete }: { open: boolean; onC
         <button className="btn btn-secondary" onClick={onClose}>Close</button>
       </div>
       {/* Content */}
-      <div className="relative z-10 mx-auto max-w-5xl px-4 sm:px-6 py-6">
+      <div className={"relative z-10 " + contentWidth + " " + contentPad}>
         <div className="transition-all">
           {step === 0 && (
             <div className="grid gap-4">
@@ -302,67 +306,25 @@ export function CreateWizard({ open, onClose, onComplete }: { open: boolean; onC
           )}
 
           {step === 3 && (
-            <div className="grid gap-3">
-              <div className="text-sm text-gray-700">Select a provider</div>
-              <div className="divide-y rounded-xl border overflow-hidden">
-                {matches.map((p) => {
-                  const est = (mode === 'specific' && cpu != null && memory != null && storage != null) ? computeEstimate(p, cpu!, memory!, storage!) : null;
-                  const pr = (p.pricing || {}) as any;
-                  const coreH = pr.usd_per_core_month != null ? +(Number(pr.usd_per_core_month) / 730).toFixed(6) : null;
-                  const ramH = pr.usd_per_gb_ram_month != null ? +(Number(pr.usd_per_gb_ram_month) / 730).toFixed(6) : null;
-                  const stoH = pr.usd_per_gb_storage_month != null ? +(Number(pr.usd_per_gb_storage_month) / 730).toFixed(6) : null;
-                  return (
-                    <div key={p.provider_id} className="grid grid-cols-12 items-center gap-3 px-4 py-3 hover:bg-gray-50">
-                      <div className="col-span-4">
-                        <div className="font-medium">{p.provider_name || p.provider_id.slice(0,8)}</div>
-                        <div className="text-xs text-gray-500 break-all">{p.provider_id}</div>
-                      </div>
-                      <div className="col-span-3 text-sm">
-                        <div className="inline-flex items-center gap-2">
-                          <span>{countryFlagEmoji(p.country || '')}</span>
-                          <span>{countryFullName(p.country || '')}</span>
-                        </div>
-                      </div>
-                      <div className="col-span-3 text-sm text-gray-700">
-                        <span className="mr-3">{p.resources.cpu} CPU</span>
-                        <span className="mr-3">{p.resources.memory} GB</span>
-                        <span>{p.resources.storage} GB</span>
-                      </div>
-                      <div className="col-span-2 flex items-center justify-end gap-3">
-                        <div className="text-right">
-                          {est ? (
-                            <>
-                              <div className="text-sm font-medium">${est.usd_per_month}/mo</div>
-                              <div className="text-xs text-gray-500">${est.usd_per_hour}/h</div>
-                            </>
-                          ) : (
-                            <div className="text-xs text-gray-700 space-y-0.5">
-                              {(coreH != null || ramH != null || stoH != null) ? (
-                                <>
-                                  {coreH != null && (<div>Core: ${coreH}/h</div>)}
-                                  {ramH != null && (<div>RAM: ${ramH}/GB·h</div>)}
-                                  {stoH != null && (<div>Storage: ${stoH}/GB·h</div>)}
-                                </>
-                              ) : '—'}
-                            </div>
-                          )}
-                        </div>
-                        <input
-                          type="radio"
-                          name="provider"
-                          className="accent-brand-600"
-                          checked={selectedProvider === p.provider_id}
-                          onChange={() => setSelectedProvider(p.provider_id)}
-                          aria-label="Select provider"
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-                {!matches.length && (
-                  <div className="px-4 py-6 text-sm text-gray-500">No matching providers with current filters.</div>
-                )}
-              </div>
+            <div>
+              {matches.map((p) => {
+                const estRaw = (mode === 'specific' && cpu != null && memory != null && storage != null) ? computeEstimate(p, cpu!, memory!, storage!) : null;
+                const estimate = estRaw ? { usd_per_month: estRaw.usd_per_month, usd_per_hour: estRaw.usd_per_hour, glm_per_month: (estRaw.glm_per_month ?? undefined) } : null;
+                return (
+                  <div key={p.provider_id} className="mb-3 last:mb-0">
+                    <ProviderRow
+                      provider={p as any}
+                      estimate={estimate}
+                      displayCurrency={displayCurrency}
+                      selected={selectedProvider === p.provider_id}
+                      onToggle={() => setSelectedProvider(prev => prev === p.provider_id ? null : p.provider_id)}
+                    />
+                  </div>
+                );
+              })}
+              {!matches.length && (
+                <div className="py-4 text-sm text-gray-500">No matching providers with current filters.</div>
+              )}
             </div>
           )}
 
