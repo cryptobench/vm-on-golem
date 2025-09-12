@@ -422,7 +422,8 @@ Notes:
 golem-provider start
 
 # Development mode with extra logs and reload
-GOLEM_ENVIRONMENT=development golem-provider start --network testnet
+# In development, providers advertise on the 'development' network and use local IPs.
+GOLEM_ENVIRONMENT=development golem-provider start
 ```
 
 Run as a background service (no terminal):
@@ -445,15 +446,16 @@ golem-provider status [--json]
   - Does not decide which chain you target.
 
 - Network Selection (`--network` or `GOLEM_PROVIDER_NETWORK`)
-  - Chooses the discovery/advertisement scope: providers advertise `golem_network=testnet|mainnet` and requestors filter accordingly.
+  - Chooses the discovery/advertisement scope: providers advertise `golem_network=development|testnet|mainnet` and requestors filter accordingly.
   - Pair with appropriate RPC envs (`GOLEM_PROVIDER_GOLEM_BASE_RPC_URL`, `GOLEM_PROVIDER_GOLEM_BASE_WS_URL`).
+  - In development, you can supply separate dev endpoints via `GOLEM_PROVIDER_GOLEM_BASE_DEV_RPC_URL` / `GOLEM_PROVIDER_GOLEM_BASE_DEV_WS_URL` (or generic `GOLEM_BASE_DEV_*`).
   - Does not change dev ergonomics (logging, reload, or port verification behavior).
 
 - Payments Network (`GOLEM_PROVIDER_PAYMENTS_NETWORK`)
   - Selects the payments chain profile (e.g., `l2.holesky`, `mainnet`). Determines default payments RPC, faucet enablement, and symbols.
 
 Common setups:
-- Local dev on testnet: `GOLEM_ENVIRONMENT=development` plus `--network testnet`.
+- Local dev (separate network): `GOLEM_ENVIRONMENT=development` (defaults to `network=development`).
 - Staging on testnet: keep `ENVIRONMENT=production`, set `--network testnet` and testnet RPCs.
 - Production on mainnet: `ENVIRONMENT=production` with `--network mainnet` and mainnet RPCs.
 

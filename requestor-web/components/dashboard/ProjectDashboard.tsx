@@ -6,6 +6,7 @@ import { useAds } from "../../context/AdsContext";
 import { useToast } from "../ui/Toast";
 import { Spinner } from "../ui/Spinner";
 import { StreamsMini } from "./StreamsMini";
+import { buildSshCommand } from "../../lib/ssh";
 
 function StatusBadge({ status }: { status?: string | null }) {
   const s = (status || '').toLowerCase();
@@ -90,9 +91,7 @@ export function ProjectDashboard() {
         show("Could not resolve SSH port");
         return;
       }
-      // Match requestor CLI format: ssh -i <key> -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p <port> ubuntu@<host>
-      const keyPath = "~/.golem/requestor/ssh/golem_id_rsa"; // default Golem key path used by requestor CLI when system key isn't used
-      const cmd = `ssh -i ${keyPath} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p ${port} ubuntu@${host}`;
+      const cmd = buildSshCommand(host, Number(port));
       await navigator.clipboard.writeText(cmd);
       show("SSH command copied");
     } catch (e) {

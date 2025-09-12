@@ -11,19 +11,26 @@ export type AdsConfig = {
   advertisement_interval_seconds?: number; // optional for created_at estimation
 };
 
-const DEFAULTS: AdsConfig = {
-  mode: 'golem-base',
-  discovery_url: process.env.NEXT_PUBLIC_DISCOVERY_API_URL || 'http://195.201.39.101:9001/api/v1',
-  // Defaults for provider discovery on L3 (EthWarsaw Holesky)
-  golem_base_rpc_url: 'https://ethwarsaw.holesky.golemdb.io/rpc',
-  golem_base_ws_url: 'wss://ethwarsaw.holesky.golemdb.io/rpc/ws',
-  chain_id: (() => {
-    // Keep existing default for backward compat; payments chain handled separately in UI
-    const def = process.env.NEXT_PUBLIC_EVM_CHAIN_ID || '0x6013a';
-    try { return parseInt(def, 16); } catch { return 393530; }
-  })(),
-  advertisement_interval_seconds: 240,
-};
+const DEFAULTS: AdsConfig = (() => {
+  const isDevEnv = (process.env.NEXT_PUBLIC_GOLEM_ENVIRONMENT || '').toLowerCase() === 'development';
+  // Allow explicit dev overrides when GOLEM_ENVIRONMENT=development
+  const devRpc = process.env.NEXT_PUBLIC_GOLEM_BASE_DEV_RPC_URL || '';
+  const devWs = process.env.NEXT_PUBLIC_GOLEM_BASE_DEV_WS_URL || '';
+  const baseRpc = isDevEnv && devRpc ? devRpc : 'https://ethwarsaw.holesky.golemdb.io/rpc';
+  const baseWs = isDevEnv && devWs ? devWs : 'wss://ethwarsaw.holesky.golemdb.io/rpc/ws';
+  return {
+    mode: 'golem-base',
+    discovery_url: process.env.NEXT_PUBLIC_DISCOVERY_API_URL || 'http://195.201.39.101:9001/api/v1',
+    golem_base_rpc_url: baseRpc,
+    golem_base_ws_url: baseWs,
+    chain_id: (() => {
+      // Keep existing default for backward compat; payments chain handled separately in UI
+      const def = process.env.NEXT_PUBLIC_EVM_CHAIN_ID || '0x6013a';
+      try { return parseInt(def, 16); } catch { return 393530; }
+    })(),
+    advertisement_interval_seconds: 240,
+  };
+})();
 
 // Profiles support: allow multiple saved advertisement server configs
 export type AdsProfile = { id: string; name: string; config: AdsConfig };

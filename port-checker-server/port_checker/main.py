@@ -40,12 +40,12 @@ DISCOVERY_API_URL = os.getenv("DISCOVERY_API_URL", "http://localhost:9001/api/v1
 PROXY_SHARED_TOKEN = os.getenv("PORT_CHECKER_PROXY_TOKEN", "")
 GOLEM_BASE_RPC_URL = os.getenv("GOLEM_BASE_RPC_URL", "")
 GOLEM_BASE_WS_URL = os.getenv("GOLEM_BASE_WS_URL", "")
-# Dev mode flag: prefer dev_ annotation keys when resolving on-chain adverts
-# Unified environment variable only
+# Dev mode flag: prefer development network when GOLEM_ENVIRONMENT=development
+# Unified environment variable only; allow explicit override via PORT_CHECKER_EXPECTED_NETWORK
 PROVIDER_ENV = (os.getenv("GOLEM_ENVIRONMENT") or "").lower()
 IS_PROVIDER_DEV = PROVIDER_ENV == "development"
-# Align expected network with provider env: dev → testnet, else mainnet
-EXPECTED_NETWORK = "testnet" if IS_PROVIDER_DEV else "mainnet"
+# In development, target the separate 'development' network; otherwise mainnet unless overridden
+EXPECTED_NETWORK = os.getenv("PORT_CHECKER_EXPECTED_NETWORK") or ("development" if IS_PROVIDER_DEV else "mainnet")
 # Allow local/private IPs when developing or when explicitly enabled. This keeps
 # production safe-by-default while unblocking localhost/private-net workflows.
 ALLOW_LOCAL_IPS = os.getenv("PORT_CHECKER_ALLOW_LOCAL_IPS", "false").lower() == "true"

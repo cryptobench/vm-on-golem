@@ -14,7 +14,7 @@ This monorepo contains services and GUIs for running virtual machines on the Gol
 ## Build, Test, and Development Commands
 - `make install` – Install Poetry dependencies for discovery, provider, requestor.
 - `make test` – Run pytest for the three core Python services.
-- `make start` – Start discovery, provider (dev), and requestor API with reload.
+- `make start` – Start provider CLI, port-checker proxy, and requestor web (development mode).
 - Per-service: `poetry -C <svc> run pytest`, `poetry -C provider-server run dev`, `poetry -C discovery-server run golem-discovery`, `poetry -C requestor-server run golem server api --reload`.
 - GUIs: in `provider-gui/` or `requestor-gui/`: `npm install && npm start`.
 

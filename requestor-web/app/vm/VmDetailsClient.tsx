@@ -10,6 +10,7 @@ import streamPayment from "../../public/abi/StreamPayment.json";
 import erc20 from "../../public/abi/ERC20.json";
 import { ensureNetwork, getPaymentsChain } from "../../lib/chain";
 import { useWallet } from "../../context/WalletContext";
+import { buildSshCommand } from "../../lib/ssh";
 
 type ChainStream = {
   token: string; sender: string; recipient: string;
@@ -198,8 +199,7 @@ export default function VmDetailsClient() {
 
   const sshHost = provider?.ip_address || vm.provider_ip || 'PROVIDER_IP';
   const sshPort = access?.ssh_port || vm.ssh_port || null;
-  const keyPath = "~/.golem/requestor/ssh/golem_id_rsa";
-  const sshCmd = sshPort ? `ssh -i ${keyPath} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p ${sshPort} ubuntu@${sshHost}` : null;
+  const sshCmd = sshPort ? buildSshCommand(sshHost, Number(sshPort)) : null;
 
   const copySSH = async () => {
     try {
