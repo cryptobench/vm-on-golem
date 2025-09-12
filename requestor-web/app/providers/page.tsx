@@ -334,17 +334,14 @@ function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provider: any
       // Native ETH mode: derive ETH rate from USD price (or eth_per_month if advertised)
       let ethPerMonth: number | null = (est as any).eth_per_month ?? null;
       if (ethPerMonth == null) {
-        // Convert USD → ETH using CoinGecko
+        // Convert USD → ETH using cached price
         const usdPerMonth = est.usd_per_month;
-        try {
-          const r = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd');
-          const js = await r.json().catch(() => ({} as any));
-          const ethUsd = js?.ethereum?.usd;
-          if (!ethUsd || !Number.isFinite(ethUsd)) throw new Error('bad price');
-          ethPerMonth = usdPerMonth / Number(ethUsd);
-        } catch {
-          throw new Error("Cannot fetch ETH/USD price to compute streaming rate");
+        const { usdToToken, getPriceUSD } = await import("../../lib/prices");
+        const price = getPriceUSD('ETH');
+        if (price == null || !Number.isFinite(usdPerMonth)) {
+          throw new Error("ETH/USD price unavailable to compute rate");
         }
+        ethPerMonth = usdPerMonth / price;
       }
       const ethPerSecond = (ethPerMonth as number) / (730.0 * 3600.0);
       // Use parseEther on a fixed-precision string to avoid float drift

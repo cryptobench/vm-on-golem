@@ -30,6 +30,9 @@ export function ProjectDashboard() {
       const current = loadRentals().filter(r => (r.project_id || 'default') === activeId);
       const next = [...current];
       for (const r of current) {
+        // Skip polling for items already terminated/deleted to avoid spamming providers with 404s
+        const status = (r.status || '').toLowerCase();
+        if (status === 'terminated' || status === 'deleted') continue;
         try {
           // First, detect if VM still exists on provider
           const st = await vmStatusSafe(r.provider_id, r.vm_id, ads);

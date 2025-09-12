@@ -31,7 +31,6 @@ type VmCardProps = {
 
 export function VmCard({ rental: r, busy, remainingSeconds, onCopySSH, onStop, onDestroy, showStreamMeta = true, showCopy = true, showStop = true, showDestroy = true }: VmCardProps) {
   const router = useRouter();
-  const ssh = r.provider_ip && r.ssh_port ? `${r.provider_ip}:${r.ssh_port}` : '—';
   const isTerminated = (r.status || '').toLowerCase() === 'terminated' || (r.status || '').toLowerCase() === 'deleted';
 
   return (
@@ -52,7 +51,9 @@ export function VmCard({ rental: r, busy, remainingSeconds, onCopySSH, onStop, o
           <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-600">
             <span className="font-mono break-all" title={r.provider_id}>Provider: {r.provider_id}</span>
             <span className="font-mono break-all" title={r.vm_id}>VM: {r.vm_id}</span>
-            {r.provider_ip && <span className="text-gray-600">IP: {r.provider_ip}</span>}
+            {r.platform && (
+              <span className="rounded border px-1.5 py-0.5 text-[11px] text-gray-700" title="Architecture">{r.platform}</span>
+            )}
           </div>
           {/* Specs and platform badges */}
           {(r.resources || r.platform) && (
@@ -66,29 +67,20 @@ export function VmCard({ rental: r, busy, remainingSeconds, onCopySSH, onStop, o
               {r.resources?.storage != null && (
                 <span className="inline-flex items-center gap-1.5"><RiHardDrive2Line className="h-4 w-4 text-gray-500" /> Disk: <span className="font-mono">{r.resources.storage} GB</span></span>
               )}
-              {r.platform && (
-                <span className="rounded border px-1.5 py-0.5 text-[11px] text-gray-700">{r.platform}</span>
-              )}
             </div>
           )}
-          <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 text-sm text-gray-700">
-            <div>
-              <div className="text-gray-500">SSH</div>
-              <div>{isTerminated ? '—' : ssh}</div>
+          {showStreamMeta && (
+            <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 text-sm text-gray-700">
+              <div>
+                <div className="text-gray-500">Stream</div>
+                <div className="truncate">{r.stream_id ? `#${r.stream_id}` : '—'}</div>
+              </div>
+              <div>
+                <div className="text-gray-500">Remaining</div>
+                <div>{isTerminated ? (r.end_reason === 'stream_depleted' ? '0s' : '—') : (r.stream_id ? (remainingSeconds != null ? humanDuration(remainingSeconds) : <span className="text-gray-400">fetching…</span>) : '—')}</div>
+              </div>
             </div>
-            {showStreamMeta && (
-              <>
-                <div>
-                  <div className="text-gray-500">Stream</div>
-                  <div className="truncate">{r.stream_id ? `#${r.stream_id}` : '—'}</div>
-                </div>
-                <div>
-                  <div className="text-gray-500">Remaining</div>
-                  <div>{isTerminated ? (r.end_reason === 'stream_depleted' ? '0s' : '—') : (r.stream_id ? (remainingSeconds != null ? humanDuration(remainingSeconds) : <span className="text-gray-400">fetching…</span>) : '—')}</div>
-                </div>
-              </>
-            )}
-          </div>
+          )}
         </div>
         {/* Actions */}
         {(showCopy || showStop || showDestroy) && (

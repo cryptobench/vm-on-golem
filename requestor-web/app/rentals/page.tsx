@@ -88,6 +88,9 @@ export default function RentalsPage() {
         const r = next[i] as any;
         // Only check those in active project for efficiency
         if ((r.project_id || 'default') !== activeId) continue;
+        // Skip terminated/deleted VMs to avoid repeated 404 polls
+        const status = ((r.status || '') as string).toLowerCase();
+        if (status === 'terminated' || status === 'deleted') continue;
         try {
           const { vmStatusSafe } = await import('../../lib/api');
           const st = await vmStatusSafe(r.provider_id, r.vm_id, ads);

@@ -17,6 +17,7 @@ export function StreamsMini({ projectId }: { projectId: string }) {
   const [error, setError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState<string | null>(null);
   const spAddr = (loadSettings().stream_payment_address || process.env.NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS || '').trim();
+  const [displayCurrency, setDisplayCurrency] = React.useState<'fiat'|'token'>(loadSettings().display_currency === 'token' ? 'token' : 'fiat');
   const { account } = useWallet();
 
   const load = async () => {
@@ -39,10 +40,23 @@ export function StreamsMini({ projectId }: { projectId: string }) {
   };
 
   React.useEffect(() => { load(); }, [projectId]);
+  // Listen for settings changes (fiat/token toggle)
+  React.useEffect(() => {
+    const onSettings = (e: any) => {
+      try { setDisplayCurrency(e?.detail?.display_currency === 'token' ? 'token' : 'fiat'); } catch {}
+    };
+    const onStorage = () => setDisplayCurrency(loadSettings().display_currency === 'token' ? 'token' : 'fiat');
+    window.addEventListener('requestor_settings_changed', onSettings as any);
+    window.addEventListener('storage', onStorage);
+    return () => {
+      window.removeEventListener('requestor_settings_changed', onSettings as any);
+      window.removeEventListener('storage', onStorage);
+    };
+  }, []);
 
-  const topUpOneHour = async (r: Rental, rate: bigint, token: string) => {
+  const topUpSeconds = async (r: Rental, rate: bigint, token: string, seconds: number) => {
     try {
-      const addWei = rate * 3600n;
+      const addWei = rate * BigInt(Math.max(1, Math.floor(seconds)));
       setBusy(r.vm_id);
       const { ethereum } = window as any;
       await ensureNetwork(ethereum, getPaymentsChain());
@@ -84,9 +98,9 @@ export function StreamsMini({ projectId }: { projectId: string }) {
                   chain={row.data.chain}
                   remaining={row.data.remaining}
                   meta={{ tokenSymbol: row.data.tokenSymbol, tokenDecimals: row.data.tokenDecimals, usdPrice: row.data.usdPrice }}
-                  displayCurrency={(loadSettings().display_currency === 'token' ? 'token' : 'fiat')}
+                  displayCurrency={displayCurrency}
                   detailsHref={`/vm?id=${encodeURIComponent(row.r.vm_id)}`}
-                  onTopUp={(secs) => topUpOneHour(row.r, row.data.chain.ratePerSecond, row.data.chain.token)}
+                  onTopUp={(secs) => topUpSeconds(row.r, row.data.chain.ratePerSecond, row.data.chain.token, secs)}
                   busy={busy === row.r.vm_id}
                 />
               )}
