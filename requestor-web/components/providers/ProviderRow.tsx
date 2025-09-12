@@ -26,7 +26,8 @@ export function ProviderRow({
   provider,
   estimate,
   displayCurrency,
-  rightAction,
+  selected,
+  onToggle,
 }: {
   provider: {
     provider_id: string;
@@ -43,7 +44,8 @@ export function ProviderRow({
     glm_per_month?: number;
   };
   displayCurrency: 'fiat' | 'token';
-  rightAction?: React.ReactNode;
+  selected: boolean;
+  onToggle: () => void;
 }) {
   const name = provider.provider_name?.trim() || provider.provider_id.slice(0, 8);
   const flag = codeToFlagEmoji(provider.country);
@@ -66,7 +68,17 @@ export function ProviderRow({
   const stoM = showToken ? pr.glm_per_gb_storage_month : pr.usd_per_gb_storage_month;
 
   return (
-    <div className="box-border flex flex-col rounded-lg border border-gray-200 bg-white px-6 py-6">
+    <div
+      className={
+        "box-border flex flex-col border bg-white px-6 py-6 cursor-pointer select-none " +
+        (selected ? "border-[#181E9F]" : "border-gray-200 hover:border-gray-300")
+      }
+      onClick={onToggle}
+      role="button"
+      aria-pressed={selected}
+      tabIndex={0}
+      onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); onToggle(); } }}
+    >
       <div className="flex flex-row items-center gap-4">
         {/* Main info */}
         <div className="flex w-full min-w-0 flex-[2] flex-row items-start gap-4">
@@ -104,8 +116,17 @@ export function ProviderRow({
           )}
         </div>
 
-        {/* Right action (Rent button centered) */}
-        <div className="flex items-center justify-end">{rightAction}</div>
+        {/* Right side: selection checkbox */}
+        <div className="flex items-center justify-end pl-2">
+          <input
+            type="checkbox"
+            className="h-4 w-4 border-gray-400"
+            checked={selected}
+            onChange={(e) => { e.stopPropagation(); onToggle(); }}
+            onClick={(e) => e.stopPropagation()}
+            aria-label={selected ? 'Deselect provider' : 'Select provider'}
+          />
+        </div>
       </div>
     </div>
   );
