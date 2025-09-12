@@ -1,7 +1,7 @@
 "use client";
 import React from "react";
 import { loadRentals, saveRentals, vmAccess, vmStop, vmDestroy, vmStreamStatus, type Rental } from "../../lib/api";
-import { buildSshCommand } from "../../lib/ssh";
+import { buildSshCommand, copyText } from "../../lib/ssh";
 import { useToast } from "../../components/ui/Toast";
 import { useAds } from "../../context/AdsContext";
 import { Spinner } from "../../components/ui/Spinner";
@@ -121,8 +121,8 @@ export default function RentalsPage() {
       if (!host) host = r.provider_ip || 'PROVIDER_IP';
       if (!port) { show('Could not resolve SSH port'); return; }
       const cmd = buildSshCommand(host, Number(port));
-      await navigator.clipboard.writeText(cmd);
-      show('SSH command copied');
+      const ok = await copyText(cmd);
+      show(ok ? 'SSH command copied' : 'Copy failed');
     } catch (e: any) { setError(e?.message || String(e)); }
     finally { setBusyId(null); }
   };
@@ -142,8 +142,12 @@ export default function RentalsPage() {
     } catch (e: any) { setError(e?.message || String(e)); } finally { setBusyId(null); }
   };
 
+  const projectItems = (items || []).filter(i => (i.project_id || 'default') === activeId) as Rental[];
+  const active = projectItems.filter(r => !['terminated', 'deleted'].includes((r.status || '').toLowerCase()));
+  const terminated = projectItems.filter(r => ['terminated', 'deleted'].includes((r.status || '').toLowerCase()));
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <h2>Your Rentals</h2>
       {error && <div className="text-sm text-red-600">{error}</div>}
       {items === null ? (
@@ -165,26 +169,54 @@ export default function RentalsPage() {
             </div></div>
           ))}
         </div>
-      ) : !items.filter(i => (i.project_id || 'default') === activeId).length ? (
-        <div className="text-gray-600">No VMs yet. Rent one from the Providers tab.</div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {items.filter(r => (r.project_id || 'default') === activeId).map((r: Rental) => (
-            <VmCard
-              key={r.vm_id}
-              rental={r}
-              busy={busyId === r.vm_id}
-              remainingSeconds={remaining[r.vm_id]}
-              onCopySSH={copySSH}
-              onStop={stop}
-              onDestroy={destroy}
-              showStreamMeta={true}
-              showCopy={true}
-              showStop={true}
-              showDestroy={true}
-            />
-          ))}
-        </div>
+        <>
+          {active.length ? (
+            <div>
+              <div className="mb-2 text-sm text-gray-700">Active</div>
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {active.map((r: Rental) => (
+                  <VmCard
+                    key={r.vm_id}
+                    rental={r}
+                    busy={busyId === r.vm_id}
+                    remainingSeconds={remaining[r.vm_id]}
+                    onCopySSH={copySSH}
+                    onStop={stop}
+                    onDestroy={destroy}
+                    showStreamMeta={true}
+                    showCopy={true}
+                    showStop={true}
+                    showDestroy={true}
+                  />
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="text-gray-600">No active VMs. Rent one from the Providers tab.</div>
+          )}
+
+          {terminated.length > 0 && (
+            <div>
+              <div className="mt-4 mb-2 text-sm text-gray-700">Terminated</div>
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {terminated.map((r: Rental) => (
+                  <VmCard
+                    key={r.vm_id}
+                    rental={r}
+                    busy={busyId === r.vm_id}
+                    remainingSeconds={remaining[r.vm_id]}
+                    onDestroy={destroy}
+                    showStreamMeta={true}
+                    showCopy={false}
+                    showStop={false}
+                    showDestroy={true}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

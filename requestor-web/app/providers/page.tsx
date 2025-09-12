@@ -412,7 +412,18 @@ function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provider: any
       const rentals = loadRentals();
       const vmId = vm.id || vm.vm_id || payload.name;
       const jobId: string | undefined = vm.job_id;
-      rentals.push({ name: payload.name, provider_id: provider.provider_id, provider_ip: provider.ip_address, vm_id: vmId, ssh_port: vm?.config?.ssh_port || null, stream_id: String(sid), project_id: activeProjectId || 'default', status: 'creating' });
+      rentals.push({
+        name: payload.name,
+        provider_id: provider.provider_id,
+        provider_ip: provider.ip_address,
+        platform: provider.platform || null,
+        resources: { cpu, memory, storage },
+        vm_id: vmId,
+        ssh_port: vm?.config?.ssh_port || null,
+        stream_id: String(sid),
+        project_id: activeProjectId || 'default',
+        status: 'creating',
+      });
       saveRentals(rentals);
       onClose();
       // Redirect to dashboard so the new VM is visible
