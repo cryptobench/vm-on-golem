@@ -1,38 +1,15 @@
 "use client";
 import React from "react";
-import { loadRentals, saveRentals, vmAccess, type Rental } from "../../lib/api";
+import { loadRentals, saveRentals, vmAccess, vmStatusSafe, type Rental, loadSettings } from "../../lib/api";
+import { fetchStreamWithMeta } from "../../lib/streams";
 import { useProjects } from "../../context/ProjectsContext";
 import { useAds } from "../../context/AdsContext";
 import { useToast } from "../ui/Toast";
-import { Spinner } from "../ui/Spinner";
 import { StreamsMini } from "./StreamsMini";
 import { buildSshCommand } from "../../lib/ssh";
+import { VmCard } from "../vm/VmCard";
 
-function StatusBadge({ status }: { status?: string | null }) {
-  const s = (status || '').toLowerCase();
-  if (s === 'running') {
-    return <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">● Running</span>;
-  }
-  if (s === 'creating') {
-    return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
-        <Spinner className="h-3.5 w-3.5" /> Creating
-      </span>
-    );
-  }
-  if (s === 'error' || s === 'failed') {
-    return <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">● Error</span>;
-  }
-  if (s === 'stopped') {
-    return <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">● Stopped</span>;
-  }
-  // Default/fallback
-  return <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">● Unknown</span>;
-}
-
-function fmtMono(s: string | number | null | undefined) {
-  return <span className="font-mono text-xs sm:text-sm">{s ?? "—"}</span>;
-}
+// Using shared VmCard component for consistency
 
 export function ProjectDashboard() {
   const { activeId, projects } = useProjects();
@@ -46,34 +23,52 @@ export function ProjectDashboard() {
     setItems(list);
   }, [activeId]);
 
-  // Background refresh for items being created: fetch access to update ssh_port and status
+  // Background refresh for items: update ssh_port for pending, and tombstone deleted VMs
   React.useEffect(() => {
     let cancelled = false;
     const tick = async () => {
       const current = loadRentals().filter(r => (r.project_id || 'default') === activeId);
-      const pending = current.filter(r => !r.ssh_port);
-      if (!pending.length) return;
-      // Refresh each pending item once per tick
       const next = [...current];
-      for (const r of pending) {
+      for (const r of current) {
         try {
-          const acc = await vmAccess(r.provider_id, r.vm_id, ads);
-          if (acc && acc.ssh_port) {
+          // First, detect if VM still exists on provider
+          const st = await vmStatusSafe(r.provider_id, r.vm_id, ads);
+          if (!st.exists && st.code === 404) {
             const idx = next.findIndex(x => x.vm_id === r.vm_id && x.provider_id === r.provider_id);
-            if (idx >= 0) next[idx] = { ...next[idx], ssh_port: acc.ssh_port, status: 'running' } as Rental;
-          } else {
-            const idx = next.findIndex(x => x.vm_id === r.vm_id && x.provider_id === r.provider_id);
-            if (idx >= 0 && !next[idx].status) next[idx] = { ...next[idx], status: 'creating' } as Rental;
+            if (idx >= 0) {
+              let end_reason: Rental['end_reason'] = 'unknown';
+              // Try to infer depletion from chain if we have a stream_id and contract address
+              try {
+                const spAddr = (loadSettings().stream_payment_address || process.env.NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS || '').trim();
+                if (r.stream_id && spAddr) {
+                  const meta = await fetchStreamWithMeta(spAddr, BigInt(r.stream_id));
+                  if (meta.remaining <= 0) end_reason = 'stream_depleted';
+                }
+              } catch {}
+              next[idx] = { ...next[idx], status: 'terminated', ssh_port: null, end_reason, ended_at: Math.floor(Date.now()/1000) } as Rental;
+            }
+            continue; // no need to check access for non-existent VM
           }
-        } catch {
-          // leave as-is
-        }
+          // For existing VMs with missing ssh_port, try to resolve access
+          if (!r.ssh_port) {
+            try {
+              const acc = await vmAccess(r.provider_id, r.vm_id, ads);
+              if (acc && acc.ssh_port) {
+                const idx = next.findIndex(x => x.vm_id === r.vm_id && x.provider_id === r.provider_id);
+                if (idx >= 0) next[idx] = { ...next[idx], ssh_port: acc.ssh_port, status: 'running' } as Rental;
+              } else {
+                const idx = next.findIndex(x => x.vm_id === r.vm_id && x.provider_id === r.provider_id);
+                if (idx >= 0 && !next[idx].status) next[idx] = { ...next[idx], status: 'creating' } as Rental;
+              }
+            } catch {}
+          }
+        } catch {}
         if (cancelled) return;
       }
       saveRentals(next);
       setItems(next);
     };
-    const iv = setInterval(tick, 5000);
+    const iv = setInterval(tick, 7000);
     tick();
     return () => { cancelled = true; clearInterval(iv); };
   }, [activeId, ads]);
@@ -114,36 +109,15 @@ export function ProjectDashboard() {
 
       <div className="grid gap-4 sm:grid-cols-2">
         {items.map(r => (
-          <a key={r.vm_id} href={`/vm?id=${encodeURIComponent(r.vm_id)}`} className="card group hover:shadow-md transition-shadow">
-            <div className="card-body">
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex items-center gap-2 min-w-0">
-                  <StatusBadge status={r.status || (r.ssh_port ? 'running' : 'creating')} />
-                  <div className="font-semibold truncate group-hover:underline">{r.name}</div>
-                </div>
-                <div className="text-xs text-gray-500">{fmtMono(r.provider_id)}</div>
-              </div>
-              <div className="mt-2 grid grid-cols-2 gap-2 text-sm text-gray-700">
-                <div>
-                  <div className="text-gray-500">VM ID</div>
-                  <div className="truncate">{fmtMono(r.vm_id)}</div>
-                </div>
-                <div>
-                  <div className="text-gray-500">SSH</div>
-                  <div className="truncate">{r.provider_ip ? `${r.provider_ip}:${r.ssh_port ?? '—'}` : '—'}</div>
-                </div>
-              </div>
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                <button
-                  className="btn btn-secondary"
-                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); copySSH(r); }}
-                  disabled={busyId === r.vm_id}
-                >
-                  {busyId === r.vm_id ? <><Spinner className="h-4 w-4" /> Copy SSH</> : 'Copy SSH'}
-                </button>
-              </div>
-            </div>
-          </a>
+          <VmCard
+            key={r.vm_id}
+            rental={r}
+            busy={busyId === r.vm_id}
+            onCopySSH={(vm) => { copySSH(vm); }}
+            showStreamMeta={false}
+            showStop={false}
+            showDestroy={false}
+          />
         ))}
       </div>
 

@@ -168,3 +168,20 @@ start-dev:
 # Alias for convenience
 .PHONY: devwebproxy
 devwebproxy: dev-proxy-web
+
+# --- Faucet helpers ---
+
+.PHONY: faucet-batch
+faucet-batch:
+	@set -e; \
+	if [ -z "$$FUND_ADDR" ]; then \
+	  echo "Usage: make faucet-batch FUND_ADDR=0xYourAddress [COUNT=20]"; \
+	  exit 2; \
+	fi; \
+	# Ensure the shared-faucet environment is installed (idempotent)
+	poetry -C shared-faucet install >/dev/null; \
+	# Run faucet N times using the shared PoW faucet client
+	cd shared-faucet; \
+	COUNT=$${COUNT:-20} \
+	FUND_ADDR="$$FUND_ADDR" \
+	poetry run python ../scripts/faucet_batch.py
