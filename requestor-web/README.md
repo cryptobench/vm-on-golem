@@ -10,6 +10,16 @@ Quick start
 - npm run dev
 - npm run build && npm run start (or deploy the `out/` folder as static site)
 
+Price cache (USD)
+
+- A centralized background poller runs in the global layout and refreshes ETH/GLM USD prices once per minute.
+- Results are stored in localStorage under `requestor_prices_v1` and broadcast via a `requestor_prices_updated` event.
+- Use helpers in `lib/prices.ts`:
+  - `startPricePolling()` to start/stop the poller (already wired in `app/layout.tsx`).
+  - `getPriceUSD(symbol)` and `usdToToken(symbol, usd)` for conversions.
+  - `onPricesUpdated(cb)` to subscribe to changes.
+- Cross-tab locking prevents stampedes and keeps within CoinGecko limits. Do not fetch CoinGecko directly in components.
+
 Styling
 
 - Tailwind CSS is used for styling. Config files: `tailwind.config.ts`, `postcss.config.js`.

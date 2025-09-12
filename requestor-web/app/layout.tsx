@@ -9,12 +9,18 @@ import { ToastProvider } from "../components/ui/Toast";
 import { Topbar } from "../components/layout/Topbar";
 // Ensure Buffer is available in the browser for SDK dependencies
 import { Buffer } from "buffer";
+import { startPricePolling } from "../lib/prices";
 if (typeof window !== "undefined") {
   // @ts-ignore
   if (!(globalThis as any).Buffer) (globalThis as any).Buffer = Buffer;
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
+  // Start background price polling once on layout mount
+  React.useEffect(() => {
+    const stop = startPricePolling();
+    return () => { try { stop && stop(); } catch {} };
+  }, []);
   return (
     <html lang="en">
       <body className="min-h-screen">

@@ -13,6 +13,8 @@ import { ensureNetwork, getPaymentsChain } from "../../lib/chain";
 import { useWallet } from "../../context/WalletContext";
 import { buildSshCommand } from "../../lib/ssh";
 import { humanDuration } from "../../lib/streams";
+import { getPriceUSD, onPricesUpdated } from "../../lib/prices";
+import { RiCpuLine, RiStackLine, RiHardDrive2Line } from "@remixicon/react";
 import { StreamCard } from "../../components/streams/StreamCard";
 
 type ChainStream = {
@@ -83,7 +85,7 @@ export default function VmDetailsClient() {
   const [tokenDecimals, setTokenDecimals] = React.useState<number>(18);
   const [usdPrice, setUsdPrice] = React.useState<number | null>(null);
   const [customTopup, setCustomTopup] = React.useState<string>("");
-  const displayCurrency = (loadSettings().display_currency === 'token' ? 'token' : 'fiat');
+  const [displayCurrency, setDisplayCurrency] = React.useState<'fiat'|'token'>(loadSettings().display_currency === 'token' ? 'token' : 'fiat');
 
   const vmId = search.get('id') || '';
   const [vm, setVm] = React.useState<ReturnType<typeof loadRentals>[number] | null>(null);
@@ -91,6 +93,19 @@ export default function VmDetailsClient() {
   const spAddr = (loadSettings().stream_payment_address || process.env.NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS || '').trim();
 
   React.useEffect(() => { setMounted(true); }, []);
+  // React to Settings changes (currency toggle) live
+  React.useEffect(() => {
+    const onSettings = (e: any) => {
+      try { setDisplayCurrency(e?.detail?.display_currency === 'token' ? 'token' : 'fiat'); } catch {}
+    };
+    const onStorage = () => setDisplayCurrency(loadSettings().display_currency === 'token' ? 'token' : 'fiat');
+    window.addEventListener('requestor_settings_changed', onSettings as any);
+    window.addEventListener('storage', onStorage);
+    return () => {
+      window.removeEventListener('requestor_settings_changed', onSettings as any);
+      window.removeEventListener('storage', onStorage);
+    };
+  }, []);
 
   // Resolve VM from local storage after mount to avoid SSR hydration mismatches
   React.useEffect(() => {
@@ -166,21 +181,14 @@ export default function VmDetailsClient() {
           } else {
             setTokenSymbol('ETH'); setTokenDecimals(18);
           }
-          // USD price (best-effort)
+          // USD price (best-effort) from centralized cache
           try {
-            let price: number | null = null;
             const addr = (res.token || '').toLowerCase();
             const glm = (loadSettings().glm_token_address || process.env.NEXT_PUBLIC_GLM_TOKEN_ADDRESS || '').toLowerCase();
-            if (addr === '0x0000000000000000000000000000000000000000') {
-              // Native ETH
-              const r = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd');
-              const js = await r.json().catch(() => ({}));
-              price = js?.ethereum?.usd ?? null;
-            } else if (glm && addr === glm) {
-              const r = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=golem&vs_currencies=usd');
-              const js = await r.json().catch(() => ({}));
-              price = js?.golem?.usd ?? null;
-            }
+            const symUpper = (typeof tokenSymbol === 'string' ? tokenSymbol : '').toUpperCase();
+            const isEthLike = (addr === '0x0000000000000000000000000000000000000000') || symUpper === 'ETH' || symUpper === 'WETH';
+            const isGlmLike = (glm && addr === glm) || symUpper === 'GLM';
+            const price = isEthLike ? getPriceUSD('ETH') : (isGlmLike ? getPriceUSD('GLM') : null);
             setUsdPrice(price);
           } catch { setUsdPrice(null); }
         } else {
@@ -191,7 +199,21 @@ export default function VmDetailsClient() {
       }
     })();
   // Re-run when VM context is available or changes
-  }, [vm?.vm_id, vm?.provider_id, vm?.stream_id, ads, spAddr]);
+  }, [vm?.vm_id, vm?.provider_id, vm?.stream_id, ads, spAddr, tokenSymbol]);
+
+  // Keep USD price in sync with global cache
+  React.useEffect(() => {
+    const addr = (stream?.chain?.token || '').toLowerCase();
+    if (!addr && !tokenSymbol) return;
+    const glm = (loadSettings().glm_token_address || process.env.NEXT_PUBLIC_GLM_TOKEN_ADDRESS || '').toLowerCase();
+    const symUpper = (typeof tokenSymbol === 'string' ? tokenSymbol : '').toUpperCase();
+    const isEthLike = (addr === '0x0000000000000000000000000000000000000000') || symUpper === 'ETH' || symUpper === 'WETH';
+    const isGlmLike = (glm && addr === glm) || symUpper === 'GLM';
+    const pick = () => (isEthLike ? getPriceUSD('ETH') : (isGlmLike ? getPriceUSD('GLM') : null));
+    setUsdPrice(pick());
+    const off = onPricesUpdated(() => setUsdPrice(pick()));
+    return () => { try { off && off(); } catch {} };
+  }, [stream?.chain?.token, tokenSymbol]);
 
   // Countdown ticker for remaining seconds
   React.useEffect(() => {
@@ -365,7 +387,12 @@ export default function VmDetailsClient() {
                       <span className="text-lg leading-none">{provider?.country ? countryFlagEmoji(provider.country) : '🏳️'}</span>
                       <span>{provider?.country ? countryFullName(provider.country) : 'Unknown region'}</span>
                     </div>
-                    {provider?.platform && (<><span>•</span><div>{provider.platform}</div></>)}
+                    {provider?.platform && (
+                      <>
+                        <span>•</span>
+                        <span className="rounded border px-1.5 py-0.5 text-[11px] text-gray-700" title="Architecture">{provider.platform}</span>
+                      </>
+                    )}
                   </>
                 )}
                 <span>•</span>
@@ -393,19 +420,19 @@ export default function VmDetailsClient() {
       {/* Specs */}
       <div className="grid gap-4 sm:grid-cols-3">
         <div className="card"><div className="card-body">
-          <div className="text-sm text-gray-500">CPU</div>
+          <div className="text-sm text-gray-500 inline-flex items-center gap-1.5"><RiCpuLine className="h-4 w-4 text-gray-500" /> CPU</div>
           <div className="mt-1 text-lg font-semibold">
             {(!mounted || provider === null || !(provider as any)?.resources?.cpu) ? (<Skeleton className="h-6 w-24" />) : (<>{(provider as any)?.resources?.cpu} vCPU</>)}
           </div>
         </div></div>
         <div className="card"><div className="card-body">
-          <div className="text-sm text-gray-500">Memory</div>
+          <div className="text-sm text-gray-500 inline-flex items-center gap-1.5"><RiStackLine className="h-4 w-4 text-gray-500" /> Memory</div>
           <div className="mt-1 text-lg font-semibold">
             {(!mounted || provider === null || !(provider as any)?.resources?.memory) ? (<Skeleton className="h-6 w-24" />) : (<>{(provider as any)?.resources?.memory} GB</>)}
           </div>
         </div></div>
         <div className="card"><div className="card-body">
-          <div className="text-sm text-gray-500">Storage</div>
+          <div className="text-sm text-gray-500 inline-flex items-center gap-1.5"><RiHardDrive2Line className="h-4 w-4 text-gray-500" /> Storage</div>
           <div className="mt-1 text-lg font-semibold">
             {(!mounted || provider === null || !(provider as any)?.resources?.storage) ? (<Skeleton className="h-6 w-24" />) : (<>{(provider as any)?.resources?.storage} GB</>)}
           </div>

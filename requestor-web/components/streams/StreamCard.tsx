@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { Card, Tracker } from "@tremor/react";
 import { RiCheckboxCircleFill, RiErrorWarningFill, RiCloseCircleFill, RiTimeFill } from "@remixicon/react";
 import { humanDuration } from "../../lib/streams";
+import { Spinner } from "../ui/Spinner";
 
 export type StreamMeta = {
   tokenSymbol: string;
@@ -80,12 +81,21 @@ export function StreamCard({ title, streamId, chain, remaining, meta, displayCur
     const t = v.trim().toLowerCase();
     if (!t) return null;
     if (/^\d+$/.test(t)) return parseInt(t, 10) * 60; // minutes default
-    let seconds = 0; const re = /(\d+)\s*(h|m|s)/g; let m;
-    while ((m = re.exec(t))) { const n = parseInt(m[1], 10); const u = m[2]; if (u === 'h') seconds += n * 3600; else if (u === 'm') seconds += n * 60; else seconds += n; }
+    let seconds = 0; const re = /(\d+)\s*(d|h|m|s)/g; let m;
+    while ((m = re.exec(t))) {
+      const n = parseInt(m[1], 10);
+      const u = m[2];
+      if (u === 'd') seconds += n * 86400;
+      else if (u === 'h') seconds += n * 3600;
+      else if (u === 'm') seconds += n * 60;
+      else seconds += n;
+    }
     return seconds || null;
   }
 
   const navigate = () => { if (detailsHref) router.push(detailsHref); };
+  const [lastTopup, setLastTopup] = React.useState<'1800' | '3600' | '7200' | 'custom' | null>(null);
+  React.useEffect(() => { if (!busy) setLastTopup(null); }, [busy]);
 
   return (
     <Card className={detailsHref ? "cursor-pointer" : undefined} onClick={detailsHref ? navigate : undefined}>
@@ -114,13 +124,13 @@ export function StreamCard({ title, streamId, chain, remaining, meta, displayCur
               Recipient
               <span className="font-mono text-[11px] text-gray-600 truncate max-w-[10rem] sm:max-w-[16rem]" title={chain.recipient}>{chain.recipient}</span>
             </span>
-            <span className="inline-flex items-center gap-1.5 rounded bg-gray-50 px-2.5 py-1 text-xs font-medium text-gray-700" onClick={(e) => e.stopPropagation()}>
-              Rate
-              <span className="text-[11px] text-gray-600 truncate" title={`${ratePerHour}`}>{ratePerHour}</span>
-            </span>
             <span className="inline-flex items-center gap-1.5 rounded bg-gray-50 px-2.5 py-1 text-xs font-medium text-gray-700">
               Balance
               <span className="text-[11px] text-gray-600 truncate" title={remStr}>{remStr}</span>
+            </span>
+            <span className="inline-flex items-center gap-1.5 rounded bg-gray-50 px-2.5 py-1 text-xs font-medium text-gray-700" onClick={(e) => e.stopPropagation()}>
+              Rate
+              <span className="text-[11px] text-gray-600 truncate" title={`${ratePerHour}`}>{ratePerHour}</span>
             </span>
           </div>
 
@@ -128,35 +138,51 @@ export function StreamCard({ title, streamId, chain, remaining, meta, displayCur
           <Tracker data={trackerData.slice(0, 30)} className="mt-5 flex sm:hidden" />
 
           <div className="mt-5 pt-4 border-t border-gray-100 flex flex-wrap items-center gap-3" onClick={(e) => e.stopPropagation()}>
-            {detailsHref && <a href={detailsHref} className="btn btn-secondary" onClick={(e) => e.stopPropagation()}>Details</a>}
             {onTopUp && !chain.halted && (
               <>
-                <button className="btn btn-secondary" disabled={busy} onClick={(e) => { e.stopPropagation(); onTopUp(1800); }}>+30 min</button>
-                <button className="btn btn-secondary" disabled={busy} onClick={(e) => { e.stopPropagation(); onTopUp(3600); }}>{busy ? (<span>+1 h</span>) : '+1 h'}</button>
-                <button className="btn btn-secondary" disabled={busy} onClick={(e) => { e.stopPropagation(); onTopUp(7200); }}>+2 h</button>
-                <div className="flex items-center gap-2">
+                <button className="btn btn-secondary" disabled={busy} onClick={(e) => { e.stopPropagation(); setLastTopup('1800'); onTopUp(1800); }}>
+                  {busy && lastTopup === '1800' ? (<Spinner className="h-4 w-4" />) : '+30 min'}
+                </button>
+                <button className="btn btn-secondary" disabled={busy} onClick={(e) => { e.stopPropagation(); setLastTopup('3600'); onTopUp(3600); }}>
+                  {busy && lastTopup === '3600' ? (<Spinner className="h-4 w-4" />) : '+1 h'}
+                </button>
+                <button className="btn btn-secondary" disabled={busy} onClick={(e) => { e.stopPropagation(); setLastTopup('7200'); onTopUp(7200); }}>
+                  {busy && lastTopup === '7200' ? (<Spinner className="h-4 w-4" />) : '+2 h'}
+                </button>
+                {/* Spacer to push custom controls to the far right on large screens only */}
+                <span className="hidden lg:block lg:grow" />
+                {actionsRight}
+                {/* On small/medium cards (e.g., 2-col grid), wrap to next line */}
+                <div className="flex items-center gap-2 ml-0 w-full lg:w-auto lg:ml-auto">
                   <input
                     className="input w-44"
-                    placeholder="Custom: 45m, 1h30m"
+                    placeholder="Custom: 30d, 45m, 1h30m"
                     value={customInput}
                     onChange={(e) => setCustomInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.stopPropagation();
+                        const secs = parseHumanTime(customInput);
+                        if (secs && secs > 0) onTopUp(secs);
+                      }
+                    }}
                     onClick={(e) => e.stopPropagation()}
                     onFocus={(e) => e.stopPropagation()}
                     disabled={busy}
                   />
                   <button
-                    className="btn btn-secondary"
-                    disabled={busy}
+                    className="btn btn-secondary h-10"
+                    disabled={busy || !(parseHumanTime(customInput) && parseHumanTime(customInput)! > 0)}
                     onClick={(e) => {
                       e.stopPropagation();
                       const secs = parseHumanTime(customInput);
-                      if (secs && secs > 0) onTopUp(secs);
+                      if (secs && secs > 0) { setLastTopup('custom'); onTopUp(secs); }
                     }}
-                  >Top up</button>
+                  >{busy && lastTopup === 'custom' ? (<Spinner className="h-4 w-4" />) : 'Top up'}</button>
                 </div>
               </>
             )}
-            {actionsRight}
+            {!onTopUp && actionsRight}
           </div>
         </div>
       </div>

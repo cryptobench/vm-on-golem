@@ -133,7 +133,16 @@ export default function SettingsPage() {
             <div className="card-body grid gap-3">
             <div>
               <label className="label">Price display</label>
-              <select className="input w-48" value={displayCurrency} onChange={(e) => setDisplayCurrency((e.target.value as 'fiat'|'token'))}>
+              <select
+                className="input w-48"
+                value={displayCurrency}
+                onChange={(e) => {
+                  const v = (e.target.value as 'fiat'|'token');
+                  setDisplayCurrency(v);
+                  // Persist immediately so other views react without needing full Save
+                  saveSettings({ display_currency: v });
+                }}
+              >
                 <option value="fiat">Fiat (USD)</option>
                 <option value="token">Token (native / GLM)</option>
               </select>
