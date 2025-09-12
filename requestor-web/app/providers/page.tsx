@@ -1,7 +1,7 @@
 "use client";
 import React from "react";
 import { useRouter } from "next/navigation";
-import { fetchProviders, computeEstimate, providerInfo } from "../../lib/api";
+import { fetchProviders, computeEstimate, providerInfo, fetchAllProviders } from "../../lib/api";
 import { useAds } from "../../context/AdsContext";
 import { Spinner } from "../../components/ui/Spinner";
 import { TableSkeleton } from "../../components/ui/Skeleton";
@@ -16,6 +16,8 @@ export default function ProvidersPage() {
   const [country, setCountry] = React.useState<string>("");
   const [platform, setPlatform] = React.useState<string>("");
   const [countries, setCountries] = React.useState<string[] | undefined>(undefined);
+  const [countryOptions, setCountryOptions] = React.useState<string[]>([]);
+  const [loadingCountries, setLoadingCountries] = React.useState<boolean>(false);
   const [maxUsd, setMaxUsd] = React.useState<number | undefined>(undefined);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -46,6 +48,24 @@ export default function ProvidersPage() {
       setError(e?.message || String(e));
     } finally { setLoading(false); }
   };
+
+  React.useEffect(() => {
+    // Load country options from advertisements for the select
+    let cancelled = false;
+    (async () => {
+      setLoadingCountries(true);
+      try {
+        const providers = await fetchAllProviders(ads);
+        if (cancelled) return;
+        const setC = new Set<string>();
+        providers.forEach(p => { const c = (p.country || '').trim(); if (c) setC.add(c.toUpperCase()); });
+        setCountryOptions(Array.from(setC).sort());
+      } catch {
+        setCountryOptions([]);
+      } finally { setLoadingCountries(false); }
+    })();
+    return () => { cancelled = true; };
+  }, [ads]);
 
   React.useEffect(() => {
     // Pre-fill from quick create wizard if present
@@ -91,7 +111,17 @@ export default function ProvidersPage() {
             </div>
             <div>
               <label className="label">Country</label>
-              <input className="input" value={country} onChange={e => setCountry(e.target.value)} placeholder="US, PL, ..." />
+              <select
+                className="input"
+                value={country}
+                onChange={e => setCountry(e.target.value)}
+                disabled={loadingCountries}
+              >
+                <option value="">Any</option>
+                {countryOptions.map(code => (
+                  <option key={code} value={code}>{countryFlagEmoji(code)} {countryFullName(code)} ({code})</option>
+                ))}
+              </select>
             </div>
             <div>
               <label className="label">Platform</label>
@@ -122,7 +152,8 @@ export default function ProvidersPage() {
         ) : (
           <div className="space-y-3">
             {rows.map((p) => {
-              const est = cpu && memory && storage ? computeEstimate(p, cpu, memory, storage) : null;
+              const estRaw = (cpu && memory && storage) ? computeEstimate(p, cpu, memory, storage) : null;
+              const est = estRaw ? { usd_per_month: estRaw.usd_per_month, usd_per_hour: estRaw.usd_per_hour, glm_per_month: (estRaw.glm_per_month ?? undefined) } : null;
               return (
                 <ProviderRow
                   key={p.provider_id}
@@ -186,6 +217,27 @@ export default function ProvidersPage() {
       })()}
     </div>
   );
+}
+
+function countryFlagEmoji(code: string): string {
+  const cc = (code || '').toUpperCase();
+  if (cc.length !== 2) return '🏳️';
+  const A = 0x1F1E6;
+  const alpha = 'A'.charCodeAt(0);
+  const chars = Array.from(cc).map(ch => String.fromCodePoint(A + (ch.charCodeAt(0) - alpha))).join('');
+  return chars;
+}
+
+function countryFullName(code: string): string {
+  try {
+    // Prefer English names for consistency
+    // @ts-ignore
+    const dn = new Intl.DisplayNames(['en'], { type: 'region' });
+    const name = dn.of((code || '').toUpperCase());
+    return name || (code || '').toUpperCase();
+  } catch {
+    return (code || '').toUpperCase();
+  }
 }
 
 function RentInline({ provider, defaultSpec, adsMode }: { provider: any; defaultSpec: { cpu?: number; memory?: number; storage?: number }; adsMode: AdsConfig }) {

@@ -442,7 +442,7 @@ export function CreateWizard({ open, onClose, onComplete }: { open: boolean; onC
             <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
             {step > 0 && <button className="btn btn-secondary" onClick={back}>Back</button>}
             {step < 4 && <button className="btn btn-primary" onClick={next}>Next</button>}
-            {step === 4 && <button className="btn btn-primary" onClick={finish} disabled={busy}>{busy ? (<><Spinner className="h-4 w-4" /> Finish</>) : 'Finish'}</button>}
+            {step === 4 && <button className="btn btn-primary" onClick={finish} disabled={busy}>{busy ? (<><Spinner className="h-4 w-4 text-white" /> Finish</>) : 'Finish'}</button>}
           </div>
         </div>
       </div>
