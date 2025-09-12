@@ -6,6 +6,7 @@ import { useAds } from "../../context/AdsContext";
 import { Spinner } from "../../components/ui/Spinner";
 import { TableSkeleton } from "../../components/ui/Skeleton";
 import { ProviderRow } from "../../components/providers/ProviderRow";
+import { RiArrowRightLine } from "@remixicon/react";
 
 export default function ProvidersPage() {
   const displayCurrency = ((typeof window !== 'undefined' && (JSON.parse(localStorage.getItem('requestor_settings_v1') || '{}')?.display_currency === 'token')) ? 'token' : 'fiat');
@@ -19,6 +20,8 @@ export default function ProvidersPage() {
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [rows, setRows] = React.useState<any[]>([]);
+  const [selectedProviderId, setSelectedProviderId] = React.useState<string | null>(null);
+  const [rentOpen, setRentOpen] = React.useState(false);
 
   const { ads } = useAds();
 
@@ -126,13 +129,61 @@ export default function ProvidersPage() {
                   provider={p}
                   estimate={est}
                   displayCurrency={displayCurrency as any}
-                  rightAction={<RentInline provider={p} defaultSpec={{ cpu, memory, storage }} adsMode={ads} />}
+                  selected={selectedProviderId === p.provider_id}
+                  onToggle={() => setSelectedProviderId(prev => prev === p.provider_id ? null : p.provider_id)}
                 />
               );
             })}
           </div>
         )}
       </div>
+      {/* Bottom checkout banner */}
+      {selectedProviderId && (() => {
+        const sel = rows.find(r => r.provider_id === selectedProviderId);
+        if (!sel) return null;
+        const est = (cpu && memory && storage) ? computeEstimate(sel, cpu, memory, storage) : null;
+        const priceStr = est ? (
+          displayCurrency === 'token' && est.glm_per_month != null ? `~${est.glm_per_month} GLM/mo (~${(est.glm_per_month/730).toFixed(8)} GLM/hr)` : `~$${est.usd_per_month} / mo (~${est.usd_per_hour}/hr)`
+        ) : '—';
+        return (
+          <div className="fixed bottom-0 left-0 right-0 z-40 border-t bg-white">
+            <div className="mx-auto max-w-6xl px-4 py-3">
+              <div className="flex items-center justify-between gap-4">
+                <div className="min-w-0">
+                  <div className="text-sm text-gray-700">Selected provider</div>
+                  <div className="text-sm font-medium text-gray-900 truncate">{sel.provider_name || sel.provider_id}</div>
+                </div>
+                <div className="ml-auto flex items-center gap-6">
+                  <div className="text-right">
+                    <div className="text-xs text-gray-600">Total price</div>
+                    <div className="text-base text-gray-900">{priceStr}</div>
+                  </div>
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => setRentOpen(true)}
+                    disabled={loading}
+                  >
+                    Rent
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+      {/* Rent dialog from banner */}
+      {rentOpen && selectedProviderId && (() => {
+        const sel = rows.find(r => r.provider_id === selectedProviderId);
+        if (!sel) return null;
+        return (
+          <RentDialog
+            provider={sel}
+            defaultSpec={{ cpu: cpu || 1, memory: memory || 2, storage: storage || 20 }}
+            onClose={() => setRentOpen(false)}
+            adsMode={ads}
+          />
+        );
+      })()}
     </div>
   );
 }
@@ -151,11 +202,16 @@ function RentInline({ provider, defaultSpec, adsMode }: { provider: any; default
   return (
     <>
       <button
-        className="btn btn-secondary"
         onClick={() => setOpen(true)}
         disabled={open}
+        className="relative inline-flex h-8 w-[78px] items-center justify-center rounded-md text-sm font-medium tracking-tight text-[#60646C] disabled:opacity-70"
+        style={{ background: 'transparent' }}
       >
-        {open ? (<span className="inline-flex items-center gap-2"><Spinner className="h-4 w-4" /> Rent</span>) : 'Rent'}
+        <span className="z-[1] inline-flex h-8 w-[78px] items-center justify-center gap-2 rounded-md px-3 bg-[rgba(0,0,51,0.06)]">
+          {open && <Spinner className="h-4 w-4" />}
+          <span>Rent</span>
+          <RiArrowRightLine className="h-4 w-4" />
+        </span>
       </button>
       {open && <RentDialog provider={provider} defaultSpec={defaultSpec} onClose={() => setOpen(false)} adsMode={adsMode} />}
     </>
@@ -198,6 +254,7 @@ function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provider: any
   const [streamId, setStreamId] = React.useState<string | null>(null);
   const [usingNative, setUsingNative] = React.useState<boolean>(true);
   const [connecting, setConnecting] = React.useState<boolean>(false);
+  const [nameTouched, setNameTouched] = React.useState<boolean>(false);
 
   const est = computeEstimate(provider, cpu, memory, storage);
 
@@ -392,7 +449,10 @@ function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provider: any
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="label">Name</label>
-              <input className="input" value={name} onChange={e => setName(e.target.value)} placeholder="my-vm" />
+              <input className="input" value={name} onChange={e => setName(e.target.value)} onBlur={() => setNameTouched(true)} placeholder="my-vm" />
+              {(!name.trim() && nameTouched) && (
+                <div className="mt-1 text-xs text-red-600">Name is required.</div>
+              )}
             </div>
             <div>
               <label className="label">CPU</label>
