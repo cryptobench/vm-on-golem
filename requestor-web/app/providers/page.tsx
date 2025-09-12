@@ -5,6 +5,7 @@ import { fetchProviders, computeEstimate, providerInfo } from "../../lib/api";
 import { useAds } from "../../context/AdsContext";
 import { Spinner } from "../../components/ui/Spinner";
 import { TableSkeleton } from "../../components/ui/Skeleton";
+import { ProviderRow } from "../../components/providers/ProviderRow";
 
 export default function ProvidersPage() {
   const displayCurrency = ((typeof window !== 'undefined' && (JSON.parse(localStorage.getItem('requestor_settings_v1') || '{}')?.display_currency === 'token')) ? 'token' : 'fiat');
@@ -112,103 +113,25 @@ export default function ProvidersPage() {
           {error && <div className="mt-3 text-sm text-red-600">{error}</div>}
         </div>
       </div>
-      <div className="card">
-        <div className="card-body overflow-x-auto">
-          {loading && rows.length === 0 ? (
-            <TableSkeleton rows={6} cols={6} />
-          ) : (
-          <table className="table">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="th">Provider</th>
-                <th className="th">IP</th>
-                <th className="th">Country</th>
-                <th className="th">Platform</th>
-                <th className="th text-right">CPU</th>
-                <th className="th text-right">RAM</th>
-                <th className="th text-right">Disk</th>
-                <th className="th">Pricing</th>
-                <th className="th">Estimate</th>
-                <th className="th">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200">
-              {rows.map((p) => {
-                const est = cpu && memory && storage ? computeEstimate(p, cpu, memory, storage) : null;
-                const pr = p.pricing || {} as any;
-                const fmt = (n: any) => (n == null || Number.isNaN(Number(n))) ? null : Number(n);
-                const coreM = fmt(pr.usd_per_core_month);
-                const ramM = fmt(pr.usd_per_gb_ram_month);
-                const stoM = fmt(pr.usd_per_gb_storage_month);
-                const coreH = coreM != null ? +(coreM / 730).toFixed(6) : null;
-                const ramH = ramM != null ? +(ramM / 730).toFixed(6) : null;
-                const stoH = stoM != null ? +(stoM / 730).toFixed(6) : null;
-                return (
-                  <tr key={p.provider_id} className="hover:bg-gray-50/50">
-                    <td className="td font-mono text-xs sm:text-sm">{p.provider_id}</td>
-                    <td className="td">{p.ip_address || '—'}</td>
-                    <td className="td">{p.country || '—'}</td>
-                    <td className="td">{p.platform || '—'}</td>
-                    <td className="td text-right">{p.resources?.cpu}</td>
-                    <td className="td text-right">{p.resources?.memory}</td>
-                    <td className="td text-right">{p.resources?.storage}</td>
-                    <td className="td">
-                      {(() => {
-                        const pr = p.pricing || {} as any;
-                        if (displayCurrency === 'token') {
-                          const gCoreM = pr.glm_per_core_month != null ? Number(pr.glm_per_core_month).toFixed(6) : null;
-                          const gRamM = pr.glm_per_gb_ram_month != null ? Number(pr.glm_per_gb_ram_month).toFixed(6) : null;
-                          const gStoM = pr.glm_per_gb_storage_month != null ? Number(pr.glm_per_gb_storage_month).toFixed(6) : null;
-                          const gCoreH = gCoreM != null ? (Number(gCoreM) / 730).toFixed(8) : null;
-                          const gRamH = gRamM != null ? (Number(gRamM) / 730).toFixed(8) : null;
-                          const gStoH = gStoM != null ? (Number(gStoM) / 730).toFixed(8) : null;
-                          if (gCoreM == null && gRamM == null && gStoM == null) return '—';
-                          return (
-                            <div className="text-xs text-gray-700 space-y-0.5">
-                              {gCoreM != null && (<div>Core: {gCoreM} GLM/mo <span className="text-gray-500">({gCoreH} GLM/hr)</span></div>)}
-                              {gRamM != null && (<div>RAM: {gRamM} GLM/GB·mo <span className="text-gray-500">({gRamH} GLM/GB·hr)</span></div>)}
-                              {gStoM != null && (<div>Storage: {gStoM} GLM/GB·mo <span className="text-gray-500">({gStoH} GLM/GB·hr)</span></div>)}
-                            </div>
-                          );
-                        } else {
-                          const uCoreM = pr.usd_per_core_month != null ? Number(pr.usd_per_core_month).toFixed(4) : null;
-                          const uRamM = pr.usd_per_gb_ram_month != null ? Number(pr.usd_per_gb_ram_month).toFixed(4) : null;
-                          const uStoM = pr.usd_per_gb_storage_month != null ? Number(pr.usd_per_gb_storage_month).toFixed(4) : null;
-                          const uCoreH = uCoreM != null ? (Number(uCoreM) / 730).toFixed(6) : null;
-                          const uRamH = uRamM != null ? (Number(uRamM) / 730).toFixed(6) : null;
-                          const uStoH = uStoM != null ? (Number(uStoM) / 730).toFixed(6) : null;
-                          if (uCoreM == null && uRamM == null && uStoM == null) return '—';
-                          return (
-                            <div className="text-xs text-gray-700 space-y-0.5">
-                              {uCoreM != null && (<div>Core: ${uCoreM}/mo <span className="text-gray-500">({uCoreH}/hr)</span></div>)}
-                              {uRamM != null && (<div>RAM: ${uRamM}/GB·mo <span className="text-gray-500">({uRamH}/GB·hr)</span></div>)}
-                              {uStoM != null && (<div>Storage: ${uStoM}/GB·mo <span className="text-gray-500">({uStoH}/GB·hr)</span></div>)}
-                            </div>
-                          );
-                        }
-                      })()}
-                    </td>
-                    <td className="td">
-                      {est ? (
-                        <div className="text-xs sm:text-sm">
-                          {displayCurrency === 'token' && est.glm_per_month != null ? (
-                            <div>~{est.glm_per_month} GLM/mo <span className="text-gray-500">({(est.glm_per_month/730).toFixed(8)} GLM/hr)</span></div>
-                          ) : (
-                            <div>~${est.usd_per_month} <span className="text-gray-500">({est.usd_per_hour}/hr)</span></div>
-                          )}
-                        </div>
-                      ) : '—'}
-                    </td>
-                    <td className="td">
-                      <RentInline provider={p} defaultSpec={{ cpu, memory, storage }} adsMode={ads} />
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          )}
-        </div>
+      <div>
+        {loading && rows.length === 0 ? (
+          <TableSkeleton rows={6} cols={5} />
+        ) : (
+          <div className="space-y-3">
+            {rows.map((p) => {
+              const est = cpu && memory && storage ? computeEstimate(p, cpu, memory, storage) : null;
+              return (
+                <ProviderRow
+                  key={p.provider_id}
+                  provider={p}
+                  estimate={est}
+                  displayCurrency={displayCurrency as any}
+                  rightAction={<RentInline provider={p} defaultSpec={{ cpu, memory, storage }} adsMode={ads} />}
+                />
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );
