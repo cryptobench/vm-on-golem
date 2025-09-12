@@ -1,7 +1,7 @@
 "use client";
 import React from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { loadRentals, vmAccess, vmStop, vmDestroy, loadSettings, providerInfo as fetchProviderInfo, vmStatus } from "../../lib/api";
+import { loadRentals, saveRentals, vmAccess, vmStop, vmDestroy, loadSettings, providerInfo as fetchProviderInfo, vmStatus, vmStatusSafe, type Rental } from "../../lib/api";
 import { useAds } from "../../context/AdsContext";
 import { useToast } from "../../components/ui/Toast";
 import { Spinner } from "../../components/ui/Spinner";
@@ -26,6 +26,7 @@ function StatusBadge({ status }: { status?: string | null }) {
   if (s === 'running') return <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">● Running</span>;
   if (s === 'creating') return <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700"><Spinner className="h-3.5 w-3.5" /> Creating</span>;
   if (s === 'stopped') return <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">● Stopped</span>;
+  if (s === 'terminated' || s === 'deleted') return <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">● Terminated</span>;
   if (s === 'error' || s === 'failed') return <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">● Error</span>;
   return <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">● Unknown</span>;
 }
@@ -113,10 +114,29 @@ export default function VmDetailsClient() {
         if (p) setProvider({ country: p.country, platform: p.platform, ip_address: p.ip_address });
       } catch {}
       try {
-        const s = await vmStatus(vm.provider_id, vm.vm_id, ads).catch(() => null);
-        if (s?.resources) {
-          // Attach resources to displayed provider specs
-          setProvider(prev => ({ ...(prev || {}), resources: s.resources } as any));
+        // If VM no longer exists, mark rental as terminated locally
+        const safe = await vmStatusSafe(vm.provider_id, vm.vm_id, ads);
+        if (!safe.exists && safe.code === 404) {
+          setAccess(null);
+          setProvider(prev => prev ? { ...prev } : prev);
+          // Update local rental record to reflect termination
+          try {
+            const list = loadRentals();
+            const idx = list.findIndex(x => x.vm_id === vm.vm_id && x.provider_id === vm.provider_id);
+            if (idx >= 0) {
+              const next: Rental = { ...list[idx], status: 'terminated', ssh_port: null, ended_at: Math.floor(Date.now()/1000) };
+              const out = [...list];
+              out[idx] = next;
+              saveRentals(out);
+              setVm(next);
+            }
+          } catch {}
+        } else {
+          const s = safe.data;
+          if (s?.resources) {
+            // Attach resources to displayed provider specs
+            setProvider(prev => ({ ...(prev || {}), resources: s.resources } as any));
+          }
         }
       } catch {}
       try {
@@ -257,6 +277,7 @@ export default function VmDetailsClient() {
 
   const copySSH = async () => {
     try {
+      if (vm?.status === 'terminated') { show("VM has been terminated by provider"); return; }
       if (!sshCmd) { show("SSH port unavailable"); return; }
       await navigator.clipboard.writeText(sshCmd);
       show("SSH command copied");
@@ -264,13 +285,29 @@ export default function VmDetailsClient() {
   };
 
   const stopVm = async () => {
+    if (vm.status === 'terminated') { show("VM already terminated"); return; }
     try { setBusy(true); await vmStop(vm.provider_id, vm.vm_id, ads); show("Stop requested"); }
     catch (e) { show("Stop failed"); }
     finally { setBusy(false); }
   };
   const destroyVm = async () => {
     if (!confirm('Destroy VM?')) return;
-    try { setBusy(true); await vmDestroy(vm.provider_id, vm.vm_id, ads); show("Destroy requested"); router.push('/rentals'); }
+    try {
+      setBusy(true);
+      try {
+        await vmDestroy(vm.provider_id, vm.vm_id, ads);
+      } catch (e) {
+        // Treat 404 as already deleted on provider; proceed to remove locally
+      }
+      // Remove locally
+      try {
+        const list = loadRentals();
+        const left = list.filter(x => !(x.vm_id === vm.vm_id && x.provider_id === vm.provider_id));
+        saveRentals(left);
+      } catch {}
+      show("Destroyed");
+      router.push('/rentals');
+    }
     catch (e) { show("Destroy failed"); setBusy(false); }
   };
 
@@ -344,8 +381,8 @@ export default function VmDetailsClient() {
                 )}
               </div>
               <div className="flex gap-2">
-                <button className="btn btn-secondary" onClick={copySSH} disabled={!sshCmd}>Copy SSH</button>
-                <button className="btn btn-secondary" onClick={stopVm} disabled={busy}>{busy ? <><Spinner className="h-4 w-4" /> Stop</> : 'Stop'}</button>
+                <button className="btn btn-secondary" onClick={copySSH} disabled={!sshCmd || vm.status === 'terminated'}>Copy SSH</button>
+                <button className="btn btn-secondary" onClick={stopVm} disabled={busy || vm.status === 'terminated'}>{busy ? <><Spinner className="h-4 w-4" /> Stop</> : 'Stop'}</button>
                 <button className="btn btn-danger" onClick={destroyVm} disabled={busy}>Destroy</button>
               </div>
             </div>
