@@ -1,43 +1,31 @@
 "use client";
 import React from "react";
-import { createPortal } from "react-dom";
+import { Dialog, DialogPanel } from "@tremor/react";
 import { cn } from "./cn";
 
-export function Modal({ open, onClose, children, className, labelledBy }: { open: boolean; onClose: () => void; children: React.ReactNode; className?: string; labelledBy?: string }) {
-  const containerRef = React.useRef<HTMLDivElement | null>(null);
-  const onCloseRef = React.useRef(onClose);
-  React.useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
+type ModalSize = 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl';
 
-  React.useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onCloseRef.current?.(); };
-    document.addEventListener('keydown', onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    // focus the container once on open
-    setTimeout(() => containerRef.current?.focus(), 0);
-    return () => { document.removeEventListener('keydown', onKey); document.body.style.overflow = prev; };
-  }, [open]);
-
-  if (!open) return null;
-  const node = (
-    <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-labelledby={labelledBy}>
-      <div className="absolute inset-0 bg-black/40 opacity-100 transition-opacity" onClick={() => onCloseRef.current?.()} />
-      <div className="absolute inset-0 flex items-center justify-center p-4">
-        <div
-          ref={containerRef}
-          tabIndex={-1}
-          className={cn("w-full max-w-lg origin-top rounded-xl bg-white shadow-lg ring-1 ring-gray-200 transition-transform duration-150 ease-out", className)}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {children}
-        </div>
-      </div>
-    </div>
+export function Modal({ open, onClose, children, className, labelledBy, size }: { open: boolean; onClose: () => void; children: React.ReactNode; className?: string; labelledBy?: string; size?: ModalSize }) {
+  const widthClass = (
+    size === 'sm' ? 'sm:max-w-sm' :
+    size === 'md' ? 'sm:max-w-md' :
+    size === 'lg' ? 'sm:max-w-lg' :
+    size === 'xl' ? 'sm:max-w-xl' :
+    size === '2xl' ? 'sm:max-w-2xl' :
+    size === '3xl' ? 'sm:max-w-3xl' :
+    'sm:max-w-lg'
   );
-  // Render to body to avoid sidebar bounds/stacking contexts
-  if (typeof window !== 'undefined' && typeof document !== 'undefined') {
-    return createPortal(node, document.body);
-  }
-  return node;
+  return (
+    <Dialog open={open} onClose={onClose} aria-labelledby={labelledBy} className="z-[100]">
+      <DialogPanel
+        className={cn(
+          "w-full max-h-[90vh] overflow-y-auto rounded-xl bg-white shadow-lg ring-1 ring-gray-200",
+          widthClass,
+          className,
+        )}
+      >
+        {children}
+      </DialogPanel>
+    </Dialog>
+  );
 }
