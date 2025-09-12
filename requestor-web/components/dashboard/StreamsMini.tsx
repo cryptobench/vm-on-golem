@@ -32,7 +32,9 @@ export function StreamsMini({ projectId }: { projectId: string }) {
           return { ok: false, r, error: e?.message || String(e) };
         }
       }));
-      setRows(list);
+      // Dashboard: show only active (not halted and remaining > 0)
+      const filtered = list.filter(row => row.ok && row.data && !row.data.chain.halted && (row.data.remaining > 0));
+      setRows(filtered);
     } catch (e: any) { setError(e?.message || String(e)); }
   };
 

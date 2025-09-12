@@ -1,5 +1,6 @@
 "use client";
 import React from "react";
+import { useRouter } from "next/navigation";
 import { Card, Tracker } from "@tremor/react";
 import { RiCheckboxCircleFill, RiErrorWarningFill, RiCloseCircleFill, RiTimeFill } from "@remixicon/react";
 import { humanDuration } from "../../lib/streams";
@@ -26,6 +27,7 @@ export type StreamCardProps = {
 };
 
 export function StreamCard({ title, streamId, chain, remaining, meta, displayCurrency, onTopUp, busy, actionsRight, detailsHref }: StreamCardProps) {
+  const router = useRouter();
   const [localRemaining, setLocalRemaining] = React.useState<number>(remaining);
   const dec = meta.tokenDecimals || 18;
   const rps = Number(chain.ratePerSecond) / 10 ** dec;
@@ -36,9 +38,6 @@ export function StreamCard({ title, streamId, chain, remaining, meta, displayCur
   // not the provider's withdrawable amount. Compute from runway: rate * remaining seconds.
   const reqRemainingTok = Math.max(0, rps * localRemaining);
 
-  const ratePerSec = (displayCurrency === 'fiat' && meta.usdPrice != null)
-    ? `$${(rps * meta.usdPrice).toFixed(6)}/s`
-    : `${rps.toFixed(6)} ${meta.tokenSymbol}/s`;
   const ratePerHour = (displayCurrency === 'fiat' && meta.usdPrice != null)
     ? `$${(rph * meta.usdPrice).toFixed(6)}/h`
     : `${rph.toFixed(6)} ${meta.tokenSymbol}/h`;
@@ -86,8 +85,10 @@ export function StreamCard({ title, streamId, chain, remaining, meta, displayCur
     return seconds || null;
   }
 
+  const navigate = () => { if (detailsHref) router.push(detailsHref); };
+
   return (
-    <Card>
+    <Card className={detailsHref ? "cursor-pointer" : undefined} onClick={detailsHref ? navigate : undefined}>
       <div className="flex gap-3">
         <span className={`w-1 shrink-0 rounded ${accent}`} aria-hidden />
         <div className="flex-1 min-w-0">
@@ -109,13 +110,13 @@ export function StreamCard({ title, streamId, chain, remaining, meta, displayCur
           </div>
 
           <div className="mt-4 flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded bg-gray-50 px-2.5 py-1 text-xs font-medium text-gray-700">
+            <span className="inline-flex items-center gap-1.5 rounded bg-gray-50 px-2.5 py-1 text-xs font-medium text-gray-700" onClick={(e) => e.stopPropagation()}>
               Recipient
               <span className="font-mono text-[11px] text-gray-600 truncate max-w-[10rem] sm:max-w-[16rem]" title={chain.recipient}>{chain.recipient}</span>
             </span>
-            <span className="inline-flex items-center gap-1.5 rounded bg-gray-50 px-2.5 py-1 text-xs font-medium text-gray-700">
+            <span className="inline-flex items-center gap-1.5 rounded bg-gray-50 px-2.5 py-1 text-xs font-medium text-gray-700" onClick={(e) => e.stopPropagation()}>
               Rate
-              <span className="text-[11px] text-gray-600 truncate" title={`${ratePerSec}`}>{ratePerSec}</span>
+              <span className="text-[11px] text-gray-600 truncate" title={`${ratePerHour}`}>{ratePerHour}</span>
             </span>
             <span className="inline-flex items-center gap-1.5 rounded bg-gray-50 px-2.5 py-1 text-xs font-medium text-gray-700">
               Balance
@@ -126,25 +127,28 @@ export function StreamCard({ title, streamId, chain, remaining, meta, displayCur
           <Tracker data={trackerData} className="mt-5 hidden sm:flex" />
           <Tracker data={trackerData.slice(0, 30)} className="mt-5 flex sm:hidden" />
 
-          <div className="mt-5 pt-4 border-t border-gray-100 flex flex-wrap items-center gap-3">
-            {detailsHref && <a href={detailsHref} className="btn btn-secondary">Details</a>}
+          <div className="mt-5 pt-4 border-t border-gray-100 flex flex-wrap items-center gap-3" onClick={(e) => e.stopPropagation()}>
+            {detailsHref && <a href={detailsHref} className="btn btn-secondary" onClick={(e) => e.stopPropagation()}>Details</a>}
             {onTopUp && !chain.halted && (
               <>
-                <button className="btn btn-secondary" disabled={busy} onClick={() => onTopUp(1800)}>+30 min</button>
-                <button className="btn btn-secondary" disabled={busy} onClick={() => onTopUp(3600)}>{busy ? (<span>+1 h</span>) : '+1 h'}</button>
-                <button className="btn btn-secondary" disabled={busy} onClick={() => onTopUp(7200)}>+2 h</button>
+                <button className="btn btn-secondary" disabled={busy} onClick={(e) => { e.stopPropagation(); onTopUp(1800); }}>+30 min</button>
+                <button className="btn btn-secondary" disabled={busy} onClick={(e) => { e.stopPropagation(); onTopUp(3600); }}>{busy ? (<span>+1 h</span>) : '+1 h'}</button>
+                <button className="btn btn-secondary" disabled={busy} onClick={(e) => { e.stopPropagation(); onTopUp(7200); }}>+2 h</button>
                 <div className="flex items-center gap-2">
                   <input
                     className="input w-44"
                     placeholder="Custom: 45m, 1h30m"
                     value={customInput}
                     onChange={(e) => setCustomInput(e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
+                    onFocus={(e) => e.stopPropagation()}
                     disabled={busy}
                   />
                   <button
                     className="btn btn-secondary"
                     disabled={busy}
-                    onClick={() => {
+                    onClick={(e) => {
+                      e.stopPropagation();
                       const secs = parseHumanTime(customInput);
                       if (secs && secs > 0) onTopUp(secs);
                     }}

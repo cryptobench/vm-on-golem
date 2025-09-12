@@ -6,7 +6,7 @@ import { useProjects } from "../../context/ProjectsContext";
 import { useAds } from "../../context/AdsContext";
 import { useToast } from "../ui/Toast";
 import { StreamsMini } from "./StreamsMini";
-import { buildSshCommand } from "../../lib/ssh";
+import { buildSshCommand, copyText } from "../../lib/ssh";
 import { VmCard } from "../vm/VmCard";
 
 // Using shared VmCard component for consistency
@@ -82,21 +82,19 @@ export function ProjectDashboard() {
         try { const acc = await vmAccess(r.provider_id, r.vm_id, ads); port = acc?.ssh_port || port; } catch {}
       }
       if (!host) host = r.provider_ip || 'PROVIDER_IP';
-      if (!port) {
-        show("Could not resolve SSH port");
-        return;
-      }
+      if (!port) { show("Could not resolve SSH port"); return; }
       const cmd = buildSshCommand(host, Number(port));
-      await navigator.clipboard.writeText(cmd);
-      show("SSH command copied");
+      const ok = await copyText(cmd);
+      show(ok ? "SSH command copied" : "Copy failed");
     } catch (e) {
-      show("Could not copy SSH command");
+      show("Copy failed");
     } finally {
       setBusyId(null);
     }
   };
 
-  if (!items.length) return null;
+  const visible = items.filter(r => (r.project_id || 'default') === activeId && !['terminated', 'deleted'].includes((r.status || '').toLowerCase()));
+  if (!visible.length) return null;
 
   const projectName = projects.find(p => p.id === activeId)?.name || activeId;
 
@@ -104,11 +102,11 @@ export function ProjectDashboard() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2>{projectName} — Machines</h2>
-        <div className="text-sm text-gray-600">{items.length} total</div>
+        <div className="text-sm text-gray-600">{visible.length} total</div>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        {items.map(r => (
+        {visible.map(r => (
           <VmCard
             key={r.vm_id}
             rental={r}

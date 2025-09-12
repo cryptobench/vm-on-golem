@@ -103,14 +103,46 @@ export default function StreamsPage() {
     }
   };
 
+  // Partition streams into active vs ended (depleted or halted)
+  const renderRows = (list: Row[], allowTopUp: boolean) => (
+    <div className="grid gap-6 sm:grid-cols-2">
+      {list.map((row, i) => {
+        const sid = String(row.r.stream_id);
+        const isBusy = !!busy[sid];
+        const remaining = Math.max(0, Number(row.chain.stopTime || 0n) - nowSec);
+        return (
+          <StreamCard
+            key={i}
+            title={row.r.name}
+            streamId={row.r.stream_id}
+            chain={row.chain as any}
+            remaining={remaining}
+            meta={{ tokenSymbol: row.tokenSymbol, tokenDecimals: row.tokenDecimals, usdPrice: row.usdPrice }}
+            displayCurrency={displayCurrency}
+            onTopUp={allowTopUp && !row.chain.halted ? ((secs) => topUp(row, secs)) : undefined}
+            busy={isBusy}
+            detailsHref={`/vm?id=${encodeURIComponent(row.r.vm_id)}`}
+          />
+        );
+      })}
+    </div>
+  );
+
+  let active: Row[] = [];
+  let ended: Row[] = [];
+  if (rows && rows.length) {
+    active = rows.filter(row => !row.chain.halted && (Number(row.chain.stopTime || 0n) - nowSec) > 0);
+    ended = rows.filter(row => row.chain.halted || (Number(row.chain.stopTime || 0n) - nowSec) <= 0);
+  }
+
   return (
     <div className="space-y-6">
       <h2>Streams</h2>
       {!rentals.length && <div className="text-gray-600">No streams yet. Create a VM to open a stream.</div>}
       {error && <div className="text-sm text-red-600">{error}</div>}
-      <div className="grid gap-6 sm:grid-cols-2">
-        {rows === null ? (
-          Array.from({ length: 4 }).map((_, i) => (
+      {rows === null ? (
+        <div className="grid gap-6 sm:grid-cols-2">
+          {Array.from({ length: 4 }).map((_, i) => (
             <div key={i} className="card">
               <div className="card-body">
                 <Skeleton className="h-4 w-48" />
@@ -122,30 +154,26 @@ export default function StreamsPage() {
                 </div>
               </div>
             </div>
-          ))
-        ) : (
-          rows.map((row, i) => {
-            const sid = String(row.r.stream_id);
-            const isBusy = !!busy[sid];
-            return (
-              <div key={i} className="cursor-pointer" onClick={() => router.push(`/vm?id=${encodeURIComponent(row.r.vm_id)}`)}>
-                <div onClick={(e) => e.stopPropagation()}>
-                  <StreamCard
-                    title={row.r.name}
-                    streamId={row.r.stream_id}
-                    chain={row.chain as any}
-                    remaining={Math.max(0, Number(row.chain.stopTime || 0n) - nowSec)}
-                    meta={{ tokenSymbol: row.tokenSymbol, tokenDecimals: row.tokenDecimals, usdPrice: row.usdPrice }}
-                    displayCurrency={displayCurrency}
-                    onTopUp={(secs) => topUp(row, secs)}
-                    busy={isBusy}
-                  />
-                </div>
-              </div>
-            );
-          })
-        )}
-      </div>
+          ))}
+        </div>
+      ) : (
+        <>
+          {active.length ? (
+            <div>
+              <div className="mb-2 text-sm text-gray-700">Active</div>
+              {renderRows(active, true)}
+            </div>
+          ) : (
+            <div className="text-gray-600">No active streams.</div>
+          )}
+          {ended.length > 0 && (
+            <div>
+              <div className="mt-4 mb-2 text-sm text-gray-700">Ended</div>
+              {renderRows(ended, false)}
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
