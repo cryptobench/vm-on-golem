@@ -16,11 +16,8 @@
   .card { @apply bg-white rounded-xl shadow-sm ring-1 ring-gray-200; }
   .card-body { @apply p-4 sm:p-6; }
   .btn { @apply inline-flex items-center justify-center rounded-lg px-3 py-2 text-sm font-medium ring-1 ring-inset focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors; }
-  /* Primary: #181E9F square button */
-  .btn-primary { @apply text-white; background-color: #181E9F; }
-  .btn-primary { box-shadow: inset 0 0 0 1px #181E9F; }
-  .btn-primary:hover { filter: brightness(0.95); }
-  .btn-primary:focus { outline: 2px solid #181E9F; outline-offset: 2px; }
+  /* Primary: brand-blue square button */
+  .btn-primary { @apply bg-brand-600 text-white ring-brand-600 hover:bg-brand-700; }
 
   /* Secondary: match Rent button subtle style */
   .btn-secondary { background-color: rgba(0,0,51,0.06); color: #60646C; }
