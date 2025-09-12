@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 import uvicorn
-import os
 from dotenv import load_dotenv
 from discovery.config import settings
 
-# Load environment variables from .env file
+# Load environment variables from .env file (if present)
 load_dotenv()
 
 def main():

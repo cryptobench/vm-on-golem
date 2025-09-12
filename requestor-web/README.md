@@ -29,6 +29,8 @@ Env vars (public)
 - NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS: default StreamPayment contract (can be overridden in Settings or provider info)
 - NEXT_PUBLIC_GLM_TOKEN_ADDRESS: GLM token address (0x00.. means native)
 - NEXT_PUBLIC_EVM_CHAIN_ID: hex chain id for MetaMask (e.g., 0x4268)
+- NEXT_PUBLIC_GOLEM_ENVIRONMENT: set to `development` to switch defaults to the Golem Base dev RPC/WS
+- NEXT_PUBLIC_GOLEM_BASE_DEV_RPC_URL / NEXT_PUBLIC_GOLEM_BASE_DEV_WS_URL: dev Golem Base endpoints used when environment=development
 
 Notes and alignment with backend
 

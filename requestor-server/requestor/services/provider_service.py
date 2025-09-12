@@ -301,24 +301,32 @@ class ProviderService:
             return "N/A"
 
     async def format_provider_row(self, provider: Dict, colorize: bool = False) -> List:
-        """Format provider information for display."""
+        """Format provider information for display.
+
+        Behavior:
+        - When no full spec is provided (no ``estimate_spec``), show hourly per-unit
+          prices (USD/core/hr, USD/GB RAM/hr, USD/GB Disk/hr) and omit monthly
+          estimate columns to avoid confusing empty fields.
+        - When a full spec is provided, show monthly per-unit prices and include
+          estimated monthly totals (USD and GLM when available).
+        """
         from click import style
 
         updated_at_str = await self._format_block_timestamp(provider.get('created_at_block', 0))
 
         pricing = provider.get('pricing') or {}
-        usd_core = pricing.get('usd_per_core_month')
-        usd_ram = pricing.get('usd_per_gb_ram_month')
-        usd_storage = pricing.get('usd_per_gb_storage_month')
+        usd_core_mo = pricing.get('usd_per_core_month')
+        usd_ram_mo = pricing.get('usd_per_gb_ram_month')
+        usd_storage_mo = pricing.get('usd_per_gb_storage_month')
 
         # Precompute estimates if a spec is set and pricing available
         est_usd = '—'
         est_glm = '—'
         est_hr_usd = '—'
-        if self.estimate_spec and all(p is not None for p in (usd_core, usd_ram, usd_storage)):
+        if self.estimate_spec and all(p is not None for p in (usd_core_mo, usd_ram_mo, usd_storage_mo)):
             spec_cpu, spec_mem, spec_sto = self.estimate_spec
             try:
-                est_usd_val = (float(usd_core) * spec_cpu) + (float(usd_ram) * spec_mem) + (float(usd_storage) * spec_sto)
+                est_usd_val = (float(usd_core_mo) * spec_cpu) + (float(usd_ram_mo) * spec_mem) + (float(usd_storage_mo) * spec_sto)
                 est_usd = round(est_usd_val, 4)
                 est_hr_usd = round(est_usd_val / 730.0, 6)
                 # If GLM per-unit is present, compute GLM estimate as well
@@ -331,6 +339,25 @@ class ProviderService:
             except Exception:
                 pass
 
+        # Decide which pricing columns to render based on presence of estimate_spec
+        show_monthly = bool(self.estimate_spec)
+
+        if show_monthly:
+            col_core = usd_core_mo if usd_core_mo is not None else '—'
+            col_ram = usd_ram_mo if usd_ram_mo is not None else '—'
+            col_sto = usd_storage_mo if usd_storage_mo is not None else '—'
+        else:
+            # Convert monthly unit prices to hourly for display when no spec provided
+            def _per_hr(val):
+                try:
+                    return round(float(val) / 730.0, 6)
+                except Exception:
+                    return '—'
+
+            col_core = _per_hr(usd_core_mo)
+            col_ram = _per_hr(usd_ram_mo)
+            col_sto = _per_hr(usd_storage_mo)
+
         row = [
             provider['provider_id'],
             provider['provider_name'],
@@ -339,14 +366,13 @@ class ProviderService:
             provider['resources']['cpu'],
             provider['resources']['memory'],
             provider['resources']['storage'],
-            usd_core if usd_core is not None else '—',
-            usd_ram if usd_ram is not None else '—',
-            usd_storage if usd_storage is not None else '—',
-            est_usd,
-            est_glm,
-            (provider.get('platform') or '—'),
-            updated_at_str
+            col_core,
+            col_ram,
+            col_sto,
         ]
+        if show_monthly:
+            row.extend([est_usd, est_glm])
+        row.extend([(provider.get('platform') or '—'), updated_at_str])
 
         if colorize:
             # Format Provider ID
@@ -361,30 +387,51 @@ class ProviderService:
             row[6] = style(f"💾 {row[6]}", fg="cyan", bold=True)
 
             # Format pricing with currency markers
-            if usd_core != '—':
-                row[7] = style(f"${row[7]}/mo", fg="magenta")
-            if usd_ram != '—':
-                row[8] = style(f"${row[8]}/GB/mo", fg="magenta")
-            if usd_storage != '—':
-                row[9] = style(f"${row[9]}/GB/mo", fg="magenta")
-            if est_usd != '—':
-                row[10] = style(f"~${row[10]}/mo", fg="yellow", bold=True)
-            if est_glm != '—':
-                row[11] = style(f"~{row[11]} GLM/mo", fg="yellow")
+            # Determine base index for pricing columns
+            # Indexes: 0=id,1=name,2=ip,3=country,4=cpu,5=mem,6=sto,7.. pricing
+            price_idx = 7
+            if show_monthly:
+                # Monthly unit prices formatting
+                if row[price_idx] != '—':
+                    row[price_idx] = style(f"${row[price_idx]}/mo", fg="magenta")
+                if row[price_idx + 1] != '—':
+                    row[price_idx + 1] = style(f"${row[price_idx + 1]}/GB/mo", fg="magenta")
+                if row[price_idx + 2] != '—':
+                    row[price_idx + 2] = style(f"${row[price_idx + 2]}/GB/mo", fg="magenta")
+                # Estimates
+                if est_usd != '—':
+                    row[price_idx + 3] = style(f"~${row[price_idx + 3]}/mo", fg="yellow", bold=True)
+                if est_glm != '—':
+                    row[price_idx + 4] = style(f"~{row[price_idx + 4]} GLM/mo", fg="yellow")
+                platform_idx = price_idx + 5
+            else:
+                # Hourly unit prices formatting
+                if row[price_idx] != '—':
+                    row[price_idx] = style(f"${row[price_idx]}/hr", fg="magenta")
+                if row[price_idx + 1] != '—':
+                    row[price_idx + 1] = style(f"${row[price_idx + 1]}/GB/hr", fg="magenta")
+                if row[price_idx + 2] != '—':
+                    row[price_idx + 2] = style(f"${row[price_idx + 2]}/GB/hr", fg="magenta")
+                platform_idx = price_idx + 3
 
             # Format location info
             row[3] = style(f"🌍 {row[3]}", fg="green", bold=True)
 
             # Platform column: dim label
-            if row[12] != '—':
-                row[12] = style(f"{row[12]}", fg="white")
+            if row[platform_idx] != '—':
+                row[platform_idx] = style(f"{row[platform_idx]}", fg="white")
 
         return row
 
     @property
     def provider_headers(self) -> List[str]:
-        """Get headers for provider display."""
-        return [
+        """Get headers for provider display.
+
+        Without a full spec, show hourly per-unit prices and omit monthly
+        estimate columns. With a full spec, show monthly per-unit prices and
+        include estimated monthly totals.
+        """
+        base = [
             "Provider ID",
             "Name",
             "IP Address",
@@ -392,11 +439,23 @@ class ProviderService:
             "CPU",
             "Memory (GB)",
             "Disk (GB)",
-            "USD/core/mo",
-            "USD/GB RAM/mo",
-            "USD/GB Disk/mo",
-            "Est. $/mo",
-            "Est. GLM/mo",
-            "Platform",
-            "Updated"
         ]
+        if self.estimate_spec:
+            pricing_cols = [
+                "USD/core/mo",
+                "USD/GB RAM/mo",
+                "USD/GB Disk/mo",
+                "Est. $/mo",
+                "Est. GLM/mo",
+            ]
+        else:
+            pricing_cols = [
+                "USD/core/hr",
+                "USD/GB RAM/hr",
+                "USD/GB Disk/hr",
+            ]
+        tail = [
+            "Platform",
+            "Updated",
+        ]
+        return base + pricing_cols + tail

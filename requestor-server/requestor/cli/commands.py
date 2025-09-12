@@ -76,8 +76,8 @@ def print_version(ctx, param, value):
 @click.group()
 @click.option('--version', is_flag=True, callback=print_version,
               expose_value=False, is_eager=True, help="Show the version and exit.")
-@click.option('--network', type=click.Choice(['testnet', 'mainnet']), default=None,
-              help="Override network for discovery filtering ('testnet' or 'mainnet')")
+@click.option('--network', type=click.Choice(['development', 'testnet', 'mainnet']), default=None,
+              help="Override network for discovery filtering ('development', 'testnet' or 'mainnet')")
 def cli(network: str | None):
     """VM on Golem management CLI"""
     ensure_config()
@@ -133,7 +133,7 @@ def vm():
 @click.option('--payments-network', type=str, default=None, help='Filter by payments network profile (default: current config)')
 @click.option('--all-payments', is_flag=True, help='Do not filter by payments network (show all)')
 @click.option('--json', 'as_json', is_flag=True, help='Output in JSON format')
-@click.option('--network', type=click.Choice(['testnet', 'mainnet']), default=None,
+@click.option('--network', type=click.Choice(['development', 'testnet', 'mainnet']), default=None,
               help='Override network filter for this command')
 @async_command
 async def list_providers(cpu: Optional[int], memory: Optional[int], storage: Optional[int], country: Optional[str], platform: Optional[str], driver: Optional[str], payments_network: Optional[str] = None, all_payments: bool = False, as_json: bool = False, network: Optional[str] = None):
@@ -242,7 +242,7 @@ async def list_providers(cpu: Optional[int], memory: Optional[int], storage: Opt
 @click.option('--stream-id', type=int, default=None, help='Optional StreamPayment stream id to fund this VM')
 @click.option('--hours', type=int, default=1, help='If no stream-id is provided and payments are enabled, open a stream with this many hours of deposit (default 1)')
 @click.option('--yes', is_flag=True, help='Do not prompt for confirmation')
-@click.option('--network', type=click.Choice(['testnet', 'mainnet']), default=None, help='Override network for discovery during creation')
+@click.option('--network', type=click.Choice(['development', 'testnet', 'mainnet']), default=None, help='Override network for discovery during creation')
 @async_command
 async def create_vm(name: str, provider_id: str, cpu: int, memory: int, storage: int, stream_id: int | None, hours: int, yes: bool, network: Optional[str] = None):
     """Create a new VM on a specific provider."""
@@ -492,7 +492,7 @@ async def stream_list(as_json: bool):
 @click.option('--memory', type=int, required=True, help='Memory (GB) for rate calc')
 @click.option('--storage', type=int, required=True, help='Storage (GB) for rate calc')
 @click.option('--hours', type=int, default=1, help='Deposit coverage in hours (default 1)')
-@click.option('--network', type=click.Choice(['testnet', 'mainnet']), default=None, help='Override network for discovery during stream open')
+@click.option('--network', type=click.Choice(['development', 'testnet', 'mainnet']), default=None, help='Override network for discovery during stream open')
 @async_command
 async def stream_open(provider_id: str, cpu: int, memory: int, storage: int, hours: int, network: Optional[str] = None):
     """Create a GLM stream for a planned VM rental."""

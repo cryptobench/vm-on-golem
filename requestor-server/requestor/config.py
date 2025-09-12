@@ -103,7 +103,7 @@ class RequestorConfig(BaseSettings):
     @field_validator("network", mode="before")
     @classmethod
     def default_network_for_dev(cls, v: str, info: ValidationInfo) -> str:
-        """Use 'testnet' by default when in development environment unless explicitly set."""
+        """Use 'development' by default when in development environment unless explicitly set."""
         if v:
             return v
         try:
@@ -111,7 +111,7 @@ class RequestorConfig(BaseSettings):
         except Exception:
             env = os.environ.get("GOLEM_ENVIRONMENT")
         if (env or "").lower() == "development":
-            return "testnet"
+            return "development"
         return v or "mainnet"
 
     # Golem Base Settings
@@ -123,6 +123,47 @@ class RequestorConfig(BaseSettings):
         default="wss://ethwarsaw.holesky.golemdb.io/rpc/ws",
         description="Golem Base WebSocket URL"
     )
+    # Optional dev-only overrides for a separate Golem Base development network
+    golem_base_dev_rpc_url: str = Field(
+        default=os.environ.get("GOLEM_REQUESTOR_GOLEM_BASE_DEV_RPC_URL", os.environ.get("GOLEM_BASE_DEV_RPC_URL", "")),
+        description="RPC URL for Golem Base development network (used when environment=development)"
+    )
+    golem_base_dev_ws_url: str = Field(
+        default=os.environ.get("GOLEM_REQUESTOR_GOLEM_BASE_DEV_WS_URL", os.environ.get("GOLEM_BASE_DEV_WS_URL", "")),
+        description="WebSocket URL for Golem Base development network (used when environment=development)"
+    )
+
+    @field_validator("golem_base_rpc_url", mode='before')
+    @classmethod
+    def prefer_dev_gb_rpc(cls, v: str, info: ValidationInfo) -> str:
+        env = (info.data.get("environment") or "").lower()
+        if env == "development":
+            if os.environ.get("GOLEM_REQUESTOR_GOLEM_BASE_DEV_RPC_URL"):
+                return os.environ["GOLEM_REQUESTOR_GOLEM_BASE_DEV_RPC_URL"]
+            if os.environ.get("GOLEM_BASE_DEV_RPC_URL"):
+                return os.environ["GOLEM_BASE_DEV_RPC_URL"]
+            dev_v = (info.data.get("golem_base_dev_rpc_url") or "").strip()
+            if dev_v:
+                return dev_v
+        if os.environ.get("GOLEM_REQUESTOR_GOLEM_BASE_RPC_URL"):
+            return os.environ["GOLEM_REQUESTOR_GOLEM_BASE_RPC_URL"]
+        return v
+
+    @field_validator("golem_base_ws_url", mode='before')
+    @classmethod
+    def prefer_dev_gb_ws(cls, v: str, info: ValidationInfo) -> str:
+        env = (info.data.get("environment") or "").lower()
+        if env == "development":
+            if os.environ.get("GOLEM_REQUESTOR_GOLEM_BASE_DEV_WS_URL"):
+                return os.environ["GOLEM_REQUESTOR_GOLEM_BASE_DEV_WS_URL"]
+            if os.environ.get("GOLEM_BASE_DEV_WS_URL"):
+                return os.environ["GOLEM_BASE_DEV_WS_URL"]
+            dev_v = (info.data.get("golem_base_dev_ws_url") or "").strip()
+            if dev_v:
+                return dev_v
+        if os.environ.get("GOLEM_REQUESTOR_GOLEM_BASE_WS_URL"):
+            return os.environ["GOLEM_REQUESTOR_GOLEM_BASE_WS_URL"]
+        return v
     advertisement_interval: int = Field(
         default=3600,
         description="Advertisement interval in seconds (should match provider's GOLEM_BASE_ADVERTISEMENT_INTERVAL)"

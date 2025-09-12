@@ -156,7 +156,7 @@ golem-provider pricing show
 
 ```
 make install   # install Poetry deps
-make start     # run discovery, provider (dev), requestor APIs
+make start     # run provider (dev), proxy, requestor web (dev)
 make test      # run tests
 ```
 
@@ -172,4 +172,3 @@ Service READMEs:
 
 * CLI help: `golem --help`, `golem vm --help`, `golem-provider --help`
 * Open an issue if something is unclear or slow — simplicity is the goal.
-

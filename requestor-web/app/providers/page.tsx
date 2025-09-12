@@ -227,7 +227,13 @@ function RentInline({ provider, defaultSpec, adsMode }: { provider: any; default
   }, [provider.provider_id]);
   return (
     <>
-      <button className="btn btn-secondary" onClick={() => setOpen(true)}>Rent</button>
+      <button
+        className="btn btn-secondary"
+        onClick={() => setOpen(true)}
+        disabled={open}
+      >
+        {open ? (<span className="inline-flex items-center gap-2"><Spinner className="h-4 w-4" /> Rent</span>) : 'Rent'}
+      </button>
       {open && <RentDialog provider={provider} defaultSpec={defaultSpec} onClose={() => setOpen(false)} adsMode={adsMode} />}
     </>
   );
@@ -268,6 +274,7 @@ function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provider: any
   const [error, setError] = React.useState<string | null>(null);
   const [streamId, setStreamId] = React.useState<string | null>(null);
   const [usingNative, setUsingNative] = React.useState<boolean>(true);
+  const [connecting, setConnecting] = React.useState<boolean>(false);
 
   const est = computeEstimate(provider, cpu, memory, storage);
 
@@ -345,7 +352,8 @@ function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provider: any
       rentals.push({ name: payload.name, provider_id: provider.provider_id, provider_ip: provider.ip_address, vm_id: vmId, ssh_port: vm?.config?.ssh_port || null, stream_id: String(sid), project_id: activeProjectId || 'default', status: 'creating' });
       saveRentals(rentals);
       onClose();
-      alert(`VM created. VM ID: ${vm.id || vm.vm_id}`);
+      // Redirect to dashboard so the new VM is visible
+      router.push('/');
 
       // Lightweight background poll: wait until access becomes available, then update rentals
       (async () => {
@@ -418,7 +426,13 @@ function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provider: any
           {isInstalled && !isConnected && (
             <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 flex items-center justify-between">
               <div>Connect MetaMask to continue with renting.</div>
-              <button className="btn btn-secondary" onClick={connect}>Connect</button>
+              <button
+                className="btn btn-secondary"
+                onClick={async () => { try { setConnecting(true); await connect(); } finally { setConnecting(false); } }}
+                disabled={connecting}
+              >
+                {connecting ? (<span className="inline-flex items-center gap-2"><Spinner className="h-4 w-4" /> Connecting…</span>) : 'Connect'}
+              </button>
             </div>
           )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -561,7 +575,17 @@ function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provider: any
         </div>
         <div className="flex items-center justify-end gap-2 border-t px-5 py-4">
           <button className="btn btn-secondary" onClick={onClose} disabled={creating}>Cancel</button>
-          <button className="btn btn-primary" onClick={create} disabled={!isConnected || creating || sshKeys.length === 0 || !sshKey.trim()}>{creating ? 'Creating…' : (streamId ? 'Create VM' : 'Open Stream + Create VM')}</button>
+          <button
+            className="btn btn-primary"
+            onClick={create}
+            disabled={!isConnected || creating || sshKeys.length === 0 || !sshKey.trim()}
+          >
+            {creating ? (
+              <span className="inline-flex items-center gap-2"><Spinner className="h-4 w-4 text-white" /> Creating…</span>
+            ) : (
+              (streamId ? 'Create VM' : 'Open Stream + Create VM')
+            )}
+          </button>
         </div>
       </div>
     </Modal>

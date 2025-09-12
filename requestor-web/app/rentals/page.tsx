@@ -1,6 +1,8 @@
 "use client";
 import React from "react";
 import { loadRentals, saveRentals, vmAccess, vmStop, vmDestroy } from "../../lib/api";
+import { buildSshCommand } from "../../lib/ssh";
+import { useToast } from "../../components/ui/Toast";
 import { useAds } from "../../context/AdsContext";
 import { Spinner } from "../../components/ui/Spinner";
 import { TableSkeleton } from "../../components/ui/Skeleton";
@@ -11,6 +13,7 @@ export default function RentalsPage() {
   const [error, setError] = React.useState<string | null>(null);
   const [busyId, setBusyId] = React.useState<string | null>(null);
   const { ads } = useAds();
+  const { show } = useToast();
   const { activeId } = useProjects();
 
   const refresh = () => setItems(loadRentals());
@@ -20,12 +23,21 @@ export default function RentalsPage() {
     return () => clearTimeout(t);
   }, []);
 
-  const access = async (r: any) => {
+  const copySSH = async (r: any) => {
     setError(null); setBusyId(r.vm_id);
     try {
-      const acc = await vmAccess(r.provider_id, r.vm_id, ads);
-      alert(`SSH: ${r.provider_ip || 'PROVIDER_IP'}:${acc.ssh_port}`);
-    } catch (e: any) { setError(e?.message || String(e)); } finally { setBusyId(null); }
+      let port = r.ssh_port || undefined;
+      let host = r.provider_ip || undefined;
+      if (!port) {
+        try { const acc = await vmAccess(r.provider_id, r.vm_id, ads); port = acc?.ssh_port || port; } catch {}
+      }
+      if (!host) host = r.provider_ip || 'PROVIDER_IP';
+      if (!port) { show('Could not resolve SSH port'); return; }
+      const cmd = buildSshCommand(host, Number(port));
+      await navigator.clipboard.writeText(cmd);
+      show('SSH command copied');
+    } catch (e: any) { setError(e?.message || String(e)); }
+    finally { setBusyId(null); }
   };
   const stop = async (r: any) => {
     setError(null); setBusyId(r.vm_id);
@@ -73,7 +85,7 @@ export default function RentalsPage() {
                     <td className="td">{r.stream_id || '—'}</td>
                     <td className="td">
                       <div className="flex flex-wrap items-center gap-2">
-                        <button className="btn btn-secondary" onClick={() => access(r)} disabled={busyId === r.vm_id}>{busyId === r.vm_id ? <><Spinner className="h-4 w-4" /> Access</> : 'Access'}</button>
+                        <button className="btn btn-secondary" onClick={() => copySSH(r)} disabled={busyId === r.vm_id}>{busyId === r.vm_id ? <><Spinner className="h-4 w-4" /> Copy SSH</> : 'Copy SSH'}</button>
                         <button className="btn btn-secondary" onClick={() => stop(r)} disabled={busyId === r.vm_id}>{busyId === r.vm_id ? <><Spinner className="h-4 w-4" /> Stop</> : 'Stop'}</button>
                         <button className="btn btn-danger" onClick={() => destroy(r)} disabled={busyId === r.vm_id}>{busyId === r.vm_id ? <><Spinner className="h-4 w-4" /> Destroy</> : 'Destroy'}</button>
                       </div>

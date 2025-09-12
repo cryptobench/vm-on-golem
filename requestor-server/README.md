@@ -262,18 +262,22 @@ GOLEM_ENVIRONMENT="development" GOLEM_REQUESTOR_FORCE_LOCALHOST="true" poetry ru
 
 - Development Mode (`GOLEM_ENVIRONMENT=development`)
   - Improves local workflows: prefixes central discovery URL with `DEVMODE-` and, when using the central driver, maps provider IPs to `localhost` for easier testing.
-  - Does not determine chain selection.
+  - Uses the separate `development` network label for provider discovery/filters and local IPs.
+  - If `NEXT_PUBLIC_GOLEM_BASE_DEV_RPC_URL`/`WS` (web) or `GOLEM_REQUESTOR_GOLEM_BASE_DEV_RPC_URL`/`WS` (CLI) are set, switches Golem Base RPC/WS to those dev endpoints.
 
 - Network Selection (`--network` or `GOLEM_REQUESTOR_NETWORK`)
-  - Filters results by `testnet|mainnet`. Defaults are sensible; most users don’t need to change anything.
+  - Filters results by `development|testnet|mainnet`.
+  - Defaults: `development` when `GOLEM_ENVIRONMENT=development`, otherwise `mainnet`.
 
 - Payments Network (`GOLEM_REQUESTOR_PAYMENTS_NETWORK`)
   - Selects the payments chain profile (e.g., `l2.holesky`, `mainnet`) used for streaming payments; sets default RPC and faucet behavior.
   - Provider discovery filters by this payments network via `vm providers` unless `--all-payments` is supplied. Override payments filter with `--payments-network <name>`.
 
 Examples:
-- List providers on mainnet without changing env: `golem vm providers --network mainnet`
-- Create a VM while targeting testnet: `golem vm create my-vm --provider-id 0xProvider --cpu 2 --memory 4 --storage 20 --network testnet`
+- Local dev vs. testnet/mainnet:
+  - Dev: `GOLEM_ENVIRONMENT=development golem vm providers` (targets `development` network)
+  - Mainnet: `golem vm providers --network mainnet`
+  - Testnet: `golem vm providers --network testnet`
 
 ## Usage
 

@@ -93,7 +93,7 @@ class Settings(BaseSettings):
 
         Priority:
         1) Explicit override via GOLEM_PROVIDER_NETWORK env or provided value
-        2) If ENVIRONMENT == development -> 'testnet'
+        2) If ENVIRONMENT == development -> 'development'
         3) Otherwise -> 'mainnet'
         """
         # Prefer explicit provider-scoped env override
@@ -106,7 +106,7 @@ class Settings(BaseSettings):
             return val
         # Default based on environment
         env = (values.data.get("ENVIRONMENT") or "").lower()
-        return "testnet" if env == "development" else "mainnet"
+        return "development" if env == "development" else "mainnet"
 
     @field_validator("SKIP_PORT_VERIFICATION", mode='before')
     def set_skip_verification(cls, v: bool, values: dict) -> bool:
@@ -180,8 +180,55 @@ class Settings(BaseSettings):
     GOLEM_BASE_ADVERTISEMENT_INTERVAL: int = 3600  # seconds (on-chain cost, keep higher)
 
     # Golem Base Settings
+    # Default to Holesky (testnet) endpoints; in development we can switch to a separate
+    # base development network via environment variables below.
     GOLEM_BASE_RPC_URL: str = "https://ethwarsaw.holesky.golemdb.io/rpc"
     GOLEM_BASE_WS_URL: str = "wss://ethwarsaw.holesky.golemdb.io/rpc/ws"
+
+    # Optional dev-only overrides for a separate Golem Base development network
+    GOLEM_BASE_DEV_RPC_URL: str = Field(
+        default=os.environ.get("GOLEM_PROVIDER_GOLEM_BASE_DEV_RPC_URL", os.environ.get("GOLEM_BASE_DEV_RPC_URL", "")),
+        description="RPC URL for Golem Base development network (used when ENVIRONMENT=development)"
+    )
+    GOLEM_BASE_DEV_WS_URL: str = Field(
+        default=os.environ.get("GOLEM_PROVIDER_GOLEM_BASE_DEV_WS_URL", os.environ.get("GOLEM_BASE_DEV_WS_URL", "")),
+        description="WebSocket URL for Golem Base development network (used when ENVIRONMENT=development)"
+    )
+
+    @field_validator("GOLEM_BASE_RPC_URL", mode='before')
+    @classmethod
+    def prefer_dev_gb_rpc(cls, v: str, values: dict) -> str:
+        env = (values.data.get("ENVIRONMENT") or "").lower()
+        if env == "development":
+            # Allow provider-scoped or generic env variables to override
+            if os.environ.get("GOLEM_PROVIDER_GOLEM_BASE_DEV_RPC_URL"):
+                return os.environ["GOLEM_PROVIDER_GOLEM_BASE_DEV_RPC_URL"]
+            if os.environ.get("GOLEM_BASE_DEV_RPC_URL"):
+                return os.environ["GOLEM_BASE_DEV_RPC_URL"]
+            # If a dev URL is configured in settings, use it
+            dev_v = (values.data.get("GOLEM_BASE_DEV_RPC_URL") or "").strip()
+            if dev_v:
+                return dev_v
+        # Also permit explicit override for non-dev via provider-scoped env
+        if os.environ.get("GOLEM_PROVIDER_GOLEM_BASE_RPC_URL"):
+            return os.environ["GOLEM_PROVIDER_GOLEM_BASE_RPC_URL"]
+        return v
+
+    @field_validator("GOLEM_BASE_WS_URL", mode='before')
+    @classmethod
+    def prefer_dev_gb_ws(cls, v: str, values: dict) -> str:
+        env = (values.data.get("ENVIRONMENT") or "").lower()
+        if env == "development":
+            if os.environ.get("GOLEM_PROVIDER_GOLEM_BASE_DEV_WS_URL"):
+                return os.environ["GOLEM_PROVIDER_GOLEM_BASE_DEV_WS_URL"]
+            if os.environ.get("GOLEM_BASE_DEV_WS_URL"):
+                return os.environ["GOLEM_BASE_DEV_WS_URL"]
+            dev_v = (values.data.get("GOLEM_BASE_DEV_WS_URL") or "").strip()
+            if dev_v:
+                return dev_v
+        if os.environ.get("GOLEM_PROVIDER_GOLEM_BASE_WS_URL"):
+            return os.environ["GOLEM_PROVIDER_GOLEM_BASE_WS_URL"]
+        return v
 
     # Polygon / Payments
     POLYGON_RPC_URL: str = Field(

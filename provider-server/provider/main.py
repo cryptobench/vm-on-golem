@@ -1240,7 +1240,7 @@ def streams_withdraw(
 @cli.command()
 def start(
     no_verify_port: bool = typer.Option(False, "--no-verify-port", help="Skip provider port verification."),
-    network: str = typer.Option(None, "--network", help="Target network: 'testnet' or 'mainnet' (overrides env)"),
+    network: str = typer.Option(None, "--network", help="Target network: 'development', 'testnet' or 'mainnet' (overrides env)"),
     gui: bool = typer.Option(False, "--gui/--no-gui", help="Launch Electron GUI (default: no)"),
     daemon: bool = typer.Option(False, "--daemon", help="Start in background and write a PID file"),
     stop_vms_on_exit: Optional[bool] = typer.Option(
@@ -1540,7 +1540,7 @@ def run_server(
         env_val = os.environ.get("GOLEM_ENVIRONMENT", "")
         dev_mode = env_val.lower() == "development"
 
-    # Load appropriate .env file based on mode
+    # Load appropriate .env file based on mode (if present)
     env_file = ".env.dev" if dev_mode else ".env"
     env_path = Path(__file__).parent.parent / env_file
     load_dotenv(dotenv_path=env_path)
