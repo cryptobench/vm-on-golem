@@ -4,17 +4,22 @@ import { useRouter } from "next/navigation";
 import { loadSettings, saveSettings, type SSHKey } from "../../lib/api";
 import { useAds } from "../../context/AdsContext";
 import { Modal } from "../../components/ui/Modal";
+import { Skeleton } from "../../components/ui/Skeleton";
 
 export default function SettingsPage() {
   const router = useRouter();
   const { ads, setAds, profiles, activeId, setActive, addProfile, removeProfile, renameProfile } = useAds();
-  const initial = loadSettings();
-  const [sp, setSp] = React.useState(loadSettings().stream_payment_address || (process.env.NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS || ""));
-  const [glm, setGlm] = React.useState(loadSettings().glm_token_address || (process.env.NEXT_PUBLIC_GLM_TOKEN_ADDRESS || ""));
-  const [sshKeys, setSshKeys] = React.useState<SSHKey[]>(initial.ssh_keys || (initial.ssh_public_key ? [{ id: 'default', name: 'Default', value: initial.ssh_public_key }] : []));
-  const [defaultKeyId, setDefaultKeyId] = React.useState<string | undefined>(initial.default_ssh_key_id || (initial.ssh_keys && initial.ssh_keys[0]?.id) || (initial.ssh_public_key ? 'default' : undefined));
+  // Mount gate to avoid hydration mismatches from localStorage/env reads
+  const [mounted, setMounted] = React.useState(false);
+  React.useEffect(() => { setMounted(true); }, []);
+
+  // Initialize settings state after mount
+  const [sp, setSp] = React.useState<string>(process.env.NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS || "");
+  const [glm, setGlm] = React.useState<string>(process.env.NEXT_PUBLIC_GLM_TOKEN_ADDRESS || "");
+  const [sshKeys, setSshKeys] = React.useState<SSHKey[]>([]);
+  const [defaultKeyId, setDefaultKeyId] = React.useState<string | undefined>(undefined);
   const [saved, setSaved] = React.useState(false);
-  const [displayCurrency, setDisplayCurrency] = React.useState<'fiat'|'token'>(initial.display_currency === 'token' ? 'token' : 'fiat');
+  const [displayCurrency, setDisplayCurrency] = React.useState<'fiat'|'token'>('fiat');
   const [mode, setMode] = React.useState<"golem-base"|"central">(ads.mode);
   const [disc, setDisc] = React.useState<string>(ads.discovery_url);
   const [rpc, setRpc] = React.useState<string>(ads.golem_base_rpc_url);
@@ -37,6 +42,26 @@ export default function SettingsPage() {
     } catch {}
   }, []);
 
+  // Load persisted requestor settings on mount
+  React.useEffect(() => {
+    if (!mounted) return;
+    const initial = loadSettings();
+    setSp(initial.stream_payment_address || (process.env.NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS || ""));
+    setGlm(initial.glm_token_address || (process.env.NEXT_PUBLIC_GLM_TOKEN_ADDRESS || ""));
+    const keys: SSHKey[] = initial.ssh_keys || (initial.ssh_public_key ? [{ id: 'default', name: 'Default', value: initial.ssh_public_key }] : []);
+    setSshKeys(keys);
+    setDefaultKeyId(initial.default_ssh_key_id || (keys[0]?.id) || (initial.ssh_public_key ? 'default' : undefined));
+    setDisplayCurrency(initial.display_currency === 'token' ? 'token' : 'fiat');
+    // Sync ads-derived fields (profiles/context already mounted)
+    setMode(ads.mode);
+    setDisc(ads.discovery_url);
+    setRpc(ads.golem_base_rpc_url);
+    setWs(ads.golem_base_ws_url);
+    try { setChainIdText('0x' + ads.chain_id.toString(16)); } catch { setChainIdText(String(ads.chain_id || '')); }
+    setProfileName(profiles.find(p => p.id === activeId)?.name || "");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mounted]);
+
   const save = () => {
     saveSettings({ ssh_keys: sshKeys, default_ssh_key_id: defaultKeyId, stream_payment_address: sp, glm_token_address: glm, display_currency: displayCurrency });
     // Parse chain id from text (accept hex 0x.. or decimal)
@@ -57,6 +82,29 @@ export default function SettingsPage() {
     setSaved(true);
     setTimeout(() => setSaved(false), 1500);
   };
+
+  // Render skeletons until mounted to avoid hydration mismatch
+  if (!mounted) {
+    return (
+      <div className="space-y-4">
+        <h2>Settings</h2>
+        <div className="grid max-w-3xl gap-4">
+          <div className="card">
+            <div className="card-body grid gap-3">
+              <Skeleton className="h-5 w-40" />
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-5 w-64" />
+              <Skeleton className="h-10 w-full" />
+              <div className="flex items-center gap-3 pt-2">
+                <Skeleton className="h-10 w-24" />
+                <Skeleton className="h-4 w-16" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
