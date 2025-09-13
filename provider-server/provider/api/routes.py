@@ -15,7 +15,7 @@ from ..container import Container
 from ..jobs.store import JobStore
 from ..utils.logging import setup_logger
 from ..utils.ascii_art import vm_creation_animation, vm_status_change
-from ..vm.models import VMInfo, VMAccessInfo, VMConfig, VMResources, VMNotFoundError
+from ..vm.models import VMInfo, VMAccessInfo, VMConfig, VMResources, VMNotFoundError, VMStatus
 from .models import (
     CreateVMRequest,
     ProviderInfoResponse,
@@ -182,6 +182,28 @@ async def get_vm_status(
         vm_status_change(requestor_name, status.status.value)
         return status
     except VMNotFoundError as e:
+        # If a mapping exists and resources are currently allocated for this VM,
+        # treat it as provisioning and return a synthetic 'creating' status
+        try:
+            multipass_name = await vm_service.name_mapper.get_multipass_name(requestor_name)
+        except Exception:
+            multipass_name = None
+        if multipass_name:
+            try:
+                res = vm_service.resource_tracker.get_allocated_resources_for(requestor_name)  # type: ignore[attr-defined]
+            except Exception:
+                res = None
+            if res:
+                synthetic = VMInfo(
+                    id=requestor_name,
+                    name=requestor_name,
+                    status=VMStatus.CREATING,
+                    resources=res,
+                    ip_address=None,
+                    ssh_port=None,
+                )
+                vm_status_change(requestor_name, synthetic.status.value)
+                return synthetic
         logger.error(f"VM not found: {e}")
         raise HTTPException(status_code=404, detail=str(e))
     except MultipassError as e:

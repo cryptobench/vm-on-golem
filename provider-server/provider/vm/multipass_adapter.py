@@ -114,9 +114,16 @@ class MultipassAdapter(VMProvider):
             raise MultipassError(f"Failed to verify multipass installation: {e}")
 
     async def create_vm(self, config: VMConfig) -> VMInfo:
-        """Create a new VM."""
-        multipass_name = f"golem-{uuid.uuid4()}"
-        await self.name_mapper.add_mapping(config.name, multipass_name)
+        """Create a new VM.
+
+        Uses a pre-assigned multipass_name from VMConfig when provided to keep
+        name mapping stable across the provisioning window. Falls back to a
+        generated name for backward compatibility.
+        """
+        multipass_name = config.multipass_name or f"golem-{uuid.uuid4()}"
+        # If the name was generated here, ensure the mapping exists.
+        if not config.multipass_name:
+            await self.name_mapper.add_mapping(config.name, multipass_name)
 
         launch_cmd = [
             "launch",

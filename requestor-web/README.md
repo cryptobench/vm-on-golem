@@ -10,6 +10,16 @@ Quick start
 - npm run dev
 - npm run build && npm run start (or deploy the `out/` folder as static site)
 
+Data fetching (SWR)
+
+- SWR is used for client-side fetching, caching and polling. A global `SWRConfig` is set in `app/layout.tsx`.
+- Prefer hooks in `hooks/useApiSWR.ts` over ad‑hoc `fetch` calls:
+  - `useProviderInfo(providerId, { refreshInterval })`
+  - `useVmAccess(providerId, vmId, { refreshInterval })`
+  - `useVmStatusSafe(providerId, vmId, { refreshInterval })`
+  - `useVmStreamStatus(providerId, vmId, { refreshInterval })`
+- Pages that display VM status poll at intervals and use skeletons for content loading, per the Loading UX guidelines.
+
 Price cache (USD)
 
 - A centralized background poller runs in the global layout and refreshes ETH/GLM USD prices once per minute.

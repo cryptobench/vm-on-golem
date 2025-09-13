@@ -1,72 +1,34 @@
 "use client";
 import React from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { loadRentals, saveRentals, vmAccess, vmStop, vmDestroy, loadSettings, providerInfo as fetchProviderInfo, vmStatus, vmStatusSafe, type Rental } from "../../lib/api";
+import { loadRentals, saveRentals, vmStop, vmDestroy, loadSettings, type Rental } from "../../lib/api";
 import { useAds } from "../../context/AdsContext";
 import { useToast } from "../../components/ui/Toast";
 import { Spinner } from "../../components/ui/Spinner";
+import { StatusBadge } from "../../components/ui/StatusBadge";
 import { Skeleton } from "../../components/ui/Skeleton";
 import { BrowserProvider, Contract } from "ethers";
 import streamPayment from "../../public/abi/StreamPayment.json";
-import erc20 from "../../public/abi/ERC20.json";
-import { ensureNetwork, getPaymentsChain } from "../../lib/chain";
+import { useStreamActions } from "../../hooks/useStreamActions";
 import { useWallet } from "../../context/WalletContext";
 import { buildSshCommand } from "../../lib/ssh";
-import { humanDuration } from "../../lib/streams";
+import { humanDuration, type ChainStream, fetchStreamWithMeta } from "../../lib/streams";
+import { parseHumanDuration } from "../../lib/time";
 import { getPriceUSD, onPricesUpdated } from "../../lib/prices";
 import { RiCpuLine, RiStackLine, RiHardDrive2Line } from "@remixicon/react";
 import { StreamCard } from "../../components/streams/StreamCard";
+import { countryFlagEmoji, countryFullName } from "../../lib/intl";
+import { useProviderInfo, useVmAccess, useVmStatusSafe, useVmStatus } from "../../hooks/useApiSWR";
 
-type ChainStream = {
-  token: string; sender: string; recipient: string;
-  startTime: bigint; stopTime: bigint; ratePerSecond: bigint;
-  deposit: bigint; withdrawn: bigint; halted: boolean;
-};
+// ChainStream imported from lib/streams
 
-function StatusBadge({ status }: { status?: string | null }) {
-  const s = (status || '').toLowerCase();
-  if (s === 'running') return <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">● Running</span>;
-  if (s === 'creating') return <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700"><Spinner className="h-3.5 w-3.5" /> Creating</span>;
-  if (s === 'stopped') return <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">● Stopped</span>;
-  if (s === 'terminated' || s === 'deleted') return <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">● Terminated</span>;
-  if (s === 'error' || s === 'failed') return <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">● Error</span>;
-  return <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">● Unknown</span>;
-}
+// StatusBadge imported from shared UI
 
-function countryFlagEmoji(code: string): string {
-  const cc = (code || '').toUpperCase();
-  if (cc.length !== 2) return '🏳️';
-  const A = 0x1F1E6;
-  const alpha = 'A'.charCodeAt(0);
-  return Array.from(cc).map(ch => String.fromCodePoint(A + (ch.charCodeAt(0) - alpha))).join('');
-}
-
-function countryFullName(code: string): string {
-  try {
-    // @ts-ignore
-    const dn = new Intl.DisplayNames(['en'], { type: 'region' });
-    return dn.of((code || '').toUpperCase()) || (code || '').toUpperCase();
-  } catch { return (code || '').toUpperCase(); }
-}
+// Country helpers imported from lib/intl
 
 // humanDuration provided by lib/streams
 
-function parseTimeInput(v: string): number | null {
-  // Accept inputs like "90", "30m", "2h", "1h 30m", "2h 30m 20s"
-  if (!v) return null;
-  const t = v.trim().toLowerCase();
-  if (!t.length) return null;
-  if (/^\d+$/.test(t)) return parseInt(t, 10) * 60; // minutes
-  let seconds = 0;
-  const re = /(\d+)\s*(h|m|s)/g;
-  let m;
-  while ((m = re.exec(t))) {
-    const n = parseInt(m[1], 10);
-    const u = m[2];
-    if (u === 'h') seconds += n * 3600; else if (u === 'm') seconds += n * 60; else seconds += n;
-  }
-  return seconds || null;
-}
+const parseTimeInput = parseHumanDuration;
 
 export default function VmDetailsClient() {
   const search = useSearchParams();
@@ -116,90 +78,110 @@ export default function VmDetailsClient() {
     } catch { setVm(null); }
   }, [vmId]);
 
+  // SWR-backed provider info, access, and VM existence polling
+  const { data: swrProvider } = useProviderInfo(vm?.provider_id, { refreshInterval: 30000 });
+  const { data: swrAccess } = useVmAccess(vm?.provider_id, vm?.vm_id, { refreshInterval: 8000 });
+  const { data: swrStatus } = useVmStatusSafe(vm?.provider_id, vm?.vm_id, { refreshInterval: 8000 });
+  const { data: swrVm } = useVmStatus(vm?.provider_id, vm?.vm_id, { refreshInterval: 8000 });
+
   React.useEffect(() => {
-    if (!vm) return;
-    (async () => {
-      try {
-        setErr(null);
-        const acc = await vmAccess(vm.provider_id, vm.vm_id, ads).catch(() => ({}));
-        setAccess(acc);
-      } catch {}
-      try {
-        const p = await fetchProviderInfo(vm.provider_id, ads).catch(() => null);
-        if (p) setProvider({ country: p.country, platform: p.platform, ip_address: p.ip_address });
-      } catch {}
-      try {
-        // If VM no longer exists, mark rental as terminated locally
-        const safe = await vmStatusSafe(vm.provider_id, vm.vm_id, ads);
-        if (!safe.exists && safe.code === 404) {
-          setAccess(null);
-          setProvider(prev => prev ? { ...prev } : prev);
-          // Update local rental record to reflect termination
-          try {
-            const list = loadRentals();
-            const idx = list.findIndex(x => x.vm_id === vm.vm_id && x.provider_id === vm.provider_id);
-            if (idx >= 0) {
-              const next: Rental = { ...list[idx], status: 'terminated', ssh_port: null, ended_at: Math.floor(Date.now()/1000) };
-              const out = [...list];
-              out[idx] = next;
-              saveRentals(out);
-              setVm(next);
-            }
-          } catch {}
-        } else {
-          const s = safe.data;
-          if (s?.resources) {
-            // Attach resources to displayed provider specs
-            setProvider(prev => ({ ...(prev || {}), resources: s.resources } as any));
-          }
-        }
-      } catch {}
-      try {
-        if (vm.stream_id && spAddr) {
-          const { ethereum } = window as any;
-          const provider = new BrowserProvider(ethereum);
-          const contract = new Contract(spAddr, (streamPayment as any).abi, provider);
-          const res = (await contract.streams(BigInt(vm.stream_id))) as ChainStream;
-          const now = BigInt((await provider.getBlock("latest"))!.timestamp!);
-          const remaining = res.stopTime > now ? (res.stopTime - now) : 0n;
-          setStream({ chain: res, remaining });
-          setRemaining(Number(remaining));
-          // Token meta
-          const zero = '0x0000000000000000000000000000000000000000';
-          if (res.token && res.token.toLowerCase() !== zero) {
-            try {
-              const erc = new Contract(res.token, (erc20 as any).abi, provider);
-              const [sym, dec] = await Promise.all([
-                erc.symbol().catch(() => 'TOKEN'),
-                erc.decimals().catch(() => 18),
-              ]);
-              setTokenSymbol(String(sym || 'TOKEN'));
-              setTokenDecimals(Number(dec || 18));
-            } catch {
-              setTokenSymbol('TOKEN'); setTokenDecimals(18);
-            }
-          } else {
-            setTokenSymbol('ETH'); setTokenDecimals(18);
-          }
-          // USD price (best-effort) from centralized cache
-          try {
-            const addr = (res.token || '').toLowerCase();
-            const glm = (loadSettings().glm_token_address || process.env.NEXT_PUBLIC_GLM_TOKEN_ADDRESS || '').toLowerCase();
-            const symUpper = (typeof tokenSymbol === 'string' ? tokenSymbol : '').toUpperCase();
-            const isEthLike = (addr === '0x0000000000000000000000000000000000000000') || symUpper === 'ETH' || symUpper === 'WETH';
-            const isGlmLike = (glm && addr === glm) || symUpper === 'GLM';
-            const price = isEthLike ? getPriceUSD('ETH') : (isGlmLike ? getPriceUSD('GLM') : null);
-            setUsdPrice(price);
-          } catch { setUsdPrice(null); }
-        } else {
-          setStream(null);
-        }
-      } catch (e: any) {
-        setStream(null);
+    if (swrProvider) setProvider({ country: (swrProvider as any).country, platform: (swrProvider as any).platform, ip_address: (swrProvider as any).ip_address });
+  }, [swrProvider]);
+
+  React.useEffect(() => {
+    if (swrAccess) setAccess(swrAccess as any);
+  }, [swrAccess]);
+
+  // Reconcile local VM record with provider's authoritative status
+  React.useEffect(() => {
+    if (!vm || !swrVm) return;
+    const s = (swrVm as any) || {};
+    const status = String(s.status || '').toLowerCase();
+    const sshPort = s.ssh_port != null ? Number(s.ssh_port) : null;
+    const ipAddr = s.ip_address || null;
+    const nowSec = Math.floor(Date.now()/1000);
+    let next: any | null = null;
+    if (status === 'running') {
+      if (vm.status !== 'running' || vm.ssh_port !== sshPort || vm.provider_ip !== ipAddr) {
+        next = { ...vm, status: 'running', ssh_port: sshPort, provider_ip: ipAddr };
       }
-    })();
-  // Re-run when VM context is available or changes
-  }, [vm?.vm_id, vm?.provider_id, vm?.stream_id, ads, spAddr, tokenSymbol]);
+    } else if (status === 'stopped') {
+      if (vm.status !== 'stopped') {
+        next = { ...vm, status: 'stopped' };
+      }
+    } else if (status === 'terminated' || status === 'deleted') {
+      if (vm.status !== 'terminated') {
+        next = { ...vm, status: 'terminated', ssh_port: null, ended_at: nowSec };
+      }
+    }
+    if (next) {
+      try {
+        const list = loadRentals();
+        const idx = list.findIndex(x => x.vm_id === vm.vm_id && x.provider_id === vm.provider_id);
+        if (idx >= 0) {
+          const out = [...list];
+          out[idx] = next as any;
+          saveRentals(out);
+        }
+        setVm(next);
+      } catch {
+        setVm(next);
+      }
+    }
+  }, [swrVm, vm?.vm_id, vm?.provider_id]);
+
+  React.useEffect(() => {
+    if (!vm || !swrStatus) return;
+    const safe = swrStatus as any;
+    if (!safe.exists && safe.code === 404) {
+      setAccess(null);
+      setProvider(prev => prev ? { ...prev } : prev);
+      const createdAt = (vm as any).created_at ? Number((vm as any).created_at) : 0;
+      const ageSec = createdAt ? Math.floor(Date.now()/1000) - createdAt : Infinity;
+      const isCreating = ((vm.status || '').toLowerCase() === 'creating');
+      const withinGrace = isCreating && ageSec < 180; // 3 minutes
+      if (!withinGrace) {
+        try {
+          const list = loadRentals();
+          const idx = list.findIndex(x => x.vm_id === vm.vm_id && x.provider_id === vm.provider_id);
+          if (idx >= 0) {
+            const next: Rental = { ...list[idx], status: 'terminated', ssh_port: null, ended_at: Math.floor(Date.now()/1000) };
+            const out = [...list];
+            out[idx] = next;
+            saveRentals(out);
+            setVm(next);
+          }
+        } catch {}
+      }
+    } else {
+      const s = (safe as any).data;
+      if (s?.resources) {
+        setProvider(prev => ({ ...(prev || {}), resources: s.resources } as any));
+      }
+    }
+  }, [swrStatus, vm?.vm_id, vm?.provider_id]);
+
+  // Stream details via lightweight polling + local 1s countdown
+  React.useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      if (!vm?.stream_id || !spAddr) { if (!cancelled) setStream(null); return; }
+      try {
+        const res = await fetchStreamWithMeta(spAddr, BigInt(vm.stream_id));
+        if (cancelled) return;
+        setStream({ chain: res.chain as any, remaining: BigInt(res.remaining) });
+        setRemaining(Number(res.remaining));
+        setTokenSymbol(String(res.tokenSymbol || 'ETH'));
+        setTokenDecimals(Number(res.tokenDecimals || 18));
+        setUsdPrice(res.usdPrice ?? null);
+      } catch {
+        if (!cancelled) setStream(null);
+      }
+    };
+    run();
+    const iv = setInterval(run, 15000);
+    return () => { cancelled = true; clearInterval(iv); };
+  }, [vm?.stream_id, spAddr]);
 
   // Keep USD price in sync with global cache
   React.useEffect(() => {
@@ -294,7 +276,7 @@ export default function VmDetailsClient() {
   }
 
   const sshHost = provider?.ip_address || vm.provider_ip || 'PROVIDER_IP';
-  const sshPort = access?.ssh_port || vm.ssh_port || null;
+  const sshPort = access?.ssh_port || (swrVm as any)?.ssh_port || vm.ssh_port || null;
   const sshCmd = sshPort ? buildSshCommand(sshHost, Number(sshPort)) : null;
 
   const copySSH = async () => {
@@ -333,23 +315,17 @@ export default function VmDetailsClient() {
     catch (e) { show("Destroy failed"); setBusy(false); }
   };
 
+  const { topUp: topUpAction } = useStreamActions(spAddr);
   const topUp = async (seconds: number) => {
     if (!vm.stream_id || !stream || !spAddr) return;
     try {
       setBusy(true);
-      const { ethereum } = window as any;
-      await ensureNetwork(ethereum, getPaymentsChain());
-      const provider = new BrowserProvider(ethereum);
-      const signer = await provider.getSigner(account ?? undefined);
-      const contract = new Contract(spAddr, (streamPayment as any).abi, signer);
-      const addWei = stream.chain.ratePerSecond * BigInt(seconds);
-      const tx = await contract.topUp(BigInt(vm.stream_id), addWei, {
-        value: stream.chain.token === '0x0000000000000000000000000000000000000000' ? addWei : 0n,
-        gasLimit: 150000n,
-      });
-      await tx.wait();
+      await topUpAction(BigInt(vm.stream_id), stream.chain.token, stream.chain.ratePerSecond, seconds);
       show("Top-up sent");
       // refresh stream
+      const { ethereum } = window as any;
+      const provider = new BrowserProvider(ethereum);
+      const contract = new Contract(spAddr, (streamPayment as any).abi, provider);
       const res = (await contract.streams(BigInt(vm.stream_id))) as ChainStream;
       const now = BigInt((await provider.getBlock("latest"))!.timestamp!);
       const remaining = res.stopTime > now ? (res.stopTime - now) : 0n;
@@ -368,7 +344,7 @@ export default function VmDetailsClient() {
           <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <StatusBadge status={vm.status || (vm.ssh_port ? 'running' : 'creating')} />
+                <StatusBadge status={((swrVm as any)?.status || vm.status || (sshPort ? 'running' : 'creating'))} />
                 <h2 className="truncate">{vm.name}</h2>
               </div>
               <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-gray-600">

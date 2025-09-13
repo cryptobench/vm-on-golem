@@ -9,6 +9,7 @@ import { useWallet } from "../../context/WalletContext";
 import { fetchStreamWithMeta } from "../../lib/streams";
 import { StreamCard } from "../streams/StreamCard";
 import streamPayment from "../../public/abi/StreamPayment.json";
+import { useStreamActions } from "../../hooks/useStreamActions";
 
 export function StreamsMini({ projectId }: { projectId: string }) {
   const rentals = (loadRentals() || []).filter(r => r.stream_id && (r.project_id || 'default') === projectId);
@@ -54,21 +55,11 @@ export function StreamsMini({ projectId }: { projectId: string }) {
     };
   }, []);
 
+  const { topUp } = useStreamActions(spAddr);
   const topUpSeconds = async (r: Rental, rate: bigint, token: string, seconds: number) => {
     try {
-      const addWei = rate * BigInt(Math.max(1, Math.floor(seconds)));
       setBusy(r.vm_id);
-      const { ethereum } = window as any;
-      await ensureNetwork(ethereum, getPaymentsChain());
-      const provider = new BrowserProvider(ethereum);
-      const signer = await provider.getSigner(account ?? undefined);
-      const contract = new Contract(spAddr, (streamPayment as any).abi, signer);
-      const streamId = BigInt(r.stream_id!);
-      const tx = await contract.topUp(streamId, addWei, {
-        value: token === '0x0000000000000000000000000000000000000000' ? addWei : 0n,
-        gasLimit: 150000n,
-      });
-      await tx.wait();
+      await topUp(BigInt(r.stream_id!), token, rate, seconds);
       show("Top-up sent");
       await load();
     } catch (e) {

@@ -8,17 +8,14 @@ import { Spinner } from "../../components/ui/Spinner";
 import { Skeleton } from "../../components/ui/Skeleton";
 import { useToast } from "../../components/ui/Toast";
 import { ensureNetwork, getPaymentsChain } from "../../lib/chain";
+import { useStreamActions } from "../../hooks/useStreamActions";
 import { useWallet } from "../../context/WalletContext";
-import { fetchStreamWithMeta } from "../../lib/streams";
+import { fetchStreamWithMeta, type ChainStream } from "../../lib/streams";
 import { getPriceUSD, onPricesUpdated } from "../../lib/prices";
 import { StreamCard } from "../../components/streams/StreamCard";
 import { RiCheckboxCircleFill, RiTimeFill, RiStackLine } from "@remixicon/react";
 
-type ChainStream = {
-  token: string; sender: string; recipient: string;
-  startTime: bigint; stopTime: bigint; ratePerSecond: bigint;
-  deposit: bigint; withdrawn: bigint; halted: boolean;
-};
+// ChainStream type now sourced from lib/streams
 
 type Row = {
   r: ReturnType<typeof loadRentals>[number];
@@ -120,23 +117,13 @@ export default function StreamsPage() {
     } catch {}
   };
 
+  const { topUp: topUpAction } = useStreamActions(spAddr);
   const topUp = async (row: Row, seconds: number) => {
     const sid = String(row.r.stream_id);
     try {
       if (!sid || !spAddr) return;
       setBusy(prev => ({ ...prev, [sid]: true }));
-      const { ethereum } = window as any;
-      await ensureNetwork(ethereum, getPaymentsChain());
-      const provider = new BrowserProvider(ethereum);
-      const signer = await provider.getSigner(account ?? undefined);
-      const contract = new Contract(spAddr, (streamPayment as any).abi, signer);
-      const addWei = row.chain.ratePerSecond * BigInt(seconds);
-      const zero = '0x0000000000000000000000000000000000000000';
-      const tx = await contract.topUp(BigInt(sid), addWei, {
-        value: row.chain.token?.toLowerCase() === zero ? addWei : 0n,
-        gasLimit: 150000n,
-      });
-      await tx.wait();
+      await topUpAction(BigInt(sid), row.chain.token, row.chain.ratePerSecond, seconds);
       show("Top-up sent");
       await refreshOne(sid);
     } catch (e) {

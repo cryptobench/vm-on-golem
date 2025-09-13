@@ -10,6 +10,7 @@ import { CreateWizardHost } from "../components/create/CreateWizardHost";
 // Ensure Buffer is available in the browser for SDK dependencies
 import { Buffer } from "buffer";
 import { startPricePolling } from "../lib/prices";
+import { SWRConfig } from "swr";
 if (typeof window !== "undefined") {
   // @ts-ignore
   if (!(globalThis as any).Buffer) (globalThis as any).Buffer = Buffer;
@@ -28,16 +29,22 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <AdsProvider>
             <ProjectsProvider>
               <ToastProvider>
-                <div className="min-h-screen w-full grid grid-cols-1 lg:grid-cols-[16rem_1fr]">
-                  <Sidebar />
-                  <div className="relative">
-                    <main className="p-4 sm:p-6 lg:p-8">
-                      <div className="mx-auto w-full max-w-6xl">{children}</div>
-                    </main>
-                    {/* Mount the create wizard in the main content column */}
-                    <CreateWizardHost />
+                <SWRConfig value={{
+                  revalidateOnFocus: false,
+                  revalidateIfStale: false,
+                  shouldRetryOnError: false,
+                }}>
+                  <div className="min-h-screen w-full grid grid-cols-1 lg:grid-cols-[16rem_1fr]">
+                    <Sidebar />
+                    <div className="relative">
+                      <main className="p-4 sm:p-6 lg:p-8">
+                        <div className="mx-auto w-full max-w-6xl">{children}</div>
+                      </main>
+                      {/* Mount the create wizard in the main content column */}
+                      <CreateWizardHost />
+                    </div>
                   </div>
-                </div>
+                </SWRConfig>
               </ToastProvider>
             </ProjectsProvider>
           </AdsProvider>

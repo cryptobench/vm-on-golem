@@ -1,6 +1,7 @@
 "use client";
 import React from "react";
 import { RiCpuLine, RiDatabase2Line, RiHardDrive2Line, RiStackLine } from "@remixicon/react";
+import { countryFlagEmoji } from "../../lib/intl";
 
 type Pricing = {
   usd_per_core_month?: number | null;
@@ -11,16 +12,7 @@ type Pricing = {
   glm_per_gb_storage_month?: number | null;
 } | null;
 
-export function codeToFlagEmoji(code?: string | null) {
-  if (!code) return "";
-  const cc = code.trim().toUpperCase();
-  if (!/^[A-Z]{2}$/.test(cc)) return cc;
-  const A = 0x1f1e6;
-  const base = "A".charCodeAt(0);
-  const first = A + (cc.charCodeAt(0) - base);
-  const second = A + (cc.charCodeAt(1) - base);
-  return String.fromCodePoint(first) + String.fromCodePoint(second);
-}
+// Use shared intl helper for flags
 
 export function ProviderRow({
   provider,
@@ -48,7 +40,7 @@ export function ProviderRow({
   onToggle: () => void;
 }) {
   const name = provider.provider_name?.trim() || provider.provider_id.slice(0, 8);
-  const flag = codeToFlagEmoji(provider.country);
+  const flag = countryFlagEmoji(provider.country || undefined);
 
   // Price summary line (hourly)
   let priceLine: string | null = null;

@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { Card, Tracker } from "@tremor/react";
 import { RiCheckboxCircleFill, RiErrorWarningFill, RiCloseCircleFill, RiTimeFill } from "@remixicon/react";
 import { humanDuration } from "../../lib/streams";
+import { parseHumanDuration } from "../../lib/time";
 import { Spinner } from "../ui/Spinner";
 
 export type StreamMeta = {
@@ -76,22 +77,7 @@ export function StreamCard({ title, streamId, chain, remaining, meta, displayCur
 
   // Custom human input for top-up like "1h30m", "45m"
   const [customInput, setCustomInput] = React.useState<string>("");
-  function parseHumanTime(v: string): number | null {
-    if (!v) return null;
-    const t = v.trim().toLowerCase();
-    if (!t) return null;
-    if (/^\d+$/.test(t)) return parseInt(t, 10) * 60; // minutes default
-    let seconds = 0; const re = /(\d+)\s*(d|h|m|s)/g; let m;
-    while ((m = re.exec(t))) {
-      const n = parseInt(m[1], 10);
-      const u = m[2];
-      if (u === 'd') seconds += n * 86400;
-      else if (u === 'h') seconds += n * 3600;
-      else if (u === 'm') seconds += n * 60;
-      else seconds += n;
-    }
-    return seconds || null;
-  }
+  const parseHumanTime = parseHumanDuration;
 
   const navigate = () => { if (detailsHref) router.push(detailsHref); };
   const [lastTopup, setLastTopup] = React.useState<'1800' | '3600' | '7200' | 'custom' | null>(null);
@@ -176,7 +162,7 @@ export function StreamCard({ title, streamId, chain, remaining, meta, displayCur
                   />
                   <button
                     className="btn btn-secondary h-10"
-                    disabled={busy || !(parseHumanTime(customInput) && parseHumanTime(customInput)! > 0)}
+                    disabled={busy || !((() => { const secs = parseHumanTime(customInput); return !!(secs && secs > 0); })())}
                     onClick={(e) => {
                       e.stopPropagation();
                       const secs = parseHumanTime(customInput);
