@@ -40,7 +40,7 @@ export function ProviderRow({
   onToggle: () => void;
 }) {
   const name = provider.provider_name?.trim() || provider.provider_id.slice(0, 8);
-  const flag = countryFlagEmoji(provider.country || undefined);
+  const flag = countryFlagEmoji(provider.country || '');
 
   // Price summary line (hourly)
   let priceLine: string | null = null;

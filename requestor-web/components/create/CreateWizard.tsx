@@ -6,6 +6,7 @@ import { useAds } from "../../context/AdsContext";
 import { fetchAllProviders, computePriceRange, computeEstimate, loadSettings, saveSettings, type SSHKey, type ProviderAd } from "../../lib/api";
 import { Modal } from "../ui/Modal";
 import { ProviderRow } from "../providers/ProviderRow";
+import { KeyPicker } from "../ssh/KeyPicker";
 import { countryFullName, countryFlagEmoji } from "../../lib/intl";
 
 type Step = 0 | 1 | 2 | 3 | 4;
