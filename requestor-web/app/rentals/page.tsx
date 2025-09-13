@@ -1,23 +1,18 @@
 "use client";
 import React from "react";
-import { loadRentals, saveRentals, vmAccess, vmStop, vmDestroy, vmStreamStatus, type Rental } from "../../lib/api";
-import { buildSshCommand, copyText } from "../../lib/ssh";
+import { loadRentals, saveRentals, vmAccess, vmStop, vmDestroy, type Rental } from "../../lib/api";
+import { useCopySSH } from "../../hooks/useCopySSH";
 import { useToast } from "../../components/ui/Toast";
 import { useAds } from "../../context/AdsContext";
 import { Spinner } from "../../components/ui/Spinner";
 import { Skeleton } from "../../components/ui/Skeleton";
 import { useProjects } from "../../context/ProjectsContext";
+import { useProjectRentals } from "../../hooks/useProjectRentals";
 import { VmCard } from "../../components/vm/VmCard";
+import { VmCardWithData } from "../../components/vm/VmCardWithData";
+import { StatusBadge } from "../../components/ui/StatusBadge";
 
-function StatusBadge({ status }: { status?: string | null }) {
-  const s = (status || '').toLowerCase();
-  if (s === 'running') return <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">● Running</span>;
-  if (s === 'creating') return <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700"><Spinner className="h-3.5 w-3.5" /> Creating</span>;
-  if (s === 'stopped') return <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">● Stopped</span>;
-  if (s === 'terminated' || s === 'deleted') return <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">● Terminated</span>;
-  if (s === 'error' || s === 'failed') return <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">● Error</span>;
-  return <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">● Unknown</span>;
-}
+// StatusBadge now imported from shared UI
 
 function humanDuration(totalSec: number): string {
   const s = Math.max(0, Math.floor(totalSec));
@@ -34,101 +29,22 @@ function humanDuration(totalSec: number): string {
 }
 
 export default function RentalsPage() {
-  const [items, setItems] = React.useState<ReturnType<typeof loadRentals> | null>(null);
-  const [remaining, setRemaining] = React.useState<Record<string, number>>({});
+  const [itemsRaw, setItemsRaw] = React.useState<ReturnType<typeof loadRentals> | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [busyId, setBusyId] = React.useState<string | null>(null);
   const { ads } = useAds();
   const { show } = useToast();
   const { activeId } = useProjects();
+  const { items, setItems, refresh } = useProjectRentals(activeId);
 
-  const refresh = () => setItems(loadRentals());
+  React.useEffect(() => { const t = setTimeout(() => refresh(), 200); return () => clearTimeout(t); }, [refresh]);
 
-  React.useEffect(() => {
-    const t = setTimeout(() => refresh(), 200); // brief delay for skeleton effect
-    return () => clearTimeout(t);
-  }, []);
+  // Remaining seconds handled per-card via SWR + 1s ticker
 
-  // Fetch per-VM stream remaining (provider computes from chain) and set countdowns
-  React.useEffect(() => {
-    if (!items) return;
-    const list = items.filter(i => (i.project_id || 'default') === activeId && !!i.stream_id) as Rental[];
-    (async () => {
-      const next: Record<string, number> = {};
-      for (const r of list) {
-        try {
-          const st = await vmStreamStatus(r.provider_id, r.vm_id, ads);
-          next[r.vm_id] = st?.computed?.remaining_seconds ?? 0;
-        } catch {}
-      }
-      setRemaining(next);
-    })();
-  }, [items, activeId, ads]);
+  // Project-level reconcile handled by useProjectRentals
 
-  // Local 1s ticker for remaining seconds
-  React.useEffect(() => {
-    const iv = setInterval(() => {
-      setRemaining(prev => {
-        const out: Record<string, number> = {};
-        for (const [k, v] of Object.entries(prev)) out[k] = v > 0 ? v - 1 : 0;
-        return out;
-      });
-    }, 1000);
-    return () => clearInterval(iv);
-  }, []);
-
-  // Background reconcile to tombstone deleted VMs
-  React.useEffect(() => {
-    let cancelled = false;
-    const tick = async () => {
-      const list = loadRentals();
-      const next = [...list];
-      let changed = false;
-      for (let i = 0; i < next.length; i++) {
-        const r = next[i] as any;
-        // Only check those in active project for efficiency
-        if ((r.project_id || 'default') !== activeId) continue;
-        // Skip terminated/deleted VMs to avoid repeated 404 polls
-        const status = ((r.status || '') as string).toLowerCase();
-        if (status === 'terminated' || status === 'deleted') continue;
-        try {
-          const { vmStatusSafe } = await import('../../lib/api');
-          const st = await vmStatusSafe(r.provider_id, r.vm_id, ads);
-          if (!st.exists && st.code === 404) {
-            if (r.status !== 'terminated') {
-              next[i] = { ...r, status: 'terminated', ssh_port: null, ended_at: Math.floor(Date.now()/1000) };
-              changed = true;
-            }
-          }
-        } catch {}
-        if (cancelled) return;
-      }
-      if (changed) {
-        saveRentals(next as any);
-        setItems(next as any);
-      }
-    };
-    const iv = setInterval(tick, 8000);
-    tick();
-    return () => { cancelled = true; clearInterval(iv); };
-  }, [activeId, ads]);
-
-  const copySSH = async (r: any) => {
-    setError(null); setBusyId(r.vm_id);
-    try {
-      let port = r.ssh_port || undefined;
-      let host = r.provider_ip || undefined;
-      if (!port) {
-        try { const acc = await vmAccess(r.provider_id, r.vm_id, ads); port = acc?.ssh_port || port; } catch {}
-      }
-      if (!host) host = r.provider_ip || 'PROVIDER_IP';
-      if (!port) { show('Could not resolve SSH port'); return; }
-      const cmd = buildSshCommand(host, Number(port));
-      const ok = await copyText(cmd);
-      show(ok ? 'SSH command copied' : 'Copy failed');
-    } catch (e: any) { setError(e?.message || String(e)); }
-    finally { setBusyId(null); }
-  };
+  const copySSHAction = useCopySSH();
+  const copySSH = async (r: any) => { setError(null); setBusyId(r.vm_id); try { await copySSHAction(r); } finally { setBusyId(null); } };
   const stop = async (r: any) => {
     setError(null); setBusyId(r.vm_id);
     try { await vmStop(r.provider_id, r.vm_id, ads); alert('Stop requested'); } catch (e: any) { setError(e?.message || String(e)); } finally { setBusyId(null); }
@@ -179,11 +95,10 @@ export default function RentalsPage() {
               <div className="mb-2 text-sm text-gray-700">Active</div>
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {active.map((r: Rental) => (
-                  <VmCard
+                  <VmCardWithData
                     key={r.vm_id}
                     rental={r}
                     busy={busyId === r.vm_id}
-                    remainingSeconds={remaining[r.vm_id]}
                     onCopySSH={copySSH}
                     onStop={stop}
                     onDestroy={destroy}
@@ -208,7 +123,6 @@ export default function RentalsPage() {
                     key={r.vm_id}
                     rental={r}
                     busy={busyId === r.vm_id}
-                    remainingSeconds={remaining[r.vm_id]}
                     onDestroy={destroy}
                     showStreamMeta={true}
                     showCopy={false}

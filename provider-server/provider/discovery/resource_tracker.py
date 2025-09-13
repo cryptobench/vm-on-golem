@@ -91,6 +91,13 @@ class ResourceTracker:
         """Get list of allocated VM IDs."""
         return list(self._allocated_vms.keys())
 
+    def get_allocated_resources_for(self, vm_id: str) -> Optional[VMResources]:
+        """Get the resources reserved for a VM if currently allocated.
+
+        Returns None if no allocation is currently tracked for the given vm_id.
+        """
+        return self._allocated_vms.get(vm_id)
+
     def get_available_resources(self) -> Dict[str, int]:
         """Get currently available resources."""
         return {

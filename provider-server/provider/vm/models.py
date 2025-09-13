@@ -98,6 +98,8 @@ class VMConfig(BaseModel):
     ssh_key: str = Field(..., pattern="^(ssh-rsa|ssh-ed25519) ",
                          description="SSH public key for VM access")
     cloud_init_path: Optional[str] = None
+    # Final multipass VM name to use; if None, provider may generate one.
+    multipass_name: Optional[str] = None
 
     @field_validator("name")
     def validate_name(cls, v: str) -> str:

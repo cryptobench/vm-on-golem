@@ -31,7 +31,11 @@ class VMService:
         if not await self.resource_tracker.allocate(config.resources, config.name):
             raise ValueError("Insufficient resources available on provider")
 
-        multipass_name = f"golem-{config.name}-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+        # Generate a stable multipass name up-front so downstream code and
+        # status checks see a consistent mapping during provisioning.
+        from uuid import uuid4
+        multipass_name = f"golem-{uuid4()}"
+        config.multipass_name = multipass_name
         await self.name_mapper.add_mapping(config.name, multipass_name)
 
         cloud_init_path, config_id = generate_cloud_init(

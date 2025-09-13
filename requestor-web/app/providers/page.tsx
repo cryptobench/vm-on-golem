@@ -6,10 +6,13 @@ import { useAds } from "../../context/AdsContext";
 import { Spinner } from "../../components/ui/Spinner";
 import { TableSkeleton } from "../../components/ui/Skeleton";
 import { ProviderRow } from "../../components/providers/ProviderRow";
+import { RentDialog as RentDialogExt } from "../../components/providers/RentDialog";
 import { RiArrowRightLine } from "@remixicon/react";
+import { countryFlagEmoji, countryFullName } from "../../lib/intl";
+import { useSettings } from "../../hooks/useSettings";
 
 export default function ProvidersPage() {
-  const displayCurrency = ((typeof window !== 'undefined' && (JSON.parse(localStorage.getItem('requestor_settings_v1') || '{}')?.display_currency === 'token')) ? 'token' : 'fiat');
+  const { displayCurrency } = useSettings();
   const [cpu, setCpu] = React.useState<number | undefined>();
   const [memory, setMemory] = React.useState<number | undefined>();
   const [storage, setStorage] = React.useState<number | undefined>();
@@ -55,11 +58,10 @@ export default function ProvidersPage() {
     (async () => {
       setLoadingCountries(true);
       try {
-        const providers = await fetchAllProviders(ads);
+        const { listCountries } = await import('../../lib/providers');
+        const list = await listCountries(ads);
         if (cancelled) return;
-        const setC = new Set<string>();
-        providers.forEach(p => { const c = (p.country || '').trim(); if (c) setC.add(c.toUpperCase()); });
-        setCountryOptions(Array.from(setC).sort());
+        setCountryOptions(list);
       } catch {
         setCountryOptions([]);
       } finally { setLoadingCountries(false); }
@@ -207,7 +209,7 @@ export default function ProvidersPage() {
         const sel = rows.find(r => r.provider_id === selectedProviderId);
         if (!sel) return null;
         return (
-          <RentDialog
+          <RentDialogExt
             provider={sel}
             defaultSpec={{ cpu: cpu || 1, memory: memory || 2, storage: storage || 20 }}
             onClose={() => setRentOpen(false)}
@@ -217,27 +219,6 @@ export default function ProvidersPage() {
       })()}
     </div>
   );
-}
-
-function countryFlagEmoji(code: string): string {
-  const cc = (code || '').toUpperCase();
-  if (cc.length !== 2) return '🏳️';
-  const A = 0x1F1E6;
-  const alpha = 'A'.charCodeAt(0);
-  const chars = Array.from(cc).map(ch => String.fromCodePoint(A + (ch.charCodeAt(0) - alpha))).join('');
-  return chars;
-}
-
-function countryFullName(code: string): string {
-  try {
-    // Prefer English names for consistency
-    // @ts-ignore
-    const dn = new Intl.DisplayNames(['en'], { type: 'region' });
-    const name = dn.of((code || '').toUpperCase());
-    return name || (code || '').toUpperCase();
-  } catch {
-    return (code || '').toUpperCase();
-  }
 }
 
 function RentInline({ provider, defaultSpec, adsMode }: { provider: any; defaultSpec: { cpu?: number; memory?: number; storage?: number }; adsMode: AdsConfig }) {
@@ -265,7 +246,7 @@ function RentInline({ provider, defaultSpec, adsMode }: { provider: any; default
           <RiArrowRightLine className="h-4 w-4" />
         </span>
       </button>
-      {open && <RentDialog provider={provider} defaultSpec={defaultSpec} onClose={() => setOpen(false)} adsMode={adsMode} />}
+      {open && <RentDialogExt provider={provider} defaultSpec={defaultSpec} onClose={() => setOpen(false)} adsMode={adsMode} />}
     </>
   );
 }
@@ -274,6 +255,7 @@ import { BrowserProvider, Contract, parseEther } from "ethers";
 import streamPayment from "../../public/abi/StreamPayment.json";
 import erc20 from "../../public/abi/ERC20.json";
 import { createVm, loadSettings, saveRentals, loadRentals, saveSettings, vmAccess, vmJobStatus, type AdsConfig, type SSHKey } from "../../lib/api";
+//
 import { Modal } from "../../components/ui/Modal";
 import { useWallet } from "../../context/WalletContext";
 import { useProjects } from "../../context/ProjectsContext";

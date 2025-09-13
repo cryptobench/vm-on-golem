@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { loadSettings, saveSettings, type SSHKey } from "../../lib/api";
 import { useAds } from "../../context/AdsContext";
 import { Modal } from "../../components/ui/Modal";
+import { KeyPicker } from "../../components/ssh/KeyPicker";
 import { Skeleton } from "../../components/ui/Skeleton";
 
 export default function SettingsPage() {
@@ -29,10 +30,7 @@ export default function SettingsPage() {
   const [ws, setWs] = React.useState<string>(ads.golem_base_ws_url);
   const [profileName, setProfileName] = React.useState<string>(profiles.find(p => p.id === activeId)?.name || "");
   const [pendingProvider, setPendingProvider] = React.useState<string | null>(null);
-  const [showAddKey, setShowAddKey] = React.useState(false);
-  const [newKeyName, setNewKeyName] = React.useState("");
-  const [newKeyValue, setNewKeyValue] = React.useState("");
-  const [addError, setAddError] = React.useState<string | null>(null);
+  // SSH key add handled by KeyPicker
   const [tab, setTab] = React.useState<'connections'|'payments'|'ssh'>('connections');
 
   React.useEffect(() => {
@@ -228,32 +226,8 @@ export default function SettingsPage() {
             <div className="card-body">
               <div className="text-sm font-medium">SSH Keys</div>
               <div className="mt-2 text-sm text-gray-600">Add keys, pick a default.</div>
-              <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                <button className="relative flex h-36 items-center justify-center rounded-xl border-2 border-dashed border-gray-300 bg-white text-gray-600 hover:border-brand-400 hover:text-brand-700" onClick={() => { setNewKeyName(""); setNewKeyValue(""); setAddError(null); setShowAddKey(true); }}>
-                  <div className="text-center">
-                    <div className="text-2xl">＋</div>
-                    <div className="mt-1 text-sm font-medium">Add SSH Key</div>
-                  </div>
-                </button>
-                {sshKeys.map((k) => {
-                  const sel = defaultKeyId === k.id;
-                  const parts = (k.value || '').split(' ');
-                  const type = parts[0] || '';
-                  const short = parts[1] ? `${parts[1].slice(0, 12)}…${parts[1].slice(-8)}` : '';
-                  return (
-                    <button key={k.id} className={"relative h-36 rounded-xl border bg-white p-3 text-left shadow-sm transition-colors " + (sel ? 'border-brand-500 ring-1 ring-brand-300' : 'hover:border-gray-300')} onClick={() => setDefaultKeyId(k.id)} title={sel ? 'Default SSH key' : 'Set as default'}>
-                      <div className={"absolute right-2 top-2 h-6 w-6 rounded-full border-2 " + (sel ? 'border-brand-500 bg-brand-500 text-white' : 'border-gray-300 bg-white text-transparent')}>
-                        <svg viewBox="0 0 20 20" className="h-full w-full p-0.5"><path fill="currentColor" d="M7.629 13.233L4.4 10.004l1.414-1.414l1.815 1.815l0.001-0.001L14.186 3.85l1.414 1.414l-7.971 7.971z"/></svg>
-                      </div>
-                      <div className="mt-1 text-sm font-medium truncate pr-8">{k.name || 'Unnamed key'}</div>
-                      <div className="mt-1 text-xs text-gray-500">{type}</div>
-                      <div className="mt-1 text-xs font-mono text-gray-600 truncate">{short}</div>
-                      <div className="absolute bottom-2 right-2 flex gap-2">
-                        <button className="rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-700 hover:bg-red-100" onClick={(e) => { e.stopPropagation(); const next = sshKeys.filter(x => x.id !== k.id); setSshKeys(next); if (defaultKeyId === k.id) setDefaultKeyId(next[0]?.id); }}>Delete</button>
-                      </div>
-                    </button>
-                  );
-                })}
+              <div className="mt-4">
+                <KeyPicker value={defaultKeyId} onChange={(id) => setDefaultKeyId(id)} />
               </div>
               <div className="mt-4 flex items-center gap-3">
                 <button className="btn btn-primary" onClick={save}>Save</button>
@@ -264,46 +238,7 @@ export default function SettingsPage() {
         </div>
       )}
 
-      
-      {/* Add SSH Key Modal */}
-      <Modal open={showAddKey} onClose={() => setShowAddKey(false)}>
-        <div className="p-4">
-          <h3 id="add-ssh-key-title" className="text-lg font-medium">Add SSH Key</h3>
-          <div className="mt-3">
-            <label className="label">Name</label>
-            <input className="input" value={newKeyName} onChange={(e) => setNewKeyName(e.target.value)} placeholder="Work Laptop" />
-          </div>
-          <div className="mt-3">
-            <label className="label">Public key</label>
-            <textarea className="input" rows={3} value={newKeyValue} onChange={(e) => setNewKeyValue(e.target.value)} placeholder="ssh-ed25519 AAAA... user@host" />
-          </div>
-          {addError && <div className="mt-2 text-sm text-red-600">{addError}</div>}
-          <div className="mt-4 flex justify-end gap-2">
-            <button className="btn btn-secondary" onClick={() => setShowAddKey(false)}>Cancel</button>
-            <button
-              className="btn btn-primary"
-              onClick={() => {
-                const name = newKeyName.trim();
-                const value = newKeyValue.trim();
-                // Basic validation: type and base64 part present
-                const validType = /^(ssh-(ed25519|rsa)|ecdsa-sha2-nistp(256|384|521))\s+/.test(value);
-                if (!name) { setAddError('Enter a name'); return; }
-                if (!value || !validType || value.split(' ').length < 2) { setAddError('Enter a valid SSH public key'); return; }
-                const id = Math.random().toString(36).slice(2, 10);
-                const next = [...sshKeys, { id, name, value }];
-                const newDefault = defaultKeyId || id;
-                setSshKeys(next);
-                if (!defaultKeyId) setDefaultKeyId(id);
-                // Auto-save settings after adding (preserve currency)
-                saveSettings({ ssh_keys: next, default_ssh_key_id: newDefault, stream_payment_address: sp, glm_token_address: glm, display_currency: displayCurrency });
-                setSaved(true);
-                setTimeout(() => setSaved(false), 1500);
-                setShowAddKey(false);
-              }}
-            >Add</button>
-          </div>
-        </div>
-      </Modal>
+      {/* SSH key add handled by KeyPicker */}
     </div>
   );
 }
