@@ -1,6 +1,6 @@
 "use client";
 import React from "react";
-import { loadRentals, saveRentals, vmAccess, vmStop, vmDestroy, type Rental } from "../../lib/api";
+import { loadRentals, saveRentals, vmAccess, vmDestroy, type Rental, loadSettings, saveSettings } from "../../lib/api";
 import { useCopySSH } from "../../hooks/useCopySSH";
 import { useToast } from "../../components/ui/Toast";
 import { useAds } from "../../context/AdsContext";
@@ -8,8 +8,7 @@ import { Spinner } from "../../components/ui/Spinner";
 import { Skeleton } from "../../components/ui/Skeleton";
 import { useProjects } from "../../context/ProjectsContext";
 import { useProjectRentals } from "../../hooks/useProjectRentals";
-import { VmCard } from "../../components/vm/VmCard";
-import { VmCardWithData } from "../../components/vm/VmCardWithData";
+import { RentalRowWithData } from "../../components/rentals/RentalRowWithData";
 import { StatusBadge } from "../../components/ui/StatusBadge";
 
 // StatusBadge now imported from shared UI
@@ -29,6 +28,22 @@ function humanDuration(totalSec: number): string {
 }
 
 export default function RentalsPage() {
+  const [mounted, setMounted] = React.useState(false);
+  React.useEffect(() => { setMounted(true); }, []);
+  const [showTerminated, setShowTerminated] = React.useState<boolean>(false);
+  // Initialize from saved settings on mount and react to changes
+  React.useEffect(() => {
+    if (!mounted) return;
+    try { setShowTerminated(!!(loadSettings().show_terminated)); } catch {}
+    const onSettings = (e: any) => { try { setShowTerminated(!!e?.detail?.show_terminated); } catch {} };
+    const onStorage = () => { try { setShowTerminated(!!loadSettings().show_terminated); } catch {} };
+    window.addEventListener('requestor_settings_changed', onSettings as any);
+    window.addEventListener('storage', onStorage);
+    return () => {
+      window.removeEventListener('requestor_settings_changed', onSettings as any);
+      window.removeEventListener('storage', onStorage);
+    };
+  }, [mounted]);
   const [itemsRaw, setItemsRaw] = React.useState<ReturnType<typeof loadRentals> | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [busyId, setBusyId] = React.useState<string | null>(null);
@@ -45,12 +60,7 @@ export default function RentalsPage() {
 
   const copySSHAction = useCopySSH();
   const copySSH = async (r: any) => { setError(null); setBusyId(r.vm_id); try { await copySSHAction(r); } finally { setBusyId(null); } };
-  const stop = async (r: any) => {
-    setError(null); setBusyId(r.vm_id);
-    try { await vmStop(r.provider_id, r.vm_id, ads); alert('Stop requested'); } catch (e: any) { setError(e?.message || String(e)); } finally { setBusyId(null); }
-  };
   const destroy = async (r: any) => {
-    if (!confirm('Destroy VM?')) return;
     setError(null); setBusyId(r.vm_id);
     try {
       try { await vmDestroy(r.provider_id, r.vm_id, ads); } catch (e) { /* treat 404 as already deleted */ }
@@ -67,9 +77,24 @@ export default function RentalsPage() {
 
   return (
     <div className="space-y-6">
-      <h2>Your Rentals</h2>
+      <div className="flex items-center justify-between gap-3">
+        <h2>My Servers</h2>
+        {mounted && (
+          <button
+            className={showTerminated ? 'btn btn-secondary' : 'btn btn-secondary'}
+            onClick={() => {
+              const next = !showTerminated;
+              setShowTerminated(next);
+              try { saveSettings({ show_terminated: next }); } catch {}
+            }}
+            aria-pressed={showTerminated}
+          >
+            {showTerminated ? 'Hide terminated' : 'Show terminated'}
+          </button>
+        )}
+      </div>
       {error && <div className="text-sm text-red-600">{error}</div>}
-      {items === null ? (
+      {(!mounted) ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {Array.from({ length: 4 }).map((_, i) => (
             <div key={i} className="card"><div className="card-body">
@@ -93,19 +118,14 @@ export default function RentalsPage() {
           {active.length ? (
             <div>
               <div className="mb-2 text-sm text-gray-700">Active</div>
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="space-y-3">
                 {active.map((r: Rental) => (
-                  <VmCardWithData
+                  <RentalRowWithData
                     key={r.vm_id}
                     rental={r}
                     busy={busyId === r.vm_id}
                     onCopySSH={copySSH}
-                    onStop={stop}
                     onDestroy={destroy}
-                    showStreamMeta={true}
-                    showCopy={true}
-                    showStop={true}
-                    showDestroy={true}
                   />
                 ))}
               </div>
@@ -114,20 +134,16 @@ export default function RentalsPage() {
             <div className="text-gray-600">No active VMs. Rent one from the Providers tab.</div>
           )}
 
-          {terminated.length > 0 && (
+          {showTerminated && terminated.length > 0 && (
             <div>
               <div className="mt-4 mb-2 text-sm text-gray-700">Terminated</div>
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="space-y-3">
                 {terminated.map((r: Rental) => (
-                  <VmCard
+                  <RentalRowWithData
                     key={r.vm_id}
                     rental={r}
                     busy={busyId === r.vm_id}
                     onDestroy={destroy}
-                    showStreamMeta={true}
-                    showCopy={false}
-                    showStop={false}
-                    showDestroy={false}
                   />
                 ))}
               </div>

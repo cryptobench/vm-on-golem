@@ -23,31 +23,56 @@ function keyWithAds<T extends any[]>(prefix: string, ads: any, ...parts: T) {
 export function useProviderInfo(providerId?: string | null, config?: SWRConfiguration) {
   const { ads } = useAds();
   const key = useMemo(() => (providerId ? keyWithAds("provider-info", ads, providerId) : null), [providerId, ads]);
-  return useSWR(key, () => apiProviderInfo(providerId!, ads), config);
+  return useSWR(key, () => apiProviderInfo(providerId!, ads), {
+    revalidateOnFocus: true,
+    revalidateOnReconnect: true,
+    revalidateIfStale: true,
+    ...config,
+  });
 }
 
 export function useVmAccess(providerId?: string | null, vmId?: string | null, config?: SWRConfiguration) {
   const { ads } = useAds();
   const key = useMemo(() => ((providerId && vmId) ? keyWithAds("vm-access", ads, providerId, vmId) : null), [providerId, vmId, ads]);
-  return useSWR(key, () => apiVmAccess(providerId!, vmId!, ads), config);
+  return useSWR(key, () => apiVmAccess(providerId!, vmId!, ads), {
+    revalidateOnFocus: true,
+    revalidateOnReconnect: true,
+    revalidateIfStale: true,
+    ...config,
+  });
 }
 
 export function useVmStatusSafe(providerId?: string | null, vmId?: string | null, config?: SWRConfiguration) {
   const { ads } = useAds();
   const key = useMemo(() => ((providerId && vmId) ? keyWithAds("vm-status-safe", ads, providerId, vmId) : null), [providerId, vmId, ads]);
-  return useSWR(key, () => apiVmStatusSafe(providerId!, vmId!, ads), config);
+  return useSWR(key, () => apiVmStatusSafe(providerId!, vmId!, ads), {
+    revalidateOnFocus: true,
+    revalidateOnReconnect: true,
+    revalidateIfStale: true,
+    ...config,
+  });
 }
 
 export function useVmStatus(providerId?: string | null, vmId?: string | null, config?: SWRConfiguration) {
   const { ads } = useAds();
   const key = useMemo(() => ((providerId && vmId) ? keyWithAds("vm-status", ads, providerId, vmId) : null), [providerId, vmId, ads]);
-  return useSWR(key, () => apiVmStatus(providerId!, vmId!, ads), config);
+  return useSWR(key, () => apiVmStatus(providerId!, vmId!, ads), {
+    revalidateOnFocus: true,
+    revalidateOnReconnect: true,
+    revalidateIfStale: true,
+    ...config,
+  });
 }
 
 export function useVmStreamStatus(providerId?: string | null, vmId?: string | null, config?: SWRConfiguration) {
   const { ads } = useAds();
   const key = useMemo(() => ((providerId && vmId) ? keyWithAds("vm-stream-status", ads, providerId, vmId) : null), [providerId, vmId, ads]);
-  return useSWR(key, () => apiVmStreamStatus(providerId!, vmId!, ads), config);
+  return useSWR(key, () => apiVmStreamStatus(providerId!, vmId!, ads), {
+    revalidateOnFocus: true,
+    revalidateOnReconnect: true,
+    revalidateIfStale: true,
+    ...config,
+  });
 }
 
 export const mutate = globalMutate;

@@ -15,10 +15,11 @@ import { buildSshCommand } from "../../lib/ssh";
 import { humanDuration, type ChainStream, fetchStreamWithMeta } from "../../lib/streams";
 import { parseHumanDuration } from "../../lib/time";
 import { getPriceUSD, onPricesUpdated } from "../../lib/prices";
-import { RiCpuLine, RiStackLine, RiHardDrive2Line } from "@remixicon/react";
+import { RiCpuLine, RiStackLine, RiHardDrive2Line, RiFileCopyLine } from "@remixicon/react";
 import { StreamCard } from "../../components/streams/StreamCard";
 import { countryFlagEmoji, countryFullName } from "../../lib/intl";
 import { useProviderInfo, useVmAccess, useVmStatusSafe, useVmStatus } from "../../hooks/useApiSWR";
+import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 
 // ChainStream imported from lib/streams
 
@@ -53,6 +54,11 @@ export default function VmDetailsClient() {
   const [vm, setVm] = React.useState<ReturnType<typeof loadRentals>[number] | null>(null);
 
   const spAddr = (loadSettings().stream_payment_address || process.env.NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS || '').trim();
+
+  // Destroy confirmation state (must be before any early returns)
+  const [confirmDestroyOpen, setConfirmDestroyOpen] = React.useState(false);
+  const openDestroy = () => setConfirmDestroyOpen(true);
+  const closeDestroy = () => setConfirmDestroyOpen(false);
 
   React.useEffect(() => { setMounted(true); }, []);
   // React to Settings changes (currency toggle) live
@@ -92,7 +98,7 @@ export default function VmDetailsClient() {
     if (swrAccess) setAccess(swrAccess as any);
   }, [swrAccess]);
 
-  // Reconcile local VM record with provider's authoritative status
+  // Reconcile local VM record with provider's authoritative status (full status endpoint)
   React.useEffect(() => {
     if (!vm || !swrVm) return;
     const s = (swrVm as any) || {};
@@ -130,6 +136,8 @@ export default function VmDetailsClient() {
     }
   }, [swrVm, vm?.vm_id, vm?.provider_id]);
 
+  // Safe status endpoint: handle 404 termination and enrich provider resources.
+  // Also reconcile status when full endpoint data is unavailable.
   React.useEffect(() => {
     if (!vm || !swrStatus) return;
     const safe = swrStatus as any;
@@ -154,9 +162,45 @@ export default function VmDetailsClient() {
         } catch {}
       }
     } else {
-      const s = (safe as any).data;
+      const s = (safe as any).data || {};
+      // Update provider resources if present
       if (s?.resources) {
         setProvider(prev => ({ ...(prev || {}), resources: s.resources } as any));
+      }
+      // If we have status in the safe payload and it differs locally, reconcile.
+      if (s && s.status) {
+        const status = String(s.status || '').toLowerCase();
+        const sshPort = s.ssh_port != null ? Number(s.ssh_port) : null;
+        const ipAddr = s.ip_address || null;
+        const nowSec = Math.floor(Date.now()/1000);
+        let next: any | null = null;
+        if (status === 'running') {
+          if (vm.status !== 'running' || vm.ssh_port !== sshPort || vm.provider_ip !== ipAddr) {
+            next = { ...vm, status: 'running', ssh_port: sshPort, provider_ip: ipAddr };
+          }
+        } else if (status === 'stopped') {
+          if (vm.status !== 'stopped') {
+            next = { ...vm, status: 'stopped' };
+          }
+        } else if (status === 'terminated' || status === 'deleted') {
+          if (vm.status !== 'terminated') {
+            next = { ...vm, status: 'terminated', ssh_port: null, ended_at: nowSec };
+          }
+        }
+        if (next) {
+          try {
+            const list = loadRentals();
+            const idx = list.findIndex(x => x.vm_id === vm.vm_id && x.provider_id === vm.provider_id);
+            if (idx >= 0) {
+              const out = [...list];
+              out[idx] = next as any;
+              saveRentals(out);
+            }
+            setVm(next);
+          } catch {
+            setVm(next);
+          }
+        }
       }
     }
   }, [swrStatus, vm?.vm_id, vm?.provider_id]);
@@ -294,8 +338,7 @@ export default function VmDetailsClient() {
     catch (e) { show("Stop failed"); }
     finally { setBusy(false); }
   };
-  const destroyVm = async () => {
-    if (!confirm('Destroy VM?')) return;
+  const confirmDestroy = async () => {
     try {
       setBusy(true);
       try {
@@ -310,9 +353,11 @@ export default function VmDetailsClient() {
         saveRentals(left);
       } catch {}
       show("Destroyed");
+      closeDestroy();
       router.push('/rentals');
     }
-    catch (e) { show("Destroy failed"); setBusy(false); }
+    catch (e) { show("Destroy failed"); }
+    finally { setBusy(false); }
   };
 
   const { topUp: topUpAction } = useStreamActions(spAddr);
@@ -336,6 +381,17 @@ export default function VmDetailsClient() {
     } finally { setBusy(false); }
   };
 
+  // Pick VM spec from provider status if exposed, else from saved rental (no hook to avoid order issues)
+  const effectiveResources = (() => {
+    const s = (swrVm as any) || {};
+    const r = (s?.resources && typeof s.resources === 'object') ? s.resources : s;
+    const cpu = Number((r as any)?.cpu);
+    const memory = Number((r as any)?.memory);
+    const storage = Number((r as any)?.storage);
+    if ([cpu, memory, storage].every((n) => Number.isFinite(n) && n > 0)) return { cpu, memory, storage };
+    return vm?.resources || null;
+  })();
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -344,49 +400,66 @@ export default function VmDetailsClient() {
           <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <StatusBadge status={((swrVm as any)?.status || vm.status || (sshPort ? 'running' : 'creating'))} />
+                <StatusBadge status={((swrVm as any)?.status || (swrStatus as any)?.data?.status || vm.status || (sshPort ? 'running' : 'creating'))} />
                 <h2 className="truncate">{vm.name}</h2>
               </div>
-              <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-gray-600">
-                <div className="flex items-center gap-1"><span className="font-mono">{vm.vm_id}</span></div>
-                <span>•</span>
+              {/* Provider wallet (secondary label) */}
+              <div className="mt-1 font-mono text-xs sm:text-sm text-gray-700 break-all" title="Provider wallet">
+                {vm.provider_id}
+              </div>
+              {/* Country and architecture */}
+              <div className="mt-1 text-sm text-gray-600">
                 {(!mounted || provider === null) ? (
                   <div className="flex items-center gap-2">
                     <Skeleton className="h-4 w-6" />
                     <Skeleton className="h-4 w-32" />
-                    <span>•</span>
                     <Skeleton className="h-4 w-16" />
                   </div>
                 ) : (
-                  <>
-                    <div className="flex items-center gap-1">
-                      <span className="text-lg leading-none">{provider?.country ? countryFlagEmoji(provider.country) : '🏳️'}</span>
-                      <span>{provider?.country ? countryFullName(provider.country) : 'Unknown region'}</span>
-                    </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg leading-none">{provider?.country ? countryFlagEmoji(provider.country) : '🏳️'}</span>
+                    <span>{provider?.country ? countryFullName(provider.country) : 'Unknown region'}</span>
                     {provider?.platform && (
                       <>
                         <span>•</span>
                         <span className="rounded border px-1.5 py-0.5 text-[11px] text-gray-700" title="Architecture">{provider.platform}</span>
                       </>
                     )}
-                  </>
+                  </div>
                 )}
-                <span>•</span>
-                <div className="font-mono text-xs sm:text-sm">{vm.provider_id}</div>
+              </div>
+              {/* IP with copy icon */}
+              <div className="mt-1 text-sm text-gray-700">
+                {(!mounted || provider === null) ? (
+                  <Skeleton className="h-4 w-40" />
+                ) : (
+                  (() => {
+                    const ip = provider?.ip_address || vm.provider_ip || null;
+                    const copy = async () => {
+                      try {
+                        if (!ip) { show('IP unavailable'); return; }
+                        await navigator.clipboard.writeText(String(ip));
+                        show('IP copied');
+                      } catch { show('Could not copy IP'); }
+                    };
+                    return (
+                      <div className="inline-flex items-center gap-1">
+                        <button type="button" onClick={copy} className="font-mono text-sm text-gray-800 hover:underline" title="Copy IP">
+                          {ip ? `${ip}` : '—'}
+                        </button>
+                        <button type="button" onClick={copy} className="text-gray-600 hover:text-gray-900" aria-label="Copy IP" title="Copy IP">
+                          <RiFileCopyLine className="h-4 w-4" />
+                        </button>
+                      </div>
+                    );
+                  })()
+                )}
               </div>
             </div>
             <div className="flex flex-col items-start gap-2 sm:items-end">
-              <div className="text-sm text-gray-700">
-                {(!mounted || access === null) ? (
-                  <div className="flex items-center gap-2"><Skeleton className="h-4 w-36" /></div>
-                ) : (
-                  <>SSH: {sshHost}:{sshPort ?? '—'}</>
-                )}
-              </div>
               <div className="flex gap-2">
                 <button className="btn btn-secondary" onClick={copySSH} disabled={!sshCmd || vm.status === 'terminated'}>Copy SSH</button>
-                <button className="btn btn-secondary" onClick={stopVm} disabled={busy || vm.status === 'terminated'}>{busy ? <><Spinner className="h-4 w-4" /> Stop</> : 'Stop'}</button>
-                <button className="btn btn-danger" onClick={destroyVm} disabled={busy}>Destroy</button>
+                <button className="btn btn-danger" onClick={openDestroy} disabled={busy}>Destroy</button>
               </div>
             </div>
           </div>
@@ -398,19 +471,19 @@ export default function VmDetailsClient() {
         <div className="card"><div className="card-body">
           <div className="text-sm text-gray-500 inline-flex items-center gap-1.5"><RiCpuLine className="h-4 w-4 text-gray-500" /> CPU</div>
           <div className="mt-1 text-lg font-semibold">
-            {(!mounted || provider === null || !(provider as any)?.resources?.cpu) ? (<Skeleton className="h-6 w-24" />) : (<>{(provider as any)?.resources?.cpu} vCPU</>)}
+            {(!mounted || !effectiveResources?.cpu) ? (<Skeleton className="h-6 w-24" />) : (<>{effectiveResources.cpu} vCPU</>)}
           </div>
         </div></div>
         <div className="card"><div className="card-body">
           <div className="text-sm text-gray-500 inline-flex items-center gap-1.5"><RiStackLine className="h-4 w-4 text-gray-500" /> Memory</div>
           <div className="mt-1 text-lg font-semibold">
-            {(!mounted || provider === null || !(provider as any)?.resources?.memory) ? (<Skeleton className="h-6 w-24" />) : (<>{(provider as any)?.resources?.memory} GB</>)}
+            {(!mounted || !effectiveResources?.memory) ? (<Skeleton className="h-6 w-24" />) : (<>{effectiveResources.memory} GB</>)}
           </div>
         </div></div>
         <div className="card"><div className="card-body">
           <div className="text-sm text-gray-500 inline-flex items-center gap-1.5"><RiHardDrive2Line className="h-4 w-4 text-gray-500" /> Storage</div>
           <div className="mt-1 text-lg font-semibold">
-            {(!mounted || provider === null || !(provider as any)?.resources?.storage) ? (<Skeleton className="h-6 w-24" />) : (<>{(provider as any)?.resources?.storage} GB</>)}
+            {(!mounted || !effectiveResources?.storage) ? (<Skeleton className="h-6 w-24" />) : (<>{effectiveResources.storage} GB</>)}
           </div>
         </div></div>
       </div>
@@ -454,6 +527,17 @@ export default function VmDetailsClient() {
           busy={busy}
         />
       )}
+      {/* Destroy confirmation modal */}
+      <ConfirmDialog
+        open={confirmDestroyOpen}
+        onCancel={closeDestroy}
+        onConfirm={confirmDestroy}
+        title="Destroy VM"
+        description="Are you sure you want to permanently destroy this VM? This action cannot be undone."
+        confirmLabel="Destroy"
+        danger
+        busy={busy}
+      />
     </div>
   );
 }

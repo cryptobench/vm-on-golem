@@ -31,23 +31,34 @@ export function VmCardWithData(props: {
     return () => clearInterval(iv);
   }, []);
 
-  // Merge authoritative VM status/ports into local storage and into the card view
+  // Merge authoritative VM status/ports (and resources if available) into local storage and the card view
   React.useEffect(() => {
     if (!vmData) return;
     const s = vmData as any;
     const status = String(s.status || '').toLowerCase();
     const sshPort = s.ssh_port != null ? Number(s.ssh_port) : null;
     const ipAddr = s.ip_address || null;
+    // Try to pick resources from provider response if present
+    const resFromVm = (() => {
+      const r = (s?.resources && typeof s.resources === 'object') ? s.resources : s;
+      const cpu = Number((r as any)?.cpu);
+      const memory = Number((r as any)?.memory);
+      const storage = Number((r as any)?.storage);
+      if ([cpu, memory, storage].every((n) => Number.isFinite(n) && n > 0)) {
+        return { cpu, memory, storage } as Rental['resources'];
+      }
+      return undefined;
+    })();
     const nowSec = Math.floor(Date.now()/1000);
     let next: Rental | null = null;
     if (status === 'running') {
-      if (rental.status !== 'running' || rental.ssh_port !== sshPort || rental.provider_ip !== ipAddr) {
-        next = { ...rental, status: 'running', ssh_port: sshPort, provider_ip: ipAddr };
+      if (rental.status !== 'running' || rental.ssh_port !== sshPort || rental.provider_ip !== ipAddr || (resFromVm && JSON.stringify(rental.resources) !== JSON.stringify(resFromVm))) {
+        next = { ...rental, status: 'running', ssh_port: sshPort, provider_ip: ipAddr, resources: resFromVm || rental.resources };
       }
     } else if (status === 'stopped') {
-      if (rental.status !== 'stopped') next = { ...rental, status: 'stopped' };
+      if (rental.status !== 'stopped' || (resFromVm && JSON.stringify(rental.resources) !== JSON.stringify(resFromVm))) next = { ...rental, status: 'stopped', resources: resFromVm || rental.resources };
     } else if (status === 'terminated' || status === 'deleted') {
-      if (rental.status !== 'terminated') next = { ...rental, status: 'terminated', ssh_port: null, ended_at: nowSec } as any;
+      if (rental.status !== 'terminated' || (resFromVm && JSON.stringify(rental.resources) !== JSON.stringify(resFromVm))) next = { ...rental, status: 'terminated', ssh_port: null, ended_at: nowSec, resources: resFromVm || rental.resources } as any;
     }
     if (next) {
       try {
@@ -64,7 +75,13 @@ export function VmCardWithData(props: {
     const status = s.status ? String(s.status) : rental.status;
     const sshPort = s.ssh_port != null ? Number(s.ssh_port) : rental.ssh_port;
     const ipAddr = s.ip_address != null ? s.ip_address : rental.provider_ip;
-    return { ...rental, status, ssh_port: sshPort, provider_ip: ipAddr } as Rental;
+    // Prefer resources from VM status if exposed; fallback to saved rental spec
+    const r = (s?.resources && typeof s.resources === 'object') ? s.resources : s;
+    const cpu = Number((r as any)?.cpu);
+    const memory = Number((r as any)?.memory);
+    const storage = Number((r as any)?.storage);
+    const resources = ([cpu, memory, storage].every((n) => Number.isFinite(n) && n > 0)) ? { cpu, memory, storage } : rental.resources;
+    return { ...rental, status, ssh_port: sshPort, provider_ip: ipAddr, resources } as Rental;
   }, [vmData, rental]);
 
   return (

@@ -15,7 +15,8 @@
 @layer components {
   .card { @apply bg-white rounded-xl shadow-sm ring-1 ring-gray-200; }
   .card-body { @apply p-4 sm:p-6; }
-  .btn { @apply inline-flex items-center justify-center rounded-lg px-3 py-2 text-sm font-medium ring-1 ring-inset focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors; }
+  /* Standardize button height across the app for consistent horizontal/vertical alignment */
+  .btn { @apply inline-flex items-center justify-center rounded-lg px-3 text-sm font-medium ring-1 ring-inset focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors h-10; }
   /* Primary: brand-blue square button */
   .btn-primary { @apply bg-brand-600 text-white ring-brand-600 hover:bg-brand-700; }
 
