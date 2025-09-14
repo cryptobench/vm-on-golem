@@ -9,8 +9,8 @@ export default function Home() {
       <div className="card">
         <div className="card-body flex flex-col gap-4 sm:flex-row sm:items-center">
           <div>
-            <h1>VM on Golem — Requestor Portal</h1>
-            <p className="mt-1 text-gray-600">Discover providers, open payment streams, rent and manage your VMs.</p>
+            <h1>Rent VMs on Golem</h1>
+            <p className="mt-1 text-gray-600">Find providers, pay as you go, and manage your VMs.</p>
           </div>
         </div>
       </div>
