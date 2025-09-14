@@ -231,8 +231,8 @@ export function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provid
         {/* Name */}
         <div className="mt-4">
           <label className="label">Name</label>
-          <input className="input" value={name} onChange={(e) => { setName(e.target.value); setNameTouched(true); }} placeholder="My Server" />
-          <div className="mt-1 text-xs text-gray-600">Spec: {cpu} CPU • {memory} GB RAM • {storage} GB Disk</div>
+          <input className="input" value={name} onChange={(e) => { setName(e.target.value); setNameTouched(true); }} placeholder="My VM" />
+          <div className="mt-1 text-xs text-gray-600">Spec: {cpu} vCPU • {memory} GB RAM • {storage} GB Storage</div>
         </div>
 
         {/* SSH Key */}
@@ -288,7 +288,7 @@ export function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provid
       <div className="flex items-center justify-end gap-2 border-t px-5 py-4">
         <button className="btn btn-secondary" onClick={onClose} disabled={creating}>Cancel</button>
         <button className="btn btn-primary disabled:opacity-60 disabled:cursor-not-allowed" onClick={create} disabled={!isConnected || creating || !sshKey.trim() || !name.trim() || !durationSeconds}>
-          {creating ? (<span className="inline-flex items-center gap-2"><Spinner className="h-4 w-4 text-white" /> Creating…</span>) : (streamId ? 'Create VM' : 'Open Stream + Create VM')}
+          {creating ? (<span className="inline-flex items-center gap-2"><Spinner className="h-4 w-4 text-white" /> Creating…</span>) : (streamId ? 'Create VM' : 'Open Stream & Create VM')}
         </button>
       </div>
     </Modal>

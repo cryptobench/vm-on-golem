@@ -20,7 +20,7 @@ export function Wallet() {
     return (
       <button onClick={connect} className="btn btn-primary w-full inline-flex items-center justify-center gap-2">
         <MetaMaskLogo />
-        Connect
+        Connect Wallet
       </button>
     );
   }

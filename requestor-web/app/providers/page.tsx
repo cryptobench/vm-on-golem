@@ -38,9 +38,9 @@ export default function ProvidersPage() {
 
   const isSpecValid = (cpu ?? 0) > 0 && (memory ?? 0) > 0 && (storage ?? 0) >= 10;
   const missing: string[] = [
-    ...((cpu ?? 0) > 0 ? [] : ["CPU"]),
+    ...((cpu ?? 0) > 0 ? [] : ["vCPU"]),
     ...((memory ?? 0) > 0 ? [] : ["RAM"]),
-    ...((storage ?? 0) >= 10 ? [] : ["Disk ≥ 10 GB"]),
+    ...((storage ?? 0) >= 10 ? [] : ["Storage ≥ 10 GB"]),
   ];
 
   const focusFirstMissing = React.useCallback(() => {
@@ -157,44 +157,44 @@ export default function ProvidersPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2>Browse Providers</h2>
+        <h2>Providers</h2>
       </div>
       <div className="card">
         <div className="card-body">
           <div className="mb-2 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <div className="text-base font-medium">Your Rental Specs</div>
+              <div className="text-base font-medium">VM requirements</div>
               <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-600">Required</span>
             </div>
             <div className="text-sm text-gray-600">
-              {isSpecValid ? `${rows.length} matching provider${rows.length === 1 ? '' : 's'}` : 'Enter CPU, RAM, and Disk to see matches'}
+              {isSpecValid ? `${rows.length} matching provider${rows.length === 1 ? '' : 's'}` : 'Enter vCPU, RAM, and Storage to see matches'}
             </div>
           </div>
           {/* Specs row */}
           <div className="flex flex-wrap items-end gap-3">
             <div>
-              <label className="label">CPU</label>
+              <label className="label">vCPU</label>
               <input ref={cpuRef} className="input w-24" type="number" min={1} value={cpu ?? ''} onChange={e => setCpu(e.target.value ? Number(e.target.value) : undefined)} />
             </div>
             <div>
-              <label className="label">Memory (GB)</label>
+              <label className="label">RAM (GB)</label>
               <input ref={memRef} className="input w-24" type="number" min={1} value={memory ?? ''} onChange={e => setMemory(e.target.value ? Number(e.target.value) : undefined)} />
             </div>
             <div>
-              <label className="label">Disk (GB)</label>
+              <label className="label">Storage (GB)</label>
               <input ref={stoRef} className="input w-24" type="number" min={10} value={storage ?? ''} onChange={e => setStorage(e.target.value ? Number(e.target.value) : undefined)} />
             </div>
           </div>
           {/* Inline checklist for required specs */}
           <div className="mt-2 flex items-center gap-3 text-xs text-gray-600">
             <span className={"inline-flex items-center gap-1 " + ((cpu ?? 0) > 0 ? 'text-emerald-700' : 'text-gray-500')}>
-              <span className={`h-2 w-2 rounded-full ${((cpu ?? 0) > 0) ? 'bg-emerald-500' : 'bg-gray-300'}`} aria-hidden /> CPU
+              <span className={`h-2 w-2 rounded-full ${((cpu ?? 0) > 0) ? 'bg-emerald-500' : 'bg-gray-300'}`} aria-hidden /> vCPU
             </span>
             <span className={"inline-flex items-center gap-1 " + ((memory ?? 0) > 0 ? 'text-emerald-700' : 'text-gray-500')}>
               <span className={`h-2 w-2 rounded-full ${((memory ?? 0) > 0) ? 'bg-emerald-500' : 'bg-gray-300'}`} aria-hidden /> RAM
             </span>
             <span className={"inline-flex items-center gap-1 " + ((storage ?? 0) > 0 ? 'text-emerald-700' : 'text-gray-500')}>
-              <span className={`h-2 w-2 rounded-full ${((storage ?? 0) >= 10) ? 'bg-emerald-500' : 'bg-gray-300'}`} aria-hidden /> Disk ≥ 10 GB
+              <span className={`h-2 w-2 rounded-full ${((storage ?? 0) >= 10) ? 'bg-emerald-500' : 'bg-gray-300'}`} aria-hidden /> Storage ≥ 10 GB
             </span>
             {!isSpecValid && (
               <span className="ml-2 text-gray-500">Add {missing.join(', ')} to continue</span>
@@ -284,20 +284,20 @@ export default function ProvidersPage() {
                 </div>
                 <div className="ml-auto flex items-center gap-6">
                   <div className="text-right">
-                    <div className="text-xs text-gray-600">Total price</div>
+                    <div className="text-xs text-gray-600">Estimated price</div>
                     <div className="text-base text-gray-900">{priceStr}</div>
                   </div>
                   {!isSpecValid && (
-                    <div className="text-sm text-gray-600">Add {missing.join(', ')} to enable Rent</div>
+                    <div className="text-sm text-gray-600">Add {missing.join(', ')} to proceed</div>
                   )}
                   <button
                     className="btn btn-primary"
                     onClick={() => setRentOpen(true)}
                     disabled={loading || !isSpecValid}
                     aria-disabled={loading || !isSpecValid}
-                    aria-label={isSpecValid ? 'Rent' : `Disabled. Missing: ${missing.join(', ')}`}
+                    aria-label={isSpecValid ? 'Rent VM' : `Disabled. Missing: ${missing.join(', ')}`}
                   >
-                    Rent
+                    Rent VM
                   </button>
                 </div>
               </div>
@@ -585,7 +585,7 @@ function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provider: any
                 onClick={async () => { try { setConnecting(true); await connect(); } finally { setConnecting(false); } }}
                 disabled={connecting}
               >
-                {connecting ? (<span className="inline-flex items-center gap-2"><Spinner className="h-4 w-4" /> Connecting…</span>) : 'Connect'}
+                {connecting ? (<span className="inline-flex items-center gap-2"><Spinner className="h-4 w-4" /> Connecting…</span>) : 'Connect Wallet'}
               </button>
             </div>
           )}
@@ -598,15 +598,15 @@ function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provider: any
               )}
             </div>
             <div>
-              <label className="label">CPU</label>
+              <label className="label">vCPU</label>
               <input className="input" type="number" min={1} value={cpu} onChange={e => setCpu(Number(e.target.value))}/>
             </div>
             <div>
-              <label className="label">Memory (GB)</label>
+              <label className="label">RAM (GB)</label>
               <input className="input" type="number" min={1} value={memory} onChange={e => setMemory(Number(e.target.value))}/>
             </div>
             <div>
-              <label className="label">Disk (GB)</label>
+              <label className="label">Storage (GB)</label>
               <input className="input" type="number" min={1} value={storage} onChange={e => setStorage(Number(e.target.value))}/>
             </div>
           </div>
@@ -691,7 +691,7 @@ function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provider: any
                   <div className="mt-2 rounded-lg border bg-gray-50 p-3 text-sm">
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                       <div className="text-gray-700">
-                        <div>CPU: {cpu} × {Number(gCore).toFixed(6)} GLM/mo = <span className="font-medium">{core.toFixed(6)}</span> GLM/mo</div>
+                        <div>vCPU: {cpu} × {Number(gCore).toFixed(6)} GLM/mo = <span className="font-medium">{core.toFixed(6)}</span> GLM/mo</div>
                         <div>RAM: {memory} GB × {Number(gRam).toFixed(6)} GLM/GB·mo = <span className="font-medium">{memC.toFixed(6)}</span> GLM/mo</div>
                         <div>Storage: {storage} GB × {Number(gSto).toFixed(6)} GLM/GB·mo = <span className="font-medium">{stoC.toFixed(6)}</span> GLM/mo</div>
                       </div>
@@ -714,7 +714,7 @@ function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provider: any
                   <div className="mt-2 rounded-lg border bg-gray-50 p-3 text-sm">
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                       <div className="text-gray-700">
-                        <div>CPU: {cpu} × ${usdCore}/mo = <span className="font-medium">${core.toFixed(4)}</span>/mo</div>
+                        <div>vCPU: {cpu} × ${usdCore}/mo = <span className="font-medium">${core.toFixed(4)}</span>/mo</div>
                         <div>RAM: {memory} GB × ${usdRam}/GB·mo = <span className="font-medium">${memC.toFixed(4)}</span>/mo</div>
                         <div>Storage: {storage} GB × ${usdSto}/GB·mo = <span className="font-medium">${stoC.toFixed(4)}</span>/mo</div>
                       </div>
@@ -740,7 +740,7 @@ function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provider: any
             {creating ? (
               <span className="inline-flex items-center gap-2"><Spinner className="h-4 w-4 text-white" /> Creating…</span>
             ) : (
-              (streamId ? 'Create VM' : 'Open Stream + Create VM')
+              (streamId ? 'Create VM' : 'Open Stream & Create VM')
             )}
           </button>
         </div>
