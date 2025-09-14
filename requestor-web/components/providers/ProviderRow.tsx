@@ -1,6 +1,6 @@
 "use client";
 import React from "react";
-import { RiCpuLine, RiDatabase2Line, RiHardDrive2Line, RiStackLine } from "@remixicon/react";
+import { RiCpuLine, RiHardDrive2Line, RiStackLine } from "@remixicon/react";
 import { countryFlagEmoji } from "../../lib/intl";
 
 type Pricing = {
@@ -42,22 +42,22 @@ export function ProviderRow({
   const name = provider.provider_name?.trim() || provider.provider_id.slice(0, 8);
   const flag = countryFlagEmoji(provider.country || '');
 
-  // Price summary line (hourly)
-  let priceLine: string | null = null;
+  // Price summary lines
+  let priceHourLine: string | null = null;
+  let priceMonthLine: string | null = null;
   if (estimate) {
     if (displayCurrency === 'token' && estimate.glm_per_month != null) {
-      priceLine = `~${(estimate.glm_per_month / 730).toFixed(8)} GLM/hr`;
-    } else if (estimate.usd_per_hour != null) {
-      priceLine = `~$${estimate.usd_per_hour}/hr`;
+      priceHourLine = `~${(estimate.glm_per_month / 730).toFixed(8)} GLM/hr`;
+      priceMonthLine = `≈ ${Number(estimate.glm_per_month).toFixed(6)} GLM/mo`;
+    } else if (estimate.usd_per_hour != null && estimate.usd_per_month != null) {
+      priceHourLine = `~$${estimate.usd_per_hour}/hr`;
+      priceMonthLine = `≈ $${Number(estimate.usd_per_month).toFixed(2)}/mo`;
     }
   }
 
-  // Per-unit pricing badges (optional)
-  const pr = (provider.pricing || {}) as any;
-  const showToken = displayCurrency === 'token';
-  const coreM = showToken ? pr.glm_per_core_month : pr.usd_per_core_month;
-  const ramM = showToken ? pr.glm_per_gb_ram_month : pr.usd_per_gb_ram_month;
-  const stoM = showToken ? pr.glm_per_gb_storage_month : pr.usd_per_gb_storage_month;
+  // Per-unit pricing (not shown on the right; optional to use elsewhere)
+  // const pr = (provider.pricing || {}) as any;
+  // const showToken = displayCurrency === 'token';
 
   return (
     <div
@@ -85,26 +85,33 @@ export function ProviderRow({
               {provider.platform && <span className="rounded border px-1.5 py-0.5 text-[11px] text-gray-700">{provider.platform}</span>}
               {provider.ip_address && <span className="text-gray-600">{provider.ip_address}</span>}
             </div>
-            {/* Resource badges */}
+            {/* Capacity (totals only) */}
             <div className="mt-2 flex flex-row flex-wrap items-center gap-4 text-[12px] text-gray-700">
-              <span className="inline-flex items-center gap-1.5"><RiCpuLine className="h-4 w-4 text-gray-500" /> Cores: <span className="font-mono">{provider.resources.cpu}</span></span>
-              <span className="inline-flex items-center gap-1.5"><RiStackLine className="h-4 w-4 text-gray-500" /> Memory: <span className="font-mono">{provider.resources.memory} GB</span></span>
-              <span className="inline-flex items-center gap-1.5"><RiHardDrive2Line className="h-4 w-4 text-gray-500" /> Disk: <span className="font-mono">{provider.resources.storage} GB</span></span>
+              <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-600">Capacity (total)</span>
+              <span className="inline-flex items-center gap-1.5" title="Total cores available">
+                <RiCpuLine className="h-4 w-4 text-gray-500" />
+                Cores: <span className="font-mono">{provider.resources.cpu}</span>
+              </span>
+              <span className="inline-flex items-center gap-1.5" title="Total memory available">
+                <RiStackLine className="h-4 w-4 text-gray-500" />
+                Memory: <span className="font-mono">{provider.resources.memory} GB</span>
+              </span>
+              <span className="inline-flex items-center gap-1.5" title="Total storage available">
+                <RiHardDrive2Line className="h-4 w-4 text-gray-500" />
+                Disk: <span className="font-mono">{provider.resources.storage} GB</span>
+              </span>
             </div>
+            {/* Hourly price under specs */}
+            {priceHourLine && (
+              <div className="mt-1 text-[12px] text-gray-700">Hourly: <span className="font-medium">{priceHourLine}</span></div>
+            )}
           </div>
         </div>
 
-        {/* Price area */}
-        <div className="flex min-w-[220px] flex-[1] flex-col items-start gap-2">
-          {priceLine && (
-            <div className="text-sm text-gray-900">{priceLine}</div>
-          )}
-          {(coreM != null || ramM != null || stoM != null) && (
-            <div className="text-[11px] text-gray-600">
-              {coreM != null && (<div>Core: <span className="font-mono">{Number(coreM).toFixed(showToken ? 6 : 4)}</span>{showToken ? ' GLM/mo' : '/mo'}</div>)}
-              {ramM != null && (<div>RAM: <span className="font-mono">{Number(ramM).toFixed(showToken ? 6 : 4)}</span>{showToken ? ' GLM/GB·mo' : '/GB·mo'}</div>)}
-              {stoM != null && (<div>Storage: <span className="font-mono">{Number(stoM).toFixed(showToken ? 6 : 4)}</span>{showToken ? ' GLM/GB·mo' : '/GB·mo'}</div>)}
-            </div>
+        {/* Price area (right): monthly only */}
+        <div className="flex min-w-[220px] flex-[1] items-start justify-start">
+          {priceMonthLine && (
+            <div className="text-base font-semibold text-gray-900">{priceMonthLine}</div>
           )}
         </div>
 

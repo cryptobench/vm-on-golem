@@ -27,8 +27,27 @@ export default function ProvidersPage() {
   const [rows, setRows] = React.useState<any[]>([]);
   const [selectedProviderId, setSelectedProviderId] = React.useState<string | null>(null);
   const [rentOpen, setRentOpen] = React.useState(false);
+  const router = useRouter();
+
+  // Refs to enable focusing first missing input
+  const cpuRef = React.useRef<HTMLInputElement | null>(null);
+  const memRef = React.useRef<HTMLInputElement | null>(null);
+  const stoRef = React.useRef<HTMLInputElement | null>(null);
 
   const { ads } = useAds();
+
+  const isSpecValid = (cpu ?? 0) > 0 && (memory ?? 0) > 0 && (storage ?? 0) >= 10;
+  const missing: string[] = [
+    ...((cpu ?? 0) > 0 ? [] : ["CPU"]),
+    ...((memory ?? 0) > 0 ? [] : ["RAM"]),
+    ...((storage ?? 0) >= 10 ? [] : ["Disk ≥ 10 GB"]),
+  ];
+
+  const focusFirstMissing = React.useCallback(() => {
+    if ((cpu ?? 0) <= 0) { cpuRef.current?.focus(); return; }
+    if ((memory ?? 0) <= 0) { memRef.current?.focus(); return; }
+    if ((storage ?? 0) <= 0) { stoRef.current?.focus(); return; }
+  }, [cpu, memory, storage]);
 
   const search = async () => {
     setLoading(true); setError(null);
@@ -70,26 +89,70 @@ export default function ProvidersPage() {
   }, [ads]);
 
   React.useEffect(() => {
-    // Pre-fill from quick create wizard if present
+    // Initialize from URL first, then pending create, then run initial search
+    let hasUrlCpu = false, hasUrlMem = false, hasUrlSto = false, hasUrlCountry = false, hasUrlPlatform = false, hasUrlMax = false;
+    try {
+      const sp = new URL(window.location.href).searchParams;
+      const urlCpu = sp.get('cpu'); hasUrlCpu = urlCpu != null;
+      const urlMem = sp.get('memory'); hasUrlMem = urlMem != null;
+      const urlSto = sp.get('storage'); hasUrlSto = urlSto != null;
+      const urlCountry = sp.get('country'); hasUrlCountry = urlCountry != null;
+      const urlPlatform = sp.get('platform'); hasUrlPlatform = urlPlatform != null;
+      const urlMax = sp.get('max_usd'); hasUrlMax = urlMax != null;
+      if (urlCpu != null) setCpu(Number(urlCpu));
+      if (urlMem != null) setMemory(Number(urlMem));
+      if (urlSto != null) setStorage(Number(urlSto));
+      if (urlCountry != null) setCountry(urlCountry);
+      if (urlPlatform != null) setPlatform(urlPlatform);
+      if (urlMax != null) setMaxUsd(Number(urlMax));
+    } catch {}
+
+    // Fallback to pre-fill from quick create wizard if present
     try {
       const raw = localStorage.getItem('requestor_pending_create');
       if (raw) {
         const data = JSON.parse(raw);
-        if (data.cpu != null) setCpu(Number(data.cpu));
-        if (data.memory != null) setMemory(Number(data.memory));
-        if (data.storage != null) setStorage(Number(data.storage));
+        if (data.cpu != null && !hasUrlCpu) setCpu(Number(data.cpu));
+        if (data.memory != null && !hasUrlMem) setMemory(Number(data.memory));
+        if (data.storage != null && !hasUrlSto) setStorage(Number(data.storage));
         if (Array.isArray(data.countries) && data.countries.length) { setCountries(data.countries); setCountry(""); }
-        else if (data.country) setCountry(String(data.country));
-        if (data.platform) setPlatform(String(data.platform));
-        if (data.max_usd_per_month != null) setMaxUsd(Number(data.max_usd_per_month));
+        else if (data.country && !hasUrlCountry) setCountry(String(data.country));
+        if (data.platform && !hasUrlPlatform) setPlatform(String(data.platform));
+        if (data.max_usd_per_month != null && !hasUrlMax) setMaxUsd(Number(data.max_usd_per_month));
         localStorage.removeItem('requestor_pending_create');
-        // trigger search after state applied
-        setTimeout(() => search(), 0);
-        return;
       }
     } catch {}
+    // Initial search
     search();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Keep URL in sync with current spec/filters
+  React.useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const setOrDel = (key: string, val?: string | number) => {
+        if (val == null || String(val) === '' || (typeof val === 'number' && !Number.isFinite(val))) params.delete(key);
+        else params.set(key, String(val));
+      };
+      setOrDel('cpu', cpu);
+      setOrDel('memory', memory);
+      setOrDel('storage', storage);
+      setOrDel('country', country || undefined);
+      setOrDel('platform', platform || undefined);
+      setOrDel('max_usd', maxUsd);
+      const next = `${window.location.pathname}?${params.toString()}`;
+      window.history.replaceState(null, '', next);
+    } catch {}
+  }, [cpu, memory, storage, country, platform, maxUsd]);
+
+
+  // Debounced search on filter/spec changes for a seamless feel
+  React.useEffect(() => {
+    const t = setTimeout(() => { search(); }, 350);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cpu, memory, storage, country, platform, maxUsd]);
 
   return (
     <div className="space-y-4">
@@ -98,19 +161,47 @@ export default function ProvidersPage() {
       </div>
       <div className="card">
         <div className="card-body">
+          <div className="mb-2 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="text-base font-medium">Your Rental Specs</div>
+              <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-600">Required</span>
+            </div>
+            <div className="text-sm text-gray-600">
+              {isSpecValid ? `${rows.length} matching provider${rows.length === 1 ? '' : 's'}` : 'Enter CPU, RAM, and Disk to see matches'}
+            </div>
+          </div>
+          {/* Specs row */}
           <div className="flex flex-wrap items-end gap-3">
             <div>
               <label className="label">CPU</label>
-              <input className="input w-24" type="number" min={1} value={cpu ?? ''} onChange={e => setCpu(e.target.value ? Number(e.target.value) : undefined)} />
+              <input ref={cpuRef} className="input w-24" type="number" min={1} value={cpu ?? ''} onChange={e => setCpu(e.target.value ? Number(e.target.value) : undefined)} />
             </div>
             <div>
               <label className="label">Memory (GB)</label>
-              <input className="input w-24" type="number" min={1} value={memory ?? ''} onChange={e => setMemory(e.target.value ? Number(e.target.value) : undefined)} />
+              <input ref={memRef} className="input w-24" type="number" min={1} value={memory ?? ''} onChange={e => setMemory(e.target.value ? Number(e.target.value) : undefined)} />
             </div>
             <div>
               <label className="label">Disk (GB)</label>
-              <input className="input w-24" type="number" min={1} value={storage ?? ''} onChange={e => setStorage(e.target.value ? Number(e.target.value) : undefined)} />
+              <input ref={stoRef} className="input w-24" type="number" min={10} value={storage ?? ''} onChange={e => setStorage(e.target.value ? Number(e.target.value) : undefined)} />
             </div>
+          </div>
+          {/* Inline checklist for required specs */}
+          <div className="mt-2 flex items-center gap-3 text-xs text-gray-600">
+            <span className={"inline-flex items-center gap-1 " + ((cpu ?? 0) > 0 ? 'text-emerald-700' : 'text-gray-500')}>
+              <span className={`h-2 w-2 rounded-full ${((cpu ?? 0) > 0) ? 'bg-emerald-500' : 'bg-gray-300'}`} aria-hidden /> CPU
+            </span>
+            <span className={"inline-flex items-center gap-1 " + ((memory ?? 0) > 0 ? 'text-emerald-700' : 'text-gray-500')}>
+              <span className={`h-2 w-2 rounded-full ${((memory ?? 0) > 0) ? 'bg-emerald-500' : 'bg-gray-300'}`} aria-hidden /> RAM
+            </span>
+            <span className={"inline-flex items-center gap-1 " + ((storage ?? 0) > 0 ? 'text-emerald-700' : 'text-gray-500')}>
+              <span className={`h-2 w-2 rounded-full ${((storage ?? 0) >= 10) ? 'bg-emerald-500' : 'bg-gray-300'}`} aria-hidden /> Disk ≥ 10 GB
+            </span>
+            {!isSpecValid && (
+              <span className="ml-2 text-gray-500">Add {missing.join(', ')} to continue</span>
+            )}
+          </div>
+          {/* Secondary filters row */}
+          <div className="mt-3 flex flex-wrap items-end gap-3">
             <div>
               <label className="label">Country</label>
               <select
@@ -139,7 +230,6 @@ export default function ProvidersPage() {
             </div>
             <div className="ml-auto flex items-center gap-3">
               {loading && <Spinner />}
-              <button className="btn btn-primary" onClick={search} disabled={loading}>{loading ? 'Searching…' : 'Search'}</button>
             </div>
           </div>
           {countries && countries.length > 0 && (
@@ -149,7 +239,7 @@ export default function ProvidersPage() {
         </div>
       </div>
       <div>
-        {loading && rows.length === 0 ? (
+        {loading ? (
           <TableSkeleton rows={6} cols={5} />
         ) : (
           <div className="space-y-3">
@@ -163,7 +253,13 @@ export default function ProvidersPage() {
                   estimate={est}
                   displayCurrency={displayCurrency as any}
                   selected={selectedProviderId === p.provider_id}
-                  onToggle={() => setSelectedProviderId(prev => prev === p.provider_id ? null : p.provider_id)}
+                  onToggle={() => {
+                    setSelectedProviderId(prev => prev === p.provider_id ? null : p.provider_id);
+                    if (!isSpecValid) {
+                      // Nudge user to fill required specs
+                      setTimeout(() => focusFirstMissing(), 0);
+                    }
+                  }}
                 />
               );
             })}
@@ -191,10 +287,15 @@ export default function ProvidersPage() {
                     <div className="text-xs text-gray-600">Total price</div>
                     <div className="text-base text-gray-900">{priceStr}</div>
                   </div>
+                  {!isSpecValid && (
+                    <div className="text-sm text-gray-600">Add {missing.join(', ')} to enable Rent</div>
+                  )}
                   <button
                     className="btn btn-primary"
                     onClick={() => setRentOpen(true)}
-                    disabled={loading}
+                    disabled={loading || !isSpecValid}
+                    aria-disabled={loading || !isSpecValid}
+                    aria-label={isSpecValid ? 'Rent' : `Disabled. Missing: ${missing.join(', ')}`}
                   >
                     Rent
                   </button>
