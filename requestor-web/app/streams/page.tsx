@@ -9,6 +9,7 @@ import { Skeleton } from "../../components/ui/Skeleton";
 import { useToast } from "../../components/ui/Toast";
 import { ensureNetwork, getPaymentsChain } from "../../lib/chain";
 import { useStreamActions } from "../../hooks/useStreamActions";
+import { useProjects } from "../../context/ProjectsContext";
 import { useWallet } from "../../context/WalletContext";
 import { fetchStreamWithMeta, type ChainStream } from "../../lib/streams";
 import { getPriceUSD, onPricesUpdated } from "../../lib/prices";
@@ -29,6 +30,7 @@ export default function StreamsPage() {
   const router = useRouter();
   const { show } = useToast();
   const { account } = useWallet();
+  const { activeId: activeProjectId } = useProjects();
   const [rentals, setRentals] = React.useState<ReturnType<typeof loadRentals> | null>(null);
   const [rows, setRows] = React.useState<Row[] | null>(null);
   const [error, setError] = React.useState<string | null>(null);
@@ -60,7 +62,7 @@ export default function StreamsPage() {
     try {
       setRows(null);
       const list: Row[] = [];
-      for (const r of (rentals || []).filter(r => r.stream_id)) {
+      for (const r of (rentals || []).filter(r => r.stream_id).filter(r => (r.project_id || 'default') === activeProjectId)) {
         try {
           const data = await fetchStreamWithMeta(spAddr, BigInt(r.stream_id!));
           list.push({ r, chain: data.chain as ChainStream, tokenSymbol: data.tokenSymbol, tokenDecimals: data.tokenDecimals, usdPrice: data.usdPrice });
@@ -77,7 +79,7 @@ export default function StreamsPage() {
   }, []);
 
   // Load stream rows once rentals are available
-  React.useEffect(() => { if (rentals) load(); }, [rentals]);
+  React.useEffect(() => { if (rentals) load(); }, [rentals, activeProjectId]);
   // React to settings changes (e.g., fiat/token toggle) without reload
   React.useEffect(() => {
     const onSettings = (e: any) => {
@@ -309,7 +311,7 @@ export default function StreamsPage() {
           </div></div>
         </div>
       )}
-      {rentals !== null && rentals.filter(r => r.stream_id).length === 0 && (
+      {rentals !== null && rentals.filter(r => r.stream_id && (r.project_id || 'default') === activeProjectId).length === 0 && (
         <div className="text-gray-600">No streams yet. Create a VM to open a stream.</div>
       )}
       {error && <div className="text-sm text-red-600">{error}</div>}
