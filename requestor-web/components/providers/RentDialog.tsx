@@ -11,6 +11,8 @@ import { useProjects } from "../../context/ProjectsContext";
 import { ensureNetwork, getPaymentsChain } from "../../lib/chain";
 import { Spinner } from "../ui/Spinner";
 import { computeEstimate } from "../../lib/api";
+import { parseHumanDuration } from "../../lib/time";
+import { humanDuration } from "../../lib/streams";
 import { useSettings } from "../../hooks/useSettings";
 import { KeyPicker } from "../ssh/KeyPicker";
 
@@ -20,9 +22,10 @@ export function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provid
   const { isInstalled, isConnected, connect, account } = useWallet();
   const { activeId: activeProjectId } = useProjects();
   const [name, setName] = React.useState("");
-  const [cpu, setCpu] = React.useState<number>(defaultSpec.cpu || 1);
-  const [memory, setMemory] = React.useState<number>(defaultSpec.memory || 2);
-  const [storage, setStorage] = React.useState<number>(defaultSpec.storage || 20);
+  // Use spec provided from the Providers page; not editable here
+  const [cpu] = React.useState<number>(defaultSpec.cpu || 1);
+  const [memory] = React.useState<number>(defaultSpec.memory || 2);
+  const [storage] = React.useState<number>(defaultSpec.storage || 20);
   const settings = loadSettings();
   const initialKeys: SSHKey[] = settings.ssh_keys || (settings.ssh_public_key ? [{ id: 'default', name: 'Default', value: settings.ssh_public_key }] : []);
   const defaultKeyId = settings.default_ssh_key_id || initialKeys[0]?.id || '';
@@ -39,6 +42,31 @@ export function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provid
   const [nameTouched, setNameTouched] = React.useState<boolean>(false);
 
   const est = computeEstimate(provider, cpu, memory, storage);
+
+  // Deposit duration selection (presets + human input like "30d", "1h30m")
+  type Preset = '1w' | '2w' | '30d' | 'custom';
+  const [preset, setPreset] = React.useState<Preset>('1w');
+  const [customInput, setCustomInput] = React.useState<string>('');
+  const durationSeconds = React.useMemo(() => {
+    if (preset === '1w') return 7 * 24 * 3600;
+    if (preset === '2w') return 14 * 24 * 3600;
+    if (preset === '30d') return 30 * 24 * 3600;
+    const secs = parseHumanDuration(customInput || '');
+    return secs && secs > 0 ? secs : 0;
+  }, [preset, customInput]);
+  const durationHoursFloat = durationSeconds / 3600;
+
+  const hourlyRate = React.useMemo(() => {
+    if (!est) return null;
+    if (displayCurrency === 'token' && (est as any).glm_per_month != null) return (est as any).glm_per_month / 730.0;
+    if (est.usd_per_hour != null) return est.usd_per_hour;
+    return null;
+  }, [est, displayCurrency]);
+
+  const totalForDuration = React.useMemo(() => {
+    if (!hourlyRate || !durationSeconds) return null;
+    return hourlyRate * (durationSeconds / 3600);
+  }, [hourlyRate, durationSeconds]);
 
   const openStream = async (): Promise<string> => {
     setError(null);
@@ -68,7 +96,9 @@ export function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provid
       }
       const ethPerSecond = (ethPerMonth as number) / (30.4167 * 24 * 3600);
       ratePerSecondWei = parseEther(ethPerSecond.toFixed(18));
-      depositWei = parseEther(((ethPerSecond) * 3600).toFixed(18));
+      const seconds = BigInt(Math.max(1, durationSeconds));
+      // approximate by converting to wei/sec and multiply
+      depositWei = BigInt(Math.floor(ethPerSecond * 1e18)) * seconds;
       setUsingNative(true);
     } else {
       let glmPerMonth: number | null = (est as any).glm_per_month ?? null;
@@ -85,7 +115,8 @@ export function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provid
       const dec = Number(await erc.decimals().catch(() => 18));
       const scale = 10 ** dec;
       ratePerSecondWei = BigInt(Math.floor(glmPerSecond * scale));
-      depositWei = BigInt(Math.floor(glmPerSecond * 3600 * scale));
+      const seconds = Math.max(1, durationSeconds);
+      depositWei = BigInt(Math.floor(glmPerSecond * seconds * scale));
       setUsingNative(false);
       // Ask wallet to watch GLM so prompts display a familiar asset
       try {
@@ -192,86 +223,70 @@ export function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provid
   };
 
   return (
-    <Modal open onClose={onClose} size="xl">
+    <Modal open onClose={onClose} size="2xl">
       <div className="px-5 py-4">
         <div className="text-lg font-semibold">Rent {provider?.provider_name || provider?.provider_id}</div>
-        <div className="mt-3 grid gap-4 sm:grid-cols-2">
-          <div>
-            <label className="label">Name</label>
-            <input className="input" value={name} onChange={(e) => { setName(e.target.value); setNameTouched(true); }} placeholder="My Server" />
-          </div>
-          <div className="grid grid-cols-3 gap-3">
-            <div><label className="label">CPU</label><input className="input" type="number" min={1} value={cpu} onChange={e => setCpu(Math.max(1, Number(e.target.value || 1)))} /></div>
-            <div><label className="label">Memory (GB)</label><input className="input" type="number" min={1} value={memory} onChange={e => setMemory(Math.max(1, Number(e.target.value || 1)))} /></div>
-            <div><label className="label">Disk (GB)</label><input className="input" type="number" min={1} value={storage} onChange={e => setStorage(Math.max(1, Number(e.target.value || 1)))} /></div>
-          </div>
+
+        {/* Name */}
+        <div className="mt-4">
+          <label className="label">Name</label>
+          <input className="input" value={name} onChange={(e) => { setName(e.target.value); setNameTouched(true); }} placeholder="My Server" />
+          <div className="mt-1 text-xs text-gray-600">Spec: {cpu} CPU • {memory} GB RAM • {storage} GB Disk</div>
         </div>
 
+        {/* SSH Key */}
         <div className="mt-4">
           <div className="text-sm font-medium">SSH Keys</div>
           <div className="mt-2">
-            <KeyPicker value={selectedKeyId} onChange={(id, key) => { setSelectedKeyId(id); setSshKey(key.value); }} />
+            <KeyPicker layout="carousel" value={selectedKeyId} onChange={(id, key) => { setSelectedKeyId(id); setSshKey(key.value); }} />
           </div>
         </div>
 
+        {/* Initial deposit */}
         <div className="mt-4">
-          <div className="text-sm font-medium">Estimated costs</div>
-          {(() => {
-            const p = provider?.pricing || {} as any;
-            if (displayCurrency === 'token') {
-              const gCore = p.glm_per_core_month, gRam = p.glm_per_gb_ram_month, gSto = p.glm_per_gb_storage_month;
-              if (gCore == null || gRam == null || gSto == null) return <div className="text-sm text-gray-600">Token pricing not available for this provider.</div>;
-              const core = Number(gCore) * cpu;
-              const memC = Number(gRam) * memory;
-              const stoC = Number(gSto) * storage;
-              const total = core + memC + stoC;
-              const perHour = total / 730.0;
-              return (
-                <div className="mt-2 rounded-lg border bg-gray-50 p-3 text-sm">
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    <div className="text-gray-700">
-                      <div>CPU: {cpu} × {Number(gCore).toFixed(6)} GLM/mo = <span className="font-medium">{core.toFixed(6)}</span> GLM/mo</div>
-                      <div>RAM: {memory} GB × {Number(gRam).toFixed(6)} GLM/GB·mo = <span className="font-medium">{memC.toFixed(6)}</span> GLM/mo</div>
-                      <div>Storage: {storage} GB × {Number(gSto).toFixed(6)} GLM/GB·mo = <span className="font-medium">{stoC.toFixed(6)}</span> GLM/mo</div>
-                    </div>
-                    <div className="text-gray-700">
-                      <div>Total: <span className="font-semibold">{total.toFixed(6)}</span> GLM per month</div>
-                      <div>Hourly: <span className="font-semibold">{perHour.toFixed(8)}</span> GLM per hour</div>
-                    </div>
-                  </div>
+          <div className="text-sm font-medium">Initial deposit</div>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            {(['1w','2w','30d'] as Preset[]).map((p) => (
+              <button key={p} type="button" onClick={() => setPreset(p)} className={(preset === p ? 'btn btn-primary' : 'btn btn-secondary') + ' h-10 px-3'}>
+                {p === '1w' ? '1 week' : p === '2w' ? '2 weeks' : '30 days'}
+              </button>
+            ))}
+            <button type="button" onClick={() => setPreset('custom')} className={(preset === 'custom' ? 'btn btn-primary' : 'btn btn-secondary') + ' h-10 px-3'}>Custom</button>
+            {preset === 'custom' && (
+              <input
+                className="input w-52 h-10"
+                placeholder="Custom: 30d, 45m, 1h30m"
+                value={customInput}
+                onChange={(e) => setCustomInput(e.target.value)}
+              />
+            )}
+          </div>
+          {/* Removed mid-section deposit summary to avoid redundancy with final summary */}
+        </div>
+
+        {/* Pricing summary for selected duration */}
+        <div className="mt-4">
+          <div className="text-sm font-medium">Total for selected deposit</div>
+          <div className="mt-2 rounded-lg border bg-gray-50 p-3">
+            {est && totalForDuration != null && durationSeconds > 0 ? (
+              <div className="flex items-end justify-between">
+                <div className="text-sm text-gray-600">Covers {humanDuration(durationSeconds)}</div>
+                <div className="text-xl font-semibold text-gray-900">
+                  {displayCurrency === 'token' && (est as any).glm_per_month != null
+                    ? `${totalForDuration.toFixed(6)} GLM`
+                    : `$${totalForDuration.toFixed(2)}`}
                 </div>
-              );
-            } else {
-              const usdCore = p.usd_per_core_month, usdRam = p.usd_per_gb_ram_month, usdSto = p.usd_per_gb_storage_month;
-              if (usdCore == null || usdRam == null || usdSto == null) return <div className="text-sm text-gray-600">Pricing not available for this provider.</div>;
-              const core = Number(usdCore) * cpu;
-              const memC = Number(usdRam) * memory;
-              const stoC = Number(usdSto) * storage;
-              const total = core + memC + stoC;
-              const perHour = total / 730.0;
-              return (
-                <div className="mt-2 rounded-lg border bg-gray-50 p-3 text-sm">
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    <div className="text-gray-700">
-                      <div>CPU: {cpu} × ${usdCore}/mo = <span className="font-medium">${core.toFixed(4)}</span>/mo</div>
-                      <div>RAM: {memory} GB × ${usdRam}/GB·mo = <span className="font-medium">${memC.toFixed(4)}</span>/mo</div>
-                      <div>Storage: {storage} GB × ${usdSto}/GB·mo = <span className="font-medium">${stoC.toFixed(4)}</span>/mo</div>
-                    </div>
-                    <div className="text-gray-700">
-                      <div>Total: <span className="font-semibold">${total.toFixed(4)}</span> per month</div>
-                      <div>Hourly: <span className="font-semibold">${perHour.toFixed(6)}</span> per hour</div>
-                    </div>
-                  </div>
-                </div>
-              );
-            }
-          })()}
+              </div>
+            ) : (
+              <div className="text-sm text-gray-600">Select a duration to see total deposit.</div>
+            )}
+          </div>
         </div>
         {error && <div className="mt-3 text-sm text-red-600">{error}</div>}
       </div>
       <div className="flex items-center justify-end gap-2 border-t px-5 py-4">
         <button className="btn btn-secondary" onClick={onClose} disabled={creating}>Cancel</button>
-        <button className="btn btn-primary" onClick={create} disabled={!isConnected || creating || !sshKey.trim() || !name.trim()}>
+        <button className="btn btn-primary disabled:opacity-60 disabled:cursor-not-allowed" onClick={create} disabled={!isConnected || creating || !sshKey.trim() || !name.trim() || !durationSeconds}>
           {creating ? (<span className="inline-flex items-center gap-2"><Spinner className="h-4 w-4 text-white" /> Creating…</span>) : (streamId ? 'Create VM' : 'Open Stream + Create VM')}
         </button>
       </div>
