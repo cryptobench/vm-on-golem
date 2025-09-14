@@ -3,7 +3,7 @@ import React from "react";
 import { useRouter } from "next/navigation";
 import { BrowserProvider, Contract } from "ethers";
 import streamPayment from "../../public/abi/StreamPayment.json";
-import { loadRentals, loadSettings } from "../../lib/api";
+import { loadRentals, loadSettings, saveSettings } from "../../lib/api";
 import { Spinner } from "../../components/ui/Spinner";
 import { Skeleton } from "../../components/ui/Skeleton";
 import { useToast } from "../../components/ui/Toast";
@@ -38,7 +38,21 @@ export default function StreamsPage() {
   const [nowSec, setNowSec] = React.useState<number>(() => Math.floor(Date.now()/1000));
   const [busy, setBusy] = React.useState<Record<string, boolean>>({});
   const [customTopup, setCustomTopup] = React.useState<Record<string, string>>({});
+  const [showEnded, setShowEnded] = React.useState<boolean>(false);
   React.useEffect(() => { const t = setInterval(() => setNowSec(Math.floor(Date.now()/1000)), 1000); return () => clearInterval(t); }, []);
+
+  // Initialize showEnded from settings and react to changes
+  React.useEffect(() => {
+    try { setShowEnded(!!(loadSettings().show_ended_streams)); } catch {}
+    const onSettings = (e: any) => { try { setShowEnded(!!e?.detail?.show_ended_streams); } catch {} };
+    const onStorage = () => { try { setShowEnded(!!loadSettings().show_ended_streams); } catch {} };
+    window.addEventListener('requestor_settings_changed', onSettings as any);
+    window.addEventListener('storage', onStorage);
+    return () => {
+      window.removeEventListener('requestor_settings_changed', onSettings as any);
+      window.removeEventListener('storage', onStorage);
+    };
+  }, []);
 
   const load = async () => {
     if (!spAddr) { setError("StreamPayment address not configured (Settings)"); return; }
@@ -167,7 +181,20 @@ export default function StreamsPage() {
 
   return (
     <div className="space-y-6">
-      <h2>Streams</h2>
+      <div className="flex items-center justify-between gap-3">
+        <h2>Streams</h2>
+        <button
+          className={showEnded ? 'btn btn-secondary' : 'btn btn-secondary'}
+          onClick={() => {
+            const next = !showEnded;
+            setShowEnded(next);
+            try { saveSettings({ show_ended_streams: next } as any); } catch {}
+          }}
+          aria-pressed={showEnded}
+        >
+          {showEnded ? 'Hide ended' : 'Show ended'}
+        </button>
+      </div>
       {/* Aggregates */}
       {rows === null ? (
         <div className="grid gap-4 sm:grid-cols-3">
@@ -312,7 +339,7 @@ export default function StreamsPage() {
           ) : (
             <div className="text-gray-600">No active streams.</div>
           )}
-          {ended.length > 0 && (
+          {showEnded && ended.length > 0 && (
             <div>
               <div className="mt-4 mb-2 text-sm text-gray-700">Ended</div>
               {renderRows(ended, false)}
