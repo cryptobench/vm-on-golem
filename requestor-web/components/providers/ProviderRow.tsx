@@ -88,17 +88,17 @@ export function ProviderRow({
             {/* Capacity (totals only) */}
             <div className="mt-2 flex flex-row flex-wrap items-center gap-4 text-[12px] text-gray-700">
               <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-600">Capacity (total)</span>
-              <span className="inline-flex items-center gap-1.5" title="Total cores available">
+              <span className="inline-flex items-center gap-1.5" title="Total vCPU available">
                 <RiCpuLine className="h-4 w-4 text-gray-500" />
-                Cores: <span className="font-mono">{provider.resources.cpu}</span>
+                vCPU: <span className="font-mono">{provider.resources.cpu}</span>
               </span>
               <span className="inline-flex items-center gap-1.5" title="Total memory available">
                 <RiStackLine className="h-4 w-4 text-gray-500" />
-                Memory: <span className="font-mono">{provider.resources.memory} GB</span>
+                RAM: <span className="font-mono">{provider.resources.memory} GB</span>
               </span>
               <span className="inline-flex items-center gap-1.5" title="Total storage available">
                 <RiHardDrive2Line className="h-4 w-4 text-gray-500" />
-                Disk: <span className="font-mono">{provider.resources.storage} GB</span>
+                Storage: <span className="font-mono">{provider.resources.storage} GB</span>
               </span>
             </div>
             {/* Hourly price under specs */}

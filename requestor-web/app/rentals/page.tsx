@@ -78,7 +78,7 @@ export default function RentalsPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-3">
-        <h2>My Servers</h2>
+        <h2>My VMs</h2>
         {mounted && (
           <button
             className={showTerminated ? 'btn btn-secondary' : 'btn btn-secondary'}

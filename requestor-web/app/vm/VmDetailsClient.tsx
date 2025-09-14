@@ -314,7 +314,7 @@ export default function VmDetailsClient() {
     return (
       <div className="space-y-4">
         <div className="text-red-600">VM not found in your rentals.</div>
-        <button className="btn btn-secondary" onClick={() => router.push('/rentals')}>Back to Servers</button>
+        <button className="btn btn-secondary" onClick={() => router.push('/rentals')}>Back to VMs</button>
       </div>
     );
   }
@@ -352,11 +352,11 @@ export default function VmDetailsClient() {
         const left = list.filter(x => !(x.vm_id === vm.vm_id && x.provider_id === vm.provider_id));
         saveRentals(left);
       } catch {}
-      show("Destroyed");
+      show("Terminated");
       closeDestroy();
       router.push('/rentals');
     }
-    catch (e) { show("Destroy failed"); }
+    catch (e) { show("Terminate failed"); }
     finally { setBusy(false); }
   };
 
@@ -459,7 +459,7 @@ export default function VmDetailsClient() {
             <div className="flex flex-col items-start gap-2 sm:items-end">
               <div className="flex gap-2">
                 <button className="btn btn-secondary" onClick={copySSH} disabled={!sshCmd || vm.status === 'terminated'}>Copy SSH</button>
-                <button className="btn btn-danger" onClick={openDestroy} disabled={busy}>Destroy</button>
+                <button className="btn btn-danger" onClick={openDestroy} disabled={busy}>Terminate</button>
               </div>
             </div>
           </div>
@@ -469,13 +469,13 @@ export default function VmDetailsClient() {
       {/* Specs */}
       <div className="grid gap-4 sm:grid-cols-3">
         <div className="card"><div className="card-body">
-          <div className="text-sm text-gray-500 inline-flex items-center gap-1.5"><RiCpuLine className="h-4 w-4 text-gray-500" /> CPU</div>
+          <div className="text-sm text-gray-500 inline-flex items-center gap-1.5"><RiCpuLine className="h-4 w-4 text-gray-500" /> vCPU</div>
           <div className="mt-1 text-lg font-semibold">
             {(!mounted || !effectiveResources?.cpu) ? (<Skeleton className="h-6 w-24" />) : (<>{effectiveResources.cpu} vCPU</>)}
           </div>
         </div></div>
         <div className="card"><div className="card-body">
-          <div className="text-sm text-gray-500 inline-flex items-center gap-1.5"><RiStackLine className="h-4 w-4 text-gray-500" /> Memory</div>
+          <div className="text-sm text-gray-500 inline-flex items-center gap-1.5"><RiStackLine className="h-4 w-4 text-gray-500" /> RAM</div>
           <div className="mt-1 text-lg font-semibold">
             {(!mounted || !effectiveResources?.memory) ? (<Skeleton className="h-6 w-24" />) : (<>{effectiveResources.memory} GB</>)}
           </div>
@@ -527,14 +527,14 @@ export default function VmDetailsClient() {
           busy={busy}
         />
       )}
-      {/* Destroy confirmation modal */}
+      {/* Terminate confirmation modal */}
       <ConfirmDialog
         open={confirmDestroyOpen}
         onCancel={closeDestroy}
         onConfirm={confirmDestroy}
-        title="Destroy VM"
-        description="Are you sure you want to permanently destroy this VM? This action cannot be undone."
-        confirmLabel="Destroy"
+        title="Terminate VM"
+        description="Are you sure you want to permanently terminate this VM? This action cannot be undone."
+        confirmLabel="Terminate"
         danger
         busy={busy}
       />

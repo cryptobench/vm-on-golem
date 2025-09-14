@@ -66,13 +66,13 @@ export function RentalRowWithData({
             {(spec) && (
               <div className="mt-2 flex flex-row flex-wrap items-center gap-4 text-[12px] text-gray-700">
                 <span className="inline-flex items-center gap-1.5">
-                  <RiCpuLine className="h-4 w-4 text-gray-500" /> Cores: <span className="font-mono">{spec.cpu}</span>
+                  <RiCpuLine className="h-4 w-4 text-gray-500" /> vCPU: <span className="font-mono">{spec.cpu}</span>
                 </span>
                 <span className="inline-flex items-center gap-1.5">
-                  <RiStackLine className="h-4 w-4 text-gray-500" /> Memory: <span className="font-mono">{spec.memory} GB</span>
+                  <RiStackLine className="h-4 w-4 text-gray-500" /> RAM: <span className="font-mono">{spec.memory} GB</span>
                 </span>
                 <span className="inline-flex items-center gap-1.5">
-                  <RiHardDrive2Line className="h-4 w-4 text-gray-500" /> Disk: <span className="font-mono">{spec.storage} GB</span>
+                  <RiHardDrive2Line className="h-4 w-4 text-gray-500" /> Storage: <span className="font-mono">{spec.storage} GB</span>
                 </span>
               </div>
             )}
@@ -97,17 +97,17 @@ export function RentalRowWithData({
             </button>
           )}
           <button className="btn btn-danger w-full sm:w-auto" onClick={(e) => { e.stopPropagation(); setConfirmOpen(true); }} disabled={!!busy}>
-            {busy ? <><Spinner className="h-4 w-4" /> Destroy</> : 'Destroy'}
+            {busy ? <><Spinner className="h-4 w-4" /> Terminate</> : 'Terminate'}
           </button>
-        </div>
+      </div>
       </div>
       <ConfirmDialog
         open={confirmOpen}
         onCancel={() => setConfirmOpen(false)}
         onConfirm={() => { setConfirmOpen(false); onDestroy?.(rental); }}
-        title="Destroy VM"
-        description="Are you sure you want to permanently destroy this VM? This action cannot be undone."
-        confirmLabel="Destroy"
+        title="Terminate VM"
+        description="Are you sure you want to permanently terminate this VM? This action cannot be undone."
+        confirmLabel="Terminate"
         danger
         busy={!!busy}
       />

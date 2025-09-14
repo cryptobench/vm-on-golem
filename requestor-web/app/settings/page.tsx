@@ -133,7 +133,7 @@ export default function SettingsPage() {
             <div className="card-body grid gap-3">
               <div className="grid gap-2 sm:grid-cols-[1fr_auto_auto] sm:items-end">
                 <div>
-                  <label className="label">Active advertisement server</label>
+                  <label className="label">Active profile</label>
                   <select className="input" value={activeId} onChange={(e) => { const id = e.target.value; setActive(id); const p = profiles.find(x => x.id === id); if (p) { setProfileName(p.name); setMode(p.config.mode); setDisc(p.config.discovery_url); setRpc(p.config.golem_base_rpc_url); setWs(p.config.golem_base_ws_url); } }}>
                     {profiles.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                   </select>
@@ -149,7 +149,7 @@ export default function SettingsPage() {
           </div>
           <div className="card">
             <div className="card-body">
-              <div className="text-sm font-medium">Advertisement Server</div>
+              <div className="text-sm font-medium">Discovery & Network</div>
               <div className="mt-3 grid gap-3">
                 <div>
                   <label className="label">Mode</label>
@@ -160,13 +160,13 @@ export default function SettingsPage() {
                 </div>
                 {mode === 'central' ? (
                   <div>
-                    <label className="label">Discovery URL</label>
+                    <label className="label">Central discovery URL</label>
                     <input className="input" value={disc} onChange={e => setDisc(e.target.value)} placeholder="http://host:9001/api/v1" />
                   </div>
                 ) : (
                   <>
                     <div>
-                      <label className="label">Payments Chain ID (hex or decimal)</label>
+                      <label className="label">Payments chain ID (hex or decimal)</label>
                       <input className="input" value={chainIdText} onChange={e => setChainIdText(e.target.value)} placeholder="0x6013a" />
                     </div>
                     <div>
@@ -197,18 +197,18 @@ export default function SettingsPage() {
           <div className="card">
             <div className="card-body grid gap-3">
               <div>
-                <label className="label">Price display</label>
+                <label className="label">Price unit</label>
                 <select className="input w-48" value={displayCurrency} onChange={(e) => { const v = (e.target.value as 'fiat'|'token'); setDisplayCurrency(v); saveSettings({ display_currency: v }); }}>
                   <option value="fiat">Fiat (USD)</option>
                   <option value="token">Token (native / GLM)</option>
                 </select>
               </div>
               <div>
-                <label className="label">StreamPayment address</label>
+                <label className="label">StreamPayment contract address</label>
                 <input className="input" value={sp} onChange={e => setSp(e.target.value)} placeholder="0x..." />
               </div>
               <div>
-                <label className="label">GLM token address (0x0.. for native)</label>
+                <label className="label">GLM token address (set 0x0… to pay in native token)</label>
                 <input className="input" value={glm} onChange={e => setGlm(e.target.value)} placeholder="0x..." />
               </div>
               <div className="flex items-center gap-3 pt-2">

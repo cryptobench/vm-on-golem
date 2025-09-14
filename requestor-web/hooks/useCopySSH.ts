@@ -15,15 +15,14 @@ export function useCopySSH() {
         try { const acc = await vmAccess(r.provider_id, r.vm_id, ads); port = acc?.ssh_port || port; } catch {}
       }
       if (!host) host = r.provider_ip || 'PROVIDER_IP';
-      if (!port) { show('Could not resolve SSH port'); return false; }
+      if (!port) { show('SSH port unavailable'); return false; }
       const cmd = buildSshCommand(host, Number(port));
       const ok = await copyText(cmd);
-      show(ok ? 'SSH command copied' : 'Copy failed');
+      show(ok ? 'SSH command copied' : 'Could not copy');
       return ok;
-    } catch {
-      show('Copy failed');
+  } catch {
+      show('Could not copy');
       return false;
-    }
+  }
   };
 }
-

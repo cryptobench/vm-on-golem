@@ -10,9 +10,9 @@ export function Sidebar() {
   const pathname = usePathname();
   const nav = [
     { href: "/", label: "Dashboard", Icon: IcDashboard },
-    { href: "/providers", label: "Browse Providers", Icon: IcProviders },
-    { href: "/rentals", label: "My Servers", Icon: IcServers },
-    { href: "/streams", label: "Payment Streams", Icon: IcStreams },
+    { href: "/rentals", label: "My VMs", Icon: IcServers },
+    { href: "/providers", label: "Providers", Icon: IcProviders },
+    { href: "/streams", label: "Streams", Icon: IcStreams },
     { href: "/settings", label: "Settings", Icon: IcSettings },
   ];
   return (
@@ -26,7 +26,7 @@ export function Sidebar() {
       <ProjectSwitcher />
       <nav className="flex-1 p-3 space-y-1">
         {nav.map((i) => {
-          const active = pathname === i.href;
+          const active = pathname === i.href || pathname.startsWith(i.href + "/");
           return (
             <Link
               key={i.href}

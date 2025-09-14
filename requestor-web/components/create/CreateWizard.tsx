@@ -227,15 +227,15 @@ export function CreateWizard({ open, onClose, onComplete }: { open: boolean; onC
                   <div className="mb-3 font-medium">Specific specs</div>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div>
-                      <label className="label">CPU</label>
+                      <label className="label">vCPU</label>
                       <input className="input" type="number" min={1} value={cpu ?? ''} onChange={e => { setMode('specific'); setCpu(e.target.value ? Number(e.target.value) : undefined); }} placeholder="e.g., 2" />
                     </div>
                     <div>
-                      <label className="label">Memory (GB)</label>
+                      <label className="label">RAM (GB)</label>
                       <input className="input" type="number" min={1} value={memory ?? ''} onChange={e => { setMode('specific'); setMemory(e.target.value ? Number(e.target.value) : undefined); }} placeholder="e.g., 4" />
                     </div>
                     <div>
-                      <label className="label">Disk (GB)</label>
+                      <label className="label">Storage (GB)</label>
                       <input
                         className="input"
                         type="number"
@@ -356,7 +356,7 @@ export function CreateWizard({ open, onClose, onComplete }: { open: boolean; onC
                   if (step === 2) {
                     if (!selectedProvider) { alert('Please select a provider to continue.'); return; }
                     if (mode !== 'specific' || cpu == null || memory == null || storage == null || storage < 10) {
-                      alert('Please enter CPU, RAM, and Disk ≥ 10 GB to continue.');
+                      alert('Please enter vCPU, RAM, and Storage ≥ 10 GB to continue.');
                       return;
                     }
                     setRentOpen(true);

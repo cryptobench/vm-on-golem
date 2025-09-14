@@ -187,7 +187,7 @@ export default function StreamsPage() {
           </div></div>
           {/* Hourly burn */}
           <div className="card"><div className="card-body">
-            <div className="text-sm text-gray-600 inline-flex items-center gap-1.5"><RiTimeFill className="h-4 w-4 text-gray-500" /> Hourly burn</div>
+            <div className="text-sm text-gray-600 inline-flex items-center gap-1.5"><RiTimeFill className="h-4 w-4 text-gray-500" /> Hourly spend</div>
             {(() => {
               // Compute sums for active only
               const unknown: string[] = [];

@@ -19,15 +19,15 @@ export default function Home() {
         <Link href="/providers" className="card hover:shadow-md transition-shadow">
           <div className="card-body">
             <div className="text-sm text-gray-500">Explore</div>
-            <div className="mt-1 font-semibold">Browse Providers</div>
-            <div className="mt-3 text-sm text-gray-600">Filter by CPU, memory, disk and estimate cost.</div>
+            <div className="mt-1 font-semibold">Providers</div>
+            <div className="mt-3 text-sm text-gray-600">Filter by vCPU, RAM, storage and estimate cost.</div>
           </div>
         </Link>
         <Link href="/rentals" className="card hover:shadow-md transition-shadow">
           <div className="card-body">
             <div className="text-sm text-gray-500">Manage</div>
-            <div className="mt-1 font-semibold">My Servers</div>
-            <div className="mt-3 text-sm text-gray-600">Access, stop or destroy your virtual machines.</div>
+            <div className="mt-1 font-semibold">My VMs</div>
+            <div className="mt-3 text-sm text-gray-600">Access, terminate or connect to your VMs.</div>
           </div>
         </Link>
         <Link href="/streams" className="card hover:shadow-md transition-shadow">

@@ -52,13 +52,13 @@ export function VmCard({ rental: r, busy, remainingSeconds, onCopySSH, onStop, o
           {(r.resources || r.platform) && (
             <div className="mt-2 flex flex-row flex-wrap items-center gap-4 text-[12px] text-gray-700">
               {r.resources?.cpu != null && (
-                <span className="inline-flex items-center gap-1.5"><RiCpuLine className="h-4 w-4 text-gray-500" /> Cores: <span className="font-mono">{r.resources.cpu}</span></span>
+                <span className="inline-flex items-center gap-1.5"><RiCpuLine className="h-4 w-4 text-gray-500" /> vCPU: <span className="font-mono">{r.resources.cpu}</span></span>
               )}
               {r.resources?.memory != null && (
-                <span className="inline-flex items-center gap-1.5"><RiStackLine className="h-4 w-4 text-gray-500" /> Memory: <span className="font-mono">{r.resources.memory} GB</span></span>
+                <span className="inline-flex items-center gap-1.5"><RiStackLine className="h-4 w-4 text-gray-500" /> RAM: <span className="font-mono">{r.resources.memory} GB</span></span>
               )}
               {r.resources?.storage != null && (
-                <span className="inline-flex items-center gap-1.5"><RiHardDrive2Line className="h-4 w-4 text-gray-500" /> Disk: <span className="font-mono">{r.resources.storage} GB</span></span>
+                <span className="inline-flex items-center gap-1.5"><RiHardDrive2Line className="h-4 w-4 text-gray-500" /> Storage: <span className="font-mono">{r.resources.storage} GB</span></span>
               )}
             </div>
           )}
@@ -90,7 +90,7 @@ export function VmCard({ rental: r, busy, remainingSeconds, onCopySSH, onStop, o
             )}
             {showDestroy && (
               <button className="btn btn-danger w-full sm:w-auto" onClick={(e) => { e.stopPropagation(); onDestroy?.(r); }} disabled={!!busy}>
-                {busy ? <><Spinner className="h-4 w-4" /> Destroy</> : 'Destroy'}
+                {busy ? <><Spinner className="h-4 w-4" /> Terminate</> : 'Terminate'}
               </button>
             )}
           </div>
