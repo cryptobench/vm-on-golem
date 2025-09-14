@@ -195,7 +195,8 @@ export function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provid
         provider_id: provider.provider_id,
         provider_ip: provider.ip_address || null,
         platform: provider.platform || null,
-        resources: provider.resources || { cpu, memory, storage },
+        // Persist the exact spec we requested, not provider total capacity
+        resources: { cpu, memory, storage },
         vm_id: vmId,
         ssh_port: null,
         stream_id: String(sid),

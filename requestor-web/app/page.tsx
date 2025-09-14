@@ -26,7 +26,7 @@ export default function Home() {
         <Link href="/rentals" className="card hover:shadow-md transition-shadow">
           <div className="card-body">
             <div className="text-sm text-gray-500">Manage</div>
-            <div className="mt-1 font-semibold">Your Rentals</div>
+            <div className="mt-1 font-semibold">My Servers</div>
             <div className="mt-3 text-sm text-gray-600">Access, stop or destroy your virtual machines.</div>
           </div>
         </Link>

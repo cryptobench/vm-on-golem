@@ -32,6 +32,11 @@ This monorepo contains services and GUIs for running virtual machines on the Gol
 - Keep spinners compact near text: typically `h-4 w-4`; use `h-3.5 w-3.5` in badges.
 - Do not mix skeletons and spinners for the same content area at the same time. Prefer skeletons for content; spinners only augment action buttons.
 
+### UI Consistency (requestor-web)
+- Buttons: Use the shared `.btn` styles for all buttons. Buttons must have a consistent height (`h-10`) whether placed horizontally or stacked vertically. Do not override button height ad-hoc in components; if a special case is unavoidable, prefer utility classes that preserve `h-10`.
+- Spinners in buttons: keep compact (`h-4 w-4`) and place inline before the label. Keep the label visible (e.g., "Creating…"). Ensure sufficient contrast (`text-white` on primary) so the spinner is visible.
+- When laying out action groups, prefer consistent spacing: horizontal button groups should align to the same height; vertical stacks should use the same button height for all items.
+
 ## Testing Guidelines
 - Framework: `pytest` (+ `pytest-asyncio`, `pytest-cov`).
 - Location/names: `<service>/tests/` with files like `test_*.py` and functions `test_*`.

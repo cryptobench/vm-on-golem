@@ -10,8 +10,8 @@ export function Sidebar() {
   const pathname = usePathname();
   const nav = [
     { href: "/", label: "Dashboard", Icon: IcDashboard },
-    { href: "/providers", label: "Providers", Icon: IcProviders },
-    { href: "/rentals", label: "Servers", Icon: IcServers },
+    { href: "/providers", label: "Browse Providers", Icon: IcProviders },
+    { href: "/rentals", label: "My Servers", Icon: IcServers },
     { href: "/streams", label: "Payment Streams", Icon: IcStreams },
     { href: "/settings", label: "Settings", Icon: IcSettings },
   ];

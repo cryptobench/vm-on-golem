@@ -46,7 +46,8 @@ export function useProjectRentals(projectId: string) {
     {
       refreshInterval: 8000,
       revalidateOnMount: true,
-      fallbackData: loadRentals(),
+      // Use a stable, SSR-safe fallback to avoid hydration mismatches
+      fallbackData: [] as any[],
     }
   );
 
