@@ -401,6 +401,10 @@ Logs are filterable, exportable, and include enough context to reproduce a timel
 
 ### **7.1. Minecraft Server dApp**
 
+<img width="1080" height="607" alt="image" src="https://gist.github.com/user-attachments/assets/add7f0b8-9f0d-4369-abd0-f38d025c8245" />
+<img width="1080" height="606" alt="image" src="https://gist.github.com/user-attachments/assets/578f4a96-378d-4cb4-be83-0a4d74fc0226" />
+<img width="1080" height="606" alt="image" src="https://gist.github.com/user-attachments/assets/1773a9e6-d333-4e98-a45e-e1705ad23042" />
+
 Minecraft hosting is a natural proving ground for browser-first VM rentals. The audience is mostly younger players who are already used to the idea of running their own servers for friends. Many of them have also experimented with crypto wallets or tokens, which lowers the barrier to trying a service that relies on MetaMask for payments. Because Minecraft servers are relatively inexpensive and not mission-critical, they are an ideal first use case to showcase VM on Golem.
 
 #### **Provisioning Flow**
@@ -428,6 +432,8 @@ Streaming payments keep the experience aligned with the underlying economics of 
 This flow creates a low-friction entry point into Golem. A player can go from connecting their wallet to running a Minecraft world in a single session, without touching cloud infrastructure or command-line tools. It taps into a community that is young, curious, and already experimenting with crypto, introducing them to Golem through an accessible and fun use case. From there, moving from a Minecraft server to a plain VM becomes trivial—the same provisioning flow, just without the Minecraft wrapper.
 
 ### **7.2. Decentralized VPN dApp**
+
+<img width="1344" height="768" alt="image" src="https://gist.github.com/user-attachments/assets/b08ee5df-067d-4648-b297-81ad0a41f4d3" />
 
 A decentralized VPN is the next natural step in showcasing VM on Golem. The idea is to ship a lightweight local installer with a graphical interface that makes connecting to the network as easy as launching a game client. Payments are handled through a Web3 wallet, keeping the model consistent with other requestor flows. Under the hood, the VPN will rely on **WireGuard**, chosen for its performance, simplicity, and strong cryptography.
 
@@ -484,28 +490,96 @@ Sources:
 
 ---
 
-## **9. Roadmap & Milestones**
+## **9. Proposed Funding Structures & Payment Schemes**
 
-| Phase    | Focus                         | Timeline | Status        | Success Criteria                                                           | Payout  |
-| -------- | ----------------------------- | -------- | ------------- | -------------------------------------------------------------------------- | ------- |
-| Phase 1  | Core Infrastructure           | Feb 2025 | Complete      | Provision VM end-to-end on testnet via three-command flow                  | $10K    |
-| Phase 2  | Provider API Hardening        | Feb 2025 | Complete      | Provider API sustains 24/7 uptime with automated recovery hooks            | $25K    |
-| Phase 3  | Requestor API & Orchestration | Feb 2025 | Complete      | Requestor API powers CLI parity flows and records immutable audit events   | $62.5K  |
-| Phase 4  | Smart-Contract Payments       | Mar 2025 | Testnet-ready | Holesky streams bill per-second with <2% settlement variance               | $156K   |
-| Phase 5  | Requestor GUI Marketplace     | Apr 2025 | Next          | Web requestors launch/manage VMs with CLI parity; ≥50 pilots complete flow | $390K   |
-| Phase 6  | Verifier Network              | May 2025 | Next          | Verifier quorum covers ≥80% of listings, false positives drop >60%         | $975K   |
-| Phase 7  | Provider GUI Desktop          | Jun 2025 | Next          | ≥50 weekly active providers; GUI-linked revenue ≥70% of payouts            | $2.44M  |
-| Phase 8  | Confidential Compute          | Aug 2025 | Next          | Attested workloads launch for ≥3 enterprise pilots with proof artifacts    | $6.10M  |
-| Phase 9  | Requestor Minecraft dApp      | Oct 2025 | Next          | One-click deploy reaches 1K monthly sessions with stable retention         | $15.26M |
-| Phase 10 | VPN dApp                      | Dec 2025 | Next          | 5K paid tunnels/month with automated SLA enforcement                       | $38.14M |
+**Date:** Sep 16, 2025
 
-Total staged funding requested: **$63.5M**, applying an ~2.5× multiplier between milestones to align capital unlocks with escalating scope and impact.
+To provide flexibility and align incentives with the project's forward-looking roadmap, we propose three distinct funding structures. This proposal seeks funding for Phases 6 through 11, building upon the foundational work already completed in Phases 1-5.
+
+Each option combines a monthly salary paid in EUR with milestone-based rewards paid in GLM tokens for the upcoming work. This hybrid approach ensures consistent development progress starting from October 2025, while rewarding the successful **delivery and implementation** of key project phases.
+
+_Note: All GLM token rewards are calculated based on a rate of €0.21 per GLM. This rate is subject to market fluctuation, and the final token amounts for milestones may be adjusted based on the prevailing market rate at the time of agreement._
 
 ---
 
-## **10. Budget & Team**
+### **Option 1: Stable Income with Steady Progress**
 
-**Total Funding Requested:** $63,500,000  
-The budget is allocated across the ten phases as detailed in the roadmap. Funds will be used for dedicated development, security audits, infrastructure for the verifier network, and marketing and community growth initiatives for the dApps. Payouts are requested upon the successful completion and verification of each milestone.
+This model prioritizes a consistent monthly salary to ensure stable and dedicated development, supplemented by significant milestone rewards that recognize the completion of core functionalities.
 
-**Team:** This project is led by myself, Phillip. I am a long-time Golem community member and infrastructure builder with deep, hands-on experience with the network's strengths and, more importantly, its weaknesses. This project is the culmination of seven years of learning and a direct effort to build the platform I and many others have always wanted.
+-   **Monthly Salary:** €12,000
+
+**Milestone Rewards:**
+
+| Phase        | Focus                         | Timeline     | Status        | Payout (GLM)    | Success Criteria (Delivery-Focused)                                                                                                                              |
+| :----------- | :---------------------------- | :----------- | :------------ | :-------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Phase 1**  | Core Infrastructure           | Feb 2025     | Complete      |                 | Provision VM end-to-end on testnet via three-command flow.                                                                                                       |
+| **Phase 2**  | Provider API Hardening        | Feb 2025     | Complete      |                 | Provider API sustains 24/7 uptime with automated recovery hooks.                                                                                                 |
+| **Phase 3**  | Requestor API & Orchestration | Feb 2025     | Complete      |                 | Requestor API powers CLI parity flows and records immutable audit events.                                                                                        |
+| **Phase 4**  | Golem DB Integration          | Feb 2025     | Complete      |                 | Providers can publish advertisements to Golem DB and requestors can successfully fetch and list them.                                                            |
+| **Phase 5**  | Smart-Contract Payments       | Mar 2025     | Testnet-ready |                 | Holesky streams bill per-second with <2% settlement variance.                                                                                                    |
+| **Phase 6**  | Requestor GUI Marketplace     | **Dec 2025** | Next          | **95,238 GLM**  | A functional, publicly deployed web marketplace where users can connect a wallet, browse providers, create/manage VMs, and handle payment streams.               |
+| **Phase 7**  | Verifier Network              | **Feb 2026** | Next          | **142,857 GLM** | The verifier network is deployed on a public testnet, demonstrating the ability to perform attestation checks and halt payment streams upon verified VM failure. |
+| **Phase 8**  | Provider GUI Desktop          | **Apr 2026** | Next          | **190,476 GLM** | A cross-platform Provider GUI application is publicly released, providing dashboards and functional controls for VM, network, and listing management.            |
+| **Phase 9**  | Requestor Minecraft dApp      | **Jun 2026** | Next          | **238,095 GLM** | The Minecraft server dApp is launched, providing a complete browser-native workflow from wallet connection to a provisioned server with a working DNS address.   |
+| **Phase 10** | VPN dApp                      | **Aug 2026** | Next          | **357,143 GLM** | A decentralized VPN dApp is released, allowing users to select a provider and establish a secure WireGuard tunnel through a simple graphical interface.          |
+| **Phase 11** | Confidential Compute          | **Oct 2026** | Next          | **476,191 GLM** | The confidential compute workflow is implemented, demonstrating an encrypted VM boot with keys released only after successful hardware attestation.              |
+
+-   **Total Potential Compensation:** €144,000 (Annual Salary) + **1,500,000 GLM** (Milestones)
+-   **Advantages:** Provides a predictable income stream, reducing developer risk and encouraging consistent, high-quality work.
+-   **Disadvantages:** Lower overall potential compensation compared to performance-heavy models.
+
+---
+
+### **Option 2: Balanced Salary with Exponential Milestone Rewards**
+
+This option offers a foundational monthly salary while creating powerful incentives through exponentially increasing milestone rewards tied directly to the delivery of critical project phases.
+
+-   **Monthly Salary:** €7,000
+
+**Milestone Rewards:**
+
+| Phase        | Focus                         | Timeline     | Status        | Payout (GLM)      | Success Criteria (Delivery-Focused)                                                                                                                              |
+| :----------- | :---------------------------- | :----------- | :------------ | :---------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Phase 1**  | Core Infrastructure           | Feb 2025     | Complete      |                   | Provision VM end-to-end on testnet via three-command flow.                                                                                                       |
+| **Phase 2**  | Provider API Hardening        | Feb 2025     | Complete      |                   | Provider API sustains 24/7 uptime with automated recovery hooks.                                                                                                 |
+| **Phase 3**  | Requestor API & Orchestration | Feb 2025     | Complete      |                   | Requestor API powers CLI parity flows and records immutable audit events.                                                                                        |
+| **Phase 4**  | Golem DB Integration          | Feb 2025     | Complete      |                   | Providers can publish advertisements to Golem DB and requestors can successfully fetch and list them.                                                            |
+| **Phase 5**  | Smart-Contract Payments       | Mar 2025     | Testnet-ready |                   | Holesky streams bill per-second with <2% settlement variance.                                                                                                    |
+| **Phase 6**  | Requestor GUI Marketplace     | **Dec 2025** | Next          | **190,476 GLM**   | A functional, publicly deployed web marketplace where users can connect a wallet, browse providers, create/manage VMs, and handle payment streams.               |
+| **Phase 7**  | Verifier Network              | **Feb 2026** | Next          | **380,952 GLM**   | The verifier network is deployed on a public testnet, demonstrating the ability to perform attestation checks and halt payment streams upon verified VM failure. |
+| **Phase 8**  | Provider GUI Desktop          | **Apr 2026** | Next          | **761,905 GLM**   | A cross-platform Provider GUI application is publicly released, providing dashboards and functional controls for VM, network, and listing management.            |
+| **Phase 9**  | Requestor Minecraft dApp      | **Jun 2026** | Next          | **1,523,810 GLM** | The Minecraft server dApp is launched, providing a complete browser-native workflow from wallet connection to a provisioned server with a working DNS address.   |
+| **Phase 10** | VPN dApp                      | **Aug 2026** | Next          | **3,047,619 GLM** | A decentralized VPN dApp is released, allowing users to select a provider and establish a secure WireGuard tunnel through a simple graphical interface.          |
+| **Phase 11** | Confidential Compute          | **Oct 2026** | Next          | **6,095,238 GLM** | The confidential compute workflow is implemented, demonstrating an encrypted VM boot with keys released only after successful hardware attestation.              |
+
+-   **Total Potential Compensation:** €84,000 (Annual Salary) + **12,000,000 GLM** (Milestones)
+-   **Advantages:** Offers substantial earning potential directly tied to project success, strongly aligning developer and project interests.
+-   **Disadvantages:** Lower monthly salary increases financial risk; missed milestones have a significant financial impact.
+
+---
+
+### **Option 3: Aggressive Timelines and Maximum Rewards**
+
+This high-risk, high-reward model features the same base salary as Option 2 but with accelerated timelines and the most aggressive milestone payouts for rapid delivery of features.
+
+-   **Monthly Salary:** €7,000
+
+**Milestone Rewards with Aggressive Timelines:**
+
+| Phase        | Focus                         | Timeline     | Status        | Payout (GLM)      | Success Criteria (Delivery-Focused)                                                                                                                              |
+| :----------- | :---------------------------- | :----------- | :------------ | :---------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Phase 1**  | Core Infrastructure           | Feb 2025     | Complete      |                   | Provision VM end-to-end on testnet via three-command flow.                                                                                                       |
+| **Phase 2**  | Provider API Hardening        | Feb 2025     | Complete      |                   | Provider API sustains 24/7 uptime with automated recovery hooks.                                                                                                 |
+| **Phase 3**  | Requestor API & Orchestration | Feb 2025     | Complete      |                   | Requestor API powers CLI parity flows and records immutable audit events.                                                                                        |
+| **Phase 4**  | Golem DB Integration          | Feb 2025     | Complete      |                   | Providers can publish advertisements to Golem DB and requestors can successfully fetch and list them.                                                            |
+| **Phase 5**  | Smart-Contract Payments       | Mar 2025     | Testnet-ready |                   | Holesky streams bill per-second with <2% settlement variance.                                                                                                    |
+| **Phase 6**  | Requestor GUI Marketplace     | **Nov 2025** | Next          | **285,714 GLM**   | A functional, publicly deployed web marketplace where users can connect a wallet, browse providers, create/manage VMs, and handle payment streams.               |
+| **Phase 7**  | Verifier Network              | **Dec 2025** | Next          | **571,429 GLM**   | The verifier network is deployed on a public testnet, demonstrating the ability to perform attestation checks and halt payment streams upon verified VM failure. |
+| **Phase 8**  | Provider GUI Desktop          | **Jan 2026** | Next          | **1,142,857 GLM** | A cross-platform Provider GUI application is publicly released, providing dashboards and functional controls for VM, network, and listing management.            |
+| **Phase 9**  | Requestor Minecraft dApp      | **Mar 2026** | Next          | **2,285,714 GLM** | The Minecraft server dApp is launched, providing a complete browser-native workflow from wallet connection to a provisioned server with a working DNS address.   |
+| **Phase 10** | VPN dApp                      | **May 2026** | Next          | **4,571,429 GLM** | A decentralized VPN dApp is released, allowing users to select a provider and establish a secure WireGuard tunnel through a simple graphical interface.          |
+| **Phase 11** | Confidential Compute          | **Jul 2026** | Next          | **9,142,857 GLM** | The confidential compute workflow is implemented, demonstrating an encrypted VM boot with keys released only after successful hardware attestation.              |
+
+-   **Total Potential Compensation:** €84,000 (Annual Salary) + **18,000,000 GLM** (Milestones)
+-   **Advantages:** Highest potential for financial reward, maximizing the incentive for rapid completion and market delivery.
+-   **Disadvantages:** Compressed timelines introduce significant pressure and execution risk. The potential for missing deadlines and forfeiting substantial rewards is higher.
