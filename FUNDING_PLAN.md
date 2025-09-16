@@ -42,9 +42,235 @@ VM on Golem is its own fresh architecture.
 
 ---
 
-## 4. Objectives & Impact
+## 4. Requestor Web Marketplace Plan
+
+We are building a browser-native marketplace that brings the full VM lifecycle into a MetaMask-enabled dashboard. Instead of bootstrapping with CLI tooling, requestors will open a single page, connect their wallet, and step through discovery, provisioning, and management without leaving the browser.
+
+The experience is organized into a handful of focused surfaces:
+
+* A **project dashboard** gives requestors an immediate view of live machines, stream health, and per-project activity.
+* The **provider marketplace** lists advertisements with filters for vCPU, RAM, storage, geography, platform, and budget caps so requestors can zero in on the right host before they stake funds.
+* A guided **rent wizard** walks newcomers through region selection, resource sizing, and SSH key validation before handing off to a MetaMask-powered rent dialog that opens the payment stream and provisions the VM.
+* The **rentals command center** keeps track of running and terminated machines, streaming live status updates, ready-to-copy SSH commands, and safe termination controls.
+* A dedicated **streams console** exposes hourly spend, remaining runway, and preset or custom length top-ups.
+* The **settings workspace** stores discovery profiles, contract overrides, currency display preferences, and SSH keys so the web client stays in sync with the rest of the stack.
+* A detailed **VM page** consolidates provider metadata, access information, stream state, and lifecycle actions for each instance.
+
+Together, these surfaces translate the "three commands" promise into a point-and-click workflow: land on the dashboard, launch the wizard, approve the payment stream, receive SSH details, and monitor runtime from the same tab.
+
+## 5. Requestor Growth Concepts
+
+
+### Minecraft Server dApp
+
+Minecraft hosting is a natural proving ground for browser-first VM rentals. The audience is mostly younger players who are already used to the idea of running their own servers for friends. Many of them have also experimented with crypto wallets or tokens, which lowers the barrier to trying a service that relies on MetaMask for payments. Because Minecraft servers are relatively inexpensive and not mission-critical, they are an ideal first use case to showcase VM on Golem.
+
+---
+
+#### Provisioning Flow
+
+The dApp translates the “three commands” promise into a browser-native workflow. A requestor connects their MetaMask wallet, chooses a server profile, and confirms the payment stream.
+
+From there, the system provisions the VM automatically: resources are allocated from a provider, the correct ports are opened, a Minecraft image is deployed, and a stable DNS record is published through Golem Base. Within minutes the requestor receives a hostname such as `play.username.golem.host` that can be shared directly with friends.
+
+---
+
+#### Management Experience
+
+The management panel mirrors what players already expect from commercial Minecraft hosting services. The goal is to give users the same visual comfort they are used to, while abstracting away the underlying VM.
+
+Key elements include:
+
+* **Live console logs** streamed directly in the browser, showing chat messages, plugin activity, and server events.
+* **File browser** with upload/download support for editing `server.properties`, uploading worlds, and managing resource packs.
+* **World management** tools for backups, restores, and scheduled saves.
+* **Plugin and mod handling** with drag-and-drop uploads for Forge and Fabric servers.
+* **Performance metrics** such as CPU, RAM, ticks per second (TPS), and player count.
+
+The design draws inspiration from the ultra-minimal dashboards popular in the Minecraft hosting community. Interfaces are visually lightweight, with clear buttons and no clutter—players should feel instantly at home.
+
+*\[Insert UI screenshot here]*
+*\[Insert UI screenshot here]*
+
+---
+
+#### Payment & Control
+
+Streaming payments keep the experience aligned with the underlying economics of VM on Golem. The dApp displays current spend and remaining runway in real time, with a single button to top up the stream.
+
+If a server is left idle, requestors can enable an automatic pause policy that saves the world and stops the VM when no players are online, preventing unnecessary costs. If the verifier network reports that the VM is no longer running, the stream is halted to protect the requestor from paying for downtime.
+
+---
+
+#### Why It Matters
+
+This flow creates a low-friction entry point into Golem. A player can go from connecting their wallet to running a Minecraft world in a single session, without touching cloud infrastructure or command-line tools.
+
+It taps into a community that is young, curious, and already experimenting with crypto, introducing them to Golem through an accessible and fun use case. From there, moving from a Minecraft server to a plain VM becomes trivial—the same provisioning flow, just without the Minecraft wrapper.
+
+
+### Decentralized VPN dApp
+
+A decentralized VPN is the next natural step in showcasing VM on Golem. The idea is to ship a lightweight local installer with a graphical interface that makes connecting to the network as easy as launching a game client. Payments are handled through a Web3 wallet, keeping the model consistent with other requestor flows. Under the hood, the VPN will rely on **WireGuard**, chosen for its performance, simplicity, and strong cryptography.
+
+---
+
+#### Provisioning Flow
+
+The application opens with a minimal panel inspired by the same design principles as the Minecraft dApp: clean layout, two or three obvious actions, and a focus on immediacy. A requestor connects their MetaMask wallet, browses available providers, and selects the endpoint they want to connect through.
+
+When the requestor confirms, the app provisions a VM from the chosen provider, configures WireGuard, and automatically establishes the tunnel. Within seconds the VPN is active, with no manual configuration files or command-line steps required.
+
+---
+
+#### Provider Discovery
+
+The marketplace view is tailored for VPN-specific criteria. Instead of CPU or RAM, requestors see:
+
+* **Bandwidth capacity** offered by each provider.
+* **Geolocation** options for region-specific browsing.
+* **Latency measurements** for selecting the fastest nodes.
+* **Policy flags** such as whether the provider allows torrenting or blocks certain traffic.
+
+These parameters allow requestors to choose endpoints that match their needs—whether it’s streaming content abroad, protecting privacy on public Wi-Fi, or running traffic through high-bandwidth nodes for downloads.
+
+---
+
+#### Management Experience
+
+Once connected, the application displays a clear dashboard showing:
+
+* Current VPN status (connected / disconnected).
+* Selected provider and endpoint location.
+* Real-time bandwidth usage and session runtime.
+* Remaining payment runway based on the active stream.
+
+From here, the requestor can disconnect, switch providers, or top up their stream directly. The focus is on simplicity: one page that manages the entire VPN lifecycle without technical complexity.
+
+---
+
+#### Payments & Control
+
+As with other VM on Golem workloads, billing is handled through **per-second payment streaming**. The requestor sees current spend and remaining balance, and can extend their session by topping up the stream.
+
+This approach keeps the incentives aligned: providers are rewarded fairly for uptime and throughput, while requestors only pay for the time they are actively connected. If the verifier network flags the endpoint as unhealthy, the stream halts automatically.
+
+---
+
+#### Why It Matters
+
+VPNs are a proven consumer service with clear demand, but today they require centralized operators, subscription lock-ins, and opaque trust models. A decentralized VPN on Golem replaces that with open discovery, transparent provider metadata, and pay-as-you-go economics.
+
+The installer abstracts all the complexity: connect wallet, pick a node, click connect. By reducing the flow to something as simple as a music-streaming app login, we open the door for mainstream users to engage with Golem infrastructure—this time not for gaming, but for everyday privacy and security.
+
+
+
+---
+
+## 6. Objectives & Impact
 
 ### Project Goals
+
+### Provider GUI (“Battlestation”)
+
+The Provider GUI is the operator’s control room. It presents live supply, revenue, and health at a glance, with one-click actions to manage VMs, ports, listings, and payouts. The goal is a Grafana-style dashboard—dark theme, dense but readable panels—while keeping every control self-explanatory.
+
+---
+
+#### Purpose
+
+Providers need three things in one place: a truthful view of what’s running, simple controls to change it, and confidence that payments are flowing. The GUI connects directly to the local Provider Node (Multipass adapter, Port Manager, Advertiser, Stream Monitor) and pulls verified state from Golem Base so what you see on screen matches what the marketplace sees.
+
+---
+
+#### Home Dashboard
+
+The landing screen is a high-signal overview that updates in real time:
+
+* **Revenue today / this week / month** with a tiny sparkline and a “pending vs. withdrawn” split.
+* **Active VMs** and **utilization gauges** (vCPU, RAM, storage) against the reserved Golem capacity.
+* **Stream health** showing running streams, average runway left, halted streams, and auto-shutdowns triggered.
+* **Port status** with counts for open/closed ports.
+* **Alerts** for anything actionable: low balance in the provider wallet, failing attestation, or disk pressure.
+
+Every card links to a deeper view and exposes a single safe action (e.g., “Withdraw,” “Pause listings,” “Open Port Manager”).
+
+---
+
+#### VM Fleet
+
+A table and detail pane for all instances running under Multipass on this host:
+
+* **Per-VM metrics** (CPU %, RAM %, disk IO, network throughput, load average, TPS if it’s a known service like Minecraft).
+* **Lifecycle controls** (start, stop, reboot, snapshot, destroy) with confirmations and guardrails if a stream is still active.
+* **SSH keys & access** showing injected keys, and the exact endpoint presented to the requestor.
+* **Tags & notes** so operators can annotate long-running tenants or internal SKUs.
+
+Behind the scenes the GUI reads from the Multipass adapter and the Resource Tracker, and writes back via the Provider API to keep state consistent.
+
+---
+
+#### Port & Network
+
+A dedicated panel for everything on the wire:
+
+* **Mapping list** of external ports → VM\:port, including protocol, status, last connection time, and byte counters.
+* **Dynamic DNS** records currently advertised via Golem Base, with expiry/TTL and the last on-chain update hash.
+
+Changes here flow through the Port Manager; the GUI blocks any operation that would strand an active stream without a confirmation.
+
+---
+
+#### Listings & Pricing
+
+Everything the marketplace sees in one page:
+
+* **Live advertisement** exactly as it appears in Golem Base: public identifier, region, CPU architecture, available cores/RAM/disk, accepted payment networks, and price in USD and GLM.
+* **Price editor** that lets operators set per-unit pricing (vCPU-hour, GB-RAM-hour, GB-storage-day) and an optional minimum deposit.
+* **Publish / pause** toggles with reason codes (maintenance, bandwidth cap reached, policy change).
+* **Templates** for common bundles (e.g., “2 vCPU / 4GB / 40GB”) to standardize offers and speed up updates.
+
+When you hit **Save**, the Advertiser pushes an updated ad to Golem Base; the page shows the transaction/commit reference so operators can verify propagation.
+
+---
+
+#### Streams & Payouts
+
+A payments view that’s easy to reconcile:
+
+* **Active streams** with per-second accrual, counterparty, start time, and estimated runway left based on current balance.
+* **Events** such as top-ups, halts (by verifier or by requestor), and auto-shutdowns mapped to VM lifecycle events.
+* **Withdrawals** for settled balances with fee estimates and a ledger of completed payouts.
+* **Wallet status** including network, addresses in use, and quick actions (copy, view in explorer).
+
+If a stream halts or runs dry, the GUI can trigger a graceful VM stop with a note stored for audit.
+
+---
+
+#### Health, Alerts, and Automation
+
+Operators shouldn’t need to babysit:
+
+* **Threshold alerts** for disk > 85%, RAM pressure, abnormal egress, or failing port checks.
+* **Policy automations** such as “pause listings if external RTT > 150ms for 5 minutes” or “refuse new VMs if free disk < 20GB.”
+* **Maintenance windows** to auto-pause advertisements and drain new requests, with an optional message shown in the marketplace.
+
+Alert definitions are stored locally; summaries and key state changes are mirrored to Golem Base where relevant (e.g., listing pauses).
+
+---
+
+#### Audit & History
+
+Every important action is logged:
+
+* **Operator actions** (who paused a listing, who opened a port, who destroyed a VM).
+* **System actions** (verifier halt, auto-shutdown, DNS updates).
+* **External signals** (advertisement commits, stream events) with their IDs.
+
+Logs are filterable, exportable, and include enough context to reproduce a timeline during support.
+
+---
+
 
 ### Expected Outcomes
 
