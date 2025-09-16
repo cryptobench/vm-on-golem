@@ -74,6 +74,42 @@ The architecture of VM on Golem is deliberately simple. Providers expose a stabl
 
 This sets a clear expectation: if you want to earn as a provider, you need a proper setup. On Golem, supply has always been far greater than demand, so raising the bar does not threaten the marketplace. It filters out low-reliability hosts while attracting providers who understand uptime, bandwidth, and service quality—the people we want powering VM on Golem.
 
+### End-to-End Overview
+
+```mermaid
+sequenceDiagram
+    participant Req as "Requestor CLI / GUI"
+    participant Wallet as "Wallet Client"
+    participant GB as "Golem Base"
+    participant Prov as "Provider API"
+    participant PM as "Port Manager & Proxy"
+    participant MP as "Multipass"
+    participant VM as "Ubuntu VM"
+    participant DNS as "Dynamic DNS"
+    participant PC as "Port Checker"
+    participant SC as "Stream Contract"
+    participant Ver as "Verifier Nodes"
+
+    Req->>GB: List providers
+    GB-->>Req: Advertisements & pricing
+    Req->>Wallet: Request stream funding
+    Wallet->>SC: Create or top up stream
+    SC-->>Prov: Funding event emitted
+    Req->>Prov: Submit provision request
+    Prov->>PM: Allocate ports & configure proxy
+    PM->>PC: Verify reachability from edge nodes
+    PM->>DNS: Publish dynamic DNS record
+    Prov->>MP: Launch VM workload
+    MP->>VM: Boot image & configure networking
+    Req->>PM: SSH / service access via forwarded port
+    SC->>Ver: Expose stream state for checks
+    Ver->>VM: Issue attestation challenge
+    VM-->>Ver: Return signed measurements
+    Ver-->>SC: Verdict continue or stop
+    SC-->>Prov: Stream GLM while VM healthy
+    Prov->>GB: Update advertisement capacity
+```
+
 ---
 
 ## Provider Node
@@ -83,6 +119,44 @@ Providers install a dedicated node built around **Multipass**, our launch hyperv
 When the node starts it reserves the portion of CPU, memory, and storage dedicated to Golem workloads. A local agent tracks these resources in real time and exposes a secure HTTPS API to requestors. Whenever free capacity changes—after a VM is created or destroyed—the node publishes an updated advertisement to **Golem Base (Golem DB)** so the marketplace always sees accurate numbers.
 
 Each advertisement includes the provider’s public identifier, live resource availability, supported CPU architecture, country of operation, pricing in both USD and GLM, and the payments network the provider accepts. Because listings live on Golem Base, requestors can independently verify that the provider exists and is keeping their information fresh. Providers retain full control: they can adjust metadata, pause their listing, or change prices.
+
+### Provider Node Components
+
+```mermaid
+sequenceDiagram
+    participant ProvSvc as "Provider Service"
+    participant PortMgr as "Port Manager"
+    participant PortCheck as "Port Checker"
+    participant VMAdapter as "Multipass Adapter"
+    participant Multipass as "Multipass CLI"
+    participant ProxyMgr as "Proxy Manager"
+    participant ResTracker as "Resource Tracker"
+    participant AdvSvc as "Advertisement Service"
+    participant Advert as "Golem Base Advertiser"
+    participant GBase as "Golem Base"
+    participant StreamMon as "Stream Monitor"
+    participant StreamCon as "Stream Contract"
+
+    ProvSvc->>PortMgr: initialize()
+    PortMgr->>PortCheck: Verify provider + SSH ports
+    PortMgr-->>ProvSvc: Verified port inventory
+    ProvSvc->>VMAdapter: Sync existing VMs
+    VMAdapter->>Multipass: Inspect running instances
+    Multipass-->>VMAdapter: VM resource snapshot
+    VMAdapter->>ProxyMgr: Ensure proxy mappings
+    VMAdapter-->>ProvSvc: Multipass ready
+    ProvSvc->>ResTracker: Register capacity updates
+    ResTracker-->>AdvSvc: Trigger advertisement update
+    AdvSvc->>Advert: Start broadcast loop
+    Advert->>GBase: Publish resource advertisement
+    ProvSvc->>StreamMon: Start stream reconciliation
+    StreamMon->>StreamCon: Poll active streams
+    StreamCon-->>StreamMon: Stream state & balances
+    StreamMon->>ProvSvc: Flag unpaid or halted VMs
+    ProvSvc->>VMAdapter: Terminate flagged VM
+    VMAdapter->>ProxyMgr: Release port mapping
+    VMAdapter->>ResTracker: Adjust resource totals
+```
 
 Onboarding also includes an automated **port verification** step. The node coordinates with a port-checker service to confirm that the provider’s public IP and forwarded SSH range are reachable from multiple regions. Nodes that fail this check remain invisible until the operator fixes their routing, keeping the pool limited to operators with reliable connectivity.
 
@@ -112,6 +186,30 @@ When a VM is first rented, the requestor must deposit a minimum amount of funds 
 
 To prevent abuse, we are designing a **verifiable execution layer** powered by verifier nodes. These nodes act as decentralized oracles: they independently check whether a VM is actually running and can halt the payment stream if the VM is proven to be down.
 
+### Streaming Payments Flow
+
+```mermaid
+sequenceDiagram
+    participant R as Requestor CLI
+    participant SC as Stream Contract (Polygon)
+    participant PV as Provider Node
+    participant VN as Verifier Nodes
+    participant VM as Provisioned VM
+
+    R->>SC: Create stream & deposit runtime
+    SC->>PV: Emit funding event / allow provisioning
+    PV->>VM: Launch via Multipass & proxy setup
+    loop Continuous verification
+        VN->>VM: Attestation challenge (Keylime/vTPM)
+        VM-->>VN: Signed measurements
+        VN->>SC: Verdict (continue or halt)
+        SC->>PV: Stream GLM per second while healthy
+    end
+    R->>SC: Top up or close stream
+    SC->>PV: Stop payments when funds exhausted
+    PV->>VM: Shutdown & cleanup on stream stop
+```
+
 ### How the Check Works
 
 Each VM runs with a **virtual Trusted Platform Module (vTPM)**, provided by tools like **swtpm** when using QEMU/KVM. Inside the VM, an agent (based on **Keylime**) continuously measures the VM’s state (boot sequence, configuration, integrity) and exposes an attestation API.
@@ -121,6 +219,38 @@ Each VM runs with a **virtual Trusted Platform Module (vTPM)**, provided by tool
 * The verifier nodes validate the signatures and compare the measurements against a **“golden baseline”**—a reference fingerprint of what a healthy, trusted VM should look like.
 
 Multiple verifiers perform this check, and their results are aggregated into a **consensus verdict** (e.g. through a Chainlink Decentralized Oracle Network).
+
+### Attestation & Oracle Flow
+
+```mermaid
+sequenceDiagram
+    participant Req as "Requestor"
+    participant PV as "Provider Node"
+    participant SC as "Stream Contract"
+    participant Oracle as "Oracle Coordinator"
+    participant VM as "VM Attestation Endpoint"
+    participant TPM as "Sealed Signing Key"
+
+    Req->>PV: Provision VM & publish attestation endpoint
+    Req->>SC: Register VM public key & endpoint
+    SC-->>Oracle: Emit verification job metadata
+    loop Scheduled checks
+        Oracle->>VM: Send random challenge nonce
+        VM->>TPM: Sign challenge with sealed key
+        TPM-->>VM: Signature (proof VM holds key)
+        VM-->>Oracle: Return signature + state hash
+        Oracle->>Oracle: Verify using registered public key
+        alt Signature valid
+            Oracle->>SC: Report VM healthy
+            SC-->>PV: Maintain payment stream
+        else Signature invalid or timeout
+            Oracle->>SC: Report VM failed attestation
+            SC-->>PV: Halt payments & flag VM
+        end
+    end
+```
+
+The oracle only accepts signatures that match the requestor-registered public key, so any deviation in the VM image or key material immediately fails attestation and halts payouts.
 
 ### Smart Contract Integration
 
@@ -163,6 +293,34 @@ The requestor experience stays true to the **“three commands to a VM”** prom
 3. `golem vm ssh <name>` — connect directly to the machine through the provider’s forwarded port.
 
 Connection details are stored locally, so reconnecting or tearing down later takes just one command.
+
+### Command Journey
+
+```mermaid
+sequenceDiagram
+    participant User as "Developer"
+    participant CLI as "golem CLI"
+    participant GB as "Golem Base"
+    participant SC as "Stream Contract"
+    participant API as "Provider API"
+    participant VM as "Provisioned VM"
+
+    User->>CLI: Run `golem vm providers`
+    CLI->>GB: Fetch provider advertisements
+    GB-->>CLI: Return listings + pricing
+    CLI-->>User: Present sorted providers
+    User->>CLI: Run `golem vm create`
+    CLI->>SC: Create or top up payment stream
+    SC-->>API: Emit funding authorization
+    CLI->>API: Submit VM specification
+    API-->>CLI: Respond with VM ready details
+    User->>CLI: Run `golem vm ssh`
+    CLI->>VM: Establish SSH via provider proxy
+    VM-->>CLI: Open shell session
+    CLI-->>User: Interactive access
+    User->>CLI: Optional `topup` or `stop`
+    CLI->>SC: Adjust or close stream
+```
 
 ---
 
