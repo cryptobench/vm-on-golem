@@ -35,13 +35,29 @@ Over the years, it has become clear that people want something simple. They expe
 
 This commitment to simplicity means builders have the freedom to run whatever they want. They are not locked into a specific SDK or a "fancy way of distributing work." Instead, they get a standard, reliable building block that the entire industry already uses. You can move your existing data pipelines, web servers, or Kubernetes clusters from any other cloud on the internet to VM on Golem, and it will just work.
 
-Getting started is as simple as it should have always been. To rent a machine, you only need three self-explanatory commands:
+Getting started is as simple as it should have always been. Install the CLI once, then rent a machine with three self-explanatory commands:
 
+-   `pip install request-vm-on-golem` to install the requestor toolkit.
 1.  `golem vm providers` to list all available providers and their specs.
 2.  `golem vm create --provider-id ... --cores 2 --memory 2 --disk 10` to provision the machine.
 3.  `golem vm ssh vm_name` to gain instant access once it's ready.
 
 That's what people want. No explanations needed.
+
+#### **Provider Activation Walkthrough**
+
+For supply, the experience mirrors that simplicity. Install the node once, then a brand-new host can join the network with two short commands run in sequence:
+
+```bash
+# One-time install from PyPI
+pip install golem-vm-provider
+
+# Go live and publish pricing
+golem-provider start --network testnet
+golem-provider pricing set --usd-per-core 12 --usd-per-mem 4 --usd-per-disk 0.1
+```
+
+Those two commands describe the activation arc we’re designing: switch on the provider service, then publish pricing so requestors can rent from you.
 
 #### **A Fresh Architecture**
 
