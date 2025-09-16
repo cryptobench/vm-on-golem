@@ -72,17 +72,82 @@ https://discord.com/channels/684703559954333727/773872812091768852/1341446378890
 
 ### Architecture & Workflow
 
-The architecture is rather simple. Vm on Golem takes the approach that the providers are exposing an API to the internet, which requestors must use to rent a VM. Now, the question that always comes up is; how will you do NAT punching for people with not public IP's, and the simply as is; We wont.
+The architecture is deliberately simple. Providers expose a stable API on the public internet, and requestors connect directly to rent machines. We don’t attempt NAT punching or home-router workarounds. Instead, providers must port-forward the necessary interfaces, prove their ports are reachable, and keep them open.
 
-The number of providers available on the network has always been 10x what the amount of requestors has been, meaning theres no issues gathering supply of VM providers. Thats why we will be forcing providers to portforward their ports in order to join the network, and that might limit some people from becoming a provider, but the positive upside of this is that, I think this will result in more high-quality providers/ server hosts that has technical expertise, and my belief is that, those people will also be people that have a high uptime on their machine which is important for a platform like VM on Golem.
+This approach sets a clear expectation: if you want to earn as a provider, you need a proper setup. On Golem, supply has always been far greater than demand, so raising the bar does not threaten the marketplace. It filters out low-reliability hosts while attracting providers who understand uptime, bandwidth, and service quality—the people we want powering VM on Golem.
+
+---
+
+### Provider Architecture
+
+We’re building dedicated provider software around **Multipass**, which works out of the box on macOS, Linux, and Windows. The provider software:
+
+* Reserves host capacity for Golem workloads.
+* Tracks CPU, memory, and storage in real time.
+* Exposes a clean HTTPS API for requestors.
+* Publishes advertisements to **Golem Base (a.k.a. Golem DB)** whenever available capacity changes.
+
+Each advertisement includes:
+
+* Current free capacity (cores, RAM, storage).
+* CPU architecture.
+* Advertised country.
+* Pricing (in fiat and GLM).
+* Preferred payments network.
+
+Because listings live on Golem Base, they’re transparent and verifiable. Providers can update or withdraw them at any time.
+
+---
 
 
-(list more information about the provider architecture here) (VM adapter, using multipass for initial launch, available on Mac, Linux nad windows.). 
+### Payments
 
-Payments are using EIP..(figure out) payment streaming, meaning that providers are paid by the second as the requestor is depositing money into the contract before the rental is allowed to start. 
+Before a rental starts, requestors deposit funds into an on-chain payment stream (based on **EIP-1620 style streaming**). Providers earn continuously—paid by the second—as long as the VM runs. If the stream stops, the VM stops.
 
-For advertising the providers we're employing Golem DB to submit advertisements from the providers and fetching via Golem DB RPC for the requestors.  (list more details about what were submitting)
+When a VM is first rented, the requestor must deposit a minimum amount of funds into the contract. This deposit defines the “runway” for how long the VM can stay alive. If more runtime is needed, the requestor can top up the stream to extend the lease.
 
+To prevent abuse, we are designing a **verifiable execution layer** powered by verifier nodes. These nodes act as decentralized oracles: they independently check whether a VM is actually running and can halt the payment stream if the VM is proven to be down.
+
+#### How the Check Works
+
+Each VM runs with a **virtual Trusted Platform Module (vTPM)**, provided by tools like **swtpm** when using QEMU/KVM. Inside the VM, an agent (based on **Keylime**) continuously measures the VM’s state (boot sequence, configuration, running integrity) and exposes an attestation API.
+
+* **Verifier nodes** periodically send cryptographic challenges to the VM’s Keylime agent.
+* The agent signs responses using the vTPM, proving the response comes from the correct, untampered VM instance.
+* The verifier nodes validate these signatures and compare the measurements against a “golden” baseline for a valid VM.
+
+Multiple verifier nodes perform this check, and their results are aggregated into a **consensus verdict** (e.g. through a Chainlink Decentralized Oracle Network).
+
+#### Smart Contract Integration
+
+* If the verifier network confirms the VM is running, the on-chain payment stream continues.
+* If the VM fails attestation or stops responding, the verifier consensus report triggers the contract to halt payments and optionally refund unused funds to the requestor.
+
+This flow ensures providers are only paid for live, verifiable machines, and requestors never fund dead VMs. By combining continuous payment streaming with cryptographic attestation, VM on Golem moves toward a self-policing, decentralized compute marketplace.
+
+
+
+---
+
+### Requestor Workflow
+
+The requestor experience stays true to the “three commands to a VM” promise:
+
+1. `golem vm providers` — query Golem Base for available providers, filter by resources or location.
+2. `golem vm create --provider-id <id> --cores <n> --memory <gb> --disk <gb>` — the CLI deposits the funds into the stream, shares the ID with the provider, and triggers provisioning once confirmed.
+3. `golem vm ssh <name>` — connect directly to the machine through the provider’s forwarded port.
+
+Connection details are stored locally, so reconnecting or tearing down later is a single command.
+
+---
+
+### End-to-End Flow
+
+* Providers install the software, port-forward, and publish their listing.
+* Requestors browse listings, fund a stream, and start provisioning.
+* Providers boot the VM, inject SSH keys, and expose the port.
+* Golem Base keeps advertisements up to date and verifiable.
+* The payment stream ensures that if funding ends, the VM shuts down gracefully.
 
 
 
