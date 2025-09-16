@@ -66,60 +66,45 @@ https://discord.com/channels/684703559954333727/773872812091768852/1341446378890
 
 ---
 
-## 5. Technical Approach
 
 
+## VM on Golem – Architecture & Workflow
 
-### Architecture & Workflow
+The architecture of VM on Golem is deliberately simple. Providers expose a stable API on the public internet, and requestors connect directly to rent machines. We don’t attempt NAT punching or home-router workarounds. Instead, providers must port-forward the necessary interfaces, prove their ports are reachable, and keep them open.
 
-The architecture is deliberately simple. Providers expose a stable API on the public internet, and requestors connect directly to rent machines. We don’t attempt NAT punching or home-router workarounds. Instead, providers must port-forward the necessary interfaces, prove their ports are reachable, and keep them open.
-
-This approach sets a clear expectation: if you want to earn as a provider, you need a proper setup. On Golem, supply has always been far greater than demand, so raising the bar does not threaten the marketplace. It filters out low-reliability hosts while attracting providers who understand uptime, bandwidth, and service quality—the people we want powering VM on Golem.
+This sets a clear expectation: if you want to earn as a provider, you need a proper setup. On Golem, supply has always been far greater than demand, so raising the bar does not threaten the marketplace. It filters out low-reliability hosts while attracting providers who understand uptime, bandwidth, and service quality—the people we want powering VM on Golem.
 
 ---
 
-### Provider Node
+## Provider Node
 
 Providers install a dedicated node built around **Multipass**, our launch hypervisor because it runs on macOS, Linux, and Windows out of the box. The node is responsible for presenting the host to the network, advertising capacity, and delivering VM instances on demand.
 
 When the node starts it reserves the portion of CPU, memory, and storage dedicated to Golem workloads. A local agent tracks these resources in real time and exposes a secure HTTPS API to requestors. Whenever free capacity changes—after a VM is created or destroyed—the node publishes an updated advertisement to **Golem Base (Golem DB)** so the marketplace always sees accurate numbers.
 
-Each advertisement includes the provider’s public identifier, live resource availability, supported CPU architecture, country of operation, pricing in both USD and GLM per resource unit, and the payments network the provider accepts. Because the listing lives on Golem Base, requestors can independently verify that the provider exists and is keeping their information fresh. Providers retain control at all times: they can adjust metadata, pause their listing, or change prices.
+Each advertisement includes the provider’s public identifier, live resource availability, supported CPU architecture, country of operation, pricing in both USD and GLM, and the payments network the provider accepts. Because listings live on Golem Base, requestors can independently verify that the provider exists and is keeping their information fresh. Providers retain full control: they can adjust metadata, pause their listing, or change prices.
 
-Onboarding also includes an automated **port verification** step. The node coordinates with our port-checker service to confirm that the provider’s public IP and forwarded SSH range are reachable from multiple regions. Nodes that fail this check remain invisible until the operator fixes their routing, keeping the pool limited to operators with reliable connectivity.
+Onboarding also includes an automated **port verification** step. The node coordinates with a port-checker service to confirm that the provider’s public IP and forwarded SSH range are reachable from multiple regions. Nodes that fail this check remain invisible until the operator fixes their routing, keeping the pool limited to operators with reliable connectivity.
 
-Once a provider passes verification, the node publishes its open port inventory alongside compute resources. Requestors will be able to allocate these ports to expose services from their VMs, with a built-in firewall interface (CLI first, GUI later) that mirrors the simplicity of cloud dashboards like Hetzner. The plan is to let requestors toggle ports on or off, apply preset rules, and audit activity while the provider software enforces those decisions at the edge.
-
-### Dynamic DNS Backed by Golem Base
-
-Raising the bar on networking introduces another reality: many community operators rely on residential or prosumer connections where the public IP can change at any time. A traditional DNS record pointed straight at the host will eventually fail—`play.ourgame.com` suddenly resolves to the wrong place and the service goes dark. Rather than telling these operators they are unwelcome, we plan to turn **Golem Base into a decentralized Dynamic DNS layer** that absorbs these changes in seconds.
-
-The domain owner keeps their registrar and purchases `ourgame.com` as usual. The only twist is that the authoritative name servers for that domain are set to our public gateways (for example `ns1.golembase-dns-provider.com`, `ns2.golembase-dns-provider.com`). These gateways speak plain DNS on the open internet, but under the hood they read from Golem Base instead of flat zone files.
-
-**Request lifecycle:**
-
-1. A player types `play.ourgame.com` into their game client. Their operating system checks the local resolver cache.
-
-2. If the answer is not cached, the resolver follows the standard route: it queries a root DNS server, receives the referral to the `.com` TLD, and then asks the `.com` name server for the NS records of `ourgame.com`.
-
-3. Because the domain owner delegated `ourgame.com` to our gateways, the resolver forwards the question to (say) `ns1.golembase-dns-provider.com`.
-
-4. The gateway receives the DNS query and immediately issues an RPC call to the connected **Golem Base DB-Chain (Layer 3)** node. No local zone file is used—everything is retrieved from the chain in real time.
-
-5. The L3 DB-Chain stores the latest IP address for `play.ourgame.com`. Providers push updates to this state whenever their client detects an IP change. Their authority to do so is anchored in a separate **Golem Base L2 smart contract** (the “Master Key”) that maps domain ownership to Ethereum keys. Only the key holder can publish updates, giving us cryptographic assurance that the domain was not hijacked.
-
-6. The L3 node returns the current IP (for example `2.2.2.2`) to the gateway. The gateway wraps that response in a standards-compliant DNS answer (including TTL/record type) and sends it back to the requester.
-
-7. The user’s resolver caches the result and hands it to the game client.
-
-8. The client connects to the provider’s server at the newly resolved IP address. When the ISP rotates the provider’s IP, the provider client pushes a fresh record to L3, the L3 state changes within seconds, and the next DNS lookup retrieves the new value without manual intervention.
-
-
+Once verified, the node publishes its open port inventory alongside compute resources. Requestors can allocate these ports to expose services from their VMs, with a built-in firewall interface (CLI first, GUI later) that mirrors the simplicity of cloud dashboards like Hetzner. Requestors will be able to toggle ports on or off, apply preset rules, and audit activity while the provider software enforces those decisions at the edge.
 
 ---
 
+## Dynamic DNS Backed by Golem Base
 
-### Payments
+Raising the bar on networking introduces another reality: many community operators rely on residential or prosumer connections where the public IP can change. A traditional DNS record pointed straight at the host will eventually fail—`play.ourgame.com` suddenly resolves to the wrong place and the service goes dark.
+
+To solve this, we plan to turn **Golem Base into a decentralized Dynamic DNS layer** that absorbs IP changes in seconds.
+
+The domain owner still buys `ourgame.com` through their registrar. The only difference is that they delegate their authoritative name servers to Golem gateways (e.g. `ns1.golembase.net`, `ns2.golembase.net`). These gateways answer DNS queries using real-time state pulled from Golem Base instead of flat zone files.
+
+Providers push IP updates into Golem Base whenever their address changes, with authority anchored in a **Golem Base L2 smart contract** that maps domain ownership to Ethereum keys. Only the legitimate key holder can publish updates, making hijacking impossible. When a user queries DNS, the gateway fetches the current record from Golem Base L3, wraps it in a valid DNS response, and sends it back.
+
+The result is resilient DNS that works even for providers on dynamic IPs—without breaking the requestor’s expectation of stable, human-readable domains.
+
+---
+
+## Payments
 
 Before a rental starts, requestors deposit funds into an on-chain payment stream (based on **EIP-1620 style streaming**). Providers earn continuously—paid by the second—as long as the VM runs. If the stream stops, the VM stops.
 
@@ -127,46 +112,68 @@ When a VM is first rented, the requestor must deposit a minimum amount of funds 
 
 To prevent abuse, we are designing a **verifiable execution layer** powered by verifier nodes. These nodes act as decentralized oracles: they independently check whether a VM is actually running and can halt the payment stream if the VM is proven to be down.
 
-#### How the Check Works
+### How the Check Works
 
-Each VM runs with a **virtual Trusted Platform Module (vTPM)**, provided by tools like **swtpm** when using QEMU/KVM. Inside the VM, an agent (based on **Keylime**) continuously measures the VM’s state (boot sequence, configuration, running integrity) and exposes an attestation API.
+Each VM runs with a **virtual Trusted Platform Module (vTPM)**, provided by tools like **swtpm** when using QEMU/KVM. Inside the VM, an agent (based on **Keylime**) continuously measures the VM’s state (boot sequence, configuration, integrity) and exposes an attestation API.
 
 * **Verifier nodes** periodically send cryptographic challenges to the VM’s Keylime agent.
-* The agent signs responses using the vTPM, proving the response comes from the correct, untampered VM instance.
-* The verifier nodes validate these signatures and compare the measurements against a “golden” baseline for a valid VM.
+* The agent signs responses with the vTPM, proving they come from the correct, untampered VM.
+* The verifier nodes validate the signatures and compare the measurements against a **“golden baseline”**—a reference fingerprint of what a healthy, trusted VM should look like.
 
-Multiple verifier nodes perform this check, and their results are aggregated into a **consensus verdict** (e.g. through a Chainlink Decentralized Oracle Network).
+Multiple verifiers perform this check, and their results are aggregated into a **consensus verdict** (e.g. through a Chainlink Decentralized Oracle Network).
 
-#### Smart Contract Integration
+### Smart Contract Integration
 
 * If the verifier network confirms the VM is running, the on-chain payment stream continues.
-* If the VM fails attestation or stops responding, the verifier consensus report triggers the contract to halt payments and optionally refund unused funds to the requestor.
+* If the VM fails attestation or stops responding, the consensus report triggers the contract to halt payments and optionally refund unused funds to the requestor.
 
-This flow ensures providers are only paid for live, verifiable machines, and requestors never fund dead VMs. By combining continuous payment streaming with cryptographic attestation, VM on Golem moves toward a self-policing, decentralized compute marketplace.
-
-
+This ensures providers are only paid for live, verifiable machines, and requestors never fund dead VMs. By combining continuous payment streaming with cryptographic attestation, VM on Golem becomes a self-policing, decentralized compute marketplace.
 
 ---
 
-### Requestor Workflow
+## Confidential Compute & Secure Storage
 
-The requestor experience stays true to the “three commands to a VM” promise:
+Opening the network to commercial workloads means assuming the host is untrusted. Technologies such as **AMD SEV** and **Intel TDX** already protect the VM’s memory while it runs, but they do not shield the disk when the VM shuts down. To close that gap we combine hardware-backed confidential compute with **full disk encryption** and **attestation-driven key release**, ensuring the VM stays protected in every state.
+
+### The Workflow
+
+1. The tenant builds the VM image with **LUKS full disk encryption** enabled. Without the key, the image is unreadable.
+2. The image includes a minimal `initramfs` containing the tools to unlock the disk and a lightweight attestation agent (e.g. a Keylime client).
+3. The provider boots the VM under SEV/TDX. The `initramfs` runs inside the hardware-encrypted enclave, while the main disk stays locked.
+4. The attestation agent requests a signed measurement from the CPU and forwards it to a remote **Key Server** controlled by the workload owner.
+5. The Key Server verifies the signature and measurements. If they match the golden baseline, it releases the LUKS key; otherwise it refuses.
+6. The `initramfs` unlocks the volume and hands control to the OS. The key never touches disk and only exists briefly in protected memory.
+
+### What the Host Can See
+
+* **While running:** only encrypted memory guarded by SEV/TDX.
+* **While stopped:** only an encrypted disk image (LUKS).
+* **At boot:** keys are released only if attestation proves the VM is genuine.
+
+This layered model delivers a zero-trust lifecycle: secrets remain private while the VM runs, when it pauses, and even when it is powered off.
+
+---
+
+## Requestor Workflow
+
+The requestor experience stays true to the **“three commands to a VM”** promise:
 
 1. `golem vm providers` — query Golem Base for available providers, filter by resources or location.
-2. `golem vm create --provider-id <id> --cores <n> --memory <gb> --disk <gb>` — the CLI deposits the funds into the stream, shares the ID with the provider, and triggers provisioning once confirmed.
+2. `golem vm create --provider-id <id> --cores <n> --memory <gb> --disk <gb>` — the CLI deposits funds into the stream, shares the ID with the provider, and triggers provisioning once confirmed.
 3. `golem vm ssh <name>` — connect directly to the machine through the provider’s forwarded port.
 
-Connection details are stored locally, so reconnecting or tearing down later is a single command.
+Connection details are stored locally, so reconnecting or tearing down later takes just one command.
 
 ---
 
-### End-to-End Flow
+## End-to-End Flow
 
-* Providers install the software, port-forward, and publish their listing.
+* Providers install the node, port-forward, and publish their listing.
 * Requestors browse listings, fund a stream, and start provisioning.
 * Providers boot the VM, inject SSH keys, and expose the port.
-* Golem Base keeps advertisements up to date and verifiable.
-* The payment stream ensures that if funding ends, the VM shuts down gracefully.
+* Golem Base keeps advertisements accurate and verifiable.
+* Payment streams ensure that if funding ends, the VM shuts down gracefully.
+
 
 
 
