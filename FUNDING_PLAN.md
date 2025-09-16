@@ -88,6 +88,34 @@ Each advertisement includes the provider’s public identifier, live resource av
 
 Onboarding also includes an automated **port verification** step. The node coordinates with our port-checker service to confirm that the provider’s public IP and forwarded SSH range are reachable from multiple regions. Nodes that fail this check remain invisible until the operator fixes their routing, keeping the pool limited to operators with reliable connectivity.
 
+Once a provider passes verification, the node publishes its open port inventory alongside compute resources. Requestors will be able to allocate these ports to expose services from their VMs, with a built-in firewall interface (CLI first, GUI later) that mirrors the simplicity of cloud dashboards like Hetzner. The plan is to let requestors toggle ports on or off, apply preset rules, and audit activity while the provider software enforces those decisions at the edge.
+
+### Dynamic DNS Backed by Golem Base
+
+Raising the bar on networking introduces another reality: many community operators rely on residential or prosumer connections where the public IP can change at any time. A traditional DNS record pointed straight at the host will eventually fail—`play.ourgame.com` suddenly resolves to the wrong place and the service goes dark. Rather than telling these operators they are unwelcome, we plan to turn **Golem Base into a decentralized Dynamic DNS layer** that absorbs these changes in seconds.
+
+The domain owner keeps their registrar and purchases `ourgame.com` as usual. The only twist is that the authoritative name servers for that domain are set to our public gateways (for example `ns1.golembase-dns-provider.com`, `ns2.golembase-dns-provider.com`). These gateways speak plain DNS on the open internet, but under the hood they read from Golem Base instead of flat zone files.
+
+**Request lifecycle:**
+
+1. A player types `play.ourgame.com` into their game client. Their operating system checks the local resolver cache.
+
+2. If the answer is not cached, the resolver follows the standard route: it queries a root DNS server, receives the referral to the `.com` TLD, and then asks the `.com` name server for the NS records of `ourgame.com`.
+
+3. Because the domain owner delegated `ourgame.com` to our gateways, the resolver forwards the question to (say) `ns1.golembase-dns-provider.com`.
+
+4. The gateway receives the DNS query and immediately issues an RPC call to the connected **Golem Base DB-Chain (Layer 3)** node. No local zone file is used—everything is retrieved from the chain in real time.
+
+5. The L3 DB-Chain stores the latest IP address for `play.ourgame.com`. Providers push updates to this state whenever their client detects an IP change. Their authority to do so is anchored in a separate **Golem Base L2 smart contract** (the “Master Key”) that maps domain ownership to Ethereum keys. Only the key holder can publish updates, giving us cryptographic assurance that the domain was not hijacked.
+
+6. The L3 node returns the current IP (for example `2.2.2.2`) to the gateway. The gateway wraps that response in a standards-compliant DNS answer (including TTL/record type) and sends it back to the requester.
+
+7. The user’s resolver caches the result and hands it to the game client.
+
+8. The client connects to the provider’s server at the newly resolved IP address. When the ISP rotates the provider’s IP, the provider client pushes a fresh record to L3, the L3 state changes within seconds, and the next DNS lookup retrieves the new value without manual intervention.
+
+
+
 ---
 
 
