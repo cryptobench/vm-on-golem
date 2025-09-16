@@ -78,24 +78,15 @@ This approach sets a clear expectation: if you want to earn as a provider, you n
 
 ---
 
-### Provider Architecture
+### Provider Node
 
-We’re building dedicated provider software around **Multipass**, which works out of the box on macOS, Linux, and Windows. The provider software:
+Providers install a dedicated node built around **Multipass**, our launch hypervisor because it runs on macOS, Linux, and Windows out of the box. The node is responsible for presenting the host to the network, advertising capacity, and delivering VM instances on demand.
 
-* Reserves host capacity for Golem workloads.
-* Tracks CPU, memory, and storage in real time.
-* Exposes a clean HTTPS API for requestors.
-* Publishes advertisements to **Golem Base (a.k.a. Golem DB)** whenever available capacity changes.
+When the node starts it reserves the portion of CPU, memory, and storage dedicated to Golem workloads. A local agent tracks these resources in real time and exposes a secure HTTPS API to requestors. Whenever free capacity changes—after a VM is created or destroyed—the node publishes an updated advertisement to **Golem Base (Golem DB)** so the marketplace always sees accurate numbers.
 
-Each advertisement includes:
+Each advertisement includes the provider’s public identifier, live resource availability, supported CPU architecture, country of operation, pricing in both USD and GLM per resource unit, and the payments network the provider accepts. Because the listing lives on Golem Base, requestors can independently verify that the provider exists and is keeping their information fresh. Providers retain control at all times: they can adjust metadata, pause their listing, or change prices.
 
-* Current free capacity (cores, RAM, storage).
-* CPU architecture.
-* Advertised country.
-* Pricing (in fiat and GLM).
-* Preferred payments network.
-
-Because listings live on Golem Base, they’re transparent and verifiable. Providers can update or withdraw them at any time.
+Onboarding also includes an automated **port verification** step. The node coordinates with our port-checker service to confirm that the provider’s public IP and forwarded SSH range are reachable from multiple regions. Nodes that fail this check remain invisible until the operator fixes their routing, keeping the pool limited to operators with reliable connectivity.
 
 ---
 
