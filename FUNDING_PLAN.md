@@ -13,29 +13,31 @@
 
 ---
 
-### **1. Introduction: Golem's Unmet Promise**
+### **1. Introduction: A Clearer Path Forward**
 
-For eight years, the Golem Network has explored decentralized cloud products, yet its fundamental promise remains unfulfilled. Builders still face steep onboarding, constrained runtimes, and non-portable workloads. I have been active in the Golem ecosystem for seven years, and during that time, I have likely built some of the most advanced infrastructure on the network. This has given me a front-row seat to its deepest frustrations, and in countless conversations with community members, I have consistently heard the same request: “Just let me rent a normal VM in a couple of commands.”
+Over the last seven years, Golem has explored multiple approaches to decentralized compute and built up a wealth of knowledge. Along this journey, one message has come through consistently from both the community and new users: they want something simple.
 
-The core problem with Golem today is its immense and unnecessary complexity. Most projects in the DePIN space are vastly overcomplicating what users actually need. They build elaborate, niche SDKs to distribute workloads, but the reality is that builders don't start their journey by seeking out fancy DePIN solutions. They start with standard, centralized clouds like AWS, DigitalOcean, or Hetzner. They use industry-standard tools like Kubernetes, which run on basic, reliable virtual machines.
+When newcomers open the documentation, many feel overwhelmed. They often expect to begin with a few straightforward commands, but instead face a steep learning curve. I’ve seen this sentiment repeated time and again in conversations over the years.
 
-My vision for VM on Golem is that even a 12-year-old should be able to use it without reading any documentation. The commands and interface should be so intuitive that they are self-explanatory. This is the "Hetzner model"—a simple, beloved cloud that just works—in contrast to the often-confusing maze of services like Azure or Google Cloud. DePIN can and _should_ be this simple.
+VM on Golem is a focused response to that feedback. It delivers standard Ubuntu virtual machines with the predictability developers expect from mainstream clouds, while retaining the advantages of an open, decentralized marketplace.
 
-The current Golem, powered by the Yagna implementation for over five years, is a clear example of this failure. Its near-total lack of requestors is a market verdict: it is too complicated, too error-prone, and too limiting. It forces developers to read mountains of documentation, rely on testnet faucets that have been broken for years, and learn a bespoke SDK. I have yet to see a single person describe this process as simple. Once you overcome these initial hurdles, you are met with limitations and roadblocks, forcing hacky workarounds for functionality that should be standard.
+At present, onboarding requires navigating extensive documentation and complex SDK examples. Our Python SSH sample alone runs over 130 lines for something as fundamental as a login. Limited requestor activity reflects what we hear from the market: developers want a simpler, more direct approach.
 
-**VM on Golem** finally delivers on the community's long-standing request. It exposes customizable Ubuntu virtual machines that behave exactly like the VPS instances developers know and use. It provides a 1:1 migration path, allowing anyone to move existing workloads from another cloud and have them just work, out of the box.
+With this approach of provisioning a plain, standard VM, people get exactly what they expect when they try Golem: a normal Ubuntu server they can use however they like. It behaves like any VPS, which means workloads that run elsewhere will run here. That makes one-to-one migration of services and Kubernetes clusters possible without modification.
 
-This need for a drop-in replacement is not theoretical; it's a critical business requirement. Our own Golem DB infrastructure currently resides on Hetzner, and we are actively exploring other clouds in case Hetzner suddenly drops us. What we value most is the ability to perform a 1:1 migration of our Kubernetes cluster. This is precisely what builders are looking for: a standard, reliable alternative that doesn't require relearning everything or facing vendor lock-in. It's the exact problem VM on Golem is built to solve.
+This principle also guides our own operations. Our Golem DB infrastructure currently runs on Hetzner, and we are actively testing other clouds to ensure we can bring our systems online quickly if Hetzner ever changes its policies. What matters most to us, and to other builders, is the ability to move workloads directly onto new infrastructure without adapting to a bespoke stack. That is the exact challenge VM on Golem is built to solve.
+
+The goal of this project is to make the first ten minutes on Golem effortless. A user should be able to discover a provider, create a VM, and connect via SSH with three self-explanatory commands. The flow is designed so most users can begin without reading documentation, keeping the focus on building rather than learning new concepts.
 
 ---
 
-### **2. The Solution: Radical Simplicity**
+### **2. The Solution: Focused on Simplicity**
 
-Over the years, it has become clear that people want something simple. They expect to find Golem, run a few commands, and get a virtual machine. That is not the current reality. With my project, VM on Golem, I am directly addressing our collective failure to deliver what users want from a decentralized compute platform: a basic VM they can build on. That's it, and that's what VM on Golem is: an exact 1:1 clone of a virtual machine, just as if you rented it from any other cloud provider.
+It has become clear that users expect a simple entry point to Golem: run a few commands and get a virtual machine. VM on Golem is designed to meet this expectation directly by providing an exact 1:1 clone of a virtual machine, just as if it were rented from any other cloud provider.
 
-This commitment to simplicity means builders have the freedom to run whatever they want. They are not locked into a specific SDK or a "fancy way of distributing work." Instead, they get a standard, reliable building block that the entire industry already uses. You can move your existing data pipelines, web servers, or Kubernetes clusters from any other cloud on the internet to VM on Golem, and it will just work.
+This commitment to simplicity gives builders the freedom to run what they want, using the tools they already know. They are not locked into a specific SDK or a novel method of distributing work. Instead, they get a standard, reliable building block that the entire industry uses. Existing data pipelines, web servers, or Kubernetes clusters can be moved from any other cloud to VM on Golem and are expected to work out of the box.
 
-Getting started is as simple as it should have always been. Install the CLI once, then rent a machine with three self-explanatory commands:
+Getting started is as simple as it should be. Install the CLI once, then rent a machine with three self-explanatory commands:
 
 -   `pip install request-vm-on-golem` to install the requestor toolkit.
 
@@ -43,11 +45,11 @@ Getting started is as simple as it should have always been. Install the CLI once
 2.  `golem vm create --provider-id ... --cores 2 --memory 2 --disk 10` to provision the machine.
 3.  `golem vm ssh vm_name` to gain instant access once it's ready.
 
-That's what people want. No explanations needed.
+No lengthy explanations are needed. This is the user experience people expect.
 
 #### **Provider Activation Walkthrough**
 
-For supply, the experience mirrors that simplicity. Install the node once, then a brand-new host can join the network with two short commands run in sequence:
+The provider experience mirrors this simplicity. After a one-time installation, a new host can join the network with two short commands:
 
 ```bash
 # One-time install from PyPI
@@ -58,11 +60,15 @@ golem-provider start --network testnet
 golem-provider pricing set --usd-per-core 12 --usd-per-mem 4 --usd-per-disk 0.1
 ```
 
-Those two commands describe the activation arc we’re designing: switch on the provider service, then publish pricing so requestors can rent from you.
+These two commands encapsulate the activation process: start the service, then publish pricing.
 
-#### **A Fresh Architecture**
+#### **A Focused Architecture for Simplicity**
 
-VM on Golem is its own custom architecture. There is nothing connected to the existing Golem network (yagna). Yagna is a failed platform, and it doesn't make sense to re-use it. It's vastly over-engineered and suffering from tons of bugs, UX issues, and much more. VM on Golem is its own fresh architecture, built from the ground up to deliver on the original promise of decentralized compute without the baggage of past attempts.
+To achieve the level of simplicity and reliability described above, VM on Golem is built on a dedicated architecture designed specifically for this purpose.
+
+Rather than layering on top of the existing Yagna implementation, this project follows a clean-slate approach. This choice makes it possible to avoid the inherited complexity and limitations of the current system, while ensuring that the design is optimized around the single goal of provisioning and managing virtual machines.
+
+The outcome is a streamlined and stable foundation, engineered from the ground up to do one thing exceptionally well: provide fast, straightforward, and reliable access to decentralized virtual machines. By narrowing the scope, VM on Golem can deliver on the long-standing promise of accessible decentralized compute without being constrained by earlier architectural decisions.
 
 ---
 
@@ -186,7 +192,7 @@ sequenceDiagram
 
 #### **How the Check Works**
 
-Each VM runs with a **virtual Trusted Platform Module (vTPM)**, provided by tools like **swtpm** when using QEMEMU/KVM. Inside the VM, an agent (based on **Keylime**) continuously measures the VM’s state (boot sequence, configuration, integrity) and exposes an attestation API.
+Each VM runs with a **virtual Trusted Platform Module (vTPM)**, provided by tools like **swtpm** when using QEMU/KVM. Inside the VM, an agent (based on **Keylime**) continuously measures the VM’s state (boot sequence, configuration, integrity) and exposes an attestation API.
 
 -   **Verifier nodes** periodically send cryptographic challenges to the VM’s Keylime agent.
 -   The agent signs responses with the vTPM, proving they come from the correct, untampered VM.
@@ -507,96 +513,54 @@ Sources:
 
 ---
 
-## **9. Proposed Funding Structures & Payment Schemes**
+## **9. Funding Structure & Payment Scheme**
 
 **Date:** Sep 16, 2025
 
-To provide flexibility and align incentives with the project's forward-looking roadmap, we propose three distinct funding structures. This proposal seeks funding for Phases 6 through 11, building upon the foundational work already completed in Phases 1-5.
+This proposal seeks funding for Phases 6 through 11, building on the foundation already completed in Phases 1–5. The model combines a fixed monthly salary in EUR with milestone-based rewards paid in GLM tokens. The salary ensures sustained focus, while milestone rewards are unlocked in stages tied to clear, verifiable outcomes.
 
-Each option combines a monthly salary paid in EUR with milestone-based rewards paid in GLM tokens for the upcoming work. This hybrid approach ensures consistent development progress starting from October 2025, while rewarding the successful **delivery and implementation** of key project phases.
+The aim of this funding is simple: to bring Golem to adoption. After more than eight years of development, users are still asking for the same thing — a standard VM they can rent in a few commands. VM on Golem is designed to deliver exactly that, removing unnecessary complexity and providing the entry point the community has been waiting for.
 
-_Note: All GLM token rewards are calculated based on a rate of €0.21 per GLM. This rate is subject to market fluctuation, and the final token amounts for milestones may be adjusted based on the prevailing market rate at the time of agreement._
+*Note: All GLM token rewards are calculated at a reference rate of €0.21 per GLM. Final amounts may be adjusted to reflect the prevailing market rate at the time of agreement.*
 
 ---
 
-### **Option 1: Stable Income with Steady Progress**
+### **Proposed Model: Balanced Salary + Performance-Gated Milestones**
 
-This model prioritizes a consistent monthly salary to ensure stable and dedicated development, supplemented by significant milestone rewards that recognize the completion of core functionalities.
+* **Monthly Salary:** €7,000
 
--   **Monthly Salary:** €12,000
+This provides baseline stability. The majority of rewards are tied to milestone delivery, so the larger upside only comes with continued progress.
 
 **Milestone Rewards:**
 
-| Phase        | Focus                         | Timeline     | Status        | Payout (GLM)    | Success Criteria (Delivery-Focused)                                                                                                                              |
-| :----------- | :---------------------------- | :----------- | :------------ | :-------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Phase 1**  | Core Infrastructure           | Feb 2025     | Complete      |                 | Provision VM end-to-end on testnet via three-command flow.                                                                                                       |
-| **Phase 2**  | Provider API Hardening        | Feb 2025     | Complete      |                 | Provider API sustains 24/7 uptime with automated recovery hooks.                                                                                                 |
-| **Phase 3**  | Requestor API & Orchestration | Feb 2025     | Complete      |                 | Requestor API powers CLI parity flows and records immutable audit events.                                                                                        |
-| **Phase 4**  | Golem DB Integration          | Feb 2025     | Complete      |                 | Providers can publish advertisements to Golem DB and requestors can successfully fetch and list them.                                                            |
-| **Phase 5**  | Smart-Contract Payments       | Mar 2025     | Testnet-ready |                 | Streamed payments paid by the second                                                                                                                             |
-| **Phase 6**  | Requestor GUI Marketplace     | **Dec 2025** | Next          | **95,238 GLM**  | A functional, publicly deployed web marketplace where users can connect a wallet, browse providers, create/manage VMs, and handle payment streams.               |
-| **Phase 7**  | Verifier Network              | **Feb 2026** | Next          | **142,857 GLM** | The verifier network is deployed on a public testnet, demonstrating the ability to perform attestation checks and halt payment streams upon verified VM failure. |
-| **Phase 8**  | Provider GUI Desktop          | **Apr 2026** | Next          | **190,476 GLM** | A cross-platform Provider GUI application is publicly released, providing dashboards and functional controls for VM, network, and listing management.            |
-| **Phase 9**  | Requestor Minecraft dApp      | **Jun 2026** | Next          | **238,095 GLM** | The Minecraft server dApp is launched, providing a complete browser-native workflow from wallet connection to a provisioned server with a working DNS address.   |
-| **Phase 10** | VPN dApp                      | **Aug 2026** | Next          | **357,143 GLM** | A decentralized VPN dApp is released, allowing users to select a provider and establish a secure WireGuard tunnel through a simple graphical interface.          |
-| **Phase 11** | Confidential Compute          | **Oct 2026** | Next          | **476,191 GLM** | The confidential compute workflow is implemented, demonstrating an encrypted VM boot with keys released only after successful hardware attestation.              |
+| Phase        | Focus                         | Timeline     | Status        | Payout (GLM)      | Success Criteria                                                                                                                                                                                                                          |
+| :----------- | :---------------------------- | :----------- | :------------ | :---------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Phase 1**  | Core Infrastructure           | Feb 2025     | Complete      |                   | CLI can provision a VM on testnet (`golem vm create`) and connect via SSH (`golem vm ssh`); teardown works end-to-end.                                                                                                                    |
+| **Phase 2**  | Provider API Hardening        | Feb 2025     | Complete      |                   | Provider node runs 24/7 without manual restarts; health checks and watchdog auto-recovery in place; readiness/liveness endpoints exposed.                                                                                                 |
+| **Phase 3**  | Requestor API & Orchestration | Feb 2025     | Complete      |                   | API supports create/list/stop/destroy; audit events recorded immutably; flows match CLI parity; idempotent retries confirmed.                                                                                                             |
+| **Phase 4**  | Golem DB Integration          | Feb 2025     | Complete      |                   | Providers publish ads with live capacity and pricing; requestors can filter and fetch ads; propagation < 10 seconds.                                                                                                                      |
+| **Phase 5**  | Smart-Contract Payments       | Mar 2025     | Testnet-ready |                   | Per-second payment streaming live on testnet; top-up extends runway; closing stream halts accrual; events visible on-chain.                                                                                                               |
+| **Phase 6**  | Requestor GUI Marketplace     | **Dec 2025** | Next          | **190,476 GLM**   | Public web app: wallet connect, provider search with filters, rent wizard (region, sizing, SSH key), rentals list with lifecycle actions, stream top-up/close. ≥10 unique requestors use it.                                              |
+| **Phase 7**  | Verifier Network              | **Feb 2026** | Next          | **380,952 GLM**   | Verifier nodes deployed on public testnet; can challenge VMs via attestation; halt streams if consensus marks VM unhealthy. ≥25 providers integrated.                                                                                     |
+| **Phase 8**  | Provider GUI Desktop          | **Apr 2026** | Next          | **761,905 GLM**   | Cross-platform desktop app (Win/Mac/Linux) showing provider revenue, utilization gauges, VM lifecycle controls (start/stop/reboot/snapshot), port management, pricing editor, payout withdrawals. ≥25 providers actively using it.        |
+| **Phase 9**  | Requestor Minecraft dApp      | **Jun 2026** | Next          | **1,523,810 GLM** | Browser-native dApp: wallet connect, choose Minecraft profile, confirm payment stream, VM auto-provisioned with Minecraft image + DNS hostname; management panel with logs, file browser, backups, mod uploads. ≥100 servers provisioned. |
+| **Phase 10** | VPN dApp                      | **Aug 2026** | Next          | **3,047,619 GLM** | Desktop VPN client: wallet connect, select provider by region/bandwidth, approve stream, auto-configured WireGuard tunnel; dashboard shows session runtime, bandwidth usage, remaining runway. ≥250 paying sessions provisioned.          |
+| **Phase 11** | Confidential Compute          | **Oct 2026** | Next          | **6,095,238 GLM** | VM boots with AMD SEV/Intel TDX + full disk encryption; attestation-driven key release; verified demo showing keys only released after attestation passes. ≥3 independent teams run workloads.                                            |
 
--   **Total Potential Compensation:** €144,000 (Annual Salary) + **1,500,000 GLM** (Milestones)
--   **Advantages:** Provides a predictable income stream, reducing developer risk and encouraging consistent, high-quality work.
--   **Disadvantages:** Lower overall potential compensation compared to performance-heavy models.
+* **Total Potential Compensation:** €84,000 (Annual Salary) + **12,000,000 GLM** (Milestones)
 
 ---
 
-### **Option 2: Balanced Salary with Exponential Milestone Rewards**
+### **Rationale**
 
-This option offers a foundational monthly salary while creating powerful incentives through exponentially increasing milestone rewards tied directly to the delivery of critical project phases.
+The funding request is ambitious because the vision is ambitious. VM on Golem is intended to be the product that finally matches what users have been asking for and creates the missing bridge to adoption. It represents a turning point — the chance to position Golem once again among the leading projects in the space, with the relevance and visibility we last had when Golem was ranked in the top 10 on CoinMarketCap back in 2017.
 
--   **Monthly Salary:** €7,000
+The milestone structure provides accountability. Rewards are tied to defined phases, and the larger amounts only unlock in later stages. This keeps progress measurable and ensures alignment between funding and delivery.
 
-**Milestone Rewards:**
+I have been part of Golem for more than seven years, and there is nobody else who carries that kind of continuity. In that time, I have seen team leader after team leader come and go. They arrived with new plans and good intentions, but none of them had the courage to make the radical decisions that could actually move Golem forward. Most avoided speaking directly with the community, which meant they were always building in a vacuum. They never really understood what users wanted, because they never asked.
 
-| Phase        | Focus                         | Timeline     | Status        | Payout (GLM)      | Success Criteria (Delivery-Focused)                                                                                                                              |
-| :----------- | :---------------------------- | :----------- | :------------ | :---------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Phase 1**  | Core Infrastructure           | Feb 2025     | Complete      |                   | Provision VM end-to-end on testnet via three-command flow.                                                                                                       |
-| **Phase 2**  | Provider API Hardening        | Feb 2025     | Complete      |                   | Provider API sustains 24/7 uptime with automated recovery hooks.                                                                                                 |
-| **Phase 3**  | Requestor API & Orchestration | Feb 2025     | Complete      |                   | Requestor API powers CLI parity flows and records immutable audit events.                                                                                        |
-| **Phase 4**  | Golem DB Integration          | Feb 2025     | Complete      |                   | Providers can publish advertisements to Golem DB and requestors can successfully fetch and list them.                                                            |
-| **Phase 5**  | Smart-Contract Payments       | Mar 2025     | Testnet-ready |                   | Streamed payments paid by the second                                                                                                                             |
-| **Phase 6**  | Requestor GUI Marketplace     | **Dec 2025** | Next          | **190,476 GLM**   | A functional, publicly deployed web marketplace where users can connect a wallet, browse providers, create/manage VMs, and handle payment streams.               |
-| **Phase 7**  | Verifier Network              | **Feb 2026** | Next          | **380,952 GLM**   | The verifier network is deployed on a public testnet, demonstrating the ability to perform attestation checks and halt payment streams upon verified VM failure. |
-| **Phase 8**  | Provider GUI Desktop          | **Apr 2026** | Next          | **761,905 GLM**   | A cross-platform Provider GUI application is publicly released, providing dashboards and functional controls for VM, network, and listing management.            |
-| **Phase 9**  | Requestor Minecraft dApp      | **Jun 2026** | Next          | **1,523,810 GLM** | The Minecraft server dApp is launched, providing a complete browser-native workflow from wallet connection to a provisioned server with a working DNS address.   |
-| **Phase 10** | VPN dApp                      | **Aug 2026** | Next          | **3,047,619 GLM** | A decentralized VPN dApp is released, allowing users to select a provider and establish a secure WireGuard tunnel through a simple graphical interface.          |
-| **Phase 11** | Confidential Compute          | **Oct 2026** | Next          | **6,095,238 GLM** | The confidential compute workflow is implemented, demonstrating an encrypted VM boot with keys released only after successful hardware attestation.              |
+I did. For me, this has not been a side project or a passing role. I have lived and breathed Golem every single day, through its toughest moments and its quietest years. I have spent thousands of hours listening to users, reading their frustrations, answering their questions, and understanding their needs. I carry seven years of accumulated knowledge, impressions, and unfiltered feedback. I have seen everything, I have heard everything, and I know exactly what the community has been asking for — because I have been there, listening, when others were not.
 
--   **Total Potential Compensation:** €84,000 (Annual Salary) + **12,000,000 GLM** (Milestones)
--   **Advantages:** Offers substantial earning potential directly tied to project success, strongly aligning developer and project interests.
--   **Disadvantages:** Lower monthly salary increases financial risk; missed milestones have a significant financial impact.
+That experience is not replaceable. It is the reason I am confident in what I am building with VM on Golem, and why I know it will resonate with the people who matter most: the users.
 
----
-
-### **Option 3: Aggressive Timelines and Maximum Rewards**
-
-This high-risk, high-reward model features the same base salary as Option 2 but with accelerated timelines and the most aggressive milestone payouts for rapid delivery of features.
-
--   **Monthly Salary:** €7,000
-
-**Milestone Rewards with Aggressive Timelines:**
-
-| Phase        | Focus                         | Timeline     | Status        | Payout (GLM)      | Success Criteria (Delivery-Focused)                                                                                                                              |
-| :----------- | :---------------------------- | :----------- | :------------ | :---------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Phase 1**  | Core Infrastructure           | Feb 2025     | Complete      |                   | Provision VM end-to-end on testnet via three-command flow.                                                                                                       |
-| **Phase 2**  | Provider API Hardening        | Feb 2025     | Complete      |                   | Provider API sustains 24/7 uptime with automated recovery hooks.                                                                                                 |
-| **Phase 3**  | Requestor API & Orchestration | Feb 2025     | Complete      |                   | Requestor API powers CLI parity flows and records immutable audit events.                                                                                        |
-| **Phase 4**  | Golem DB Integration          | Feb 2025     | Complete      |                   | Providers can publish advertisements to Golem DB and requestors can successfully fetch and list them.                                                            |
-| **Phase 5**  | Smart-Contract Payments       | Mar 2025     | Testnet-ready |                   | Streamed payments paid by the second                                                                                                                             |
-| **Phase 6**  | Requestor GUI Marketplace     | **Nov 2025** | Next          | **285,714 GLM**   | A functional, publicly deployed web marketplace where users can connect a wallet, browse providers, create/manage VMs, and handle payment streams.               |
-| **Phase 7**  | Verifier Network              | **Dec 2025** | Next          | **571,429 GLM**   | The verifier network is deployed on a public testnet, demonstrating the ability to perform attestation checks and halt payment streams upon verified VM failure. |
-| **Phase 8**  | Provider GUI Desktop          | **Jan 2026** | Next          | **1,142,857 GLM** | A cross-platform Provider GUI application is publicly released, providing dashboards and functional controls for VM, network, and listing management.            |
-| **Phase 9**  | Requestor Minecraft dApp      | **Mar 2026** | Next          | **2,285,714 GLM** | The Minecraft server dApp is launched, providing a complete browser-native workflow from wallet connection to a provisioned server with a working DNS address.   |
-| **Phase 10** | VPN dApp                      | **May 2026** | Next          | **4,571,429 GLM** | A decentralized VPN dApp is released, allowing users to select a provider and establish a secure WireGuard tunnel through a simple graphical interface.          |
-| **Phase 11** | Confidential Compute          | **Jul 2026** | Next          | **9,142,857 GLM** | The confidential compute workflow is implemented, demonstrating an encrypted VM boot with keys released only after successful hardware attestation.              |
-
--   **Total Potential Compensation:** €84,000 (Annual Salary) + **18,000,000 GLM** (Milestones)
--   **Advantages:** Highest potential for financial reward, maximizing the incentive for rapid completion and market delivery.
--   **Disadvantages:** Compressed timelines introduce significant pressure and execution risk. The potential for missing deadlines and forfeiting substantial rewards is higher.
+This funding structure reflects how I work best: a steady salary for stability, with meaningful rewards tied directly to milestones. For Golem, it means resources are only committed if the work continues to move forward.
