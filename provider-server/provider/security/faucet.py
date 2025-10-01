@@ -72,12 +72,45 @@ class FaucetClient:
             tx_hash = await self._request_faucet(address, redeemed_token)
             if tx_hash:
                 logger.success(f"Successfully requested funds. Transaction hash: {tx_hash}")
+                logger.info("Waiting for faucet funds to confirm on-chain...")
+                confirmed = await self._wait_for_funds(address)
+                if confirmed:
+                    logger.info("Faucet funds detected; continuing startup.")
+                else:
+                    logger.warning(
+                        "Faucet transaction broadcast but funds not detected before timeout; continuing anyway."
+                    )
             return tx_hash
         except Exception as e:
             import traceback
             logger.error(f"Failed to get funds from faucet: {e}")
             logger.error(traceback.format_exc())
             return None
+
+    async def _wait_for_funds(
+        self,
+        address: str,
+        *,
+        min_balance: float = 0.01,
+        timeout: float = 120.0,
+        poll_interval: float = 3.0,
+    ) -> bool:
+        """Poll the faucet account until the expected balance is available."""
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = asyncio.get_event_loop()
+
+        deadline = loop.time() + timeout
+        while True:
+            balance = await self.check_balance(address)
+            if balance is not None and balance >= min_balance:
+                return True
+
+            if loop.time() >= deadline:
+                return False
+
+            await asyncio.sleep(poll_interval)
 
     async def _get_challenge(self) -> Optional[dict]:
         """Get a PoW challenge from the faucet."""

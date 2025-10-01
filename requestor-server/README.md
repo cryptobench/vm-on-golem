@@ -190,7 +190,7 @@ golem vm create my-vm \
 
 Environment (env prefix `GOLEM_REQUESTOR_`):
 
-- `payments_network` — Payments network profile (defaults to `l2.holesky`). Profiles provide RPC + faucet defaults.
+- `payments_network` — Payments network profile (defaults to `l2.hoodi`). Profiles provide RPC + faucet defaults.
 - `polygon_rpc_url` — EVM RPC URL (defaults from `payments_network` profile; can be overridden)
 - `stream_payment_address` — StreamPayment address (defaults from `contracts/deployments/l2.json`; overridden by provider info)
 - `glm_token_address` — Token address (defaults from `contracts/deployments/l2.json`; zero address means native ETH)
@@ -270,7 +270,7 @@ GOLEM_ENVIRONMENT="development" GOLEM_REQUESTOR_FORCE_LOCALHOST="true" poetry ru
   - Defaults: `development` when `GOLEM_ENVIRONMENT=development`, otherwise `mainnet`.
 
 - Payments Network (`GOLEM_REQUESTOR_PAYMENTS_NETWORK`)
-  - Selects the payments chain profile (e.g., `l2.holesky`, `mainnet`) used for streaming payments; sets default RPC and faucet behavior.
+  - Selects the payments chain profile (e.g., `l2.hoodi`, `mainnet`) used for streaming payments; sets default RPC and faucet behavior.
   - Provider discovery filters by this payments network via `vm providers` unless `--all-payments` is supplied. Override payments filter with `--payments-network <name>`.
 
 Examples:

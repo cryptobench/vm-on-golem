@@ -452,7 +452,7 @@ golem-provider status [--json]
   - Does not change dev ergonomics (logging, reload, or port verification behavior).
 
 - Payments Network (`GOLEM_PROVIDER_PAYMENTS_NETWORK`)
-  - Selects the payments chain profile (e.g., `l2.holesky`, `mainnet`). Determines default payments RPC, faucet enablement, and symbols.
+  - Selects the payments chain profile (e.g., `l2.hoodi`, `mainnet`). Determines default payments RPC, faucet enablement, and symbols.
 
 Common setups:
 - Local dev (separate network): `GOLEM_ENVIRONMENT=development` (defaults to `network=development`).
@@ -471,11 +471,11 @@ The provider will:
 5. Listen for VM requests
 
 Notes:
-- Advertisements include both `golem_network` (testnet/mainnet) and `golem_payments_network` (e.g., `l2.holesky`). Requestors default to matching both; they can list all payments networks with a CLI flag.
+- Advertisements include both `golem_network` (testnet/mainnet) and `golem_payments_network` (e.g., `l2.hoodi`). Requestors default to matching both; they can list all payments networks with a CLI flag.
 
 ### Faucet
 
-- L3 (Golem Base adverts): provider auto-requests funds on startup from `FAUCET_URL` (defaults to EthWarsaw Holesky) protected by CAPTCHA at `CAPTCHA_URL/05381a2cef5e`.
+- L3 (Golem Base adverts): provider auto-requests funds on startup from `FAUCET_URL` (defaults to Kaolin Hoodi) protected by CAPTCHA at `CAPTCHA_URL/05381a2cef5e`.
 - L2 (payments): Use the CLI to request native ETH (enabled only on testnet profiles):
 
 ```bash

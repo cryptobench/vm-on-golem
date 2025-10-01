@@ -360,7 +360,7 @@ Every card links to a deeper view and exposes a single safe action (e.g., “Wit
 
 A table and detail pane for all instances running under Multipass on this host:
 
--   **Per-VM metrics** (CPU %, RAM %, disk IO, network throughput, load average, TPS if it’s a known service like Minecraft).
+-   **Per-VM metrics** (CPU %, RAM %, disk IO, network throughput, load average).
 -   **Lifecycle controls** (start, stop, reboot, snapshot, destroy) with confirmations and guardrails if a stream is still active.
 -   **SSH keys & access** showing injected keys, and the exact endpoint presented to the requestor.
 -   **Tags & notes** so operators can annotate long-running tenants or internal SKUs.
@@ -422,47 +422,13 @@ Logs are filterable, exportable, and include enough context to reproduce a timel
 
 ## **7. Adoption Strategy: Requestor Growth Concepts**
 
-### **7.1. Minecraft Server dApp**
+### **7.1. Decentralized VPN dApp**
 
-<img width="1080" height="607" alt="image" src="https://gist.github.com/user-attachments/assets/add7f0b8-9f0d-4369-abd0-f38d025c8245" />
-<img width="1080" height="606" alt="image" src="https://gist.github.com/user-attachments/assets/578f4a96-378d-4cb4-be83-0a4d74fc0226" />
-<img width="1080" height="606" alt="image" src="https://gist.github.com/user-attachments/assets/1773a9e6-d333-4e98-a45e-e1705ad23042" />
-
-Minecraft hosting is a natural proving ground for browser-first VM rentals. The audience is mostly younger players who are already used to the idea of running their own servers for friends. Many of them have also experimented with crypto wallets or tokens, which lowers the barrier to trying a service that relies on MetaMask for payments. Because Minecraft servers are relatively inexpensive and not mission-critical, they are an ideal first use case to showcase VM on Golem.
+A decentralized VPN is the next natural step in showcasing VM on Golem. The idea is to ship a lightweight local installer with a graphical interface that makes connecting to the network as effortless as opening a modern productivity app. Payments are handled through a Web3 wallet, keeping the model consistent with other requestor flows. Under the hood, the VPN will rely on **WireGuard**, chosen for its performance, simplicity, and strong cryptography.
 
 #### **Provisioning Flow**
 
-The dApp translates the “three commands” promise into a browser-native workflow. A requestor connects their MetaMask wallet, chooses a server profile, and confirms the payment stream. From there, the system provisions the VM automatically: resources are allocated from a provider, the correct ports are opened, a Minecraft image is deployed, and a stable DNS record is published through Golem Base. Within minutes the requestor receives a hostname such as `play.username.golem.host` that can be shared directly with friends.
-
-#### **Management Experience**
-
-The management panel mirrors what players already expect from commercial Minecraft hosting services. The goal is to give users the same visual comfort they are used to, while abstracting away the underlying VM. Key elements include:
-
--   **Live console logs** streamed directly in the browser, showing chat messages, plugin activity, and server events.
--   **File browser** with upload/download support for editing `server.properties`, uploading worlds, and managing resource packs.
--   **World management** tools for backups, restores, and scheduled saves.
--   **Plugin and mod handling** with drag-and-drop uploads for Forge and Fabric servers.
--   **Performance metrics** such as CPU, RAM, ticks per second (TPS), and player count.
-
-The design draws inspiration from the ultra-minimal dashboards popular in the Minecraft hosting community. Interfaces are visually lightweight, with clear buttons and no clutter—players should feel instantly at home.
-
-#### **Payment & Control**
-
-Streaming payments keep the experience aligned with the underlying economics of VM on Golem. The dApp displays current spend and remaining runway in real time, with a single button to top up the stream. If a server is left idle, requestors can enable an automatic pause policy that saves the world and stops the VM when no players are online, preventing unnecessary costs. If the verifier network reports that the VM is no longer running, the stream is halted to protect the requestor from paying for downtime.
-
-#### **Why It Matters**
-
-This flow creates a low-friction entry point into Golem. A player can go from connecting their wallet to running a Minecraft world in a single session, without touching cloud infrastructure or command-line tools. It taps into a community that is young, curious, and already experimenting with crypto, introducing them to Golem through an accessible and fun use case. From there, moving from a Minecraft server to a plain VM becomes trivial—the same provisioning flow, just without the Minecraft wrapper.
-
-### **7.2. Decentralized VPN dApp**
-
-<img width="1344" height="768" alt="image" src="https://gist.github.com/user-attachments/assets/b08ee5df-067d-4648-b297-81ad0a41f4d3" />
-
-A decentralized VPN is the next natural step in showcasing VM on Golem. The idea is to ship a lightweight local installer with a graphical interface that makes connecting to the network as easy as launching a game client. Payments are handled through a Web3 wallet, keeping the model consistent with other requestor flows. Under the hood, the VPN will rely on **WireGuard**, chosen for its performance, simplicity, and strong cryptography.
-
-#### **Provisioning Flow**
-
-The application opens with a minimal panel inspired by the same design principles as the Minecraft dApp: clean layout, two or three obvious actions, and a focus on immediacy. A requestor connects their MetaMask wallet, browses available providers, and selects the endpoint they want to connect through. When the requestor confirms, the app provisions a VM from the chosen provider, configures WireGuard, and automatically establishes the tunnel. Within seconds the VPN is active, with no manual configuration files or command-line steps required.
+The application opens with a minimal panel inspired by the same design principles as the requestor web marketplace: clean layout, two or three obvious actions, and a focus on immediacy. A requestor connects their MetaMask wallet, browses available providers, and selects the endpoint they want to connect through. When the requestor confirms, the app provisions a VM from the chosen provider, configures WireGuard, and automatically establishes the tunnel. Within seconds the VPN is active, with no manual configuration files or command-line steps required.
 
 #### **Provider Discovery**
 
@@ -540,14 +506,16 @@ This provides baseline stability. The majority of rewards are tied to milestone 
 | **Phase 3**  | Requestor API & Orchestration | Feb 2025     | Complete      |                   | API supports create/list/stop/destroy; audit events recorded immutably; flows match CLI parity; idempotent retries confirmed.                                                                                                             |
 | **Phase 4**  | Golem DB Integration          | Feb 2025     | Complete      |                   | Providers publish ads with live capacity and pricing; requestors can filter and fetch ads; propagation < 10 seconds.                                                                                                                      |
 | **Phase 5**  | Smart-Contract Payments       | Mar 2025     | Testnet-ready |                   | Per-second payment streaming live on testnet; top-up extends runway; closing stream halts accrual; events visible on-chain.                                                                                                               |
-| **Phase 6**  | Requestor GUI Marketplace     | **Dec 2025** | Next          | **190,476 GLM**   | Public web app: wallet connect, provider search with filters, rent wizard (region, sizing, SSH key), rentals list with lifecycle actions, stream top-up/close. ≥10 unique requestors use it.                                              |
-| **Phase 7**  | Verifier Network              | **Feb 2026** | Next          | **380,952 GLM**   | Verifier nodes deployed on public testnet; can challenge VMs via attestation; halt streams if consensus marks VM unhealthy. ≥25 providers integrated.                                                                                     |
-| **Phase 8**  | Provider GUI Desktop          | **Apr 2026** | Next          | **761,905 GLM**   | Cross-platform desktop app (Win/Mac/Linux) showing provider revenue, utilization gauges, VM lifecycle controls (start/stop/reboot/snapshot), port management, pricing editor, payout withdrawals. ≥25 providers actively using it.        |
-| **Phase 9**  | Requestor Minecraft dApp      | **Jun 2026** | Next          | **1,523,810 GLM** | Browser-native dApp: wallet connect, choose Minecraft profile, confirm payment stream, VM auto-provisioned with Minecraft image + DNS hostname; management panel with logs, file browser, backups, mod uploads. ≥100 servers provisioned. |
-| **Phase 10** | VPN dApp                      | **Aug 2026** | Next          | **3,047,619 GLM** | Desktop VPN client: wallet connect, select provider by region/bandwidth, approve stream, auto-configured WireGuard tunnel; dashboard shows session runtime, bandwidth usage, remaining runway. ≥250 paying sessions provisioned.          |
-| **Phase 11** | Confidential Compute          | **Oct 2026** | Next          | **6,095,238 GLM** | VM boots with AMD SEV/Intel TDX + full disk encryption; attestation-driven key release; verified demo showing keys only released after attestation passes. ≥3 independent teams run workloads.                                            |
+| **Phase 6**  | Requestor GUI Marketplace     | **Dec 2025** | Next          | **95,238 GLM**    | Public web app: wallet connect, provider search with filters, rent wizard (region, sizing, SSH key), rentals list with lifecycle actions, stream top-up/close.                                                                            |
+| **Phase 7**  | Verifier Network              | **Feb 2026** | Next          | **190,476 GLM**   | Verifier nodes deployed on public testnet; can challenge VMs via attestation; halt streams if consensus marks VM unhealthy.                                                                                                               |
+| **Phase 8**  | Golem DNS                     | **Mar 2026** | Next          | **380,952 GLM**   | Authoritative DNS tier backed by Golem Base L3; provider agents push signed dynamic-IP updates via L2 "master key"; public ns1/ns2 resolvers answer standards-compliant queries with <60s propagation |
+| **Phase 9**  | Provider GUI Desktop          | **May 2026** | Next          | **761,904 GLM**   | Cross-platform desktop app (Win/Mac/Linux) showing provider revenue, utilization gauges, VM lifecycle controls (start/stop/reboot/snapshot), port management, pricing editor, payout withdrawals.                                        |
+| **Phase 10** | Decentralized VPN dApp        | **Sep 2026** | Next          | **1,523,808 GLM** | Desktop VPN client: wallet connect, select provider by region/bandwidth, approve stream, auto-configured WireGuard tunnel; dashboard shows session runtime, bandwidth usage, remaining runway.                                            |
+| **Phase 11** | Confidential Compute          | **Nov 2026** | Next          | **3,047,622 GLM** | VM boots with AMD SEV/Intel TDX + full disk encryption; attestation-driven key release; verified demo showing keys only released after attestation passes.                                                                                |
 
-* **Total Potential Compensation:** €84,000 (Annual Salary) + **12,000,000 GLM** (Milestones)
+* **Total Potential Compensation:** €84,000 (Annual Salary) + **6,000,000 GLM** (Milestones)
+
+The GLM rewards roughly double at each stage (rounded to whole GLM), concentrating the largest upside at final delivery so meaningful payouts only arrive when the entire roadmap ships.
 
 ---
 
@@ -564,3 +532,5 @@ I did. For me, this has not been a side project or a passing role. I have lived 
 That experience is not replaceable. It is the reason I am confident in what I am building with VM on Golem, and why I know it will resonate with the people who matter most: the users.
 
 This funding structure reflects how I work best: a steady salary for stability, with meaningful rewards tied directly to milestones. For Golem, it means resources are only committed if the work continues to move forward.
+
+I'm open for discussion on the proposal, and it's important to state this is just the short-term plan. I have tons of things in the pipeline for the future.

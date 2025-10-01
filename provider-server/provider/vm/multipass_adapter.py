@@ -246,7 +246,7 @@ class MultipassAdapter(VMProvider):
         vm_info_obj = VMInfo(
             id=requestor_name,
             name=requestor_name,
-            status=VMStatus(info["state"].lower()),
+            status=VMStatus.from_multipass(info.get("state")),
             resources=VMResources(
                 cpu=self._safe_int(info.get("cpu_count"), 1),
                 memory=round(mem_total_bytes / (1024**3)),

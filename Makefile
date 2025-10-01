@@ -5,9 +5,9 @@
 PORT_CHECKER_PORT ?= 9000
 # Shared token between UI and proxy (public in UI; use dev-only value)
 PORT_CHECKER_TOKEN ?= dev-token
-# Golem Base RPC/WS for provider resolution (L3 EthWarsaw Holesky)
-GOLEM_BASE_RPC_URL ?= https://ethwarsaw.holesky.golemdb.io/rpc
-GOLEM_BASE_WS_URL ?= wss://ethwarsaw.holesky.golemdb.io/rpc/ws
+# Golem Base RPC/WS for provider resolution (L3 Kaolin Hoodi)
+GOLEM_BASE_RPC_URL ?= https://kaolin.hoodi.arkiv.network/rpc
+GOLEM_BASE_WS_URL ?= wss://kaolin.hoodi.arkiv.network/rpc/ws
 # Optional dev-only endpoints for Golem Base
 GOLEM_BASE_DEV_RPC_URL ?=
 GOLEM_BASE_DEV_WS_URL ?=

@@ -171,3 +171,4 @@ provider-gui/node_modules/
 requestor-gui/node_modules/
 python-sdk/
 typescript-sdk/
+stress_results.json

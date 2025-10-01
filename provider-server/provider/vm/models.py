@@ -6,12 +6,43 @@ from datetime import datetime
 
 class VMStatus(str, Enum):
     """VM status enum."""
+
     CREATING = "creating"
+    STARTING = "starting"
+    RESTARTING = "restarting"
     RUNNING = "running"
+    DELAYED_SHUTDOWN = "delayed_shutdown"
+    SUSPENDING = "suspending"
+    SUSPENDED = "suspended"
     STOPPING = "stopping"
     STOPPED = "stopped"
     ERROR = "error"
     DELETED = "deleted"
+    UNKNOWN = "unknown"
+
+    @classmethod
+    def from_multipass(cls, state: str | None) -> "VMStatus":
+        """Map raw Multipass states to VMStatus, defaulting to UNKNOWN."""
+
+        if state is None:
+            return cls.UNKNOWN
+
+        normalized = state.strip().lower().replace("-", "_").replace(" ", "_")
+        mapping = {
+            "creating": cls.CREATING,
+            "starting": cls.STARTING,
+            "restarting": cls.RESTARTING,
+            "running": cls.RUNNING,
+            "delayed_shutdown": cls.DELAYED_SHUTDOWN,
+            "suspending": cls.SUSPENDING,
+            "suspended": cls.SUSPENDED,
+            "stopping": cls.STOPPING,
+            "stopped": cls.STOPPED,
+            "error": cls.ERROR,
+            "deleted": cls.DELETED,
+            "unknown": cls.UNKNOWN,
+        }
+        return mapping.get(normalized, cls.UNKNOWN)
 
 
 class VMSize(str, Enum):

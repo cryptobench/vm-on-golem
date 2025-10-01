@@ -57,10 +57,10 @@ class RequestorConfig(BaseSettings):
     )
     
     # Payments chain selection (modular network profiles)
-    # Keep current standard as l2.holesky
+    # Keep current standard as l2.hoodi
     payments_network: str = Field(
-        default="l2.holesky",
-        description="Payments network profile (e.g., 'l2.holesky', 'kaolin.holesky', 'mainnet')"
+        default="l2.hoodi",
+        description="Payments network profile (e.g., 'l2.hoodi', 'kaolin.hoodi', 'mainnet')"
     )
     
     # Development Settings
@@ -116,11 +116,11 @@ class RequestorConfig(BaseSettings):
 
     # Golem Base Settings
     golem_base_rpc_url: str = Field(
-        default="https://ethwarsaw.holesky.golemdb.io/rpc",
+        default="https://kaolin.hoodi.arkiv.network/rpc",
         description="Golem Base RPC URL"
     )
     golem_base_ws_url: str = Field(
-        default="wss://ethwarsaw.holesky.golemdb.io/rpc/ws",
+        default="wss://kaolin.hoodi.arkiv.network/rpc/ws",
         description="Golem Base WebSocket URL"
     )
     # Optional dev-only overrides for a separate Golem Base development network
@@ -236,7 +236,7 @@ class RequestorConfig(BaseSettings):
         if v:
             return v
         # Default from payments profile
-        pn = info.data.get("payments_network") or "l2.holesky"
+        pn = info.data.get("payments_network") or "l2.hoodi"
         return RequestorConfig._profile_defaults(pn)["rpc_url"]
 
     @field_validator("l2_faucet_url", mode='before')
@@ -250,7 +250,7 @@ class RequestorConfig(BaseSettings):
                 return os.environ[key]
         if v:
             return v
-        pn = info.data.get("payments_network") or "l2.holesky"
+        pn = info.data.get("payments_network") or "l2.hoodi"
         return RequestorConfig._profile_defaults(pn).get("faucet_url", "")
 
     @staticmethod
@@ -292,7 +292,7 @@ class RequestorConfig(BaseSettings):
     def _deployment_basename(network: str) -> str:
         # Map well-known network aliases to deployment file base names
         n = (network or "").lower()
-        if n in ("l2", "l2.holesky"):  # current standard
+        if n in ("l2", "l2.hoodi"):
             return "l2"
         if "." in n:
             return n.split(".")[0]
@@ -300,12 +300,12 @@ class RequestorConfig(BaseSettings):
 
     @staticmethod
     def _profile_defaults(network: str) -> Dict[str, str]:
-        n = (network or "l2.holesky").lower()
+        n = (network or "l2.hoodi").lower()
         # Built-in profiles; extend easily in future
         profiles = {
-            "l2.holesky": {
-                "rpc_url": "https://l2.holesky.golemdb.io/rpc",
-                "faucet_url": "https://l2.holesky.golemdb.io/faucet",
+            "l2.hoodi": {
+                "rpc_url": "https://l2.hoodi.arkiv.network/rpc",
+                "faucet_url": "https://l2.hoodi.arkiv.network/faucet",
                 "faucet_enabled": True,
                 "token_symbol": "GLM",
                 "gas_symbol": "ETH",
@@ -319,14 +319,14 @@ class RequestorConfig(BaseSettings):
                 "gas_symbol": "ETH",
             },
         }
-        return profiles.get(n, profiles["l2.holesky"])  # default to current standard
+        return profiles.get(n, profiles["l2.hoodi"])  # default to current standard
 
     @field_validator("stream_payment_address", mode='before')
     @classmethod
     def default_stream_addr(cls, v: str, info: ValidationInfo) -> str:
         if v:
             return v
-        network = info.data.get("payments_network") or "l2.holesky"
+        network = info.data.get("payments_network") or "l2.hoodi"
         addr, _ = RequestorConfig._load_deployment(network)
         return addr or "0x0000000000000000000000000000000000000000"
 
@@ -335,7 +335,7 @@ class RequestorConfig(BaseSettings):
     def default_token_addr(cls, v: str, info: ValidationInfo) -> str:
         if v:
             return v
-        network = info.data.get("payments_network") or "l2.holesky"
+        network = info.data.get("payments_network") or "l2.hoodi"
         _, token = RequestorConfig._load_deployment(network)
         return token or "0x0000000000000000000000000000000000000000"
 
@@ -354,7 +354,7 @@ class RequestorConfig(BaseSettings):
     def default_token_symbol(cls, v: str, info: ValidationInfo) -> str:
         if v:
             return v
-        pn = info.data.get("payments_network") or "l2.holesky"
+        pn = info.data.get("payments_network") or "l2.hoodi"
         return RequestorConfig._profile_defaults(pn).get("token_symbol", "")
 
     @field_validator("gas_token_symbol", mode="before")
@@ -362,7 +362,7 @@ class RequestorConfig(BaseSettings):
     def default_gas_symbol(cls, v: str, info: ValidationInfo) -> str:
         if v:
             return v
-        pn = info.data.get("payments_network") or "l2.holesky"
+        pn = info.data.get("payments_network") or "l2.hoodi"
         return RequestorConfig._profile_defaults(pn).get("gas_symbol", "")
 
     # Base Directory

@@ -6,7 +6,7 @@ from golem_faucet import PowFaucetClient
 
 CAPTCHA_BASE = os.getenv("CAPTCHA_BASE", "https://cap.gobas.me")
 CAPTCHA_KEY = os.getenv("CAPTCHA_API_KEY", "05381a2cef5e")
-L2_FAUCET = os.getenv("L2_FAUCET_URL", "https://l2.holesky.golemdb.io/faucet")
+L2_FAUCET = os.getenv("L2_FAUCET_URL", "https://l2.hoodi.arkiv.network/faucet")
 
 
 @pytest.mark.asyncio

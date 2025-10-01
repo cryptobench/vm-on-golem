@@ -20,7 +20,7 @@ async function main() {
 
   const outDir = path.join(__dirname, "..", "deployments");
   fs.mkdirSync(outDir, { recursive: true });
-  const network = (process.env.HARDHAT_NETWORK || "ethwarsaw").toLowerCase();
+  const network = (process.env.HARDHAT_NETWORK || "kaolin").toLowerCase();
   const outFile = path.join(outDir, `${network}-mockglm.json`);
   const payload = {
     network,
@@ -38,4 +38,3 @@ main().catch((e) => {
   console.error(e);
   process.exit(1);
 });
-

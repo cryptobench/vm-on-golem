@@ -100,6 +100,14 @@ class ProviderService:
             except Exception as e:
                 logger.warning(f"Failed to reconcile VMs with payment streams: {e}")
 
+            # Check wallet balance and request funds if needed
+            faucet_client = FaucetClient(
+                faucet_url=settings.FAUCET_URL,
+                captcha_url=settings.CAPTCHA_URL,
+                captcha_api_key=settings.CAPTCHA_API_KEY,
+            )
+            await faucet_client.get_funds(settings.PROVIDER_ID)
+
             await self.advertisement_service.start()
             # Start pricing auto-updater; trigger re-advertise after updates
             async def _on_price_updated(platform: str, glm_usd):
@@ -114,14 +122,6 @@ class ProviderService:
             if cfg.STREAM_MONITOR_ENABLED or cfg.STREAM_WITHDRAW_ENABLED:
                 self._stream_monitor = app.container.stream_monitor()
                 self._stream_monitor.start()
-
-            # Check wallet balance and request funds if needed
-            faucet_client = FaucetClient(
-                faucet_url=settings.FAUCET_URL,
-                captcha_url=settings.CAPTCHA_URL,
-                captcha_api_key=settings.CAPTCHA_API_KEY,
-            )
-            await faucet_client.get_funds(settings.PROVIDER_ID)
 
             logger.success("✨ Provider setup complete")
         except Exception as e:

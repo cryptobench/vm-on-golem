@@ -34,7 +34,7 @@ class DummyClient:
 
 class DummyCfg:
     polygon_rpc_url = "http://localhost"  # reused for L2 in config
-    l2_faucet_url = "https://l2.holesky.golemdb.io/faucet"
+    l2_faucet_url = "https://l2.hoodi.arkiv.network/faucet"
     captcha_url = "https://cap.gobas.me"
     captcha_api_key = "05381a2cef5e"
 

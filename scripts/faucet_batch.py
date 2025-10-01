@@ -36,17 +36,72 @@ async def run_once(client: PowFaucetClient, address: str, executor: concurrent.f
     return await client.request_funds(address, redeemed)
 
 
+NETWORK_ALIASES = {
+    "l2": "l2.hoodi",
+    "l2.hoodi": "l2.hoodi",
+    "kaolin": "kaolin.hoodi",
+    "kaolin.hoodi": "kaolin.hoodi",
+}
+
+NETWORK_DEFAULTS = {
+    "l2.hoodi": {
+        "faucet_url": "https://l2.hoodi.arkiv.network/faucet",
+    },
+    "kaolin.hoodi": {
+        "faucet_url": "https://kaolin.hoodi.arkiv.network/faucet",
+    },
+}
+
+
+def _resolve_network(raw: Optional[str]) -> str:
+    if not raw:
+        return "l2.hoodi"
+    net = NETWORK_ALIASES.get(raw.lower())
+    if not net:
+        raise ValueError(f"unsupported network '{raw}'. Expected one of: {', '.join(sorted(NETWORK_DEFAULTS))}")
+    return net
+
+
 async def amain() -> int:
-    addr = os.getenv("FUND_ADDR") or (sys.argv[1] if len(sys.argv) > 1 else None)
+    args = sys.argv[1:]
+
+    addr = os.getenv("FUND_ADDR")
+    network_arg: Optional[str] = os.getenv("FAUCET_NETWORK")
+
+    if args:
+        remaining = list(args)
+        first = remaining.pop(0)
+        is_eth_address = first.lower().startswith("0x") and len(first) == 42
+        if not addr or is_eth_address:
+            addr = first
+        else:
+            network_arg = first
+        if remaining:
+            network_arg = remaining.pop(0)
+        if remaining:
+            extras = " ".join(remaining)
+            print(f"warning: ignoring extra CLI arguments: {extras}")
+
     if not addr:
-        print("usage: FUND_ADDR=0x... python scripts/faucet_batch.py [FUND_ADDR]")
+        print(
+            "usage: FUND_ADDR=0x... python scripts/faucet_batch.py [FUND_ADDR] [NETWORK]",
+        )
+        print("supported networks:", ", ".join(sorted(NETWORK_DEFAULTS.keys())))
         return 2
 
     count = int(os.getenv("COUNT", "20"))
     concurrency = int(os.getenv("CONCURRENCY", str(min(8, max(1, os.cpu_count() or 4)))))
     solver_procs = int(os.getenv("SOLVER_PROCESSES", str(max(1, os.cpu_count() or 4))))
 
-    faucet_url = os.getenv("L2_FAUCET_URL", "https://l2.holesky.golemdb.io/faucet")
+    try:
+        network = _resolve_network(network_arg)
+    except ValueError as err:
+        print(err)
+        return 2
+
+    net_defaults = NETWORK_DEFAULTS[network]
+
+    faucet_url = os.getenv("L2_FAUCET_URL", net_defaults["faucet_url"])
     captcha_base = os.getenv("CAPTCHA_BASE", "https://cap.gobas.me")
     captcha_api_key = os.getenv("CAPTCHA_API_KEY", "05381a2cef5e")
 
@@ -57,7 +112,10 @@ async def amain() -> int:
         timeout=90.0,
     )
 
-    print(f"Requesting faucet funds {count} times (concurrency={concurrency}, solver_procs={solver_procs}) for {addr}")
+    print(
+        f"Requesting faucet funds {count} times (concurrency={concurrency}, solver_procs={solver_procs})"
+        f" for {addr} on {network}",
+    )
     print(f"- faucet:  {faucet_url}")
     print(f"- captcha: {captcha_base} (key: {captcha_api_key[:4]}…)")
 
