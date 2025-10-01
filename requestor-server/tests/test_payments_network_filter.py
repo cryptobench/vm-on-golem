@@ -64,16 +64,16 @@ async def test_query_includes_payments_network_by_default(monkeypatch):
 
     # Ensure known config
     config.network = "testnet"
-    config.payments_network = "l2.holesky"
+    config.payments_network = "l2.hoodi"
 
     svc = ProviderService()
     async with svc:
         providers = await svc.find_providers(driver="golem-base")
     # Query should include both network filters
     assert 'golem_network="testnet"' in DummyClient.last_query
-    assert 'golem_payments_network="l2.holesky"' in DummyClient.last_query
+    assert 'golem_payments_network="l2.hoodi"' in DummyClient.last_query
     # Return should include parsed provider
-    assert providers and providers[0]["payments_network"] == "l2.holesky"
+    assert providers and providers[0]["payments_network"] == "l2.hoodi"
 
 
 @pytest.mark.asyncio
@@ -120,7 +120,7 @@ async def test_query_omits_payments_filter_when_all_flag(monkeypatch):
     monkeypatch.setattr(ps, "EntityKey", EK)
 
     config.network = "testnet"
-    config.payments_network = "l2.holesky"
+    config.payments_network = "l2.hoodi"
     svc = ProviderService()
     async with svc:
         await svc.find_providers(driver="golem-base", include_all_payments=True)
@@ -163,5 +163,5 @@ async def test_query_overrides_payments_network(monkeypatch):
 
     svc = ProviderService()
     async with svc:
-        await svc.find_providers(driver="golem-base", payments_network="kaolin.holesky")
-    assert 'golem_payments_network="kaolin.holesky"' in (DummyClient.last_query or '')
+        await svc.find_providers(driver="golem-base", payments_network="kaolin.hoodi")
+    assert 'golem_payments_network="kaolin.hoodi"' in (DummyClient.last_query or '')

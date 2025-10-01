@@ -34,7 +34,7 @@ class DummyClient:
 
 class DummyCfg:
     POLYGON_RPC_URL = "http://localhost"
-    L2_FAUCET_URL = "https://l2.holesky.golemdb.io/faucet"
+    L2_FAUCET_URL = "https://l2.hoodi.arkiv.network/faucet"
     L2_CAPTCHA_URL = "https://cap.gobas.me"
     L2_CAPTCHA_API_KEY = "05381a2cef5e"
 
@@ -114,4 +114,3 @@ async def test_l2_faucet_faucet_failure(monkeypatch):
     )
     tx = await svc.request_funds("0xaddr")
     assert tx is None
-

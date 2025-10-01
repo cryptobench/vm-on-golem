@@ -49,6 +49,9 @@ async def test_faucet_happy_path(monkeypatch):
     monkeypatch.setattr(fc, "_solve_challenge", lambda s, t: 0)
     monkeypatch.setattr(fc, "_redeem_solution", _redeem)
     monkeypatch.setattr(fc, "_request_faucet", _req)
+    async def _wait(*args, **kwargs):
+        return True
+    monkeypatch.setattr(fc, "_wait_for_funds", _wait)
     tx = await fc.get_funds("0xaddr")
     assert tx == "0xabc"
 
@@ -89,3 +92,31 @@ async def test_faucet_request_failure(monkeypatch):
     monkeypatch.setattr(fc, "_request_faucet", lambda addr, tok: None)
     tx = await fc.get_funds("0xaddr")
     assert tx is None
+
+
+@pytest.mark.asyncio
+async def test_wait_for_funds_polls_until_balance(monkeypatch):
+    fc = FaucetClient("https://f", "https://cap", "key")
+
+    balances = [0.0, 0.0, 0.015]
+
+    async def fake_check(address):
+        return balances.pop(0) if balances else 0.015
+
+    monkeypatch.setattr(fc, "check_balance", fake_check)
+
+    result = await fc._wait_for_funds("0xaddr", timeout=0.1, poll_interval=0.01)
+    assert result is True
+
+
+@pytest.mark.asyncio
+async def test_wait_for_funds_timeout(monkeypatch):
+    fc = FaucetClient("https://f", "https://cap", "key")
+
+    async def fake_check(address):
+        return 0.0
+
+    monkeypatch.setattr(fc, "check_balance", fake_check)
+
+    result = await fc._wait_for_funds("0xaddr", timeout=0.05, poll_interval=0.01)
+    assert result is False

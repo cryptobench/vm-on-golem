@@ -217,6 +217,37 @@ async def test_get_vm_status_no_ipv4(multipass_adapter):
     assert status.status.value == "running"
     assert status.ip_address is None
 
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "raw_state,expected_status",
+    [
+        ("STARTING", VMStatus.STARTING),
+        ("restarting", VMStatus.RESTARTING),
+        ("Delayed Shutdown", VMStatus.DELAYED_SHUTDOWN),
+        ("delayed-shutdown", VMStatus.DELAYED_SHUTDOWN),
+        ("SUSPENDING", VMStatus.SUSPENDING),
+        ("Suspended", VMStatus.SUSPENDED),
+        (None, VMStatus.UNKNOWN),
+        ("", VMStatus.UNKNOWN),
+    ],
+)
+async def test_get_vm_status_handles_additional_states(multipass_adapter, raw_state, expected_status):
+    # Arrange
+    multipass_adapter._get_vm_info = AsyncMock(return_value={
+        "state": raw_state,
+        "ipv4": [],
+        "cpu_count": "1",
+        "memory": {"total": 1073741824},
+        "disks": {"sda1": {"total": 10737418240}},
+    })
+
+    # Act
+    status = await multipass_adapter.get_vm_status("test-vm")
+
+    # Assert
+    assert status.status == expected_status
+
 import subprocess
 
 @pytest.mark.asyncio

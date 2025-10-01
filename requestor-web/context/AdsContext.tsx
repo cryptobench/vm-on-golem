@@ -11,13 +11,15 @@ export type AdsConfig = {
   advertisement_interval_seconds?: number; // optional for created_at estimation
 };
 
+const BASE_RPC_URL = 'https://kaolin.hoodi.arkiv.network/rpc';
+const BASE_WS_URL = 'wss://kaolin.hoodi.arkiv.network/rpc/ws';
 const DEFAULTS: AdsConfig = (() => {
   const isDevEnv = (process.env.NEXT_PUBLIC_GOLEM_ENVIRONMENT || '').toLowerCase() === 'development';
   // Allow explicit dev overrides when GOLEM_ENVIRONMENT=development
   const devRpc = process.env.NEXT_PUBLIC_GOLEM_BASE_DEV_RPC_URL || '';
   const devWs = process.env.NEXT_PUBLIC_GOLEM_BASE_DEV_WS_URL || '';
-  const baseRpc = isDevEnv && devRpc ? devRpc : 'https://ethwarsaw.holesky.golemdb.io/rpc';
-  const baseWs = isDevEnv && devWs ? devWs : 'wss://ethwarsaw.holesky.golemdb.io/rpc/ws';
+  const baseRpc = isDevEnv && devRpc ? devRpc : BASE_RPC_URL;
+  const baseWs = isDevEnv && devWs ? devWs : BASE_WS_URL;
   return {
     mode: 'golem-base',
     discovery_url: process.env.NEXT_PUBLIC_DISCOVERY_API_URL || 'http://195.201.39.101:9001/api/v1',
@@ -44,13 +46,25 @@ function loadProfiles(): { profiles: AdsProfile[]; activeId: string } {
   try {
     const stored = JSON.parse(localStorage.getItem(PROFILES_KEY) || '[]');
     let profiles: AdsProfile[] = Array.isArray(stored) ? stored : [];
+    let shouldPersistProfiles = false;
     // Migrate from legacy single-config storage
     const legacy = JSON.parse(localStorage.getItem('requestor_ads_config_v1') || 'null');
     if (!profiles.length && legacy && typeof legacy === 'object') {
       profiles = [{ id: 'default', name: 'Default', config: { ...DEFAULTS, ...legacy } }];
+      shouldPersistProfiles = true;
     }
-    if (!profiles.length) profiles = [{ id: 'default', name: 'Default', config: DEFAULTS }];
+    if (!profiles.length) {
+      profiles = [{ id: 'default', name: 'Default', config: DEFAULTS }];
+      shouldPersistProfiles = true;
+    }
+
+    if (shouldPersistProfiles) {
+      localStorage.setItem(PROFILES_KEY, JSON.stringify(profiles));
+    }
     const activeId = String(localStorage.getItem(ACTIVE_KEY) || profiles[0].id);
+    if (shouldPersistProfiles) {
+      localStorage.setItem(ACTIVE_KEY, activeId);
+    }
     return { profiles, activeId };
   } catch {
     return { profiles: [{ id: 'default', name: 'Default', config: DEFAULTS }], activeId: 'default' };

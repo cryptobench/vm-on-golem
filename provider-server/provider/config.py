@@ -62,10 +62,10 @@ class Settings(BaseSettings):
         description="Logical Golem network: 'testnet' or 'mainnet'"
     )
 
-    # Payments chain selection (modular network profiles). Keep default on l2.holesky
+    # Payments chain selection (modular network profiles). Keep default on l2.hoodi
     PAYMENTS_NETWORK: str = Field(
-        default="l2.holesky",
-        description="Payments network profile (e.g., 'l2.holesky', 'kaolin.holesky', 'mainnet')"
+        default="l2.hoodi",
+        description="Payments network profile (e.g., 'l2.hoodi', 'kaolin.hoodi', 'mainnet')"
     )
 
     @field_validator("PAYMENTS_NETWORK", mode='before')
@@ -180,10 +180,10 @@ class Settings(BaseSettings):
     GOLEM_BASE_ADVERTISEMENT_INTERVAL: int = 3600  # seconds (on-chain cost, keep higher)
 
     # Golem Base Settings
-    # Default to Holesky (testnet) endpoints; in development we can switch to a separate
+    # Default to Kaolin Hoodi (testnet) endpoints; in development we can switch to a separate
     # base development network via environment variables below.
-    GOLEM_BASE_RPC_URL: str = "https://ethwarsaw.holesky.golemdb.io/rpc"
-    GOLEM_BASE_WS_URL: str = "wss://ethwarsaw.holesky.golemdb.io/rpc/ws"
+    GOLEM_BASE_RPC_URL: str = "https://kaolin.hoodi.arkiv.network/rpc"
+    GOLEM_BASE_WS_URL: str = "wss://kaolin.hoodi.arkiv.network/rpc/ws"
 
     # Optional dev-only overrides for a separate Golem Base development network
     GOLEM_BASE_DEV_RPC_URL: str = Field(
@@ -285,7 +285,7 @@ class Settings(BaseSettings):
     )
 
     # Faucet settings (L3 for Golem Base adverts)
-    FAUCET_URL: str = "https://ethwarsaw.holesky.golemdb.io/faucet"
+    FAUCET_URL: str = "https://kaolin.hoodi.arkiv.network/faucet"
     CAPTCHA_URL: str = "https://cap.gobas.me"
     CAPTCHA_API_KEY: str = "05381a2cef5e"
 
@@ -323,7 +323,7 @@ class Settings(BaseSettings):
         if v:
             return v
         # Default from profile
-        pn = values.data.get("PAYMENTS_NETWORK") or "l2.holesky"
+        pn = values.data.get("PAYMENTS_NETWORK") or "l2.hoodi"
         return Settings._profile_defaults(pn)["rpc_url"]
 
     @field_validator("L2_FAUCET_URL", mode='before')
@@ -334,7 +334,7 @@ class Settings(BaseSettings):
                 return os.environ[key]
         if v:
             return v
-        pn = values.data.get("PAYMENTS_NETWORK") or "l2.holesky"
+        pn = values.data.get("PAYMENTS_NETWORK") or "l2.hoodi"
         return Settings._profile_defaults(pn).get("faucet_url", "")
 
     @staticmethod
@@ -373,12 +373,12 @@ class Settings(BaseSettings):
     # Backwards-compat helper used by tests expecting this method name
     @staticmethod
     def _load_l2_deployment() -> tuple[str | None, str | None]:
-        return Settings._load_deployment("l2.holesky")
+        return Settings._load_deployment("l2.hoodi")
 
     @staticmethod
     def _deployment_basename(network: str) -> str:
         n = (network or "").lower()
-        if n in ("l2", "l2.holesky"):
+        if n in ("l2", "l2.hoodi"):
             return "l2"
         if "." in n:
             return n.split(".")[0]
@@ -386,11 +386,11 @@ class Settings(BaseSettings):
 
     @staticmethod
     def _profile_defaults(network: str) -> dict[str, str | bool]:
-        n = (network or "l2.holesky").lower()
+        n = (network or "l2.hoodi").lower()
         profiles = {
-            "l2.holesky": {
-                "rpc_url": "https://l2.holesky.golemdb.io/rpc",
-                "faucet_url": "https://l2.holesky.golemdb.io/faucet",
+            "l2.hoodi": {
+                "rpc_url": "https://l2.hoodi.arkiv.network/rpc",
+                "faucet_url": "https://l2.hoodi.arkiv.network/faucet",
                 "faucet_enabled": True,
                 "token_symbol": "GLM",
                 "gas_symbol": "ETH",
@@ -403,7 +403,7 @@ class Settings(BaseSettings):
                 "gas_symbol": "ETH",
             },
         }
-        return profiles.get(n, profiles["l2.holesky"])  # default to current standard
+        return profiles.get(n, profiles["l2.hoodi"])  # default to current standard
 
     @field_validator("STREAM_PAYMENT_ADDRESS", mode='before')
     @classmethod
@@ -413,7 +413,7 @@ class Settings(BaseSettings):
             return "0x0000000000000000000000000000000000000000"
         if v:
             return v
-        pn = values.data.get("PAYMENTS_NETWORK") or "l2.holesky"
+        pn = values.data.get("PAYMENTS_NETWORK") or "l2.hoodi"
         addr, _ = Settings._load_deployment(pn)
         return addr or "0x0000000000000000000000000000000000000000"
 
@@ -424,7 +424,7 @@ class Settings(BaseSettings):
             return "0x0000000000000000000000000000000000000000"
         if v:
             return v
-        pn = values.data.get("PAYMENTS_NETWORK") or "l2.holesky"
+        pn = values.data.get("PAYMENTS_NETWORK") or "l2.hoodi"
         _, token = Settings._load_deployment(pn)
         return token or "0x0000000000000000000000000000000000000000"
 
@@ -440,7 +440,7 @@ class Settings(BaseSettings):
     def default_token_symbol(cls, v: str, values: dict) -> str:
         if v:
             return v
-        pn = values.data.get("PAYMENTS_NETWORK") or "l2.holesky"
+        pn = values.data.get("PAYMENTS_NETWORK") or "l2.hoodi"
         return str(Settings._profile_defaults(pn).get("token_symbol", ""))
 
     @field_validator("GAS_TOKEN_SYMBOL", mode='before')
@@ -448,7 +448,7 @@ class Settings(BaseSettings):
     def default_gas_symbol(cls, v: str, values: dict) -> str:
         if v:
             return v
-        pn = values.data.get("PAYMENTS_NETWORK") or "l2.holesky"
+        pn = values.data.get("PAYMENTS_NETWORK") or "l2.hoodi"
         return str(Settings._profile_defaults(pn).get("gas_symbol", ""))
 
     @property

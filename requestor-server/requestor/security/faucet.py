@@ -15,7 +15,7 @@ class L2FaucetService:
         self.cfg = config
         self.web3 = Web3(Web3.HTTPProvider(config.polygon_rpc_url))
         self.client = PowFaucetClient(
-            faucet_url=getattr(config, 'l2_faucet_url', '') or 'https://l2.holesky.golemdb.io/faucet',
+            faucet_url=getattr(config, 'l2_faucet_url', '') or 'https://l2.hoodi.arkiv.network/faucet',
             captcha_base_url=getattr(config, 'captcha_url', 'https://cap.gobas.me'),
             captcha_api_key=getattr(config, 'captcha_api_key', '05381a2cef5e'),
         )

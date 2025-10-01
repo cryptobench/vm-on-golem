@@ -41,9 +41,8 @@ async def test_golem_base_advertiser_includes_payments_network(monkeypatch):
     monkeypatch.setattr(gba, "get_provider_entity_keys", lambda *a, **k: asyncio.sleep(0, result=[]))
 
     # Set a known payments profile
-    settings.PAYMENTS_NETWORK = "l2.holesky"
+    settings.PAYMENTS_NETWORK = "l2.hoodi"
 
     await adv.post_advertisement()
     str_anns = {a.key: a.value for a in nonlocal_capture["string_annotations"]}
     assert str_anns.get("golem_payments_network") == settings.PAYMENTS_NETWORK
-

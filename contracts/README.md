@@ -41,41 +41,14 @@ Polygon PoS
   - `npx hardhat run scripts/deploy.js --network polygon`
 - Output: Deployment info is written to `contracts/deployments/<network>.json`.
 
-ETHWARSAW (Holesky) test network
+KAOLIN (Hoodi) test network
 
 - Network info
-  - RPC (HTTP): `https://ethwarsaw.holesky.golemdb.io/rpc`
-  - RPC (WS): `wss://ethwarsaw.holesky.golemdb.io/rpc/ws`
-  - Faucet: `https://ethwarsaw.holesky.golemdb.io/faucet/`
-  - Explorer: `https://explorer.ethwarsaw.holesky.golemdb.io`
-- Env vars:
-  - `ETHWARSAW_RPC_URL` — defaults to the HTTP RPC above
-  - `PRIVATE_KEY` — deployer key (fund with faucet ETH for gas)
-  - `GLM_TOKEN_ADDRESS` — ERC20 token address on this network (optional). For native ETH mode leave unset and pass `0x000...0`.
-  - `ORACLE_ADDRESS` — optional; defaults to deployer address
-- Deploy MockGLM (optional, for testing):
-  ```bash
-  npm install
-  npx hardhat run scripts/deploy_mock_glm.js --network ethwarsaw
-  # Record MockGLM address from deployments/ethwarsaw-mockglm.json
-  export GLM_TOKEN_ADDRESS=<MockGLM_address>
-  ```
-- Deploy StreamPayment:
-  ```bash
-  ETHWARSAW_RPC_URL=https://ethwarsaw.holesky.golemdb.io/rpc \
-  # For ETH mode, you may omit GLM_TOKEN_ADDRESS and pass zero from clients
-  PRIVATE_KEY=0x... \
-  npx hardhat run scripts/deploy.js --network ethwarsaw
-  ```
-- Output: Deployment info is written to `contracts/deployments/<network>.json`.
-
-KAOLIN (Holesky) test network
-
-- Network info
-  - RPC (HTTP): `https://kaolin.holesky.golemdb.io/rpc`
-  - RPC (WS): `wss://kaolin.holesky.golemdb.io/rpc/ws`
-  - Faucet: `https://kaolin.holesky.golemdb.io/faucet/`
-  - Explorer: `https://explorer.kaolin.holesky.golemdb.io`
+  - RPC (HTTP): `https://kaolin.hoodi.arkiv.network/rpc`
+  - RPC (WS): `wss://kaolin.hoodi.arkiv.network/rpc/ws`
+  - Faucet: `https://kaolin.hoodi.arkiv.network/faucet/`
+  - Faucet challenge: `curl 'https://cap.gobas.me/05381a2cef5e/api/challenge' -X POST -H 'origin: https://kaolin.hoodi.arkiv.network'` (see faucet UI for full header set)
+  - Bridge: `0xa85E4E3C73E83C627C1a55E2f2B4e4794367431f`
   - Network ID (chainId): `60138453025`
 - Env vars:
   - `KAOLIN_RPC_URL` — defaults to the HTTP RPC above
@@ -92,7 +65,7 @@ KAOLIN (Holesky) test network
   ```
 - Deploy StreamPayment:
   ```bash
-  KAOLIN_RPC_URL=https://kaolin.holesky.golemdb.io/rpc \
+  KAOLIN_RPC_URL=https://kaolin.hoodi.arkiv.network/rpc \
   KAOLIN_CHAIN_ID=60138453025 \
   GLM_TOKEN_ADDRESS=$GLM_TOKEN_ADDRESS \
   PRIVATE_KEY=0x... \
@@ -100,13 +73,14 @@ KAOLIN (Holesky) test network
   ```
 - Output: Deployment info is written to `contracts/deployments/<network>.json` (e.g., `kaolin.json`).
 
-L2 (Holesky) test network
+L2 (Hoodi) test network
 
 - Network info
-  - RPC (HTTP): `https://l2.holesky.golemdb.io/rpc`
-  - RPC (WS): `wss://l2.holesky.golemdb.io/rpc/ws`
-  - Faucet: `https://l2.holesky.golemdb.io/faucet/`
-  - Explorer: `https://explorer.l2.holesky.golemdb.io`
+  - RPC (HTTP): `https://l2.hoodi.arkiv.network/rpc`
+  - RPC (WS): `wss://l2.hoodi.arkiv.network/rpc/ws`
+  - Faucet: `https://l2.hoodi.arkiv.network/faucet/`
+  - Faucet challenge: `https://cap.gobas.me/05381a2cef5e/api/challenge`
+  - Bridge: `0xD770652eB62C12cA12AAd6D7C56B34Ed4970655c`
   - Network ID (chainId): `393530`
 - Env vars:
   - `L2_RPC_URL` — defaults to the HTTP RPC above
@@ -116,7 +90,7 @@ L2 (Holesky) test network
   - `ORACLE_ADDRESS` — optional; defaults to deployer address
 - Deploy StreamPayment (native ETH mode):
   ```bash
-  L2_RPC_URL=https://l2.holesky.golemdb.io/rpc \
+  L2_RPC_URL=https://l2.hoodi.arkiv.network/rpc \
   L2_CHAIN_ID=393530 \
   PRIVATE_KEY=0x... \
   npx hardhat run scripts/deploy.js --network l2
