@@ -1,6 +1,7 @@
 # VM on Golem: Milestone Plan
 
 **Project:** VM on Golem
+**Tagline:** A three-command path to plain virtual machines on the Golem Network
 **Version:** 1.0
 **Last Updated:** December 2025
 
@@ -9,6 +10,40 @@
 ## Executive Summary
 
 This document outlines the complete milestone plan for VM on Golem across all phases. Each phase includes timeline, high-level acceptance criteria, and definition of done.
+
+### Vision
+
+Over the last seven years, Golem has explored multiple approaches to decentralized compute. One message has come through consistently from both the community and new users: they want something simple.
+
+VM on Golem is a focused response to that feedback. It delivers standard Ubuntu virtual machines with the predictability developers expect from mainstream clouds, while retaining the advantages of an open, decentralized marketplace.
+
+The goal is to make the first ten minutes on Golem effortless. A user should be able to discover a provider, create a VM, and connect via SSH with three self-explanatory commands:
+
+```
+golem vm providers                                              # List available providers
+golem vm create --provider-id <id> --cpu 2 --memory 4 --disk 20 # Provision a VM
+golem vm ssh <name>                                             # Connect instantly
+```
+
+This principle extends to providers as well. After installation, a provider can join the network with:
+
+```
+golem-provider start
+golem-provider pricing set --cpu 12 --memory 4 --storage 0.1
+```
+
+No lengthy explanations needed. This is the user experience people expect.
+
+### Architecture Principles
+
+VM on Golem is built on a dedicated architecture designed specifically for simplicity and reliability:
+
+- **Providers** expose a stable API on the public internet. Requestors connect directly to rent machines. Providers must port-forward the necessary interfaces and prove their ports are reachable.
+- **Discovery** uses Arkiv, a decentralized on-chain registry where providers advertise resources with live capacity and pricing.
+- **Payments** use per-second streaming on L2. Requestors deposit funds into a payment stream; providers earn continuously as long as the VM runs.
+- **Verification** through a verifier network ensures providers are only paid for live, accessible VMs.
+
+This raises the bar on provider quality while filtering out low-reliability hosts, attracting operators who understand uptime, bandwidth, and service quality.
 
 ### Note on KPIs
 
@@ -19,6 +54,10 @@ While KPIs were initially requested, this document uses acceptance criteria and 
 ## Funding Structure
 
 This proposal combines a fixed monthly salary in EUR with milestone-based rewards paid in GLM tokens. The salary ensures sustained focus, while milestone rewards are unlocked in stages tied to clear, verifiable outcomes.
+
+Milestone payouts are structured to **double at each phase**, concentrating the largest rewards at the end of the roadmap. This reduces early-stage risk: initial phases cost relatively little to evaluate, and significant payouts only unlock after consistent delivery has been demonstrated. If progress stalls, exposure remains limited.
+
+Accepting payment in GLM reflects confidence that this work will drive adoption, rebuild community engagement, and ultimately increase the token's value. This creates direct alignment: if the product succeeds, both parties benefit from the appreciation.
 
 *Note: All GLM token rewards are calculated at a reference rate of €0.21 per GLM. Final amounts may be adjusted to reflect the prevailing market rate at the time of agreement.*
 
@@ -32,11 +71,11 @@ This proposal combines a fixed monthly salary in EUR with milestone-based reward
 
 | Phase | Name | Target | Status | Payout (GLM) |
 |-------|------|--------|--------|--------------|
-| ~~1~~ | ~~Discovery Service~~ | ~~Feb 2025~~ | ✅ Complete | — |
-| ~~2~~ | ~~Provider API~~ | ~~Feb 2025~~ | ✅ Complete | — |
-| ~~3~~ | ~~Requestor API~~ | ~~Feb 2025~~ | ✅ Complete | — |
-| ~~4~~ | ~~Arkiv Integration~~ | ~~Feb 2025~~ | ✅ Complete | — |
-| ~~5~~ | ~~Smart Contract Payments~~ | ~~Mar 2025~~ | ✅ Complete | — |
+| ~~1~~ | ~~Discovery Service~~ | ~~Feb 2025~~ | Complete | - |
+| ~~2~~ | ~~Provider API~~ | ~~Feb 2025~~ | Complete | - |
+| ~~3~~ | ~~Requestor API~~ | ~~Feb 2025~~ | Complete | - |
+| ~~4~~ | ~~Arkiv Integration~~ | ~~Feb 2025~~ | Complete | - |
+| ~~5~~ | ~~Smart Contract Payments~~ | ~~Mar 2025~~ | Complete | - |
 | 6 | Requestor GUI Marketplace | January 2026 | Planned | 95,238 |
 | 7 | Verifier Network | March 2026 | Planned | 190,476 |
 | 8 | Arkiv DNS | April 2026 | Planned | 380,952 |
@@ -48,7 +87,7 @@ This proposal combines a fixed monthly salary in EUR with milestone-based reward
 
 ## Completed Phases
 
-### ~~Phase 1: Discovery Service~~ ✅
+### ~~Phase 1: Discovery Service~~
 
 **Completed:** February 2025
 **Focus:** Centralized provider discovery
@@ -67,7 +106,7 @@ Delivered a centralized discovery service enabling providers to register and adv
 
 ---
 
-### ~~Phase 2: Provider API~~ ✅
+### ~~Phase 2: Provider API~~
 
 **Completed:** February 2025
 **Focus:** Production-grade provider server
@@ -89,7 +128,7 @@ Built the provider-side server enabling providers to manage VMs via Multipass, t
 
 ---
 
-### ~~Phase 3: Requestor API~~ ✅
+### ~~Phase 3: Requestor API~~
 
 **Completed:** February 2025
 **Focus:** Full requestor-side VM lifecycle management
@@ -110,7 +149,7 @@ Developed the requestor-side CLI and API enabling users to provision VMs on prov
 
 ---
 
-### ~~Phase 4: Arkiv Integration~~ ✅
+### ~~Phase 4: Arkiv Integration~~
 
 **Completed:** February 2025
 **Focus:** Decentralized provider discovery
@@ -122,7 +161,7 @@ Developed the requestor-side CLI and API enabling users to provision VMs on prov
 
 ---
 
-### ~~Phase 5: Smart Contract Payments~~ ✅
+### ~~Phase 5: Smart Contract Payments~~
 
 **Completed:** March 2025
 **Focus:** Per-second streaming payments on L2
@@ -157,7 +196,9 @@ Implemented on-chain streaming payment infrastructure enabling continuous per-se
 
 #### Description
 
-Deliver a production-ready web application that enables requestors to discover providers, provision VMs, and manage rentals entirely through a browser interface with MetaMask wallet integration.
+Deliver a browser-native marketplace that brings the full VM lifecycle into a MetaMask-enabled dashboard. Instead of bootstrapping with CLI tooling, requestors open a single page, connect their wallet, and step through discovery, provisioning, and management without leaving the browser.
+
+The experience translates the "three commands" promise into a point-and-click workflow: land on the dashboard, launch the rent wizard, approve the payment stream, receive SSH details, and monitor runtime from the same tab.
 
 #### Acceptance Criteria
 
@@ -169,7 +210,7 @@ Deliver a production-ready web application that enables requestors to discover p
    - [ ] Support for both native ETH and ERC20 (GLM) streaming
 
 2. **Provider Discovery**
-   - [ ] Dual discovery modes: Golem Base (decentralized) and Central (legacy)
+   - [ ] Dual discovery modes: Arkiv (decentralized) and Central (legacy)
    - [ ] Filter by vCPU, RAM, storage minimums
    - [ ] Filter by country, platform (x86_64/arm64), and max price
    - [ ] Price estimation display (USD/month and hourly rates)
@@ -224,11 +265,15 @@ Deliver a production-ready web application that enables requestors to discover p
 
 **Target:** March 2026
 **Payout:** 190,476 GLM
-**Focus:** Decentralized VM health attestation and payment protection
+**Focus:** VM health attestation and payment protection
 
 #### Description
 
-Deploy a decentralized network of verifier nodes that monitor VM health and can halt payment streams for failed VMs, protecting requestors from paying for unavailable resources.
+Deploy a network of verifier nodes that monitor VM health and can halt payment streams for failed VMs, protecting requestors from paying for unavailable resources.
+
+Verifier nodes act as oracles: they independently check whether a VM is actually running and can halt the payment stream if the VM is proven to be down. Multiple verifiers perform checks, and their results are aggregated into a consensus verdict. If the verifier network confirms the VM is running, the payment stream continues. If the VM fails attestation or stops responding, the consensus triggers the contract to halt payments.
+
+This ensures providers are only paid for live, verifiable machines, and requestors never fund dead VMs.
 
 #### Acceptance Criteria
 
@@ -259,7 +304,7 @@ Deploy a decentralized network of verifier nodes that monitor VM health and can 
 
 ---
 
-### Phase 8: Golem Base DNS
+### Phase 8: Arkiv DNS
 
 **Target:** April 2026
 **Payout:** 380,952 GLM
@@ -267,13 +312,13 @@ Deploy a decentralized network of verifier nodes that monitor VM health and can 
 
 #### Description
 
-Turn Golem Base into a decentralized Dynamic DNS layer for providers on residential or prosumer connections where public IPs can change. Domain owners delegate their authoritative name servers to Golem gateways, which answer DNS queries using real-time state from Golem Base instead of static zone files. Providers push IP updates on-chain, with ownership anchored in a smart contract—only the legitimate key holder can publish updates.
+Turn Arkiv into a decentralized Dynamic DNS layer for providers on residential or prosumer connections where public IPs can change. Domain owners delegate their authoritative name servers to Arkiv gateways, which answer DNS queries using real-time on-chain state instead of static zone files. Providers push IP updates on-chain, with ownership anchored in a smart contract. Only the legitimate key holder can publish updates.
 
 #### Acceptance Criteria
 
 1. **DNS Gateway Infrastructure**
    - [ ] Public authoritative name servers that domain owners can delegate to
-   - [ ] Gateways resolve DNS queries using real-time Golem Base state
+   - [ ] Gateways resolve DNS queries using real-time Arkiv state
    - [ ] Standard DNS record types supported (A, AAAA, TXT)
 
 2. **On-Chain Domain Registry**
@@ -281,7 +326,7 @@ Turn Golem Base into a decentralized Dynamic DNS layer for providers on resident
    - [ ] Only authorized key holder can publish updates (prevents hijacking)
 
 3. **Dynamic IP Updates**
-   - [ ] Providers can push IP updates to Golem Base when address changes
+   - [ ] Providers can push IP updates to Arkiv when address changes
    - [ ] Updates reflected in DNS resolution within seconds
 
 4. **Provider Integration**
@@ -303,7 +348,9 @@ Turn Golem Base into a decentralized Dynamic DNS layer for providers on resident
 
 #### Description
 
-Deliver a desktop application for Windows, macOS, and Linux that allows providers to monitor and manage their node through a graphical interface. The GUI presents earnings, VM fleet, and configuration in a unified dashboard.
+Deliver a desktop application for Windows, macOS, and Linux that serves as the provider's control room. The GUI presents live earnings, resource utilization, and VM health at a glance, with controls to manage VMs, ports, listings, and payouts.
+
+Providers need three things in one place: a truthful view of what's running, simple controls to change it, and confidence that payments are flowing. The application connects directly to the local provider node and displays verified state so what operators see on screen matches what the marketplace sees.
 
 #### Acceptance Criteria
 
@@ -347,7 +394,11 @@ Deliver a desktop application for Windows, macOS, and Linux that allows provider
 
 #### Description
 
-Ship a user-friendly VPN application that provisions encrypted tunnels through Golem providers. Users connect their wallet, select a provider by region, approve a payment stream, and establish a VPN connection—all without manual configuration.
+Ship a user-friendly VPN application that provisions encrypted tunnels through Golem providers. Users connect their wallet, select a provider by region, approve a payment stream, and establish a VPN connection, all without manual configuration.
+
+VPNs are a proven consumer service with clear demand, but today they require centralized operators, subscription lock-ins, and opaque trust models. A decentralized VPN on Golem replaces that with open discovery, transparent provider metadata, and pay-as-you-go economics.
+
+The application abstracts all complexity: connect wallet, pick a node, click connect. By reducing the flow to something as simple as a consumer app, we open the door for mainstream users to engage with Golem infrastructure for everyday privacy and security.
 
 #### Acceptance Criteria
 
@@ -389,7 +440,14 @@ Ship a user-friendly VPN application that provisions encrypted tunnels through G
 
 #### Description
 
-Enable confidential workloads using hardware-based trusted execution environments (AMD SEV, Intel TDX, or similar). VMs run in encrypted memory that the host cannot inspect, and disk contents are protected through attestation-based key release. Requestors can run sensitive workloads without trusting the provider.
+Opening the network to commercial workloads means assuming the host is untrusted. Technologies such as AMD SEV and Intel TDX protect VM memory while running, but they do not shield the disk when the VM shuts down. To close that gap, we combine hardware-backed confidential compute with full disk encryption and attestation-driven key release, ensuring the VM stays protected in every state.
+
+**What the host can see:**
+- **While running:** only encrypted memory guarded by hardware isolation
+- **While stopped:** only an encrypted disk image
+- **At boot:** keys are released only if attestation proves the VM is genuine
+
+This layered model delivers a zero-trust lifecycle: secrets remain private while the VM runs, when it pauses, and even when it is powered off.
 
 #### Acceptance Criteria
 
