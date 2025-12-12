@@ -34,6 +34,67 @@ golem-provider pricing set --cpu 12 --memory 4 --storage 0.1
 
 No lengthy explanations needed. This is the user experience people expect.
 
+### Why Virtual Machines Matter
+
+Virtual machines are the foundation of the modern internet.
+
+Almost everything we use today runs inside a VM: cloud servers, VPS instances, CI systems, databases, VPNs, bots, storage services, internal tools, and entire Kubernetes clusters. Whether it's VirtualBox on a laptop, Hyper-V in an enterprise, or a rented VPS from a cloud provider, the model is always the same: a general-purpose machine with predictable behavior.
+
+That predictability is the key strength of VMs. Users know what they are getting before they log in. They know which tools work, how to deploy software, and how to debug problems. Years of shared knowledge, documentation, and muscle memory are built around this model.
+
+### The Problem Golem Faces Today
+
+Golem does not currently offer a standard VM.
+
+Instead, it exposes a custom execution environment that looks capable from the outside, but reveals sharp limitations once users start building on it. This creates several problems:
+
+* Users bring expectations shaped by normal VMs, then run into constraints they didn't anticipate.
+* Common tools and workflows do not work out of the box.
+* Learning Golem means learning a special case, not applying existing knowledge.
+* The gap between "what it looks like" and "what it can actually do" leads to frustration and churn.
+
+This is not a branding issue or a documentation issue. It is a foundational mismatch between what developers expect and what the platform provides.
+
+As long as Golem is not a normal VM environment, it will continue to limit:
+
+* what users can run,
+* how easily they can get started,
+* and how far the ecosystem can extend.
+
+### What VM on Golem Changes
+
+VM on Golem introduces something deliberately boring: a VM that behaves exactly like the VMs people already know.
+
+A VM on Golem is the same concept you get from:
+
+* VirtualBox or Hyper-V,
+* a VPS from a cloud provider,
+* a raw Ubuntu server rented by the hour.
+
+Nothing new to learn. No custom execution model. No hidden constraints.
+
+Once that foundation is in place, everything else becomes possible without special casing:
+
+* Run scripts directly on a raw server
+* Host long-running services
+* Deploy containers or Docker-based stacks
+* Build and operate a Kubernetes cluster across multiple Golem providers
+* Host Discord bots or backend services
+* Store files or build an S3-compatible service
+* 1:1 migration of services running on other cloud infrastructure directly onto VM on Golem provider nodes.
+
+The point is not to define what users should build. The point is to stop limiting what they *can* build.
+
+### Groundwork, Not a Single Feature
+
+This proposal is not about a single application or vertical.
+
+It lays the groundwork that allows *anything* to exist on the network. Once standard VMs are available, higher-level services become straightforward compositions rather than special projects.
+
+Later phases in this roadmap demonstrate that clearly. For example, a decentralized VPN becomes possible not because VPNs are special, but because VMs are versatile. The same applies to storage, compute clusters, private services, and future ideas that are not yet defined.
+
+VM on Golem is the foundation that removes artificial ceilings from the network. Everything built on top benefits from that decision.
+
 ### Architecture Principles
 
 VM on Golem is built on a dedicated architecture designed specifically for simplicity and reliability:
