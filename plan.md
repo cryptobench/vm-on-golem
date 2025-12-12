@@ -61,6 +61,23 @@ As long as Golem is not a normal VM environment, it will continue to limit:
 * how easily they can get started,
 * and how far the ecosystem can extend.
 
+### Feature Comparison
+
+| Feature | Golem | VM on Golem |
+|---------|:-----:|:-----------:|
+| Complex SDK to learn | ✅ | ❌ |
+| 1:1 migration from existing infrastructure | ❌ | ✅ |
+| Outbound networking | ⚠️ | ✅ |
+| Inbound networking | ❌ | ✅ |
+| Simple to use | ❌ | ✅ |
+| Provider port forwarding | ⚠️ | ✅ |
+| Payment streaming | ❌ | ✅ |
+| Confidential compute | ❌ | ✅ |
+| Offline requestor | ❌ | ✅ |
+| Windows/Mac provider support | ❌ | ✅ |
+
+*⚠️ Partial or limited support*
+
 ### What VM on Golem Changes
 
 VM on Golem introduces something deliberately boring: a VM that behaves exactly like the VMs people already know.
