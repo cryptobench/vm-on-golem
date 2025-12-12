@@ -200,7 +200,7 @@ Deliver a browser-native marketplace that brings the full VM lifecycle into a Me
 
 The experience translates the "three commands" promise into a point-and-click workflow: land on the dashboard, launch the rent wizard, approve the payment stream, receive SSH details, and monitor runtime from the same tab.
 
-#### Acceptance Criteria
+#### High-Level Acceptance Criteria
 
 1. **Wallet Integration**
    - [ ] MetaMask detection and connection flow
@@ -275,7 +275,7 @@ Verifier nodes act as oracles: they independently check whether a VM is actually
 
 This ensures providers are only paid for live, verifiable machines, and requestors never fund dead VMs.
 
-#### Acceptance Criteria
+#### High-Level Acceptance Criteria
 
 1. **Verifier Node**
    - [ ] Software that can join the verifier network
@@ -314,7 +314,7 @@ This ensures providers are only paid for live, verifiable machines, and requesto
 
 Turn Arkiv into a decentralized Dynamic DNS layer for providers on residential or prosumer connections where public IPs can change. Domain owners delegate their authoritative name servers to Arkiv gateways, which answer DNS queries using real-time on-chain state instead of static zone files. Providers push IP updates on-chain, with ownership anchored in a smart contract. Only the legitimate key holder can publish updates.
 
-#### Acceptance Criteria
+#### High-Level Acceptance Criteria
 
 1. **DNS Gateway Infrastructure**
    - [ ] Public authoritative name servers that domain owners can delegate to
@@ -352,7 +352,7 @@ Deliver a desktop application for Windows, macOS, and Linux that serves as the p
 
 Providers need three things in one place: a truthful view of what's running, simple controls to change it, and confidence that payments are flowing. The application connects directly to the local provider node and displays verified state so what operators see on screen matches what the marketplace sees.
 
-#### Acceptance Criteria
+#### High-Level Acceptance Criteria
 
 1. **Cross-Platform Support**
    - [ ] Application runs on Windows, macOS, and Linux
@@ -400,7 +400,7 @@ VPNs are a proven consumer service with clear demand, but today they require cen
 
 The application abstracts all complexity: connect wallet, pick a node, click connect. By reducing the flow to something as simple as a consumer app, we open the door for mainstream users to engage with Golem infrastructure for everyday privacy and security.
 
-#### Acceptance Criteria
+#### High-Level Acceptance Criteria
 
 1. **Desktop Application**
    - [ ] Application for Windows, Mac and Linux
@@ -449,7 +449,7 @@ Opening the network to commercial workloads means assuming the host is untrusted
 
 This layered model delivers a zero-trust lifecycle: secrets remain private while the VM runs, when it pauses, and even when it is powered off.
 
-#### Acceptance Criteria
+#### High-Level Acceptance Criteria
 
 1. **Hardware-Backed Isolation**
    - [ ] VMs run in hardware-protected encrypted memory
