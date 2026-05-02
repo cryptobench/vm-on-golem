@@ -1,10 +1,11 @@
 import asyncio
+
 from fastapi import FastAPI
 
+from .discovery.service import DiscoveryPublishingService
 from .utils.logging import setup_logger
-from .vm.service import VMService
-from .discovery.service import AdvertisementService
 from .utils.pricing import PricingAutoUpdater
+from .vm.service import VMService
 
 logger = setup_logger(__name__)
 
@@ -12,7 +13,12 @@ logger = setup_logger(__name__)
 class ProviderService:
     """Service for managing the provider's lifecycle."""
 
-    def __init__(self, vm_service: VMService, advertisement_service: AdvertisementService, port_manager):
+    def __init__(
+        self,
+        vm_service: VMService,
+        advertisement_service: DiscoveryPublishingService,
+        port_manager,
+    ):
         self.vm_service = vm_service
         self.advertisement_service = advertisement_service
         self.port_manager = port_manager
@@ -23,8 +29,8 @@ class ProviderService:
     async def setup(self, app: FastAPI):
         """Setup and initialize the provider components."""
         from .config import settings
-        from .utils.ascii_art import startup_animation
         from .security.faucet import FaucetClient
+        from .utils.ascii_art import startup_animation
 
         try:
             # Display startup animation
@@ -50,12 +56,20 @@ class ProviderService:
             # active stream, it is no longer rented: terminate it and free resources.
             try:
                 # Only perform checks if payments are configured
-                if settings.STREAM_PAYMENT_ADDRESS and not settings.STREAM_PAYMENT_ADDRESS.lower().endswith("0000000000000000000000000000000000000000") and settings.POLYGON_RPC_URL:
+                if (
+                    settings.STREAM_PAYMENT_ADDRESS
+                    and not settings.STREAM_PAYMENT_ADDRESS.lower().endswith(
+                        "0000000000000000000000000000000000000000"
+                    )
+                    and settings.POLYGON_RPC_URL
+                ):
                     stream_map = app.container.stream_map()
                     reader = app.container.stream_reader()
 
                     # Use the most recent view of VMs from the previous sync
-                    vm_ids = list(vm_resources.keys()) if 'vm_resources' in locals() else []
+                    vm_ids = (
+                        list(vm_resources.keys()) if "vm_resources" in locals() else []
+                    )
                     for vm_id in vm_ids:
                         try:
                             stream_id = await stream_map.get(vm_id)
@@ -67,12 +81,16 @@ class ProviderService:
                             should_terminate = True
                         else:
                             try:
-                                ok, msg = reader.verify_stream(int(stream_id), settings.PROVIDER_ID)
+                                ok, msg = reader.verify_stream(
+                                    int(stream_id), settings.PROVIDER_ID
+                                )
                                 should_terminate = not ok
                                 reason = msg if not ok else "ok"
                             except Exception as e:
                                 # If verification cannot be performed, be conservative and keep the VM
-                                logger.warning(f"Stream verification error for VM {vm_id} (stream {stream_id}): {e}")
+                                logger.warning(
+                                    f"Stream verification error for VM {vm_id} (stream {stream_id}): {e}"
+                                )
                                 should_terminate = False
                                 reason = f"verification error: {e}"
 
@@ -92,11 +110,15 @@ class ProviderService:
                     # Re-sync after any terminations to ensure ads reflect capacity
                     try:
                         vm_resources = await self.vm_service.get_all_vms_resources()
-                        await self.vm_service.resource_tracker.sync_with_multipass(vm_resources)
+                        await self.vm_service.resource_tracker.sync_with_multipass(
+                            vm_resources
+                        )
                     except Exception as e:
                         logger.warning(f"Post-termination resource sync failed: {e}")
                 else:
-                    logger.info("Payments not configured; skipping startup stream checks")
+                    logger.info(
+                        "Payments not configured; skipping startup stream checks"
+                    )
             except Exception as e:
                 logger.warning(f"Failed to reconcile VMs with payment streams: {e}")
 
@@ -112,13 +134,19 @@ class ProviderService:
             # Start pricing auto-updater; trigger re-advertise after updates
             async def _on_price_updated(platform: str, glm_usd):
                 await self.advertisement_service.trigger_update()
-            self._pricing_updater = PricingAutoUpdater(on_updated_callback=_on_price_updated)
+
+            self._pricing_updater = PricingAutoUpdater(
+                on_updated_callback=_on_price_updated
+            )
             # Keep a handle to the background task so we can cancel it promptly on shutdown
-            self._pricing_task = asyncio.create_task(self._pricing_updater.start(), name="pricing-updater")
+            self._pricing_task = asyncio.create_task(
+                self._pricing_updater.start(), name="pricing-updater"
+            )
 
             # Start stream monitor if enabled
-            from .container import Container
             from .config import settings as cfg
+            from .container import Container
+
             if cfg.STREAM_MONITOR_ENABLED or cfg.STREAM_WITHDRAW_ENABLED:
                 self._stream_monitor = app.container.stream_monitor()
                 self._stream_monitor.start()
@@ -151,7 +179,9 @@ class ProviderService:
                     try:
                         await self.vm_service.stop_vm(vm.id)
                     except Exception as e:
-                        logger.warning(f"Failed to stop VM {getattr(vm, 'id', '?')}: {e}")
+                        logger.warning(
+                            f"Failed to stop VM {getattr(vm, 'id', '?')}: {e}"
+                        )
         except Exception:
             pass
 
@@ -181,9 +211,10 @@ class ProviderService:
 
     def _setup_directories(self):
         """Create necessary directories for the provider."""
-        from .config import settings
         from pathlib import Path
-        
+
+        from .config import settings
+
         Path(settings.VM_DATA_DIR).mkdir(parents=True, exist_ok=True)
         Path(settings.SSH_KEY_DIR).mkdir(parents=True, exist_ok=True)
         Path(settings.CLOUD_INIT_DIR).mkdir(parents=True, exist_ok=True)

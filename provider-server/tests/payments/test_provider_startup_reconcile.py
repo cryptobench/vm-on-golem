@@ -1,5 +1,6 @@
 import asyncio
 import types
+
 import pytest
 
 from provider.service import ProviderService
@@ -11,7 +12,7 @@ class DummyPortManager:
         return None
 
 
-class DummyAdvertisementService:
+class DummyDiscoveryPublishingService:
     def __init__(self):
         self.started = False
 
@@ -135,15 +136,22 @@ async def test_startup_terminates_vms_without_active_stream(monkeypatch):
 
     # Patch external collaborators (faucet + pricing updater)
     import provider.security.faucet as faucet_mod
-    monkeypatch.setattr(faucet_mod, "FaucetClient", lambda *a, **k: types.SimpleNamespace(get_funds=lambda *_: asyncio.sleep(0)))
+
+    monkeypatch.setattr(
+        faucet_mod,
+        "FaucetClient",
+        lambda *a, **k: types.SimpleNamespace(get_funds=lambda *_: asyncio.sleep(0)),
+    )
     monkeypatch.setattr(ps, "PricingAutoUpdater", DummyPricingUpdater)
 
     # One VM present, no stream mapping -> should be terminated
     vm_resources = {"vm-a": VMResources(cpu=2, memory=4, storage=20)}
     vm_service = DummyVMService(vm_resources)
-    adv = DummyAdvertisementService()
+    adv = DummyDiscoveryPublishingService()
     port = DummyPortManager()
-    provider_service = ProviderService(vm_service=vm_service, advertisement_service=adv, port_manager=port)
+    provider_service = ProviderService(
+        vm_service=vm_service, advertisement_service=adv, port_manager=port
+    )
 
     stream_map = DummyStreamMap({})
     reader = DummyReader({})
@@ -172,14 +180,21 @@ async def test_startup_keeps_vms_with_active_stream(monkeypatch):
 
     # Patch external collaborators
     import provider.security.faucet as faucet_mod
-    monkeypatch.setattr(faucet_mod, "FaucetClient", lambda *a, **k: types.SimpleNamespace(get_funds=lambda *_: asyncio.sleep(0)))
+
+    monkeypatch.setattr(
+        faucet_mod,
+        "FaucetClient",
+        lambda *a, **k: types.SimpleNamespace(get_funds=lambda *_: asyncio.sleep(0)),
+    )
     monkeypatch.setattr(ps, "PricingAutoUpdater", DummyPricingUpdater)
 
     vm_resources = {"vm-b": VMResources(cpu=2, memory=4, storage=20)}
     vm_service = DummyVMService(vm_resources)
-    adv = DummyAdvertisementService()
+    adv = DummyDiscoveryPublishingService()
     port = DummyPortManager()
-    provider_service = ProviderService(vm_service=vm_service, advertisement_service=adv, port_manager=port)
+    provider_service = ProviderService(
+        vm_service=vm_service, advertisement_service=adv, port_manager=port
+    )
 
     # Map stream and mark it valid
     stream_map = DummyStreamMap({"vm-b": 42})
@@ -208,14 +223,21 @@ async def test_startup_skips_stream_checks_when_payments_disabled(monkeypatch):
 
     # Patch external collaborators
     import provider.security.faucet as faucet_mod
-    monkeypatch.setattr(faucet_mod, "FaucetClient", lambda *a, **k: types.SimpleNamespace(get_funds=lambda *_: asyncio.sleep(0)))
+
+    monkeypatch.setattr(
+        faucet_mod,
+        "FaucetClient",
+        lambda *a, **k: types.SimpleNamespace(get_funds=lambda *_: asyncio.sleep(0)),
+    )
     monkeypatch.setattr(ps, "PricingAutoUpdater", DummyPricingUpdater)
 
     vm_resources = {"vm-c": VMResources(cpu=2, memory=4, storage=20)}
     vm_service = DummyVMService(vm_resources)
-    adv = DummyAdvertisementService()
+    adv = DummyDiscoveryPublishingService()
     port = DummyPortManager()
-    provider_service = ProviderService(vm_service=vm_service, advertisement_service=adv, port_manager=port)
+    provider_service = ProviderService(
+        vm_service=vm_service, advertisement_service=adv, port_manager=port
+    )
 
     # If called, these would raise; but payments disabled should skip them
     class RaisingStreamMap:

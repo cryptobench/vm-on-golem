@@ -1,6 +1,6 @@
 """Service layer for VM on Golem requestor."""
 
-from .vm_service import VMService
 from .provider_service import ProviderService
+from .vm_service import VMService
 
-__all__ = ['VMService', 'ProviderService']
+__all__ = ["VMService", "ProviderService"]

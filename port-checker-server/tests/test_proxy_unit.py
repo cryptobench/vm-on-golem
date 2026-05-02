@@ -1,103 +1,96 @@
-import importlib
-import os
-import sys
-import asyncio
+import pytest
 
-# Ensure local package is importable (prefer local over any installed version)
-TEST_DIR = os.path.dirname(__file__)
-PKG_ROOT = os.path.abspath(os.path.join(TEST_DIR, ".."))
-if PKG_ROOT not in sys.path:
-    sys.path.insert(0, PKG_ROOT)
+from port_checker.config import Settings
+from port_checker.errors import ConfigurationError, ValidationError
+from port_checker.proxy.policy import (
+    forwarded_headers,
+    forwarded_query,
+    is_allowed_port,
+    is_public_ip,
+    normalize_proxy_source,
+    parse_allowed_ports,
+)
 
 
-def test_parse_allowed_ports_basic():
-    m = importlib.import_module("port_checker.main")
-    parse = getattr(m, "_parse_allowed_ports")
+def test_parse_allowed_ports_basic_and_wildcard():
+    ranges = parse_allowed_ports("80,443,1000-1005, 65535")
 
-    ranges = parse("80,443,1000-1005,  65535")
     assert (80, 80) in ranges
     assert (443, 443) in ranges
     assert (1000, 1005) in ranges
     assert (65535, 65535) in ranges
+    assert parse_allowed_ports("*") == [(1, 65535)]
 
 
-def test_is_public_ip_recognizes_private_and_public():
-    m = importlib.import_module("port_checker.main")
-    is_pub = getattr(m, "_is_public_ip")
+def test_parse_allowed_ports_invalid_tokens_raise():
+    with pytest.raises(ConfigurationError):
+        parse_allowed_ports("80,abc-def,443")
 
-    # Private and loopback should be rejected
-    assert is_pub("127.0.0.1") is False
-    assert is_pub("10.0.0.1") is False
-    assert is_pub("192.168.1.10") is False
-    # Clearly public
-    assert is_pub("1.1.1.1") is True
+    with pytest.raises(ConfigurationError):
+        parse_allowed_ports("")
 
 
 def test_is_allowed_port_range_and_exact():
-    m = importlib.import_module("port_checker.main")
-    # Use module's parsed ranges
-    is_allowed = getattr(m, "_is_allowed_port")
+    ranges = parse_allowed_ports("80,443,1024-65535")
 
-    assert is_allowed(80)
-    assert is_allowed(443)
-    assert is_allowed(5000)
-    assert is_allowed(65535)
-    assert is_allowed(1024)
-    assert is_allowed(2048)
+    assert is_allowed_port(80, ranges)
+    assert is_allowed_port(443, ranges)
+    assert is_allowed_port(2048, ranges)
+    assert not is_allowed_port(81, parse_allowed_ports("80"))
 
 
-def test_parse_allowed_ports_wildcard():
-    m = importlib.import_module("port_checker.main")
-    parse = getattr(m, "_parse_allowed_ports")
-    ranges = parse("*")
-    assert (1, 65535) in ranges
+def test_is_public_ip_recognizes_private_public_and_invalid():
+    assert is_public_ip("127.0.0.1") is False
+    assert is_public_ip("10.0.0.1") is False
+    assert is_public_ip("192.168.1.10") is False
+    assert is_public_ip("not.an.ip") is False
+    assert is_public_ip("1.1.1.1") is True
 
 
-def test_parse_allowed_ports_invalid_tokens_skipped():
-    m = importlib.import_module("port_checker.main")
-    parse = getattr(m, "_parse_allowed_ports")
-    # Include invalid range token and invalid integer token; they should be skipped
-    ranges = parse("80,abc-def,notanint,443")
-    assert (80, 80) in ranges
-    assert (443, 443) in ranges
-    # Ensure no bogus ranges were added
-    assert all(isinstance(t, tuple) and len(t) == 2 for t in ranges)
+def test_proxy_source_is_arkiv_or_central_only():
+    assert normalize_proxy_source(None) == "arkiv"
+    assert normalize_proxy_source("arkiv") == "arkiv"
+    assert normalize_proxy_source("central") == "central"
+
+    with pytest.raises(ValidationError):
+        normalize_proxy_source("legacy")
 
 
-def test_is_public_ip_rejects_invalid_string():
-    m = importlib.import_module("port_checker.main")
-    is_pub = getattr(m, "_is_public_ip")
-    assert is_pub("not.an.ip") is False
+def test_forwarded_query_removes_control_params():
+    assert forwarded_query("port=8080&foo=bar&empty=", {"port"}) == "foo=bar&empty="
+    assert forwarded_query("target=1.1.1.1%3A80&foo=bar", {"target"}) == "foo=bar"
 
 
-def test_check_ports_validator_rejects_out_of_range(monkeypatch):
-    # Use FastAPI client to trigger Pydantic validation error path
-    import importlib
-    from fastapi.testclient import TestClient
+def test_forwarded_headers_strip_proxy_controls_and_append_client_ip():
+    headers = {
+        "Host": "proxy.local",
+        "X-Proxy-Token": "secret",
+        "X-Proxy-Source": "arkiv",
+        "X-Forwarded-For": "1.2.3.4",
+        "User-Agent": "client",
+    }
 
-    m = importlib.import_module("port_checker.main")
-    client = TestClient(m.app)
-    r = client.post("/check-ports", json={"provider_ip": "1.2.3.4", "ports": [80, 70000]})
-    assert r.status_code == 422
+    forwarded = forwarded_headers(
+        headers,
+        {"x-proxy-token", "x-proxy-source"},
+        "5.6.7.8",
+    )
+
+    assert "Host" not in forwarded
+    assert "X-Proxy-Token" not in forwarded
+    assert forwarded["User-Agent"] == "client"
+    assert forwarded["X-Forwarded-For"] == "1.2.3.4, 5.6.7.8"
+    assert forwarded["X-Real-IP"] == "5.6.7.8"
 
 
-async def _fake_open_connection_timeout(host, port):  # noqa: ARG001
-    raise asyncio.TimeoutError()
+def test_settings_use_arkiv_names_only(monkeypatch):
+    monkeypatch.setenv("GOLEM_ENVIRONMENT", "development")
+    monkeypatch.setenv("ARKIV_RPC_URL", "http://rpc")
+    monkeypatch.setenv("ARKIV_WS_URL", "ws://ws")
 
+    settings = Settings()
 
-async def _fake_open_connection_generic(host, port):  # noqa: ARG001
-    raise RuntimeError("boom")
-
-
-def test_check_port_handles_timeout_and_generic(monkeypatch):
-    m = importlib.import_module("port_checker.main")
-
-    # Patch open_connection to timeout
-    monkeypatch.setattr(m.asyncio, "open_connection", _fake_open_connection_timeout)
-    res = m.asyncio.get_event_loop().run_until_complete(m.check_port("1.2.3.4", 80, retries=1))
-    assert res.accessible is False and "timed out" in (res.error or "")
-
-    # Patch to generic error
-    monkeypatch.setattr(m.asyncio, "open_connection", _fake_open_connection_generic)
-    res = m.asyncio.get_event_loop().run_until_complete(m.check_port("1.2.3.4", 80, retries=1))
-    assert res.accessible is False and "boom" in (res.error or "")
+    assert settings.arkiv_rpc_url == "http://rpc"
+    assert settings.arkiv_ws_url == "ws://ws"
+    assert settings.expected_network == "development"
+    assert settings.effective_allow_local_ips is True

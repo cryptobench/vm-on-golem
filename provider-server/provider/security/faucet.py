@@ -1,9 +1,10 @@
 import asyncio
-from typing import Optional, List, Tuple
+from typing import List, Optional, Tuple
 
 from golem_base_sdk import GolemBaseClient
-from provider.utils.logging import setup_logger
 from golem_faucet import PowFaucetClient
+
+from provider.utils.logging import setup_logger
 
 logger = setup_logger(__name__)
 
@@ -17,16 +18,19 @@ class FaucetClient:
         self.captcha_api_key = captcha_api_key
         self.api_endpoint = f"{self.faucet_url}/api"
         self.client: Optional[GolemBaseClient] = None
-        self._pow = PowFaucetClient(self.faucet_url, self.captcha_url, self.captcha_api_key)
+        self._pow = PowFaucetClient(
+            self.faucet_url, self.captcha_url, self.captcha_api_key
+        )
 
     async def _ensure_client(self):
         if not self.client:
             from ..config import settings
+
             private_key_hex = settings.ETHEREUM_PRIVATE_KEY.replace("0x", "")
             private_key_bytes = bytes.fromhex(private_key_hex)
             self.client = await GolemBaseClient.create_ro_client(
-                rpc_url=settings.GOLEM_BASE_RPC_URL,
-                ws_url=settings.GOLEM_BASE_WS_URL,
+                rpc_url=settings.ARKIV_RPC_URL,
+                ws_url=settings.ARKIV_WS_URL,
             )
 
     async def check_balance(self, address: str) -> Optional[float]:
@@ -34,7 +38,7 @@ class FaucetClient:
         await self._ensure_client()
         try:
             balance_wei = await self.client.http_client().eth.get_balance(address)
-            balance_eth = self.client.http_client().from_wei(balance_wei, 'ether')
+            balance_eth = self.client.http_client().from_wei(balance_wei, "ether")
             return float(balance_eth)
         except Exception as e:
             logger.error(f"Failed to check balance: {e}")
@@ -45,7 +49,9 @@ class FaucetClient:
         try:
             balance = await self.check_balance(address)
             if balance is not None and balance > 0.01:
-                logger.info(f"Sufficient funds ({balance} ETH), skipping faucet request.")
+                logger.info(
+                    f"Sufficient funds ({balance} ETH), skipping faucet request."
+                )
                 return None
 
             logger.info("Requesting funds from faucet...")
@@ -71,7 +77,9 @@ class FaucetClient:
 
             tx_hash = await self._request_faucet(address, redeemed_token)
             if tx_hash:
-                logger.success(f"Successfully requested funds. Transaction hash: {tx_hash}")
+                logger.success(
+                    f"Successfully requested funds. Transaction hash: {tx_hash}"
+                )
                 logger.info("Waiting for faucet funds to confirm on-chain...")
                 confirmed = await self._wait_for_funds(address)
                 if confirmed:
@@ -83,6 +91,7 @@ class FaucetClient:
             return tx_hash
         except Exception as e:
             import traceback
+
             logger.error(f"Failed to get funds from faucet: {e}")
             logger.error(traceback.format_exc())
             return None

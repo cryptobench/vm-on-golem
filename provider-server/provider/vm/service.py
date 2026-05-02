@@ -3,10 +3,10 @@ from typing import Dict, List
 
 from ..discovery.resource_tracker import ResourceTracker
 from ..utils.logging import setup_logger
-from .models import VMConfig, VMInfo, VMResources, VMNotFoundError
-from .provider import VMProvider
+from .cloud_init import cleanup_cloud_init, generate_cloud_init
+from .models import VMConfig, VMInfo, VMNotFoundError, VMResources
 from .name_mapper import VMNameMapper
-from .cloud_init import generate_cloud_init, cleanup_cloud_init
+from .provider import VMProvider
 
 logger = setup_logger(__name__)
 
@@ -34,13 +34,13 @@ class VMService:
         # Generate a stable multipass name up-front so downstream code and
         # status checks see a consistent mapping during provisioning.
         from uuid import uuid4
+
         multipass_name = f"golem-{uuid4()}"
         config.multipass_name = multipass_name
         await self.name_mapper.add_mapping(config.name, multipass_name)
 
         cloud_init_path, config_id = generate_cloud_init(
-            hostname=config.name,
-            ssh_key=config.ssh_key
+            hostname=config.name, ssh_key=config.ssh_key
         )
         config.cloud_init_path = cloud_init_path
 
@@ -58,12 +58,13 @@ class VMService:
         """Delete a VM."""
         multipass_name = await self.name_mapper.get_multipass_name(vm_id)
         if not multipass_name:
-            logger.warning(f"No multipass name found for VM {vm_id}")
-            return
+            raise VMNotFoundError(f"VM {vm_id} not found")
 
         try:
             vm_info = await self.provider.get_vm_status(multipass_name)
-            logger.info(f"Deleting VM {vm_id} (multipass={multipass_name}) with status={vm_info.status}")
+            logger.info(
+                f"Deleting VM {vm_id} (multipass={multipass_name}) with status={vm_info.status}"
+            )
             await self.provider.delete_vm(multipass_name)
             await self.resource_tracker.deallocate(vm_info.resources, vm_id)
             # Optional: best-effort on-chain termination if we have a mapping
@@ -73,13 +74,12 @@ class VMService:
                     pass
             except Exception:
                 pass
-        except VMNotFoundError:
-            logger.warning(f"VM {multipass_name} not found on provider, cleaning up resources")
-            # If the VM is not found, we still need to deallocate the resources we have tracked for it
-            # Since we can't get the resources from the provider, we'll have to assume the resources are what we have tracked
-            # This is not ideal, but it's the best we can do in this situation
-            # A better solution would be to store the resources in the name mapper
-            pass
+        except VMNotFoundError as exc:
+            logger.error(
+                "VM mapped but not found on provider during delete",
+                extra={"vm_id": vm_id, "multipass_name": multipass_name},
+            )
+            raise exc
         finally:
             await self.name_mapper.remove_mapping(vm_id)
 
@@ -99,7 +99,7 @@ class VMService:
         except Exception:
             pass
         return vm
- 
+
     async def list_vms(self) -> List[VMInfo]:
         """List all VMs."""
         return await self.provider.list_vms()
@@ -109,12 +109,14 @@ class VMService:
         multipass_name = await self.name_mapper.get_multipass_name(vm_id)
         if not multipass_name:
             from .models import VMNotFoundError
+
             raise VMNotFoundError(f"VM {vm_id} not found")
         return await self.provider.get_vm_status(multipass_name)
 
     async def get_all_vms_resources(self) -> Dict[str, VMResources]:
         """Get resources for all running VMs."""
         return await self.provider.get_all_vms_resources()
+
     async def initialize(self):
         await self.provider.initialize()
 

@@ -1,9 +1,9 @@
 import asyncio
 from typing import Optional
 
-from ..services.database_service import DatabaseService
-from ..provider.client import ProviderClient
 from ..config import config
+from ..provider.client import ProviderClient
+from ..services.database_service import DatabaseService
 from ..utils.logging import setup_logger
 from .blockchain_service import StreamPaymentClient, StreamPaymentConfig
 
@@ -68,7 +68,9 @@ class RequestorStreamMonitor:
                 for vm in vms:
                     # Only manage running VMs
                     if vm.get("status") != "running":
-                        self._logger.debug(f"skip VM {vm.get('name')} status={vm.get('status')}")
+                        self._logger.debug(
+                            f"skip VM {vm.get('name')} status={vm.get('status')}"
+                        )
                         continue
                     stream_id = await self._resolve_stream_id(vm)
                     if stream_id is None:
@@ -76,11 +78,21 @@ class RequestorStreamMonitor:
                         continue
                     # Read on-chain stream tuple via contract
                     try:
-                        token, sender, recipient, startTime, stopTime, ratePerSecond, deposit, withdrawn, halted = (
-                            self._sp.contract.functions.streams(int(stream_id)).call()
-                        )
+                        (
+                            token,
+                            sender,
+                            recipient,
+                            startTime,
+                            stopTime,
+                            ratePerSecond,
+                            deposit,
+                            withdrawn,
+                            halted,
+                        ) = self._sp.contract.functions.streams(int(stream_id)).call()
                     except Exception as e:
-                        self._logger.warning(f"stream lookup failed for {stream_id}: {e}")
+                        self._logger.warning(
+                            f"stream lookup failed for {stream_id}: {e}"
+                        )
                         continue
                     if bool(halted):
                         # Respect terminated streams
@@ -112,7 +124,9 @@ class RequestorStreamMonitor:
                             )
                         except Exception as e:
                             # Ignore failures; will retry next tick
-                            self._logger.warning(f"top-up failed for stream {stream_id}: {e}")
+                            self._logger.warning(
+                                f"top-up failed for stream {stream_id}: {e}"
+                            )
                     else:
                         self._logger.debug(
                             f"stream {stream_id} healthy (remaining={remaining}s >= {min_remaining}s)"

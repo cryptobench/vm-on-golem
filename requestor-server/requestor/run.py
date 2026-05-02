@@ -2,15 +2,17 @@
 import os
 import sys
 from pathlib import Path
+
 from dotenv import load_dotenv
 
 if "--json" in sys.argv:
     os.environ["GOLEM_SILENCE_LOGS"] = "1"
     try:
         import logging as _logging
+
         _logging.getLogger().setLevel(_logging.CRITICAL)
-        _logging.getLogger('rlp').setLevel(_logging.CRITICAL)
-        _logging.getLogger('rlp.codec').setLevel(_logging.CRITICAL)
+        _logging.getLogger("rlp").setLevel(_logging.CRITICAL)
+        _logging.getLogger("rlp.codec").setLevel(_logging.CRITICAL)
     except Exception:
         pass
 
@@ -45,17 +47,22 @@ def check_requirements() -> bool:
     """Check if all requirements are met."""
     return secure_directory(get_ssh_key_dir())
 
+
 def main():
     """Run the requestor CLI."""
     try:
         # Load environment variables based on unified environment
-        env_mode = (os.environ.get('GOLEM_ENVIRONMENT') or os.environ.get('GOLEM_REQUESTOR_ENVIRONMENT') or '').lower()
+        env_mode = (
+            os.environ.get("GOLEM_ENVIRONMENT")
+            or os.environ.get("GOLEM_REQUESTOR_ENVIRONMENT")
+            or ""
+        ).lower()
         base_dir = Path(__file__).parent.parent
-        env_file = '.env.dev' if env_mode == 'development' else '.env'
+        env_file = ".env.dev" if env_mode == "development" else ".env"
         env_path = base_dir / env_file
         # If chosen file does not exist, fallback to the other
         if not env_path.exists():
-            alt = base_dir / ('.env' if env_file == '.env.dev' else '.env.dev')
+            alt = base_dir / (".env" if env_file == ".env.dev" else ".env.dev")
             env_path = alt if alt.exists() else env_path
         load_dotenv(dotenv_path=env_path)
         logger.info(f"Loading environment variables from: {env_path}")
@@ -72,6 +79,7 @@ def main():
     except Exception as e:
         logger.error(f"Failed to start requestor CLI: {e}")
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

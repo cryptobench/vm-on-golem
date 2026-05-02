@@ -1,29 +1,54 @@
 class RequestorError(Exception):
     """Base class for requestor errors."""
-    pass
 
-class ProviderError(RequestorError):
+
+class DomainError(RequestorError):
+    """Base class for requestor domain errors."""
+
+
+class NotFoundError(DomainError):
+    """Requested resource was not found."""
+
+
+class ConflictError(DomainError):
+    """Requested operation conflicts with current state."""
+
+
+class ValidationError(DomainError):
+    """Domain validation failed."""
+
+
+class ExternalServiceError(DomainError):
+    """External boundary call failed."""
+
+
+class ConfigurationError(DomainError):
+    """Configuration is invalid or incomplete."""
+
+
+class ProviderError(ExternalServiceError):
     """Provider communication error."""
-    pass
 
-class DiscoveryError(RequestorError):
+
+class DiscoveryError(ExternalServiceError):
     """Discovery service error."""
-    pass
 
-class SSHError(RequestorError):
+
+class SSHError(ExternalServiceError):
     """SSH-related error."""
-    pass
 
-class ConfigError(RequestorError):
+
+class ConfigError(ConfigurationError):
     """Configuration error."""
-    pass
 
-class DatabaseError(RequestorError):
+
+class DatabaseError(ExternalServiceError):
     """Database operation error."""
-    pass
 
-class VMError(RequestorError):
+
+class VMError(DomainError):
     """VM operation error."""
+
     def __init__(self, message: str, vm_id: str = None):
         self.vm_id = vm_id
         super().__init__(message)

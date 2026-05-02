@@ -1,30 +1,32 @@
 "use client";
 import React from "react";
 
-export type AdsMode = 'golem-base' | 'central';
+export type AdsMode = 'arkiv' | 'central';
 export type AdsConfig = {
   mode: AdsMode;
   discovery_url: string; // used when mode === 'central'
-  golem_base_rpc_url: string; // used when mode === 'golem-base'
-  golem_base_ws_url: string; // used when mode === 'golem-base'
-  chain_id: number; // numeric chain id for Golem Base
+  arkiv_rpc_url: string;
+  arkiv_ws_url: string;
+  chain_id: number; // numeric chain id for Arkiv payments/network metadata
   advertisement_interval_seconds?: number; // optional for created_at estimation
 };
+
+type StoredAdsConfig = Partial<AdsConfig>;
 
 const BASE_RPC_URL = 'https://kaolin.hoodi.arkiv.network/rpc';
 const BASE_WS_URL = 'wss://kaolin.hoodi.arkiv.network/rpc/ws';
 const DEFAULTS: AdsConfig = (() => {
   const isDevEnv = (process.env.NEXT_PUBLIC_GOLEM_ENVIRONMENT || '').toLowerCase() === 'development';
   // Allow explicit dev overrides when GOLEM_ENVIRONMENT=development
-  const devRpc = process.env.NEXT_PUBLIC_GOLEM_BASE_DEV_RPC_URL || '';
-  const devWs = process.env.NEXT_PUBLIC_GOLEM_BASE_DEV_WS_URL || '';
+  const devRpc = process.env.NEXT_PUBLIC_ARKIV_DEV_RPC_URL || '';
+  const devWs = process.env.NEXT_PUBLIC_ARKIV_DEV_WS_URL || '';
   const baseRpc = isDevEnv && devRpc ? devRpc : BASE_RPC_URL;
   const baseWs = isDevEnv && devWs ? devWs : BASE_WS_URL;
   return {
-    mode: 'golem-base',
+    mode: 'arkiv',
     discovery_url: process.env.NEXT_PUBLIC_DISCOVERY_API_URL || 'http://195.201.39.101:9001/api/v1',
-    golem_base_rpc_url: baseRpc,
-    golem_base_ws_url: baseWs,
+    arkiv_rpc_url: baseRpc,
+    arkiv_ws_url: baseWs,
     chain_id: (() => {
       // Keep existing default for backward compat; payments chain handled separately in UI
       const def = process.env.NEXT_PUBLIC_EVM_CHAIN_ID || '0x6013a';
@@ -41,16 +43,29 @@ const ACTIVE_KEY = 'requestor_ads_active_profile_v1';
 
 function uuid() { return Math.random().toString(36).slice(2, 10); }
 
+function normalizeAdsConfig(config: StoredAdsConfig): AdsConfig {
+  const next = { ...DEFAULTS, ...config };
+  next.mode = next.mode === 'central' ? 'central' : 'arkiv';
+  next.arkiv_rpc_url = config.arkiv_rpc_url || DEFAULTS.arkiv_rpc_url;
+  next.arkiv_ws_url = config.arkiv_ws_url || DEFAULTS.arkiv_ws_url;
+  return next;
+}
+
 function loadProfiles(): { profiles: AdsProfile[]; activeId: string } {
   if (typeof window === 'undefined') return { profiles: [{ id: 'default', name: 'Default', config: DEFAULTS }], activeId: 'default' };
   try {
     const stored = JSON.parse(localStorage.getItem(PROFILES_KEY) || '[]');
-    let profiles: AdsProfile[] = Array.isArray(stored) ? stored : [];
-    let shouldPersistProfiles = false;
+    let profiles: AdsProfile[] = Array.isArray(stored)
+      ? stored.map((profile) => ({
+          ...profile,
+          config: normalizeAdsConfig(profile.config || {}),
+        }))
+      : [];
+    let shouldPersistProfiles = profiles.length > 0;
     // Migrate from legacy single-config storage
     const legacy = JSON.parse(localStorage.getItem('requestor_ads_config_v1') || 'null');
     if (!profiles.length && legacy && typeof legacy === 'object') {
-      profiles = [{ id: 'default', name: 'Default', config: { ...DEFAULTS, ...legacy } }];
+      profiles = [{ id: 'default', name: 'Default', config: normalizeAdsConfig(legacy) }];
       shouldPersistProfiles = true;
     }
     if (!profiles.length) {

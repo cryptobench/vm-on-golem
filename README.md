@@ -164,6 +164,8 @@ Service READMEs:
 
 * Provider: `provider-server/README.md`
 * Requestor: `requestor-server/README.md`
+* Discovery architecture: `docs/discovery.md`
+* Central discovery backend: `central-discovery-server/README.md`
 * Port checker: `port-checker-server/README.md`
 
 ---

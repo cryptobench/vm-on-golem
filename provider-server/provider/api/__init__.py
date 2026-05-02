@@ -1,10 +1,10 @@
 from .models import (
-    CreateVMRequest,
-    VMResponse,
     AddSSHKeyRequest,
+    CreateVMRequest,
     ErrorResponse,
     ListVMsResponse,
-    ProviderStatusResponse
+    ProviderStatusResponse,
+    VMResponse,
 )
 from .routes import router
 
@@ -15,5 +15,5 @@ __all__ = [
     "ErrorResponse",
     "ListVMsResponse",
     "ProviderStatusResponse",
-    "router"
+    "router",
 ]

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from typing import Optional, List, Tuple
+from typing import List, Optional, Tuple
 
-from web3 import Web3
 from golem_faucet import PowFaucetClient
-from ..utils.logging import setup_logger
+from web3 import Web3
+
 from ..config import RequestorConfig
+from ..utils.logging import setup_logger
 
 logger = setup_logger(__name__)
 
@@ -15,22 +16,25 @@ class L2FaucetService:
         self.cfg = config
         self.web3 = Web3(Web3.HTTPProvider(config.polygon_rpc_url))
         self.client = PowFaucetClient(
-            faucet_url=getattr(config, 'l2_faucet_url', '') or 'https://l2.hoodi.arkiv.network/faucet',
-            captcha_base_url=getattr(config, 'captcha_url', 'https://cap.gobas.me'),
-            captcha_api_key=getattr(config, 'captcha_api_key', '05381a2cef5e'),
+            faucet_url=getattr(config, "l2_faucet_url", "")
+            or "https://l2.hoodi.arkiv.network/faucet",
+            captcha_base_url=getattr(config, "captcha_url", "https://cap.gobas.me"),
+            captcha_api_key=getattr(config, "captcha_api_key", "05381a2cef5e"),
         )
 
     def _balance_eth(self, address: str) -> float:
         try:
             wei = self.web3.eth.get_balance(Web3.to_checksum_address(address))
-            return float(self.web3.from_wei(wei, 'ether'))
+            return float(self.web3.from_wei(wei, "ether"))
         except Exception as e:
             logger.warning(f"balance check failed: {e}")
             return 0.0
 
     async def request_funds(self, address: str) -> Optional[str]:
         # Disallow faucet if explicitly disabled by profile
-        if hasattr(self.cfg, 'faucet_enabled') and not getattr(self.cfg, 'faucet_enabled'):
+        if hasattr(self.cfg, "faucet_enabled") and not getattr(
+            self.cfg, "faucet_enabled"
+        ):
             logger.info("Faucet disabled for current payments network; skipping.")
             return None
         bal = self._balance_eth(address)
@@ -41,8 +45,8 @@ class L2FaucetService:
         if not chall:
             logger.error("could not fetch faucet challenge")
             return None
-        token = chall.get('token')
-        challenge_list = chall.get('challenge') or []
+        token = chall.get("token")
+        challenge_list = chall.get("challenge") or []
         solutions: List[Tuple[str, str, int]] = []
         for salt, target in challenge_list:
             nonce = PowFaucetClient.solve_challenge(salt, target)

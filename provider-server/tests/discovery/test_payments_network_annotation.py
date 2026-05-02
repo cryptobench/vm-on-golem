@@ -1,8 +1,9 @@
 import asyncio
+
 import pytest
 
-from provider.discovery.golem_base_advertiser import GolemBaseAdvertiser
 from provider.config import settings
+from provider.discovery.arkiv_publisher import ArkivDiscoveryPublisher
 
 
 class StubResourceTracker:
@@ -20,25 +21,32 @@ class StubResourceTracker:
 
 
 @pytest.mark.asyncio
-async def test_golem_base_advertiser_includes_payments_network(monkeypatch):
+async def test_arkiv_publisher_includes_payments_network(monkeypatch):
     class StubClient:
         async def disconnect(self):
             pass
 
         async def create_entities(self, entities):
             nonlocal_capture["string_annotations"] = entities[0].string_annotations
+
             class R:
                 entity_key = "abc"
+
             return [R()]
 
     nonlocal_capture = {}
     rt = StubResourceTracker({"cpu": 2, "memory": 2, "storage": 10})
-    adv = GolemBaseAdvertiser(rt)
+    adv = ArkivDiscoveryPublisher(rt)
     adv.client = StubClient()
     settings.PUBLIC_IP = "1.2.3.4"
     # Ensure create path
-    from provider.discovery import golem_base_advertiser as gba
-    monkeypatch.setattr(gba, "get_provider_entity_keys", lambda *a, **k: asyncio.sleep(0, result=[]))
+    from provider.discovery import arkiv_publisher
+
+    monkeypatch.setattr(
+        arkiv_publisher,
+        "get_provider_entity_keys",
+        lambda *a, **k: asyncio.sleep(0, result=[]),
+    )
 
     # Set a known payments profile
     settings.PAYMENTS_NETWORK = "l2.hoodi"

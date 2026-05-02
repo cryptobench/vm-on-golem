@@ -1,15 +1,16 @@
 """VM management service."""
-from typing import Dict, List, Optional
 from datetime import datetime
+from typing import Dict, List, Optional
 
-from ..provider.client import ProviderClient
 from ..errors import RequestorError, VMError
+from ..provider.client import ProviderClient
 from .database_service import DatabaseService
 from .ssh_service import SSHService
 
+
 class VMService:
     """Service for VM operations."""
-    
+
     def __init__(
         self,
         db_service: DatabaseService,
@@ -46,10 +47,10 @@ class VMService:
                 memory=memory,
                 storage=storage,
                 ssh_key=ssh_key,
-                stream_id=stream_id
+                stream_id=stream_id,
             )
 
-            vm_id = job.get('vm_id') or name
+            vm_id = job.get("vm_id") or job.get("id") or name
 
             # Save initial record with 'creating' status (no port yet)
             await self.db.save_vm(
@@ -57,30 +58,30 @@ class VMService:
                 provider_ip=provider_ip,
                 vm_id=vm_id,
                 config={
-                    'cpu': cpu,
-                    'memory': memory,
-                    'storage': storage,
+                    "cpu": cpu,
+                    "memory": memory,
+                    "storage": storage,
                     **({"stream_id": stream_id} if stream_id is not None else {}),
                 },
-                status='creating'
+                status="creating",
             )
 
-            # Poll provider until VM is ready, then fetch access info
-            import asyncio as _asyncio
-            deadline = _asyncio.get_event_loop().time() + 600.0  # 10 minutes max
-            last_status = 'creating'
-            while _asyncio.get_event_loop().time() < deadline:
-                try:
+            if "job_id" in job and job.get("status") not in {"ready", "running"}:
+                # Poll provider until VM is ready, then fetch access info.
+                import asyncio as _asyncio
+
+                deadline = _asyncio.get_event_loop().time() + 600.0  # 10 minutes max
+                last_status = "creating"
+                while _asyncio.get_event_loop().time() < deadline:
                     info = await self.provider_client.get_vm_info(vm_id)
-                    last_status = (info.get('status') or '').lower() or last_status
-                    if last_status == 'running':
+                    last_status = (info.get("status") or "").lower() or last_status
+                    if last_status == "running":
                         break
-                except Exception:
-                    # Best-effort: ignore transient errors during startup
-                    pass
-                await _asyncio.sleep(2.0)
-            if last_status != 'running':
-                raise VMError(f"VM did not become ready in time (status={last_status})")
+                    await _asyncio.sleep(2.0)
+                if last_status != "running":
+                    raise VMError(
+                        f"VM did not become ready in time (status={last_status})"
+                    )
 
             # Get VM access info (ssh port)
             access_info = await self.provider_client.get_vm_access(vm_id)
@@ -90,26 +91,26 @@ class VMService:
 
             # Save VM details to database
             config = {
-                'cpu': cpu,
-                'memory': memory,
-                'storage': storage,
-                'ssh_port': access_info['ssh_port'],
+                "cpu": cpu,
+                "memory": memory,
+                "storage": storage,
+                "ssh_port": access_info["ssh_port"],
                 **({"stream_id": stream_id} if stream_id is not None else {}),
             }
             await self.db.save_vm(
                 name=name,
                 provider_ip=provider_ip,
-                vm_id=access_info['vm_id'],
+                vm_id=access_info["vm_id"],
                 config=config,
-                status='running'
+                status="running",
             )
 
             return {
-                'name': name,
-                'provider_ip': provider_ip,
-                'vm_id': access_info['vm_id'],
-                'config': config,
-                'status': 'running'
+                "name": name,
+                "provider_ip": provider_ip,
+                "vm_id": access_info["vm_id"],
+                "config": config,
+                "status": "running",
             }
 
         except Exception as e:
@@ -125,14 +126,14 @@ class VMService:
 
             try:
                 # Destroy VM on provider
-                await self.provider_client.destroy_vm(vm['vm_id'])
+                await self.provider_client.destroy_vm(vm["vm_id"])
             except Exception as e:
                 if "Not Found" not in str(e):
                     raise
 
             # Attempt to terminate stream if present
             try:
-                stream_id = vm.get('config', {}).get('stream_id')
+                stream_id = vm.get("config", {}).get("stream_id")
                 if stream_id is not None and self.blockchain_client:
                     self.blockchain_client.terminate(stream_id)
             except Exception:
@@ -154,8 +155,8 @@ class VMService:
                 raise VMError(f"VM '{name}' not found")
 
             # Start VM on provider
-            await self.provider_client.start_vm(vm['vm_id'])
-            
+            await self.provider_client.start_vm(vm["vm_id"])
+
             # Update status in database
             await self.db.update_vm_status(name, "running")
 
@@ -171,14 +172,14 @@ class VMService:
                 raise VMError(f"VM '{name}' not found")
 
             # Stop VM on provider
-            await self.provider_client.stop_vm(vm['vm_id'])
-            
+            await self.provider_client.stop_vm(vm["vm_id"])
+
             # Update status in database
             await self.db.update_vm_status(name, "stopped")
 
             # Best-effort terminate stream on stop (treat stop as end of agreement)
             try:
-                stream_id = vm.get('config', {}).get('stream_id')
+                stream_id = vm.get("config", {}).get("stream_id")
                 if stream_id is not None and self.blockchain_client:
                     self.blockchain_client.terminate(stream_id)
             except Exception:
@@ -210,21 +211,21 @@ class VMService:
 
         key_pair = self.ssh_service.get_key_pair_sync()
         connect_command = self.ssh_service.format_ssh_command(
-            host=vm['provider_ip'],
-            port=vm['config'].get('ssh_port', 'N/A'),
-            private_key_path=key_pair.private_key.absolute()
+            host=vm["provider_ip"],
+            port=vm["config"].get("ssh_port", "N/A"),
+            private_key_path=key_pair.private_key.absolute(),
         )
 
         row = [
-            vm['name'],
-            vm['status'],
-            vm['provider_ip'],
-            vm['config'].get('ssh_port', 'N/A'),
-            vm['config']['cpu'],
-            vm['config']['memory'],
-            vm['config']['storage'],
+            vm["name"],
+            vm["status"],
+            vm["provider_ip"],
+            vm["config"].get("ssh_port", "N/A"),
+            vm["config"]["cpu"],
+            vm["config"]["memory"],
+            vm["config"]["storage"],
             connect_command,
-            vm['created_at']
+            vm["created_at"],
         ]
 
         if colorize:
@@ -256,7 +257,7 @@ class VMService:
             "Memory (GB)",
             "Disk (GB)",
             "Connect Command",
-            "Created"
+            "Created",
         ]
 
     async def get_vm_stats(self, name: str) -> Dict:
@@ -269,9 +270,9 @@ class VMService:
             key_pair = await self.ssh_service.get_key_pair()
 
             return self.ssh_service.get_vm_stats(
-                host=vm['provider_ip'],
-                port=vm['config']['ssh_port'],
-                private_key_path=key_pair.private_key
+                host=vm["provider_ip"],
+                port=vm["config"]["ssh_port"],
+                private_key_path=key_pair.private_key,
             )
         except Exception as e:
             raise VMError(f"Failed to get VM stats: {str(e)}")

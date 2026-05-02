@@ -1,0 +1,143 @@
+from pathlib import Path
+
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+
+from .api import routes
+from .container import Container
+from .errors import (
+    ConflictError,
+    DomainError,
+    ExternalServiceError,
+    NotFoundError,
+    ValidationError,
+)
+from .payments.errors import (
+    PaymentsDisabledError,
+    StreamLookupError,
+    StreamNotFoundError,
+)
+from .vm.models import VMNotFoundError
+from .vm.multipass_adapter import MultipassError
+
+
+def create_app() -> FastAPI:
+    app = FastAPI(title="VM on Golem Provider")
+    container = Container()
+    app.container = container
+    _configure_safe_defaults(container)
+    _wire_container(container)
+    _register_exception_handlers(app)
+    _register_middleware(app)
+    _register_lifecycle(app, container)
+    app.include_router(routes.router, prefix="/api/v1")
+    return app
+
+
+def _wire_container(container: Container) -> None:
+    container.wire(
+        modules=[
+            ".api.routes",
+            ".api.vm_routes",
+            ".api.payments_routes",
+            ".api.provider_routes",
+            ".api.summary_routes",
+        ]
+    )
+
+
+def _configure_safe_defaults(container: Container) -> None:
+    container.config.from_dict(
+        {
+            "VM_DATA_DIR": str(Path.home() / ".golem" / "provider" / "vms"),
+            "PROXY_STATE_DIR": str(Path.home() / ".golem" / "provider" / "proxy"),
+            "PORT_RANGE_START": 50800,
+            "PORT_RANGE_END": 50900,
+            "PORT": 7466,
+            "SKIP_PORT_VERIFICATION": True,
+        }
+    )
+
+
+def _register_exception_handlers(app: FastAPI) -> None:
+    @app.exception_handler(VMNotFoundError)
+    async def vm_not_found_exception_handler(request: Request, exc: VMNotFoundError):
+        return JSONResponse(status_code=404, content={"detail": str(exc)})
+
+    @app.exception_handler(NotFoundError)
+    async def not_found_exception_handler(request: Request, exc: NotFoundError):
+        return JSONResponse(status_code=404, content={"detail": str(exc)})
+
+    @app.exception_handler(StreamNotFoundError)
+    async def stream_not_found_exception_handler(
+        request: Request, exc: StreamNotFoundError
+    ):
+        return JSONResponse(status_code=404, content={"detail": str(exc)})
+
+    @app.exception_handler(ValidationError)
+    async def validation_exception_handler(request: Request, exc: ValidationError):
+        return JSONResponse(status_code=400, content={"detail": str(exc)})
+
+    @app.exception_handler(PaymentsDisabledError)
+    async def payments_disabled_exception_handler(
+        request: Request, exc: PaymentsDisabledError
+    ):
+        return JSONResponse(status_code=400, content={"detail": str(exc)})
+
+    @app.exception_handler(ConflictError)
+    async def conflict_exception_handler(request: Request, exc: ConflictError):
+        return JSONResponse(status_code=409, content={"detail": str(exc)})
+
+    @app.exception_handler(StreamLookupError)
+    async def stream_lookup_exception_handler(request: Request, exc: StreamLookupError):
+        return JSONResponse(status_code=502, content={"detail": str(exc)})
+
+    @app.exception_handler(ExternalServiceError)
+    async def external_service_exception_handler(
+        request: Request, exc: ExternalServiceError
+    ):
+        return JSONResponse(status_code=502, content={"detail": str(exc)})
+
+    @app.exception_handler(MultipassError)
+    async def multipass_exception_handler(request: Request, exc: MultipassError):
+        return JSONResponse(status_code=502, content={"detail": str(exc)})
+
+    @app.exception_handler(DomainError)
+    async def domain_exception_handler(request: Request, exc: DomainError):
+        return JSONResponse(status_code=400, content={"detail": str(exc)})
+
+    @app.exception_handler(Exception)
+    async def generic_exception_handler(request: Request, exc: Exception):
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "An unexpected error occurred"},
+        )
+
+
+def _register_middleware(app: FastAPI) -> None:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+
+def _register_lifecycle(app: FastAPI, container: Container) -> None:
+    @app.on_event("startup")
+    async def startup_event():
+        from .config import settings
+
+        container.config.from_dict(settings.model_dump())
+        provider_service = container.provider_service()
+        await provider_service.setup(app)
+
+    @app.on_event("shutdown")
+    async def shutdown_event():
+        provider_service = container.provider_service()
+        await provider_service.cleanup()
+
+
+app = create_app()

@@ -1,14 +1,14 @@
-import os
-import json
-import socket
-import logging
 import asyncio
+import json
+import logging
+import os
+import socket
 from pathlib import Path
-from typing import Optional, Set, List, Dict
 from threading import Lock
+from typing import Dict, List, Optional, Set
 
 from ..config import settings
-from ..network.port_verifier import PortVerifier, PortVerificationResult, ServerAttempt
+from ..network.port_verifier import PortVerificationResult, PortVerifier, ServerAttempt
 from ..utils.port_display import PortVerificationDisplay
 
 logger = logging.getLogger(__name__)
@@ -25,7 +25,7 @@ class PortManager:
         port_check_servers: Optional[List[str]] = None,
         discovery_port: Optional[int] = None,
         existing_ports: Optional[Set[int]] = None,
-        skip_verification: bool = False
+        skip_verification: bool = False,
     ):
         """Initialize the port manager.
 
@@ -40,7 +40,8 @@ class PortManager:
         self.start_port = start_port
         self.end_port = end_port
         self.state_file = state_file or os.path.expanduser(
-            "~/.golem/provider/ports.json")
+            "~/.golem/provider/ports.json"
+        )
         self.lock = Lock()
         self._used_ports: dict[str, int] = {}  # vm_id -> port
         self.verified_ports: Set[int] = set()
@@ -57,13 +58,12 @@ class PortManager:
         self.discovery_port = discovery_port or settings.PORT
         self.skip_verification = skip_verification
         self.port_verifier = PortVerifier(
-            self.port_check_servers,
-            discovery_port=self.discovery_port
+            self.port_check_servers, discovery_port=self.discovery_port
         )
 
         # Load state after setting existing ports
         self._load_state()
-        
+
         # Mark existing ports as used and remove from verified ports
         for port in self._existing_ports:
             if port in self.verified_ports:
@@ -82,7 +82,7 @@ class PortManager:
             provider_port=self.discovery_port,
             port_range_start=self.start_port,
             port_range_end=self.end_port,
-            skip_verification=self.skip_verification
+            skip_verification=self.skip_verification,
         )
         display.print_header()
 
@@ -91,10 +91,10 @@ class PortManager:
             logger.warning("⚠️  Port verification is disabled in development mode")
             logger.warning("   All ports will be considered available")
             logger.warning("   This should only be used for development/testing")
-            
+
             # Mark all ports as verified
             self.verified_ports = set(range(self.start_port, self.end_port))
-            
+
             # In development mode, we don't need to create any results
             # The display will handle development mode differently
             results = {}
@@ -104,7 +104,8 @@ class PortManager:
             logger.info(f"Starting port verification...")
             logger.info(f"SSH ports range: {self.start_port}-{self.end_port}")
             logger.info(
-                f"Using port check servers: {', '.join(self.port_check_servers)}")
+                f"Using port check servers: {', '.join(self.port_check_servers)}"
+            )
 
             # Clear existing verified ports before verification
             self.verified_ports.clear()
@@ -116,11 +117,9 @@ class PortManager:
                     logger.error(f"Port verification failed: {e}")
                     display.print_summary(
                         PortVerificationResult(
-                            port=self.discovery_port,
-                            accessible=False,
-                            error=str(e)
+                            port=self.discovery_port, accessible=False, error=str(e)
                         ),
-                        {}
+                        {},
                     )
                     return False
 
@@ -129,7 +128,7 @@ class PortManager:
             port=self.discovery_port,
             accessible=True,
             verified_by="local_verification",
-            attempts=[ServerAttempt(server="local_verification", success=True)]
+            attempts=[ServerAttempt(server="local_verification", success=True)],
         )
 
         # Check if discovery port was verified
@@ -138,11 +137,9 @@ class PortManager:
             logger.error(error_msg)
             display.print_summary(
                 PortVerificationResult(
-                    port=self.discovery_port,
-                    accessible=False,
-                    error=error_msg
+                    port=self.discovery_port, accessible=False, error=error_msg
                 ),
-                {}
+                {},
             )
             return False
 
@@ -151,20 +148,27 @@ class PortManager:
         await display.print_discovery_status(discovery_result)
 
         if not discovery_result.accessible:
-            error_msg = discovery_result.error or f"Port {self.discovery_port} is not accessible"
+            error_msg = (
+                discovery_result.error
+                or f"Port {self.discovery_port} is not accessible"
+            )
             logger.error(f"Failed to verify discovery port: {error_msg}")
             # Print summary before returning
             display.print_summary(discovery_result, {})
             return False
 
         # Display SSH ports status with animation
-        ssh_results = {port: result for port,
-                       result in results.items() if port != self.discovery_port}
+        ssh_results = {
+            port: result
+            for port, result in results.items()
+            if port != self.discovery_port
+        }
         await display.print_ssh_status(ssh_results)
 
         # Store verified ports
         self.verified_ports = {
-            port for port, result in ssh_results.items() if result.accessible}
+            port for port, result in ssh_results.items() if result.accessible
+        }
 
         # Only show critical issues and quick fix if there are problems
         if not discovery_result.accessible or not self.verified_ports:
@@ -175,15 +179,16 @@ class PortManager:
         display.print_summary(discovery_result, ssh_results)
 
         if self.skip_verification:
-            logger.info(f"Port verification skipped - all {len(self.verified_ports)} ports marked as available")
+            logger.info(
+                f"Port verification skipped - all {len(self.verified_ports)} ports marked as available"
+            )
             return True
         else:
             if not self.verified_ports:
                 logger.error("No SSH ports were verified as accessible")
                 return False
 
-            logger.info(
-                f"Successfully verified {len(self.verified_ports)} SSH ports")
+            logger.info(f"Successfully verified {len(self.verified_ports)} SSH ports")
             return True
 
     def _load_state(self) -> None:
@@ -191,10 +196,9 @@ class PortManager:
         try:
             state_path = Path(self.state_file)
             if state_path.exists():
-                with open(state_path, 'r') as f:
+                with open(state_path, "r") as f:
                     self._used_ports = json.load(f)
-                logger.info(
-                    f"Loaded port assignments for {len(self._used_ports)} VMs")
+                logger.info(f"Loaded port assignments for {len(self._used_ports)} VMs")
             else:
                 state_path.parent.mkdir(parents=True, exist_ok=True)
                 self._save_state()
@@ -205,7 +209,7 @@ class PortManager:
     def _save_state(self) -> None:
         """Save current port assignments to state file."""
         try:
-            with open(self.state_file, 'w') as f:
+            with open(self.state_file, "w") as f:
                 json.dump(self._used_ports, f)
         except Exception as e:
             logger.error(f"Failed to save port state: {e}")
@@ -230,10 +234,9 @@ class PortManager:
                 if port in self.verified_ports:
                     # Quick check if port is still available
                     try:
-                        sock = socket.socket(
-                            socket.AF_INET, socket.SOCK_STREAM)
+                        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                         sock.settimeout(1)
-                        result = sock.connect_ex(('127.0.0.1', port))
+                        result = sock.connect_ex(("127.0.0.1", port))
                         sock.close()
 
                         if result != 0:  # Port is available
@@ -254,27 +257,31 @@ class PortManager:
             used_ports = self._get_used_ports()
 
             # Find first available verified port
-            ports_to_check = sorted(list(self.verified_ports)) if not self.skip_verification else range(
-                self.start_port, self.end_port)
+            ports_to_check = (
+                sorted(list(self.verified_ports))
+                if not self.skip_verification
+                else range(self.start_port, self.end_port)
+            )
             for port in ports_to_check:
                 if port not in used_ports:
                     # Quick check if port is actually available
                     try:
-                        sock = socket.socket(
-                            socket.AF_INET, socket.SOCK_STREAM)
+                        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                         sock.settimeout(1)
-                        result = sock.connect_ex(('127.0.0.1', port))
+                        result = sock.connect_ex(("127.0.0.1", port))
                         sock.close()
 
                         if result != 0:  # Port is available
                             self._used_ports[vm_id] = port
                             self._save_state()
-                            logger.info(
-                                f"Allocated port {port} for VM {vm_id}")
+                            logger.info(f"Allocated port {port} for VM {vm_id}")
                             return port
                         else:
                             # Port is in use, remove from verified ports
-                            if not self.skip_verification and port in self.verified_ports:
+                            if (
+                                not self.skip_verification
+                                and port in self.verified_ports
+                            ):
                                 self.verified_ports.remove(port)
                     except Exception as e:
                         logger.debug(f"Failed to check port {port}: {e}")

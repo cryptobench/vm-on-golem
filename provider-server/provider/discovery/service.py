@@ -1,34 +1,5 @@
-import asyncio
-from typing import Optional
+"""Compatibility wrapper for old advertisement service imports."""
 
-from .advertiser import Advertiser
-from ..config import settings
+from .publishing_service import DiscoveryPublishingService
 
-class AdvertisementService:
-    """Service for managing the advertisement lifecycle."""
-
-    def __init__(self, advertiser: Advertiser):
-        self.advertiser = advertiser
-        self._task: Optional[asyncio.Task] = None
-
-    async def start(self):
-        """Initialize and start the advertiser."""
-        await self.advertiser.initialize()
-        self._task = asyncio.create_task(self.advertiser.start_loop())
-
-    async def stop(self):
-        """Stop the advertiser."""
-        if self._task:
-            self._task.cancel()
-            try:
-                await self._task
-            except asyncio.CancelledError:
-                pass
-        await self.advertiser.stop()
-
-    async def trigger_update(self):
-        """Trigger an immediate advertisement update."""
-        try:
-            await self.advertiser.post_advertisement()
-        except Exception:
-            pass
+__all__ = ["DiscoveryPublishingService"]

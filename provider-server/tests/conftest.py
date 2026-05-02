@@ -12,7 +12,7 @@ os.environ.setdefault(
 # Avoid auto-detecting multipass binary during settings load
 os.environ.setdefault("GOLEM_PROVIDER_MULTIPASS_BINARY_PATH", "/bin/echo")
 
-# Provide a PUBLIC_IP to avoid any detection logic in advertisers/tests
+# Provide a PUBLIC_IP to avoid detection logic in publisher tests
 os.environ.setdefault("GOLEM_PROVIDER_PUBLIC_IP", "127.0.0.1")
 
 # Make retries/timeouts fast in tests to avoid long waits

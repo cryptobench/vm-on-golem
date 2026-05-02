@@ -1,94 +1,18 @@
 import asyncio
 import os
-import sys as _sys
 import socket
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+import sys as _sys
 from typing import Optional
-
-from .utils.logging import setup_logger
-
 
 # If the invocation includes --json, mute logs as early as possible
 if "--json" in _sys.argv:
     os.environ["GOLEM_SILENCE_LOGS"] = "1"
 
-# Defer heavy local imports (may import config) until after we decide on silence
-from .container import Container
+from .app import app
 from .config import settings  # used by pricing CLI and server commands
-from .service import ProviderService
+from .utils.logging import setup_logger
 
 logger = setup_logger(__name__)
-
-app = FastAPI(title="VM on Golem Provider")
-container = Container()
-app.container = container
-container.wire(modules=[".api.routes"])
-
-# Minimal safe defaults so DI providers that rely on config have paths before runtime
-try:
-    from pathlib import Path as _Path
-    container.config.from_dict({
-        "VM_DATA_DIR": str(_Path.home() / ".golem" / "provider" / "vms"),
-        "PROXY_STATE_DIR": str(_Path.home() / ".golem" / "provider" / "proxy"),
-        "PORT_RANGE_START": 50800,
-        "PORT_RANGE_END": 50900,
-        "PORT": 7466,
-        "SKIP_PORT_VERIFICATION": True,
-    })
-except Exception:
-    pass
-
-from .vm.models import VMNotFoundError
-from fastapi import Request
-from fastapi.responses import JSONResponse
-
-@app.exception_handler(VMNotFoundError)
-async def vm_not_found_exception_handler(request: Request, exc: VMNotFoundError):
-    return JSONResponse(
-        status_code=404,
-        content={"message": str(exc)},
-    )
-
-@app.exception_handler(Exception)
-async def generic_exception_handler(request: Request, exc: Exception):
-    return JSONResponse(
-        status_code=500,
-        content={"message": "An unexpected error occurred"},
-    )
-
-# Add CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins
-    allow_credentials=True,
-    allow_methods=["*"],  # Allows all methods
-    allow_headers=["*"],  # Allows all headers
-)
-
-@app.on_event("startup")
-async def startup_event():
-    """Handle application startup."""
-    # Load configuration into container lazily at runtime
-    from .config import settings as _settings
-    try:
-        container.config.from_dict(_settings.model_dump())
-    except Exception:
-        # Fallback for environments without pydantic v2 model_dump
-        container.config.from_pydantic(_settings)
-    provider_service = container.provider_service()
-    await provider_service.setup(app)
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Handle application shutdown."""
-    provider_service = container.provider_service()
-    await provider_service.cleanup()
-
-# Import routes after app creation to avoid circular imports
-from .api import routes
-app.include_router(routes.router, prefix="/api/v1")
 
 # Export app for uvicorn
 __all__ = ["app", "start"]
@@ -99,6 +23,7 @@ def check_requirements():
     try:
         # Import settings to trigger validation
         from .config import settings
+
         return True
     except Exception as e:
         logger.error(f"Requirements check failed: {e}")
@@ -117,9 +42,7 @@ async def verify_provider_port(port: int) -> bool:
     try:
         # Try to create a temporary listener
         server = await asyncio.start_server(
-            lambda r, w: None,  # Empty callback
-            '0.0.0.0',
-            port
+            lambda r, w: None, "0.0.0.0", port  # Empty callback
         )
         server.close()
         await server.wait_closed()
@@ -137,12 +60,14 @@ async def verify_provider_port(port: int) -> bool:
 # The get_local_ip function has been removed as this logic is now handled in config.py
 
 
-import typer
 import platform as _platform
+import shutil as _shutil
 import signal as _signal
 import time as _time
-import shutil as _shutil
+
 import psutil
+import typer
+
 try:
     from importlib import metadata
 except ImportError:
@@ -158,6 +83,7 @@ cli.add_typer(wallet_app, name="wallet")
 cli.add_typer(streams_app, name="streams")
 config_app = typer.Typer(help="Configure stream monitoring and withdrawals")
 cli.add_typer(config_app, name="config")
+
 
 @cli.callback()
 def main(ctx: typer.Context):
@@ -183,21 +109,32 @@ def _get_latest_version_from_pypi(pkg_name: str) -> Optional[str]:
 # Daemon/PID file management
 # ---------------------------
 
+
 def _pid_dir() -> str:
     from pathlib import Path
+
     plat = _platform.system().lower()
     if plat.startswith("darwin"):
         base = Path.home() / "Library" / "Application Support" / "Golem Provider"
     elif plat.startswith("windows"):
-        base = Path(os.environ.get("APPDATA", str(Path.home() / "AppData" / "Roaming"))) / "Golem Provider"
+        base = (
+            Path(os.environ.get("APPDATA", str(Path.home() / "AppData" / "Roaming")))
+            / "Golem Provider"
+        )
     else:
-        base = Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local" / "state"))) / "golem-provider"
+        base = (
+            Path(
+                os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local" / "state"))
+            )
+            / "golem-provider"
+        )
     base.mkdir(parents=True, exist_ok=True)
     return str(base)
 
 
 def _pid_path() -> str:
     from pathlib import Path
+
     return str(Path(_pid_dir()) / "provider.pid")
 
 
@@ -231,6 +168,7 @@ def _is_running(pid: int) -> bool:
 
 def _spawn_detached(argv: list[str], env: dict | None = None) -> int:
     import subprocess
+
     popen_kwargs = {
         "stdin": subprocess.DEVNULL,
         "stdout": subprocess.DEVNULL,
@@ -253,6 +191,7 @@ def _spawn_detached(argv: list[str], env: dict | None = None) -> int:
 
 def _self_command(base_args: list[str]) -> list[str]:
     import sys
+
     # When frozen (PyInstaller), sys.executable is the CLI binary
     if getattr(sys, "frozen", False):
         return [sys.executable] + base_args
@@ -265,6 +204,7 @@ def _self_command(base_args: list[str]) -> list[str]:
     try:
         import json as _json
         from urllib.request import urlopen
+
         with urlopen(f"https://pypi.org/pypi/{pkg_name}/json", timeout=5) as resp:
             data = _json.loads(resp.read().decode("utf-8"))
             return data.get("info", {}).get("version")
@@ -273,22 +213,27 @@ def _self_command(base_args: list[str]) -> list[str]:
 
 
 @cli.command("status")
-def status(json_out: bool = typer.Option(False, "--json", help="Output machine-readable JSON")):
+def status(
+    json_out: bool = typer.Option(False, "--json", help="Output machine-readable JSON")
+):
     """Show provider environment status and update info (pretty or JSON)."""
-    from .utils.logging import logger as _logger
-    from rich.console import Console
-    from rich.table import Table
-    from rich.panel import Panel
-    from rich import box
-
     # For JSON, set a process-wide mute env that setup_logger() respects
     import os as _os
+
+    from rich import box
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.table import Table
+
+    from .utils.logging import logger as _logger
+
     if json_out:
         _os.environ["GOLEM_SILENCE_LOGS"] = "1"
 
     # Temporarily quiet logs; when --json, suppress near everything
     prev_level = _logger.level
     import logging as _logging
+
     _root_logger = _logging.getLogger()
     _prev_root_level = _root_logger.level
     try:
@@ -337,7 +282,10 @@ def status(json_out: bool = typer.Option(False, "--json", help="Output machine-r
         mp["path"] = mp_path or None
         if mp_path:
             import subprocess
-            r = subprocess.run([mp_path, "version"], capture_output=True, text=True, timeout=5)
+
+            r = subprocess.run(
+                [mp_path, "version"], capture_output=True, text=True, timeout=5
+            )
             if r.returncode == 0:
                 mp["ok"] = True
                 mp["version"] = (r.stdout or r.stderr).strip()
@@ -419,8 +367,9 @@ def status(json_out: bool = typer.Option(False, "--json", help="Output machine-r
 
     # SSH port usage summary from state file + external reachability for full range
     try:
-        from pathlib import Path as _Path
         import json as _json
+        from pathlib import Path as _Path
+
         state_path = _Path(_settings.PROXY_STATE_DIR) / "ports.json"
         ports_in_use = []
         if state_path.exists():
@@ -454,7 +403,9 @@ def status(json_out: bool = typer.Option(False, "--json", help="Output machine-r
         external_batch_error: str | None = None
         try:
             verifier_all = PortVerifier(servers, discovery_port=port)
-            _ext_results = asyncio.run(verifier_all.verify_external_access(set(range(start, end))))
+            _ext_results = asyncio.run(
+                verifier_all.verify_external_access(set(range(start, end)))
+            )
             for prt, res in _ext_results.items():
                 p = int(prt)
                 ok = bool(getattr(res, "accessible", False))
@@ -475,21 +426,28 @@ def status(json_out: bool = typer.Option(False, "--json", help="Output machine-r
         # Build per-port details for JSON consumers
         details = []
         for p in range(start, end):
-            details.append({
-                "port": p,
-                "in_use": p in used,
-                "local_listening": p in used_listening,
-                "external_reachable": bool(ext_results_map.get(p, False)) if external_batch_ok else False,
-            })
+            details.append(
+                {
+                    "port": p,
+                    "in_use": p in used,
+                    "local_listening": p in used_listening,
+                    "external_reachable": bool(ext_results_map.get(p, False))
+                    if external_batch_ok
+                    else False,
+                }
+            )
 
         # Compute number of free ports that are actually externally reachable (usable)
         usable_free_count = None
         try:
             if external_batch_ok:
-                usable_free_count = len([
-                    p for p in range(start, end)
-                    if (p not in used) and bool(ext_results_map.get(p, False))
-                ])
+                usable_free_count = len(
+                    [
+                        p
+                        for p in range(start, end)
+                        if (p not in used) and bool(ext_results_map.get(p, False))
+                    ]
+                )
         except Exception:
             usable_free_count = None
 
@@ -501,7 +459,9 @@ def status(json_out: bool = typer.Option(False, "--json", help="Output machine-r
             "listening_ok": used_listening,
             "listening_issues": used_not_listening,
             "free_count": free_count,
-            "external_reachable_count": len([p for p in range(start, end) if p in external_ok]),
+            "external_reachable_count": len(
+                [p for p in range(start, end) if p in external_ok]
+            ),
             "firewall_issues_count": len(firewall_issues),
             "external_checked": external_batch_ok,
             "external_error": external_batch_error,
@@ -526,7 +486,11 @@ def status(json_out: bool = typer.Option(False, "--json", help="Output machine-r
             usable_free_out = int(usable_free_count)
 
         # Issues breakdown matching TTY wording
-        unreachable_count = total if (not external_batch_ok or _ext_reach == 0) else len(firewall_issues)
+        unreachable_count = (
+            total
+            if (not external_batch_ok or _ext_reach == 0)
+            else len(firewall_issues)
+        )
         not_listening_count = len(used_not_listening)
 
         # Build minimal per-port status list for JSON consumers
@@ -537,14 +501,20 @@ def status(json_out: bool = typer.Option(False, "--json", help="Output machine-r
         for p in range(start, end):
             listening = p in used_listening
             if external_batch_ok:
-                status_val = "reachable" if bool(ext_results_map.get(p, False)) else "unreachable"
+                status_val = (
+                    "reachable"
+                    if bool(ext_results_map.get(p, False))
+                    else "unreachable"
+                )
             else:
                 status_val = "unknown"
-            ports_detail.append({
-                "port": p,
-                "status": status_val,
-                "listening": bool(listening),
-            })
+            ports_detail.append(
+                {
+                    "port": p,
+                    "status": status_val,
+                    "listening": bool(listening),
+                }
+            )
 
         data["ports"]["ssh"] = {
             "range": [start, end],
@@ -599,15 +569,23 @@ def status(json_out: bool = typer.Option(False, "--json", help="Output machine-r
         json_issues.append("Provider API port not reachable externally")
         json_critical_provider_external = True
 
-    if json_critical_no_ssh or (not local["ok"]) or (not mp["ok"]) or json_critical_provider_external:
+    if (
+        json_critical_no_ssh
+        or (not local["ok"])
+        or (not mp["ok"])
+        or json_critical_provider_external
+    ):
         overall_status = "error"
     else:
-        overall_status = "healthy" if (not json_issues and not json_ssh_blocked) else "issues"
+        overall_status = (
+            "healthy" if (not json_issues and not json_ssh_blocked) else "issues"
+        )
 
     data["overall"] = {"status": overall_status, "issues": json_issues}
 
     if json_out:
         import json as _json
+
         print(_json.dumps(data, indent=2))
         # Restore logger level
         try:
@@ -672,7 +650,12 @@ def status(json_out: bool = typer.Option(False, "--json", help="Output machine-r
         critical_provider_external = True
 
     # Severity: Error when critical conditions are met; else Issues/Healthy
-    if critical_no_ssh or (not local["ok"]) or (not mp["ok"]) or critical_provider_external:
+    if (
+        critical_no_ssh
+        or (not local["ok"])
+        or (not mp["ok"])
+        or critical_provider_external
+    ):
         overall = "Error"
     else:
         overall = "Healthy" if (not issues and not ssh_blocked) else "Issues detected"
@@ -699,7 +682,10 @@ def status(json_out: bool = typer.Option(False, "--json", help="Output machine-r
     upd = data["version"]["update_available"]
     tbl.add_row("  Installed", f"[white]{ver_inst}[/white]")
     if upd:
-        tbl.add_row("  Latest", f"[bold bright_yellow]{ver_latest}[/bold bright_yellow]  [grey62](pip install -U golem-vm-provider)[/grey62]")
+        tbl.add_row(
+            "  Latest",
+            f"[bold bright_yellow]{ver_latest}[/bold bright_yellow]  [grey62](pip install -U golem-vm-provider)[/grey62]",
+        )
         tbl.add_row("  Update", "[bold bright_yellow]⬆️  yes[/bold bright_yellow]")
     else:
         tbl.add_row("  Latest", f"[cyan]{ver_latest}[/cyan]")
@@ -739,7 +725,7 @@ def status(json_out: bool = typer.Option(False, "--json", help="Output machine-r
     # SSH ports (condensed, actionable)
     if data["ports"].get("ssh"):
         ssh = data["ports"]["ssh"]
-        r0, r1 = ssh['range'][0], ssh['range'][1]-1
+        r0, r1 = ssh["range"][0], ssh["range"][1] - 1
         tbl.add_row("", "")
         status_val = str(ssh.get("status") or "blocked").lower()
         issues_obj = ssh.get("issues") or {}
@@ -764,13 +750,15 @@ def status(json_out: bool = typer.Option(False, "--json", help="Output machine-r
         tbl.add_row("  In use", str(in_use))
         if status_val == "blocked":
             # Show total not reachable externally
-            total_ports = (r1 - r0 + 1)
+            total_ports = r1 - r0 + 1
             cnt = unreachable_issues if unreachable_issues else total_ports
             tbl.add_row("  Issues", f"{cnt} not reachable externally")
-        elif (not_listening_issues or unreachable_issues):
+        elif not_listening_issues or unreachable_issues:
             parts = []
             if unreachable_issues:
-                parts.append(f"{unreachable_issues} unreachable (listening but blocked)")
+                parts.append(
+                    f"{unreachable_issues} unreachable (listening but blocked)"
+                )
             if not_listening_issues:
                 parts.append(f"{not_listening_issues} not listening")
             tbl.add_row("  Issues", ", ".join(parts))
@@ -825,11 +813,13 @@ def wallet_faucet_l2():
     """Request L2 faucet funds for the provider's payment address (native ETH)."""
     from .config import settings
     from .security.l2_faucet import L2FaucetService
+
     try:
         if not bool(getattr(settings, "FAUCET_ENABLED", False)):
             print("Faucet is disabled for current payments network.")
             raise typer.Exit(code=0)
         addr = settings.PROVIDER_ID
+
         async def _run():
             svc = L2FaucetService(settings)
             tx = await svc.request_funds(addr)
@@ -838,6 +828,7 @@ def wallet_faucet_l2():
             else:
                 # Either skipped due to sufficient balance or failed
                 pass
+
         asyncio.run(_run())
     except Exception as e:
         print(f"Error: {e}")
@@ -847,17 +838,24 @@ def wallet_faucet_l2():
 @streams_app.command("list")
 def streams_list(json_out: bool = typer.Option(False, "--json", help="Output in JSON")):
     """List all mapped streams with computed status."""
-    from .container import Container
-    from .config import settings
-    from .payments.blockchain_service import StreamPaymentReader
-    from .utils.pricing import fetch_glm_usd_price, fetch_eth_usd_price
-    from decimal import Decimal
-    from web3 import Web3
     import json as _json
+    from decimal import Decimal
+
+    from web3 import Web3
+
+    from .config import settings
+    from .container import Container
+    from .payments.blockchain_service import StreamPaymentReader
+    from .utils.pricing import fetch_eth_usd_price, fetch_glm_usd_price
+
     try:
         if json_out:
             os.environ["GOLEM_SILENCE_LOGS"] = "1"
-        if not settings.STREAM_PAYMENT_ADDRESS or settings.STREAM_PAYMENT_ADDRESS == "0x0000000000000000000000000000000000000000":
+        if (
+            not settings.STREAM_PAYMENT_ADDRESS
+            or settings.STREAM_PAYMENT_ADDRESS
+            == "0x0000000000000000000000000000000000000000"
+        ):
             if json_out:
                 print(_json.dumps({"error": "streaming_disabled"}, indent=2))
             else:
@@ -866,7 +864,9 @@ def streams_list(json_out: bool = typer.Option(False, "--json", help="Output in 
         c = Container()
         c.config.from_pydantic(settings)
         stream_map = c.stream_map()
-        reader = StreamPaymentReader(settings.POLYGON_RPC_URL, settings.STREAM_PAYMENT_ADDRESS)
+        reader = StreamPaymentReader(
+            settings.POLYGON_RPC_URL, settings.STREAM_PAYMENT_ADDRESS
+        )
         items = asyncio.run(stream_map.all_items())
         now = int(reader.web3.eth.get_block("latest")["timestamp"]) if items else 0
         rows = []
@@ -877,23 +877,27 @@ def streams_list(json_out: bool = typer.Option(False, "--json", help="Output in 
                 withdrawable = max(int(vested) - int(s["withdrawn"]), 0)
                 remaining = max(int(s["stopTime"]) - now, 0)
                 ok, reason = reader.verify_stream(int(stream_id), settings.PROVIDER_ID)
-                rows.append({
-                    "vm_id": vm_id,
-                    "stream_id": int(stream_id),
-                    "token": str(s.get("token")),
-                    "recipient": s["recipient"],
-                    "start": int(s["startTime"]),
-                    "stop": int(s["stopTime"]),
-                    "rate": int(s["ratePerSecond"]),
-                    "deposit": int(s["deposit"]),
-                    "withdrawn": int(s["withdrawn"]),
-                    "remaining": remaining,
-                    "verified": bool(ok),
-                    "reason": reason,
-                    "withdrawable": int(withdrawable),
-                })
+                rows.append(
+                    {
+                        "vm_id": vm_id,
+                        "stream_id": int(stream_id),
+                        "token": str(s.get("token")),
+                        "recipient": s["recipient"],
+                        "start": int(s["startTime"]),
+                        "stop": int(s["stopTime"]),
+                        "rate": int(s["ratePerSecond"]),
+                        "deposit": int(s["deposit"]),
+                        "withdrawn": int(s["withdrawn"]),
+                        "remaining": remaining,
+                        "verified": bool(ok),
+                        "reason": reason,
+                        "withdrawable": int(withdrawable),
+                    }
+                )
             except Exception as e:
-                rows.append({"vm_id": vm_id, "stream_id": int(stream_id), "error": str(e)})
+                rows.append(
+                    {"vm_id": vm_id, "stream_id": int(stream_id), "error": str(e)}
+                )
         if json_out:
             print(_json.dumps({"streams": rows}, indent=2))
             return
@@ -921,11 +925,22 @@ def streams_list(json_out: bool = typer.Option(False, "--json", help="Output in 
         table_rows = []
         for r in rows:
             if "error" in r:
-                table_rows.append([r["vm_id"], str(r["stream_id"]), "—", "ERROR", r.get("error", ""), "—"])
+                table_rows.append(
+                    [
+                        r["vm_id"],
+                        str(r["stream_id"]),
+                        "—",
+                        "ERROR",
+                        r.get("error", ""),
+                        "—",
+                    ]
+                )
                 continue
             token_addr = (r.get("token") or "").lower()
             sym = "ETH" if token_addr == ZERO.lower() else "GLM"
-            withdrawable_eth = Decimal(str(Web3.from_wei(int(r["withdrawable"]), "ether")))
+            withdrawable_eth = Decimal(
+                str(Web3.from_wei(int(r["withdrawable"]), "ether"))
+            )
             withdrawable_str = f"{withdrawable_eth:.6f} {sym}"
             price = price_cache.get(sym)
             usd_str = "—"
@@ -935,14 +950,16 @@ def streams_list(json_out: bool = typer.Option(False, "--json", help="Output in 
                     usd_str = f"${usd_val}"
                 except Exception:
                     usd_str = "—"
-            table_rows.append([
-                r["vm_id"],
-                str(r["stream_id"]),
-                f"{int(r['remaining'])}s",
-                "yes" if r["verified"] else "no",
-                withdrawable_str,
-                usd_str,
-            ])
+            table_rows.append(
+                [
+                    r["vm_id"],
+                    str(r["stream_id"]),
+                    f"{int(r['remaining'])}s",
+                    "yes" if r["verified"] else "no",
+                    withdrawable_str,
+                    usd_str,
+                ]
+            )
 
         headers = ["VM", "Stream", "Remaining", "Verified", "Withdrawable", "USD"]
         # Compute column widths
@@ -975,15 +992,21 @@ def streams_list(json_out: bool = typer.Option(False, "--json", help="Output in 
 
 
 @streams_app.command("show")
-def streams_show(vm_id: str = typer.Argument(..., help="VM id (requestor_name)"), json_out: bool = typer.Option(False, "--json")):
+def streams_show(
+    vm_id: str = typer.Argument(..., help="VM id (requestor_name)"),
+    json_out: bool = typer.Option(False, "--json"),
+):
     """Show a single VM's stream status."""
-    from .container import Container
-    from .config import settings
-    from .payments.blockchain_service import StreamPaymentReader
-    from .utils.pricing import fetch_glm_usd_price, fetch_eth_usd_price
-    from decimal import Decimal
-    from web3 import Web3
     import json as _json
+    from decimal import Decimal
+
+    from web3 import Web3
+
+    from .config import settings
+    from .container import Container
+    from .payments.blockchain_service import StreamPaymentReader
+    from .utils.pricing import fetch_eth_usd_price, fetch_glm_usd_price
+
     try:
         if json_out:
             os.environ["GOLEM_SILENCE_LOGS"] = "1"
@@ -993,11 +1016,17 @@ def streams_show(vm_id: str = typer.Argument(..., help="VM id (requestor_name)")
         sid = asyncio.run(stream_map.get(vm_id))
         if sid is None:
             if json_out:
-                print(_json.dumps({"error": "no_stream_mapping", "vm_id": vm_id}, indent=2))
+                print(
+                    _json.dumps(
+                        {"error": "no_stream_mapping", "vm_id": vm_id}, indent=2
+                    )
+                )
             else:
                 print("No stream mapped for this VM.")
             raise typer.Exit(code=1)
-        reader = StreamPaymentReader(settings.POLYGON_RPC_URL, settings.STREAM_PAYMENT_ADDRESS)
+        reader = StreamPaymentReader(
+            settings.POLYGON_RPC_URL, settings.STREAM_PAYMENT_ADDRESS
+        )
         s = reader.get_stream(int(sid))
         now = int(reader.web3.eth.get_block("latest")["timestamp"])  # type: ignore
         vested = max(min(now, int(s["stopTime"])) - int(s["startTime"]), 0) * int(s["ratePerSecond"])  # type: ignore
@@ -1032,16 +1061,22 @@ def streams_show(vm_id: str = typer.Argument(..., help="VM id (requestor_name)")
                     usd_str = f"${usd_val}"
                 except Exception:
                     usd_str = "—"
+
             def _fmt_seconds(sec: int) -> str:
                 m, s2 = divmod(int(sec), 60)
                 h, m = divmod(m, 60)
                 d, h = divmod(h, 24)
                 parts = []
-                if d: parts.append(f"{d}d")
-                if h: parts.append(f"{h}h")
-                if m and not d: parts.append(f"{m}m")
-                if s2 and not d and not h and not m: parts.append(f"{s2}s")
+                if d:
+                    parts.append(f"{d}d")
+                if h:
+                    parts.append(f"{h}h")
+                if m and not d:
+                    parts.append(f"{m}m")
+                if s2 and not d and not h and not m:
+                    parts.append(f"{s2}s")
                 return " ".join(parts) or "0s"
+
             # Pretty single-record display
             print("\nStream Details")
             headers = ["VM", "Stream", "Remaining", "Verified", "Withdrawable", "USD"]
@@ -1070,23 +1105,31 @@ def streams_show(vm_id: str = typer.Argument(..., help="VM id (requestor_name)")
             except Exception:
                 pass
 
+
 @streams_app.command("earnings")
-def streams_earnings(json_out: bool = typer.Option(False, "--json", help="Output in JSON")):
+def streams_earnings(
+    json_out: bool = typer.Option(False, "--json", help="Output in JSON")
+):
     """Summarize provider earnings: vested, withdrawn, and withdrawable totals."""
-    from .container import Container
-    from .config import settings
-    from .payments.blockchain_service import StreamPaymentReader
-    from .utils.pricing import fetch_glm_usd_price, fetch_eth_usd_price
-    from decimal import Decimal
-    from web3 import Web3
     import json as _json
+    from decimal import Decimal
+
+    from web3 import Web3
+
+    from .config import settings
+    from .container import Container
+    from .payments.blockchain_service import StreamPaymentReader
+    from .utils.pricing import fetch_eth_usd_price, fetch_glm_usd_price
+
     try:
         if json_out:
             os.environ["GOLEM_SILENCE_LOGS"] = "1"
         c = Container()
         c.config.from_pydantic(settings)
         stream_map = c.stream_map()
-        reader = StreamPaymentReader(settings.POLYGON_RPC_URL, settings.STREAM_PAYMENT_ADDRESS)
+        reader = StreamPaymentReader(
+            settings.POLYGON_RPC_URL, settings.STREAM_PAYMENT_ADDRESS
+        )
         items = asyncio.run(stream_map.all_items())
         now = int(reader.web3.eth.get_block("latest")["timestamp"]) if items else 0
         rows = []
@@ -1104,24 +1147,30 @@ def streams_earnings(json_out: bool = typer.Option(False, "--json", help="Output
                 total_withdrawn += int(s["withdrawn"])  # type: ignore
                 total_withdrawable += int(withdrawable)
                 sym = "ETH" if (s.get("token") or "").lower() == ZERO.lower() else "GLM"
-                sums_native[sym] += Decimal(str(Web3.from_wei(int(withdrawable), "ether")))
-                rows.append({
-                    "vm_id": vm_id,
-                    "stream_id": int(stream_id),
-                    "token": str(s.get("token")),
-                    "vested": int(vested),
-                    "withdrawn": int(s["withdrawn"]),
-                    "withdrawable": int(withdrawable),
-                })
+                sums_native[sym] += Decimal(
+                    str(Web3.from_wei(int(withdrawable), "ether"))
+                )
+                rows.append(
+                    {
+                        "vm_id": vm_id,
+                        "stream_id": int(stream_id),
+                        "token": str(s.get("token")),
+                        "vested": int(vested),
+                        "withdrawn": int(s["withdrawn"]),
+                        "withdrawable": int(withdrawable),
+                    }
+                )
             except Exception as e:
-                rows.append({"vm_id": vm_id, "stream_id": int(stream_id), "error": str(e)})
+                rows.append(
+                    {"vm_id": vm_id, "stream_id": int(stream_id), "error": str(e)}
+                )
         out = {
             "streams": rows,
             "totals": {
                 "vested": int(total_vested),
                 "withdrawn": int(total_withdrawn),
                 "withdrawable": int(total_withdrawable),
-            }
+            },
         }
         if json_out:
             print(_json.dumps(out, indent=2))
@@ -1129,6 +1178,7 @@ def streams_earnings(json_out: bool = typer.Option(False, "--json", help="Output
         # Human summary by token with USD
         price_eth = fetch_eth_usd_price()
         price_glm = fetch_glm_usd_price()
+
         def _fmt_usd(amount_native: Decimal, price: Optional[Decimal]) -> str:
             if price is None:
                 return "—"
@@ -1136,11 +1186,20 @@ def streams_earnings(json_out: bool = typer.Option(False, "--json", help="Output
                 return f"${(amount_native * price).quantize(Decimal('0.01'))}"
             except Exception:
                 return "—"
+
         print("\nEarnings Summary")
         headers = ["Token", "Withdrawable", "USD"]
         data_rows = [
-            ["ETH", f"{sums_native['ETH']:.6f} ETH", _fmt_usd(sums_native["ETH"], price_eth)],
-            ["GLM", f"{sums_native['GLM']:.6f} GLM", _fmt_usd(sums_native["GLM"], price_glm)],
+            [
+                "ETH",
+                f"{sums_native['ETH']:.6f} ETH",
+                _fmt_usd(sums_native["ETH"], price_eth),
+            ],
+            [
+                "GLM",
+                f"{sums_native['GLM']:.6f} GLM",
+                _fmt_usd(sums_native["GLM"], price_glm),
+            ],
         ]
         # Table widths
         w = [len(h) for h in headers]
@@ -1156,7 +1215,9 @@ def streams_earnings(json_out: bool = typer.Option(False, "--json", help="Output
             table = []
             for r in rows:
                 if "error" in r:
-                    table.append([r["vm_id"], str(r["stream_id"]), "ERROR", r.get("error", "")])
+                    table.append(
+                        [r["vm_id"], str(r["stream_id"]), "ERROR", r.get("error", "")]
+                    )
                     continue
                 sym = "ETH" if (r.get("token") or "").lower() == ZERO.lower() else "GLM"
                 nat = Decimal(str(Web3.from_wei(int(r["withdrawable"]), "ether")))
@@ -1178,7 +1239,7 @@ def streams_earnings(json_out: bool = typer.Option(False, "--json", help="Output
             try:
                 print(_json.dumps({"error": str(e)}, indent=2))
             except Exception:
-                print("{\"error\": \"unexpected\"}")
+                print('{"error": "unexpected"}')
         else:
             print(f"Error: {e}")
         raise typer.Exit(code=1)
@@ -1193,12 +1254,15 @@ def streams_earnings(json_out: bool = typer.Option(False, "--json", help="Output
 @streams_app.command("withdraw")
 def streams_withdraw(
     vm_id: str = typer.Option(None, "--vm-id", help="Withdraw for a single VM id"),
-    all_streams: bool = typer.Option(False, "--all", help="Withdraw for all mapped streams"),
+    all_streams: bool = typer.Option(
+        False, "--all", help="Withdraw for all mapped streams"
+    ),
 ):
     """Withdraw vested funds for one or all streams."""
-    from .container import Container
     from .config import settings
+    from .container import Container
     from .security.l2_faucet import L2FaucetService
+
     try:
         if not vm_id and not all_streams:
             print("Specify --vm-id or --all")
@@ -1237,15 +1301,27 @@ def streams_withdraw(
         print(f"Error: {e}")
         raise typer.Exit(code=1)
 
+
 @cli.command()
 def start(
-    no_verify_port: bool = typer.Option(False, "--no-verify-port", help="Skip provider port verification."),
-    network: str = typer.Option(None, "--network", help="Target network: 'development', 'testnet' or 'mainnet' (overrides env)"),
-    gui: bool = typer.Option(False, "--gui/--no-gui", help="Launch Electron GUI (default: no)"),
-    daemon: bool = typer.Option(False, "--daemon", help="Start in background and write a PID file"),
+    no_verify_port: bool = typer.Option(
+        False, "--no-verify-port", help="Skip provider port verification."
+    ),
+    network: str = typer.Option(
+        None,
+        "--network",
+        help="Target network: 'development', 'testnet' or 'mainnet' (overrides env)",
+    ),
+    gui: bool = typer.Option(
+        False, "--gui/--no-gui", help="Launch Electron GUI (default: no)"
+    ),
+    daemon: bool = typer.Option(
+        False, "--daemon", help="Start in background and write a PID file"
+    ),
     stop_vms_on_exit: Optional[bool] = typer.Option(
-        None, "--stop-vms-on-exit/--keep-vms-on-exit",
-        help="On shutdown: stop all VMs (default: keep VMs running)"
+        None,
+        "--stop-vms-on-exit/--keep-vms-on-exit",
+        help="On shutdown: stop all VMs (default: keep VMs running)",
     ),
 ):
     """Start the provider server."""
@@ -1264,7 +1340,9 @@ def start(
         # Force no GUI for daemonized child to avoid duplicates
         args.append("--no-gui")
         if stop_vms_on_exit is not None:
-            args.append("--stop-vms-on-exit" if stop_vms_on_exit else "--keep-vms-on-exit")
+            args.append(
+                "--stop-vms-on-exit" if stop_vms_on_exit else "--keep-vms-on-exit"
+            )
         cmd = _self_command(args)
         # Ensure GUI not auto-launched via env, regardless of defaults
         env = {**os.environ, "GOLEM_PROVIDER_LAUNCH_GUI": "0"}
@@ -1283,7 +1361,11 @@ def start(
 
 
 @cli.command()
-def stop(timeout: int = typer.Option(15, "--timeout", help="Seconds to wait for graceful shutdown")):
+def stop(
+    timeout: int = typer.Option(
+        15, "--timeout", help="Seconds to wait for graceful shutdown"
+    )
+):
     """Stop a background provider started with --daemon."""
     pid = _read_pid()
     if not pid:
@@ -1324,17 +1406,22 @@ def stop(timeout: int = typer.Option(15, "--timeout", help="Seconds to wait for 
     _remove_pid_file()
     print("Provider stopped")
 
+
 # Removed separate 'dev' command; use environment GOLEM_ENVIRONMENT=development instead.
+
 
 def _env_path_for(dev_mode: Optional[bool]) -> str:
     from pathlib import Path
+
     env_file = ".env.dev" if dev_mode else ".env"
     return str(Path(__file__).parent.parent / env_file)
 
+
 def _write_env_vars(path: str, updates: dict):
     # Simple .env updater: preserves other lines, replaces/append updated keys
-    import re
     import io
+    import re
+
     try:
         with open(path, "r") as f:
             lines = f.readlines()
@@ -1366,13 +1453,20 @@ def _write_env_vars(path: str, updates: dict):
 
 @config_app.command("withdraw")
 def config_withdraw(
-    enable: bool = typer.Option(None, "--enable", help="Enable/disable auto-withdraw (true/false)"),
-    interval: int = typer.Option(None, "--interval", help="Withdraw interval in seconds (e.g., 1800)"),
-    min_wei: int = typer.Option(None, "--min-wei", help="Only withdraw when >= this wei amount"),
+    enable: bool = typer.Option(
+        None, "--enable", help="Enable/disable auto-withdraw (true/false)"
+    ),
+    interval: int = typer.Option(
+        None, "--interval", help="Withdraw interval in seconds (e.g., 1800)"
+    ),
+    min_wei: int = typer.Option(
+        None, "--min-wei", help="Only withdraw when >= this wei amount"
+    ),
     dev: bool = typer.Option(False, "--dev", help="Write to .env.dev instead of .env"),
 ):
     """Configure provider auto-withdraw settings and persist to .env(.dev)."""
     from .config import settings
+
     env_path = _env_path_for(dev)
     updates = {}
     if enable is not None:
@@ -1403,13 +1497,22 @@ def config_withdraw(
 
 @config_app.command("monitor")
 def config_monitor(
-    enable: bool = typer.Option(None, "--enable", help="Enable/disable stream monitor (true/false)"),
-    interval: int = typer.Option(None, "--interval", help="Monitor interval in seconds (e.g., 30)"),
-    min_remaining: int = typer.Option(None, "--min-remaining", help="Minimum remaining runway to keep VM running (seconds)"),
+    enable: bool = typer.Option(
+        None, "--enable", help="Enable/disable stream monitor (true/false)"
+    ),
+    interval: int = typer.Option(
+        None, "--interval", help="Monitor interval in seconds (e.g., 30)"
+    ),
+    min_remaining: int = typer.Option(
+        None,
+        "--min-remaining",
+        help="Minimum remaining runway to keep VM running (seconds)",
+    ),
     dev: bool = typer.Option(False, "--dev", help="Write to .env.dev instead of .env"),
 ):
     """Configure provider stream monitor and persist to .env(.dev)."""
     from .config import settings
+
     env_path = _env_path_for(dev)
     updates = {}
     if enable is not None:
@@ -1437,10 +1540,13 @@ def config_monitor(
     _write_env_vars(env_path, updates)
     print(f"Updated monitor settings in {env_path}")
 
+
 def _print_pricing_examples(glm_usd):
     from decimal import Decimal
+
     from .utils.pricing import calculate_monthly_cost, calculate_monthly_cost_usd
     from .vm.models import VMResources
+
     examples = [
         ("Small", VMResources(cpu=1, memory=1, storage=10)),
         ("Medium", VMResources(cpu=2, memory=4, storage=20)),
@@ -1458,10 +1564,13 @@ def _print_pricing_examples(glm_usd):
             f"- {name} ({res.cpu}C, {res.memory}GB RAM, {res.storage}GB Disk): ~{usd_str} per month (~{glm_str})"
         )
 
+
 def _maybe_launch_gui(port: int):
-    import subprocess, shutil
     import os as _os
+    import shutil
+    import subprocess
     from pathlib import Path
+
     root = Path(__file__).parent.parent.parent
     gui_dir = root / "provider-gui"
     if not gui_dir.exists():
@@ -1469,11 +1578,21 @@ def _maybe_launch_gui(port: int):
         return
     cmd = None
     npm = shutil.which("npm")
-    electron_bin = gui_dir / "node_modules" / "electron" / "dist" / ("electron.exe" if _sys.platform.startswith("win") else "electron")
+    electron_bin = (
+        gui_dir
+        / "node_modules"
+        / "electron"
+        / "dist"
+        / ("electron.exe" if _sys.platform.startswith("win") else "electron")
+    )
     try:
         # Ensure dependencies (electron) are present
         if npm and not electron_bin.exists():
-            install_cmd = [npm, "ci", "--silent"] if (gui_dir / "package-lock.json").exists() else [npm, "install", "--silent"]
+            install_cmd = (
+                [npm, "ci", "--silent"]
+                if (gui_dir / "package-lock.json").exists()
+                else [npm, "install", "--silent"]
+            )
             logger.info("Installing Provider GUI dependencies…")
             subprocess.run(install_cmd, cwd=str(gui_dir), env=os.environ, check=True)
     except Exception as e:
@@ -1533,8 +1652,10 @@ def run_server(
     """Helper to run the uvicorn server."""
     import sys
     from pathlib import Path
-    from dotenv import load_dotenv
+
     import uvicorn
+    from dotenv import load_dotenv
+
     # Decide dev mode from explicit arg or environment (unified only)
     if dev_mode is None:
         env_val = os.environ.get("GOLEM_ENVIRONMENT", "")
@@ -1551,12 +1672,13 @@ def run_server(
     # Apply shutdown behavior override early so it is reflected in settings
     if stop_vms_on_exit is not None:
         os.environ["GOLEM_PROVIDER_STOP_VMS_ON_EXIT"] = "1" if stop_vms_on_exit else "0"
-    
+
     # The logic for setting the public IP in dev mode is now handled in config.py
     # The following lines are no longer needed and have been removed.
 
     # Import settings after loading env
     from .config import settings
+
     if network:
         try:
             settings.NETWORK = network
@@ -1570,7 +1692,7 @@ def run_server(
         # Log environment variables
         logger.info("Environment variables:")
         for key, value in os.environ.items():
-            if key.startswith('GOLEM_PROVIDER_'):
+            if key.startswith("GOLEM_PROVIDER_"):
                 logger.info(f"{key}={value}")
         if network:
             logger.info(f"Overridden network: {network}")
@@ -1587,7 +1709,9 @@ def run_server(
 
         # Configure uvicorn logging
         log_config = uvicorn.config.LOGGING_CONFIG
-        log_config["formatters"]["access"]["fmt"] = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        log_config["formatters"]["access"][
+            "fmt"
+        ] = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
         # Optionally launch GUI (non-blocking) — disabled by default
         if bool(launch_gui):
@@ -1612,6 +1736,7 @@ def run_server(
         logger.error(f"Failed to start provider server: {e}")
         sys.exit(1)
 
+
 if __name__ == "__main__":
     cli()
 
@@ -1620,6 +1745,7 @@ if __name__ == "__main__":
 def pricing_show():
     """Show current USD and GLM per-unit monthly prices and examples."""
     from decimal import Decimal
+
     from .utils.pricing import fetch_glm_usd_price, update_glm_unit_prices_from_usd
 
     print("Current pricing (per month):")
@@ -1632,6 +1758,7 @@ def pricing_show():
         raise typer.Exit(code=1)
     # Coerce to Decimal for calculations if needed
     from decimal import Decimal
+
     if not isinstance(glm_usd, Decimal):
         glm_usd = Decimal(str(glm_usd))
     update_glm_unit_prices_from_usd(glm_usd)
@@ -1652,7 +1779,11 @@ def pricing_set(
         ..., "--usd-per-mem", "--ram-usd", help="USD per GB of RAM per month"
     ),
     usd_per_disk: float = typer.Option(
-        ..., "--usd-per-disk", "--usd-per-storage", "--storage-usd", help="USD per GB of disk per month"
+        ...,
+        "--usd-per-disk",
+        "--usd-per-storage",
+        "--storage-usd",
+        help="USD per GB of disk per month",
     ),
     dev: bool = typer.Option(False, "--dev", help="Write to .env.dev instead of .env"),
 ):
@@ -1673,10 +1804,12 @@ def pricing_set(
     settings.PRICE_USD_PER_GB_STORAGE_MONTH = usd_per_disk
 
     from .utils.pricing import fetch_glm_usd_price, update_glm_unit_prices_from_usd
+
     glm_usd = fetch_glm_usd_price()
     if glm_usd:
         # Coerce to Decimal for calculations if needed
         from decimal import Decimal
+
         if not isinstance(glm_usd, Decimal):
             glm_usd = Decimal(str(glm_usd))
         update_glm_unit_prices_from_usd(glm_usd)
@@ -1684,4 +1817,6 @@ def pricing_set(
         _print_pricing_examples(glm_usd)
     else:
         print("Warning: could not fetch GLM/USD; GLM unit prices not recalculated.")
-        print("Tip: run 'golem-provider pricing show' when online to verify pricing with USD examples.")
+        print(
+            "Tip: run 'golem-provider pricing show' when online to verify pricing with USD examples."
+        )

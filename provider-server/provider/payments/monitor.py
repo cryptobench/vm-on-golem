@@ -27,7 +27,9 @@ class StreamMonitor:
                 return default
 
     def start(self):
-        if self._get("STREAM_MONITOR_ENABLED", False) or self._get("STREAM_WITHDRAW_ENABLED", False):
+        if self._get("STREAM_MONITOR_ENABLED", False) or self._get(
+            "STREAM_WITHDRAW_ENABLED", False
+        ):
             logger.info(
                 f"⏱️ Stream monitor enabled (check={self._get('STREAM_MONITOR_ENABLED', False)}, "
                 f"withdraw={self._get('STREAM_WITHDRAW_ENABLED', False)}) interval={self._get('STREAM_MONITOR_INTERVAL_SECONDS', 60)}s"
@@ -46,9 +48,15 @@ class StreamMonitor:
         last_withdraw = 0
         while True:
             try:
-                await asyncio.sleep(int(self._get("STREAM_MONITOR_INTERVAL_SECONDS", 60)))
+                await asyncio.sleep(
+                    int(self._get("STREAM_MONITOR_INTERVAL_SECONDS", 60))
+                )
                 items = await self.stream_map.all_items()
-                now = int(self.reader.web3.eth.get_block("latest")["timestamp"]) if items else 0
+                now = (
+                    int(self.reader.web3.eth.get_block("latest")["timestamp"])
+                    if items
+                    else 0
+                )
                 logger.debug(f"stream monitor tick: {len(items)} streams, now={now}")
                 for vm_id, stream_id in items.items():
                     try:
@@ -61,11 +69,15 @@ class StreamMonitor:
                         try:
                             await self.vm_service.delete_vm(vm_id)
                         except Exception as del_err:
-                            logger.warning(f"delete_vm failed for {vm_id} after stream lookup failure: {del_err}")
+                            logger.warning(
+                                f"delete_vm failed for {vm_id} after stream lookup failure: {del_err}"
+                            )
                         try:
                             await self.stream_map.remove(vm_id)
                         except Exception as rem_err:
-                            logger.debug(f"failed to remove vm {vm_id} from stream map: {rem_err}")
+                            logger.debug(
+                                f"failed to remove vm {vm_id} from stream map: {rem_err}"
+                            )
                         continue
                     # Stop VM if remaining runway < threshold
                     remaining = max(int(s["stopTime"]) - int(now), 0)
@@ -98,9 +110,13 @@ class StreamMonitor:
                             logger.warning(f"delete_vm failed for {vm_id}: {e}")
                         try:
                             await self.stream_map.remove(vm_id)
-                            logger.debug(f"Removed {vm_id} from stream map after delete")
+                            logger.debug(
+                                f"Removed {vm_id} from stream map after delete"
+                            )
                         except Exception as e:
-                            logger.debug(f"failed to remove vm {vm_id} from stream map: {e}")
+                            logger.debug(
+                                f"failed to remove vm {vm_id} from stream map: {e}"
+                            )
                         continue
 
                     # If runway is exhausted, delete the VM and remove mapping
@@ -119,7 +135,9 @@ class StreamMonitor:
                                 f"Pre-delete status for {vm_id}: not found (will remove mapping)"
                             )
                         except Exception as pre_err:
-                            logger.debug(f"Pre-delete status check failed for {vm_id}: {pre_err}")
+                            logger.debug(
+                                f"Pre-delete status check failed for {vm_id}: {pre_err}"
+                            )
 
                         try:
                             await self.vm_service.delete_vm(vm_id)
@@ -141,7 +159,9 @@ class StreamMonitor:
                             logger.warning(f"delete_vm failed for {vm_id}: {e}")
                         try:
                             await self.stream_map.remove(vm_id)
-                            logger.info(f"Removed mapping for {vm_id} after delete on exhausted runway")
+                            logger.info(
+                                f"Removed mapping for {vm_id} after delete on exhausted runway"
+                            )
                         except Exception as rem_err:
                             logger.debug(
                                 f"failed to remove vm {vm_id} from stream map after delete: {rem_err}"
@@ -154,12 +174,20 @@ class StreamMonitor:
                     )
                     # Withdraw if enough vested and configured
                     if self._get("STREAM_WITHDRAW_ENABLED", False) and self.client:
-                        vested = max(min(now, s["stopTime"]) - s["startTime"], 0) * s["ratePerSecond"]
+                        vested = (
+                            max(min(now, s["stopTime"]) - s["startTime"], 0)
+                            * s["ratePerSecond"]
+                        )
                         withdrawable = max(vested - s["withdrawn"], 0)
-                        logger.debug(f"withdraw check stream {stream_id}: vested={vested} withdrawable={withdrawable}")
+                        logger.debug(
+                            f"withdraw check stream {stream_id}: vested={vested} withdrawable={withdrawable}"
+                        )
                         # Enforce a minimum interval between withdrawals
-                        if withdrawable >= int(self._get("STREAM_MIN_WITHDRAW_WEI", 0)) and (
-                            now - last_withdraw >= int(self._get("STREAM_WITHDRAW_INTERVAL_SECONDS", 1800))
+                        if withdrawable >= int(
+                            self._get("STREAM_MIN_WITHDRAW_WEI", 0)
+                        ) and (
+                            now - last_withdraw
+                            >= int(self._get("STREAM_WITHDRAW_INTERVAL_SECONDS", 1800))
                         ):
                             try:
                                 self.client.withdraw(stream_id)

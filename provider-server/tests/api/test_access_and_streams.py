@@ -1,5 +1,7 @@
-import pytest
 from unittest.mock import AsyncMock
+
+import pytest
+from dependency_injector import providers
 from fastapi.testclient import TestClient
 
 from provider.main import app
@@ -79,8 +81,7 @@ def test_get_vm_access_happy_path(monkeypatch, client: TestClient):
 def test_get_vm_access_vm_not_found(monkeypatch, client: TestClient):
     app.container.vm_service().get_vm_status = AsyncMock(return_value=None)
     resp = client.get("/api/v1/vms/unknown/access")
-    # Current implementation wraps HTTPException into generic 500
-    assert resp.status_code == 500
+    assert resp.status_code == 404
 
 
 def test_get_vm_access_mapping_not_found(monkeypatch, client: TestClient):
@@ -96,8 +97,7 @@ def test_get_vm_access_mapping_not_found(monkeypatch, client: TestClient):
         return_value=None
     )
     resp = client.get("/api/v1/vms/test-vm/access")
-    # Current implementation wraps HTTPException into generic 500
-    assert resp.status_code == 500
+    assert resp.status_code == 404
 
 
 def test_get_vm_access_multipass_error(monkeypatch, client: TestClient):
@@ -105,7 +105,7 @@ def test_get_vm_access_multipass_error(monkeypatch, client: TestClient):
         side_effect=MultipassError("mp error")
     )
     resp = client.get("/api/v1/vms/test-vm/access")
-    assert resp.status_code == 500
+    assert resp.status_code == 502
 
 
 def test_get_vm_stream_status_disabled(client: TestClient):
@@ -137,8 +137,6 @@ def test_get_vm_stream_status_lookup_failure(monkeypatch, client: TestClient):
         app.container.stream_map.override(DummyStreamMap({"test-vm": 42}))
 
         # Dummy reader that raises on get_stream
-        from provider.api import routes as routes_mod
-
         class BadReader:
             def __init__(self, *a, **kw):
                 class W3:
@@ -156,11 +154,12 @@ def test_get_vm_stream_status_lookup_failure(monkeypatch, client: TestClient):
             def verify_stream(self, *_):
                 return True, "ok"
 
-        monkeypatch.setattr(routes_mod, "StreamPaymentReader", BadReader)
+        app.container.stream_reader.override(providers.Factory(BadReader))
 
         resp = client.get("/api/v1/vms/test-vm/stream")
         assert resp.status_code == 502
     finally:
+        app.container.stream_reader.reset_override()
         app.container.config.override(old)
 
 
@@ -168,8 +167,6 @@ def test_get_vm_stream_status_happy_path(monkeypatch, client: TestClient):
     old = _enable_streaming_config()
     try:
         app.container.stream_map.override(DummyStreamMap({"test-vm": 7}))
-
-        from provider.api import routes as routes_mod
 
         class GoodReader:
             def __init__(self, *a, **kw):
@@ -200,7 +197,7 @@ def test_get_vm_stream_status_happy_path(monkeypatch, client: TestClient):
                 assert sid == 7
                 return True, "ok"
 
-        monkeypatch.setattr(routes_mod, "StreamPaymentReader", GoodReader)
+        app.container.stream_reader.override(providers.Factory(GoodReader))
 
         resp = client.get("/api/v1/vms/test-vm/stream")
         assert resp.status_code == 200
@@ -216,6 +213,7 @@ def test_get_vm_stream_status_happy_path(monkeypatch, client: TestClient):
         # withdrawable = max(vested - withdrawn, 0) = 150
         assert data["computed"]["withdrawable_wei"] == 150
     finally:
+        app.container.stream_reader.reset_override()
         app.container.config.override(old)
 
 
@@ -236,8 +234,6 @@ def test_list_stream_statuses_happy_and_errors(monkeypatch, client: TestClient):
     try:
         # two items; one will fail
         app.container.stream_map.override(DummyStreamMap({"vmA": 1, "vmB": 2}))
-
-        from provider.api import routes as routes_mod
 
         class Reader:
             def __init__(self, *a, **kw):
@@ -269,17 +265,10 @@ def test_list_stream_statuses_happy_and_errors(monkeypatch, client: TestClient):
             def verify_stream(self, sid, expected_recipient):
                 return True, "ok"
 
-        monkeypatch.setattr(routes_mod, "StreamPaymentReader", Reader)
+        app.container.stream_reader.override(providers.Factory(Reader))
 
         resp = client.get("/api/v1/payments/streams")
-        assert resp.status_code == 200
-        rows = resp.json()
-        # one succeeded, one skipped due to error
-        assert len(rows) == 1
-        r = rows[0]
-        assert r["vm_id"] == "vmA"
-        assert r["stream_id"] == 1
-        assert r["verified"] is True
-        assert r["computed"]["remaining_seconds"] == 200
+        assert resp.status_code == 502
     finally:
+        app.container.stream_reader.reset_override()
         app.container.config.override(old)
