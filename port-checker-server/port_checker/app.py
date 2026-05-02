@@ -20,7 +20,7 @@ from .proxy.api import router as proxy_router
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     app_settings = settings or Settings()
-    app = FastAPI(title="Golem Port Checker")
+    app = FastAPI(title="Golem Port Checker", openapi_url="/openapi.json")
     app.state.settings = app_settings
 
     app.add_middleware(

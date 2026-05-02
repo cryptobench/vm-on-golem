@@ -355,7 +355,7 @@ function RentInline({ provider, defaultSpec, adsMode }: { provider: any; default
 import { BrowserProvider, Contract, parseEther } from "ethers";
 import streamPayment from "../../public/abi/StreamPayment.json";
 import erc20 from "../../public/abi/ERC20.json";
-import { createVm, loadSettings, saveRentals, loadRentals, saveSettings, vmAccess, vmJobStatus, type AdsConfig, type SSHKey } from "../../lib/api";
+import { createVm, loadSettings, saveRentals, loadRentals, saveSettings, vmAccess, vmJobStatus, type AdsConfig, type CreateVMRequest, type SSHKey } from "../../lib/api";
 //
 import { Modal } from "../../components/ui/Modal";
 import { useWallet } from "../../context/WalletContext";
@@ -487,11 +487,11 @@ function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provider: any
       if (!nm) { setError('Enter a VM name'); return; }
       if (!sshKey) throw new Error("Provide your SSH public key in the form");
       const sid = streamId || await openStream();
-      const payload = { name: nm, resources: { cpu, memory, storage }, ssh_key: sshKey, stream_id: Number(sid) };
+      const payload: CreateVMRequest = { name: nm, resources: { cpu, memory, storage }, ssh_key: sshKey, stream_id: Number(sid) };
       const vm = await createVm(provider.provider_id, payload, adsMode);
       const rentals = loadRentals();
-      const vmId = vm.id || vm.vm_id || payload.name;
-      const jobId: string | undefined = vm.job_id;
+      const vmId = "id" in vm ? vm.id : vm.vm_id;
+      const jobId: string | undefined = "job_id" in vm ? vm.job_id : undefined;
       rentals.push({
         name: payload.name,
         provider_id: provider.provider_id,
@@ -499,7 +499,7 @@ function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provider: any
         platform: provider.platform || null,
         resources: { cpu, memory, storage },
         vm_id: vmId,
-        ssh_port: vm?.config?.ssh_port || null,
+        ssh_port: "ssh_port" in vm ? vm.ssh_port || null : null,
         stream_id: String(sid),
         project_id: activeProjectId || 'default',
         status: 'creating',

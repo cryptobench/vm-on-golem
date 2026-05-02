@@ -69,6 +69,22 @@ def async_command(f):
     return lambda *args, **kwargs: asyncio.run(wrapper(*args, **kwargs))
 
 
+async def _vm_service_for(name: str) -> tuple[dict, VMService]:
+    vm_record = await db_service.get_vm(name)
+    if not vm_record:
+        raise click.BadParameter(f"VM '{name}' not found")
+    provider_url = config.get_provider_url(vm_record["provider_ip"])
+    client = ProviderClient(provider_url)
+    await client.__aenter__()
+    service = VMService(db_service, SSHService(config.ssh_key_dir), client)
+    return vm_record, service
+
+
+async def _close_vm_service(service: VMService) -> None:
+    if service.provider_client is not None:
+        await service.provider_client.__aexit__(None, None, None)
+
+
 def print_version(ctx, param, value):
     if not value or ctx.resilient_parsing:
         return
@@ -1347,6 +1363,138 @@ async def stop_vm(name: str):
         raise click.Abort()
 
 
+async def _run_simple_lifecycle(name: str, action: str, label: str) -> None:
+    vm_record, vm_service = await _vm_service_for(name)
+    try:
+        await getattr(vm_service, action)(name)
+    finally:
+        await _close_vm_service(vm_service)
+    click.echo(f"{label} requested for VM '{vm_record['name']}'")
+
+
+@vm.command(name="restart")
+@click.argument("name")
+@async_command
+async def restart_vm(name: str):
+    """Restart a VM."""
+    await _run_simple_lifecycle(name, "restart_vm", "Restart")
+
+
+@vm.command(name="suspend")
+@click.argument("name")
+@async_command
+async def suspend_vm(name: str):
+    """Suspend a VM while preserving it."""
+    await _run_simple_lifecycle(name, "suspend_vm", "Suspend")
+
+
+@vm.command(name="resume")
+@click.argument("name")
+@async_command
+async def resume_vm(name: str):
+    """Resume a suspended VM."""
+    await _run_simple_lifecycle(name, "resume_vm", "Resume")
+
+
+@vm.command(name="resize")
+@click.argument("name")
+@click.option("--cpu", required=True, type=int, help="Target CPU cores")
+@click.option("--memory", required=True, type=int, help="Target memory in GB")
+@click.option("--storage", required=True, type=int, help="Target storage in GB")
+@click.option("--stream-id", type=int, default=None, help="Replacement stream id")
+@async_command
+async def resize_vm(
+    name: str, cpu: int, memory: int, storage: int, stream_id: int | None
+):
+    """Resize a stopped VM."""
+    vm_record, vm_service = await _vm_service_for(name)
+    try:
+        await vm_service.resize_vm(name, cpu, memory, storage, stream_id)
+    finally:
+        await _close_vm_service(vm_service)
+    click.echo(
+        f"Resize requested for VM '{vm_record['name']}' "
+        f"({cpu} vCPU, {memory} GB RAM, {storage} GB disk)"
+    )
+
+
+@vm.group(name="snapshot")
+def vm_snapshot():
+    """Manage VM snapshots."""
+    pass
+
+
+@vm_snapshot.command(name="list")
+@click.argument("name")
+@async_command
+async def list_snapshots(name: str):
+    """List VM snapshots."""
+    _, vm_service = await _vm_service_for(name)
+    try:
+        snapshots = await vm_service.list_snapshots(name)
+    finally:
+        await _close_vm_service(vm_service)
+    click.echo(json.dumps(snapshots, indent=2))
+
+
+@vm_snapshot.command(name="create")
+@click.argument("name")
+@click.option("--name", "snapshot_name", default=None, help="Snapshot name")
+@click.option("--comment", default=None, help="Snapshot comment")
+@async_command
+async def create_snapshot(name: str, snapshot_name: str | None, comment: str | None):
+    """Create a VM snapshot. The VM must be stopped."""
+    _, vm_service = await _vm_service_for(name)
+    try:
+        snapshot = await vm_service.create_snapshot(name, snapshot_name, comment)
+    finally:
+        await _close_vm_service(vm_service)
+    click.echo(json.dumps(snapshot, indent=2))
+
+
+@vm_snapshot.command(name="restore")
+@click.argument("name")
+@click.argument("snapshot_name")
+@async_command
+async def restore_snapshot(name: str, snapshot_name: str):
+    """Restore a VM snapshot. The VM must be stopped."""
+    _, vm_service = await _vm_service_for(name)
+    try:
+        await vm_service.restore_snapshot(name, snapshot_name)
+    finally:
+        await _close_vm_service(vm_service)
+    click.echo(f"Restore requested for VM '{name}' from snapshot '{snapshot_name}'")
+
+
+@vm_snapshot.command(name="delete")
+@click.argument("name")
+@click.argument("snapshot_name")
+@async_command
+async def delete_snapshot(name: str, snapshot_name: str):
+    """Delete a VM snapshot."""
+    _, vm_service = await _vm_service_for(name)
+    try:
+        await vm_service.delete_snapshot(name, snapshot_name)
+    finally:
+        await _close_vm_service(vm_service)
+    click.echo(f"Deleted snapshot '{snapshot_name}' for VM '{name}'")
+
+
+@vm.command(name="clone")
+@click.argument("source_name")
+@click.argument("new_name")
+@click.option("--stream-id", type=int, default=None, help="Replacement stream id")
+@async_command
+async def clone_vm(source_name: str, new_name: str, stream_id: int | None):
+    """Clone a stopped VM."""
+    _, vm_service = await _vm_service_for(source_name)
+    try:
+        await vm_service.clone_vm(source_name, new_name, stream_id)
+    finally:
+        await _close_vm_service(vm_service)
+    click.echo(f"Clone requested from '{source_name}' to '{new_name}'")
+
+
 @cli.group()
 def server():
     """Server management commands"""
@@ -1457,8 +1605,15 @@ if __name__ == "__main__":
 
 @vm.command(name="stats")
 @click.argument("name")
+@click.option(
+    "--source",
+    type=click.Choice(["provider", "ssh"]),
+    default="provider",
+    show_default=True,
+    help="Read provider monitoring API or collect over your SSH key.",
+)
 @async_command
-async def vm_stats(name: str):
+async def vm_stats(name: str, source: str):
     """Display live resource usage statistics for a VM."""
     try:
         # Initialize services
@@ -1472,7 +1627,10 @@ async def vm_stats(name: str):
 
         # Loop to fetch and display stats continuously
         while True:
-            stats = await vm_service.get_vm_stats(name)
+            if source == "ssh":
+                stats = await vm_service.get_vm_stats(name)
+            else:
+                stats = await _get_provider_vm_stats(vm)
 
             click.clear()
             click.echo("\n" + "─" * 60)
@@ -1485,6 +1643,8 @@ async def vm_stats(name: str):
             )
             click.echo("─" * 60)
 
+            if "source" in stats:
+                click.echo(f"  Source     : {click.style(stats['source'], fg='cyan')}")
             if "cpu" in stats and "usage" in stats["cpu"]:
                 click.echo(
                     f"  💻 CPU Usage : {click.style(stats['cpu']['usage'], fg='cyan')}"
@@ -1505,3 +1665,66 @@ async def vm_stats(name: str):
     except Exception as e:
         logger.error(f"Failed to get VM stats: {str(e)}")
         raise click.Abort()
+
+
+async def _get_provider_vm_stats(vm: dict) -> dict:
+    """Read VM stats from the provider monitoring API."""
+    import json
+    import urllib.request
+
+    provider_ip = vm.get("provider_ip")
+    vm_id = vm.get("vm_id")
+    if not provider_ip or not vm_id:
+        raise click.ClickException("Provider address or VM id is missing")
+
+    def _fetch() -> dict:
+        url = f"http://{provider_ip}:7466/api/v1/vms/{vm_id}/metrics/latest"
+        with urllib.request.urlopen(url, timeout=5) as response:
+            return json.loads(response.read().decode("utf-8"))
+
+    data = await asyncio.to_thread(_fetch)
+    metrics = data.get("vms", {}).get(vm_id, {})
+    guest = metrics.get("guest_agent") or {}
+    infra = metrics.get("infrastructure") or {}
+    if not guest:
+        return {
+            "source": "provider infrastructure (guest agent unavailable)",
+            "cpu": {},
+            "memory": {},
+            "disk": {},
+        }
+    return {
+        "source": "guest agent",
+        "cpu": {"usage": _format_percent(guest.get("cpu_percent"))},
+        "memory": {
+            "used": _format_bytes(guest.get("memory_used_bytes")),
+            "total": _format_bytes(guest.get("memory_total_bytes")),
+        },
+        "disk": {
+            "used": _format_bytes(guest.get("disk_used_bytes")),
+            "total": _format_bytes(guest.get("disk_total_bytes")),
+        },
+        "network": infra,
+    }
+
+
+def _metric_value(sample: dict | None) -> float | None:
+    if not isinstance(sample, dict):
+        return None
+    value = sample.get("value")
+    return float(value) if value is not None else None
+
+
+def _format_percent(sample: dict | None) -> str:
+    value = _metric_value(sample)
+    return "N/A" if value is None else f"{value:.1f}%"
+
+
+def _format_bytes(sample: dict | None) -> str:
+    value = _metric_value(sample)
+    if value is None:
+        return "N/A"
+    for unit in ["B", "KiB", "MiB", "GiB", "TiB"]:
+        if value < 1024 or unit == "TiB":
+            return f"{value:.1f} {unit}"
+        value /= 1024

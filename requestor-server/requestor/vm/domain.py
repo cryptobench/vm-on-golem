@@ -22,6 +22,23 @@ class CreateVMCommand(BaseModel):
     stream_id: int | None = None
 
 
+class ResizeVMCommand(BaseModel):
+    cpu: int = Field(..., ge=1)
+    memory: int = Field(..., ge=1)
+    storage: int = Field(..., ge=1)
+    stream_id: int | None = None
+
+
+class CloneVMCommand(BaseModel):
+    name: str = Field(..., min_length=1)
+    stream_id: int | None = None
+
+
+class SnapshotCommand(BaseModel):
+    name: str | None = Field(default=None, min_length=1)
+    comment: str | None = None
+
+
 class VMAccess(BaseModel):
     vm_id: str
     ssh_port: int | None = None
@@ -34,3 +51,16 @@ class VMCreateResult(BaseModel):
     vm_id: str
     config: dict[str, Any]
     status: str
+
+
+class VMImage(BaseModel):
+    alias: str
+    version: str | None = None
+    description: str | None = None
+
+
+class VMSnapshot(BaseModel):
+    name: str
+    vm_id: str
+    comment: str | None = None
+    created_at: str | None = None

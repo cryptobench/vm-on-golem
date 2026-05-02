@@ -1,7 +1,23 @@
 "use client";
 import React from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { loadRentals, saveRentals, vmStop, vmDestroy, loadSettings, type Rental } from "../../lib/api";
+import {
+  loadRentals,
+  saveRentals,
+  createSnapshot,
+  deleteSnapshot,
+  listSnapshots,
+  restoreSnapshot,
+  vmDestroy,
+  vmRestart,
+  vmResume,
+  vmResize,
+  vmStart,
+  vmStop,
+  vmSuspend,
+  loadSettings,
+  type Rental,
+} from "../../lib/api";
 import { useAds } from "../../context/AdsContext";
 import { useToast } from "../../components/ui/Toast";
 import { Spinner } from "../../components/ui/Spinner";
@@ -18,7 +34,7 @@ import { getPriceUSD, onPricesUpdated } from "../../lib/prices";
 import { RiCpuLine, RiStackLine, RiHardDrive2Line, RiFileCopyLine } from "@remixicon/react";
 import { StreamCard } from "../../components/streams/StreamCard";
 import { countryFlagEmoji, countryFullName } from "../../lib/intl";
-import { useProviderInfo, useVmAccess, useVmStatusSafe, useVmStatus } from "../../hooks/useApiSWR";
+import { useProviderInfo, useVmAccess, useVmStatusSafe, useVmStatus, useVmMetricsLatest } from "../../hooks/useApiSWR";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 
 // ChainStream imported from lib/streams
@@ -49,6 +65,12 @@ export default function VmDetailsClient() {
   const [usdPrice, setUsdPrice] = React.useState<number | null>(null);
   const [customTopup, setCustomTopup] = React.useState<string>("");
   const [displayCurrency, setDisplayCurrency] = React.useState<'fiat'|'token'>(loadSettings().display_currency === 'token' ? 'token' : 'fiat');
+  const [snapshots, setSnapshots] = React.useState<Array<{ name: string; comment?: string | null; created_at?: string | null }>>([]);
+  const [snapshotName, setSnapshotName] = React.useState("");
+  const [snapshotBusy, setSnapshotBusy] = React.useState<string | null>(null);
+  const [resizeCpu, setResizeCpu] = React.useState<number>(1);
+  const [resizeMemory, setResizeMemory] = React.useState<number>(1);
+  const [resizeStorage, setResizeStorage] = React.useState<number>(10);
 
   const vmId = search.get('id') || '';
   const [vm, setVm] = React.useState<ReturnType<typeof loadRentals>[number] | null>(null);
@@ -89,6 +111,7 @@ export default function VmDetailsClient() {
   const { data: swrAccess } = useVmAccess(vm?.provider_id, vm?.vm_id, { refreshInterval: 8000 });
   const { data: swrStatus } = useVmStatusSafe(vm?.provider_id, vm?.vm_id, { refreshInterval: 8000 });
   const { data: swrVm } = useVmStatus(vm?.provider_id, vm?.vm_id, { refreshInterval: 8000 });
+  const { data: swrMetrics, isLoading: metricsLoading } = useVmMetricsLatest(vm?.provider_id, vm?.vm_id, { refreshInterval: 10000 });
 
   React.useEffect(() => {
     if (swrProvider) setProvider({ country: (swrProvider as any).country, platform: (swrProvider as any).platform, ip_address: (swrProvider as any).ip_address });
@@ -251,6 +274,13 @@ export default function VmDetailsClient() {
     return () => clearInterval(t);
   }, [stream?.chain?.stopTime]);
 
+  React.useEffect(() => {
+    if (!vm) return;
+    listSnapshots(vm.provider_id, vm.vm_id, ads)
+      .then((rows) => setSnapshots(Array.isArray(rows) ? rows : []))
+      .catch(() => setSnapshots([]));
+  }, [vm?.provider_id, vm?.vm_id, vm?.status, ads]);
+
   if (!mounted) {
     // Full-page skeleton to align with Suspense fallback and prevent hydration mismatch
     return (
@@ -322,6 +352,11 @@ export default function VmDetailsClient() {
   const sshHost = provider?.ip_address || vm.provider_ip || 'PROVIDER_IP';
   const sshPort = access?.ssh_port || (swrVm as any)?.ssh_port || vm.ssh_port || null;
   const sshCmd = sshPort ? buildSshCommand(sshHost, Number(sshPort)) : null;
+  const effectiveStatus = String((swrVm as any)?.status || (swrStatus as any)?.data?.status || vm.status || '').toLowerCase();
+  const isStopped = effectiveStatus === 'stopped';
+  const isSuspended = effectiveStatus === 'suspended' || effectiveStatus === 'suspending';
+  const isRunning = effectiveStatus === 'running';
+  const isTerminated = effectiveStatus === 'terminated' || effectiveStatus === 'deleted';
 
   const copySSH = async () => {
     try {
@@ -334,9 +369,117 @@ export default function VmDetailsClient() {
 
   const stopVm = async () => {
     if (vm.status === 'terminated') { show("VM already terminated"); return; }
-    try { setBusy(true); await vmStop(vm.provider_id, vm.vm_id, ads); show("Stop requested"); }
+    try { setBusy(true); await vmStop(vm.provider_id, vm.vm_id, ads); updateVmStatus("stopped"); show("Stop requested"); }
     catch (e) { show("Stop failed"); }
     finally { setBusy(false); }
+  };
+  const startVm = async () => {
+    if (vm.status === 'terminated') { show("VM already terminated"); return; }
+    try { setBusy(true); await vmStart(vm.provider_id, vm.vm_id, ads); updateVmStatus("running"); show("Start requested"); }
+    catch (e) { show("Start failed"); }
+    finally { setBusy(false); }
+  };
+  const restartVm = async () => {
+    if (vm.status === 'terminated') { show("VM already terminated"); return; }
+    try { setBusy(true); await vmRestart(vm.provider_id, vm.vm_id, ads); updateVmStatus("running"); show("Restart requested"); }
+    catch (e) { show("Restart failed"); }
+    finally { setBusy(false); }
+  };
+  const suspendVm = async () => {
+    if (vm.status === 'terminated') { show("VM already terminated"); return; }
+    try { setBusy(true); await vmSuspend(vm.provider_id, vm.vm_id, ads); updateVmStatus("suspended"); show("Suspend requested"); }
+    catch (e) { show("Suspend failed"); }
+    finally { setBusy(false); }
+  };
+  const resumeVm = async () => {
+    if (vm.status === 'terminated') { show("VM already terminated"); return; }
+    try { setBusy(true); await vmResume(vm.provider_id, vm.vm_id, ads); updateVmStatus("running"); show("Resume requested"); }
+    catch (e) { show("Resume failed"); }
+    finally { setBusy(false); }
+  };
+  const updateVmStatus = (status: string) => {
+    const next = { ...vm, status } as Rental;
+    try {
+      const list = loadRentals();
+      const idx = list.findIndex(x => x.vm_id === vm.vm_id && x.provider_id === vm.provider_id);
+      if (idx >= 0) {
+        const out = [...list];
+        out[idx] = next;
+        saveRentals(out);
+      }
+    } catch {}
+    setVm(next as any);
+  };
+  const refreshSnapshots = async () => {
+    const rows = await listSnapshots(vm.provider_id, vm.vm_id, ads);
+    setSnapshots(Array.isArray(rows) ? rows : []);
+  };
+  const createVmSnapshot = async () => {
+    try {
+      setSnapshotBusy("create");
+      await createSnapshot(
+        vm.provider_id,
+        vm.vm_id,
+        { name: snapshotName.trim() || undefined },
+        ads,
+      );
+      setSnapshotName("");
+      await refreshSnapshots();
+      show("Snapshot created");
+    } catch {
+      show("Snapshot failed. Stop the VM first and try again.");
+    } finally {
+      setSnapshotBusy(null);
+    }
+  };
+  const restoreVmSnapshot = async (name: string) => {
+    try {
+      setSnapshotBusy(`restore:${name}`);
+      await restoreSnapshot(vm.provider_id, vm.vm_id, name, ads);
+      await refreshSnapshots();
+      show("Snapshot restored");
+    } catch {
+      show("Restore failed. Stop the VM first and try again.");
+    } finally {
+      setSnapshotBusy(null);
+    }
+  };
+  const deleteVmSnapshot = async (name: string) => {
+    try {
+      setSnapshotBusy(`delete:${name}`);
+      await deleteSnapshot(vm.provider_id, vm.vm_id, name, ads);
+      await refreshSnapshots();
+      show("Snapshot deleted");
+    } catch {
+      show("Delete snapshot failed");
+    } finally {
+      setSnapshotBusy(null);
+    }
+  };
+  const resizeVm = async () => {
+    try {
+      setBusy(true);
+      await vmResize(
+        vm.provider_id,
+        vm.vm_id,
+        { cpu: resizeCpu, memory: resizeMemory, storage: resizeStorage },
+        ads,
+      );
+      const next = { ...vm, resources: { cpu: resizeCpu, memory: resizeMemory, storage: resizeStorage } } as Rental;
+      const list = loadRentals();
+      const idx = list.findIndex(x => x.vm_id === vm.vm_id && x.provider_id === vm.provider_id);
+      if (idx >= 0) {
+        const out = [...list];
+        out[idx] = next;
+        saveRentals(out);
+      }
+      setVm(next as any);
+      show("Resize applied");
+    } catch {
+      show("Resize failed. Stop the VM first and check capacity.");
+    } finally {
+      setBusy(false);
+    }
   };
   const confirmDestroy = async () => {
     try {
@@ -391,6 +534,22 @@ export default function VmDetailsClient() {
     if ([cpu, memory, storage].every((n) => Number.isFinite(n) && n > 0)) return { cpu, memory, storage };
     return vm?.resources || null;
   })();
+
+  const guestMetrics = (() => {
+    const byVm = (swrMetrics as any)?.vms || {};
+    return byVm[vm.vm_id]?.guest_agent || null;
+  })();
+  const metricPercent = (name: string) => {
+    const value = Number(guestMetrics?.[name]?.value);
+    return Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : null;
+  };
+  const metricText = (name: string) => {
+    const value = metricPercent(name);
+    return value == null ? "—" : `${value.toFixed(0)}%`;
+  };
+  const metricsUpdatedAt = guestMetrics?.agent_heartbeat?.timestamp
+    ? new Date(guestMetrics.agent_heartbeat.timestamp).toLocaleTimeString()
+    : null;
 
   return (
     <div className="space-y-6">
@@ -458,7 +617,25 @@ export default function VmDetailsClient() {
             </div>
             <div className="flex flex-col items-start gap-2 sm:items-end">
               <div className="flex gap-2">
-                <button className="btn btn-secondary" onClick={copySSH} disabled={!sshCmd || vm.status === 'terminated'}>Copy SSH</button>
+                <button className="btn btn-secondary" onClick={copySSH} disabled={!sshCmd || isTerminated}>Copy SSH</button>
+                {(isStopped || isSuspended) && (
+                  <button className="btn btn-secondary" onClick={isSuspended ? resumeVm : startVm} disabled={busy || isTerminated}>
+                    {busy ? <><Spinner className="h-4 w-4" /> {isSuspended ? 'Resume' : 'Start'}</> : (isSuspended ? 'Resume' : 'Start')}
+                  </button>
+                )}
+                {isRunning && (
+                  <>
+                    <button className="btn btn-secondary" onClick={stopVm} disabled={busy || isTerminated}>
+                      {busy ? <><Spinner className="h-4 w-4" /> Stop</> : 'Stop'}
+                    </button>
+                    <button className="btn btn-secondary" onClick={restartVm} disabled={busy || isTerminated}>
+                      {busy ? <><Spinner className="h-4 w-4" /> Restart</> : 'Restart'}
+                    </button>
+                    <button className="btn btn-secondary" onClick={suspendVm} disabled={busy || isTerminated}>
+                      {busy ? <><Spinner className="h-4 w-4" /> Suspend</> : 'Suspend'}
+                    </button>
+                  </>
+                )}
                 <button className="btn btn-danger" onClick={openDestroy} disabled={busy}>Terminate</button>
               </div>
             </div>
@@ -486,6 +663,112 @@ export default function VmDetailsClient() {
             {(!mounted || !effectiveResources?.storage) ? (<Skeleton className="h-6 w-24" />) : (<>{effectiveResources.storage} GB</>)}
           </div>
         </div></div>
+      </div>
+
+      <div className="card">
+        <div className="card-body">
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+            <h3>Live Metrics</h3>
+            <div className="text-xs text-gray-500">
+              {metricsUpdatedAt ? `Updated ${metricsUpdatedAt}` : "Guest metrics unavailable"}
+            </div>
+          </div>
+          {metricsLoading ? (
+            <div className="mt-4 grid gap-4 sm:grid-cols-3">
+              <Skeleton className="h-20 w-full" />
+              <Skeleton className="h-20 w-full" />
+              <Skeleton className="h-20 w-full" />
+            </div>
+          ) : guestMetrics ? (
+            <div className="mt-4 grid gap-4 sm:grid-cols-3">
+              {[
+                ["CPU", "cpu_percent"],
+                ["RAM", "memory_percent"],
+                ["Disk", "disk_percent"],
+              ].map(([label, key]) => (
+                <div key={key} className="border border-gray-200 p-3">
+                  <div className="text-sm text-gray-500">{label}</div>
+                  <div className="mt-1 text-xl font-semibold">{metricText(key)}</div>
+                  <div className="mt-3 h-2 bg-gray-100">
+                    <div className="h-2 bg-brand-600" style={{ width: `${metricPercent(key) || 0}%` }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="mt-4 border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+              Guest metrics are not available yet. The default VM agent only publishes metrics and does not give providers shell or file access.
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card-body">
+          <div className="grid gap-6 lg:grid-cols-2">
+            <div>
+              <div className="flex items-center justify-between gap-3">
+                <h3>Snapshots</h3>
+                <button className="btn btn-secondary" onClick={refreshSnapshots} disabled={!!snapshotBusy}>Refresh</button>
+              </div>
+              <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                <input
+                  className="input"
+                  value={snapshotName}
+                  onChange={(e) => setSnapshotName(e.target.value)}
+                  placeholder="snapshot-name"
+                  disabled={!!snapshotBusy || !isStopped}
+                />
+                <button className="btn btn-primary" onClick={createVmSnapshot} disabled={!!snapshotBusy || !isStopped}>
+                  {snapshotBusy === 'create' ? <><Spinner className="h-4 w-4 text-white" /> Creating...</> : 'Create'}
+                </button>
+              </div>
+              <div className="mt-4 divide-y divide-gray-100">
+                {snapshots.length ? snapshots.map((snapshot) => (
+                  <div key={snapshot.name} className="flex items-center justify-between gap-3 py-3">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-medium text-gray-900">{snapshot.name}</div>
+                      {snapshot.comment && <div className="truncate text-xs text-gray-500">{snapshot.comment}</div>}
+                    </div>
+                    <div className="flex gap-2">
+                      <button className="btn btn-secondary" onClick={() => restoreVmSnapshot(snapshot.name)} disabled={!!snapshotBusy || !isStopped}>
+                        {snapshotBusy === `restore:${snapshot.name}` ? <><Spinner className="h-4 w-4" /> Restore</> : 'Restore'}
+                      </button>
+                      <button className="btn btn-secondary" onClick={() => deleteVmSnapshot(snapshot.name)} disabled={!!snapshotBusy}>
+                        {snapshotBusy === `delete:${snapshot.name}` ? <><Spinner className="h-4 w-4" /> Delete</> : 'Delete'}
+                      </button>
+                    </div>
+                  </div>
+                )) : (
+                  <div className="py-3 text-sm text-gray-600">No snapshots.</div>
+                )}
+              </div>
+            </div>
+            <div>
+              <h3>Resize</h3>
+              <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                <div>
+                  <label className="label">vCPU</label>
+                  <input className="input" type="number" min={1} value={resizeCpu} onChange={(e) => setResizeCpu(Number(e.target.value))} disabled={!isStopped || busy} />
+                </div>
+                <div>
+                  <label className="label">RAM GB</label>
+                  <input className="input" type="number" min={1} value={resizeMemory} onChange={(e) => setResizeMemory(Number(e.target.value))} disabled={!isStopped || busy} />
+                </div>
+                <div>
+                  <label className="label">Disk GB</label>
+                  <input className="input" type="number" min={effectiveResources?.storage || 10} value={resizeStorage} onChange={(e) => setResizeStorage(Number(e.target.value))} disabled={!isStopped || busy} />
+                </div>
+              </div>
+              <div className="mt-4 flex items-center justify-between gap-3">
+                <div className="text-sm text-gray-600">Resize requires a stopped VM. Disk can only increase.</div>
+                <button className="btn btn-primary" onClick={resizeVm} disabled={!isStopped || busy}>
+                  {busy ? <><Spinner className="h-4 w-4 text-white" /> Applying...</> : 'Apply Resize'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Stream section via shared component */}

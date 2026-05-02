@@ -640,6 +640,15 @@ class Settings(BaseSettings):
     MEMORY_THRESHOLD: int = 85
     STORAGE_THRESHOLD: int = 90
 
+    # Monitoring settings
+    MONITORING_ENABLED: bool = True
+    MONITORING_SAMPLE_INTERVAL_SECONDS: int = Field(default=30, ge=5)
+    MONITORING_RETENTION_DAYS: int = Field(default=30, ge=1)
+    MONITORING_GUEST_AGENT_DEFAULT: bool = True
+    MONITORING_PROMETHEUS_ENABLED: bool = True
+    MONITORING_OTLP_ENDPOINT: str = ""
+    MONITORING_WEBHOOK_TIMEOUT_SECONDS: int = Field(default=5, ge=1)
+
     # Rate Limiting
     RATE_LIMIT_PER_MINUTE: int = 100
 

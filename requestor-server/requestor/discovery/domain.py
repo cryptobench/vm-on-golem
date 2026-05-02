@@ -42,6 +42,10 @@ class ProviderAdvertisement(BaseModel):
     created_at_block: int | None = None
 
 
+class ProviderListResponse(BaseModel):
+    providers: list[ProviderAdvertisement]
+
+
 class ProviderEstimate(BaseModel):
     usd_per_month: float
     usd_per_hour: float

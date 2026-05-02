@@ -1,6 +1,6 @@
 "use client";
 import React from "react";
-import { loadRentals, saveRentals, vmAccess, vmDestroy, type Rental, loadSettings, saveSettings } from "../../lib/api";
+import { loadRentals, saveRentals, vmAccess, vmDestroy, vmResume, vmStart, vmStop, type Rental, loadSettings, saveSettings } from "../../lib/api";
 import { useCopySSH } from "../../hooks/useCopySSH";
 import { useToast } from "../../components/ui/Toast";
 import { useAds } from "../../context/AdsContext";
@@ -60,6 +60,27 @@ export default function RentalsPage() {
 
   const copySSHAction = useCopySSH();
   const copySSH = async (r: any) => { setError(null); setBusyId(r.vm_id); try { await copySSHAction(r); } finally { setBusyId(null); } };
+  const updateRentalStatus = (r: Rental, status: string) => {
+    const cur = items || [];
+    const next = cur.map(i => i.vm_id === r.vm_id ? { ...i, status } : i);
+    saveRentals(next);
+    setItems(next);
+  };
+  const start = async (r: Rental) => {
+    setError(null); setBusyId(r.vm_id);
+    try {
+      if ((r.status || '').toLowerCase() === 'suspended') await vmResume(r.provider_id, r.vm_id, ads);
+      else await vmStart(r.provider_id, r.vm_id, ads);
+      updateRentalStatus(r, 'running');
+    } catch (e: any) { setError(e?.message || String(e)); } finally { setBusyId(null); }
+  };
+  const stop = async (r: Rental) => {
+    setError(null); setBusyId(r.vm_id);
+    try {
+      await vmStop(r.provider_id, r.vm_id, ads);
+      updateRentalStatus(r, 'stopped');
+    } catch (e: any) { setError(e?.message || String(e)); } finally { setBusyId(null); }
+  };
   const destroy = async (r: any) => {
     setError(null); setBusyId(r.vm_id);
     try {
@@ -125,6 +146,8 @@ export default function RentalsPage() {
                     rental={r}
                     busy={busyId === r.vm_id}
                     onCopySSH={copySSH}
+                    onStart={start}
+                    onStop={stop}
                     onDestroy={destroy}
                   />
                 ))}

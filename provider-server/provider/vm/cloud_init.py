@@ -41,6 +41,8 @@ def generate_cloud_init(
     ssh_key: str,
     packages: Optional[list[str]] = None,
     runcmd: Optional[list[str]] = None,
+    monitoring_vm_id: Optional[str] = None,
+    monitoring_token: Optional[str] = None,
 ) -> Tuple[str, str]:
     """Generate cloud-init configuration.
 
@@ -62,6 +64,31 @@ def generate_cloud_init(
         # Start with required #cloud-config header
         yaml_content = "#cloud-config\n"
 
+        write_files = [
+            {
+                "path": "/etc/ssh/sshd_config.d/allow_root.conf",
+                "content": "PermitRootLogin prohibit-password\n",
+                "owner": "root:root",
+                "permissions": "0644",
+            }
+        ]
+        run_commands = ["systemctl restart ssh"]
+
+        if (
+            monitoring_vm_id
+            and monitoring_token
+            and settings.MONITORING_GUEST_AGENT_DEFAULT
+        ):
+            write_files.extend(
+                _monitoring_agent_files(monitoring_vm_id, monitoring_token)
+            )
+            run_commands.extend(
+                [
+                    "systemctl daemon-reload",
+                    "systemctl enable --now golem-metrics-agent.service",
+                ]
+            )
+
         config = {
             "version": 1,
             "hostname": hostname,
@@ -70,15 +97,8 @@ def generate_cloud_init(
             "preserve_hostname": False,
             "ssh_authorized_keys": [ssh_key],
             "users": [{"name": "root", "ssh_authorized_keys": [ssh_key]}],
-            "write_files": [
-                {
-                    "path": "/etc/ssh/sshd_config.d/allow_root.conf",
-                    "content": "PermitRootLogin prohibit-password\n",
-                    "owner": "root:root",
-                    "permissions": "0644",
-                }
-            ],
-            "runcmd": ["systemctl restart ssh"],
+            "write_files": write_files,
+            "runcmd": run_commands,
         }
 
         if packages:
@@ -122,6 +142,163 @@ def generate_cloud_init(
             except Exception as read_error:
                 logger.error(f"Could not read failed config: {read_error}")
         raise Exception(error_msg)
+
+
+def _monitoring_agent_files(vm_id: str, token: str) -> list[dict[str, str]]:
+    """Return cloud-init write_files entries for the push-only guest metrics agent."""
+
+    port = settings.PORT
+    agent = f"""#!/usr/bin/env python3
+import json
+import os
+import shutil
+import socket
+import subprocess
+import time
+import urllib.request
+
+VM_ID = {vm_id!r}
+TOKEN = {token!r}
+VERSION = "0.1.0"
+
+
+def _default_gateway():
+    try:
+        out = subprocess.check_output(["ip", "route", "show", "default"], text=True)
+        parts = out.strip().split()
+        if "via" in parts:
+            return parts[parts.index("via") + 1]
+    except Exception:
+        return None
+
+
+def _endpoint():
+    override = os.environ.get("GOLEM_PROVIDER_METRICS_URL", "").strip()
+    if override:
+        return override.rstrip("/")
+    host = _default_gateway() or os.environ.get("GOLEM_PROVIDER_HOST", "").strip()
+    if not host:
+        return ""
+    return f"http://{{host}}:{port}/api/v1/monitoring/guest/{{VM_ID}}/samples"
+
+
+def _read_cpu():
+    def sample():
+        with open("/proc/stat", "r", encoding="utf-8") as fh:
+            parts = [float(v) for v in fh.readline().split()[1:]]
+        idle = parts[3] + (parts[4] if len(parts) > 4 else 0)
+        total = sum(parts)
+        return idle, total
+
+    idle1, total1 = sample()
+    time.sleep(0.2)
+    idle2, total2 = sample()
+    total_delta = total2 - total1
+    if total_delta <= 0:
+        return None
+    return max(0.0, min(100.0, 100.0 * (1.0 - ((idle2 - idle1) / total_delta))))
+
+
+def _meminfo():
+    data = {{}}
+    with open("/proc/meminfo", "r", encoding="utf-8") as fh:
+        for line in fh:
+            key, raw = line.split(":", 1)
+            data[key] = float(raw.strip().split()[0]) * 1024
+    total = data.get("MemTotal")
+    available = data.get("MemAvailable")
+    used = total - available if total is not None and available is not None else None
+    return used, total
+
+
+def _disk():
+    usage = shutil.disk_usage("/")
+    return usage.used, usage.total
+
+
+def _net():
+    rx = 0
+    tx = 0
+    with open("/proc/net/dev", "r", encoding="utf-8") as fh:
+        for line in fh.readlines()[2:]:
+            iface, raw = line.split(":", 1)
+            if iface.strip() == "lo":
+                continue
+            parts = raw.split()
+            rx += int(parts[0])
+            tx += int(parts[8])
+    return rx, tx
+
+
+def _load():
+    try:
+        return os.getloadavg()[0]
+    except Exception:
+        return None
+
+
+def collect():
+    mem_used, mem_total = _meminfo()
+    disk_used, disk_total = _disk()
+    rx, tx = _net()
+    return {{
+        "token": TOKEN,
+        "cpu_percent": _read_cpu(),
+        "memory_used_bytes": mem_used,
+        "memory_total_bytes": mem_total,
+        "disk_used_bytes": disk_used,
+        "disk_total_bytes": disk_total,
+        "load_1m": _load(),
+        "network_rx_bytes": rx,
+        "network_tx_bytes": tx,
+        "agent_version": VERSION,
+    }}
+
+
+def post(payload):
+    url = _endpoint()
+    if not url:
+        return
+    body = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(url, data=body, headers={{"Content-Type": "application/json"}})
+    urllib.request.urlopen(req, timeout=5).read()
+
+
+while True:
+    try:
+        post(collect())
+    except Exception:
+        pass
+    time.sleep(30)
+"""
+    service = """[Unit]
+Description=Golem VM metrics agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/golem-metrics-agent
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target
+"""
+    return [
+        {
+            "path": "/usr/local/bin/golem-metrics-agent",
+            "content": agent,
+            "owner": "root:root",
+            "permissions": "0755",
+        },
+        {
+            "path": "/etc/systemd/system/golem-metrics-agent.service",
+            "content": service,
+            "owner": "root:root",
+            "permissions": "0644",
+        },
+    ]
 
 
 def cleanup_cloud_init(path: str, config_id: str) -> None:

@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { BrowserProvider, Contract, parseEther } from "ethers";
 import streamPayment from "../../public/abi/StreamPayment.json";
 import erc20 from "../../public/abi/ERC20.json";
-import { createVm, loadSettings, saveRentals, loadRentals, saveSettings, vmAccess, vmJobStatus, type AdsConfig, type SSHKey } from "../../lib/api";
+import { createVm, loadSettings, saveRentals, loadRentals, saveSettings, vmAccess, vmJobStatus, type AdsConfig, type CreateVMRequest, type ProviderAd, type SSHKey } from "../../lib/api";
 import { Modal } from "../ui/Modal";
 import { useWallet } from "../../context/WalletContext";
 import { useProjects } from "../../context/ProjectsContext";
@@ -16,7 +16,7 @@ import { humanDuration } from "../../lib/streams";
 import { useSettings } from "../../hooks/useSettings";
 import { KeyPicker } from "../ssh/KeyPicker";
 
-export function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provider: any; defaultSpec: { cpu?: number; memory?: number; storage?: number }; onClose: () => void; adsMode: AdsConfig; }) {
+export function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provider: ProviderAd; defaultSpec: { cpu?: number; memory?: number; storage?: number }; onClose: () => void; adsMode: AdsConfig; }) {
   const router = useRouter();
   const { displayCurrency } = useSettings();
   const { isInstalled, isConnected, connect, account } = useWallet();
@@ -170,8 +170,8 @@ export function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provid
         if (!isConnected) return;
       }
       const sid = streamId || await openStream();
-      const payload: any = {
-        name: name.trim() || provider.provider_name || provider.provider_id,
+      const payload: CreateVMRequest = {
+        name: name.trim() || provider.provider_id,
         resources: { cpu, memory, storage },
         ssh_key: sshKey,
         stream_id: Number(sid),
@@ -226,7 +226,7 @@ export function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provid
   return (
     <Modal open onClose={onClose} size="2xl">
       <div className="px-5 py-4">
-        <div className="text-lg font-semibold">Rent {provider?.provider_name || provider?.provider_id}</div>
+        <div className="text-lg font-semibold">Rent {provider.provider_id}</div>
 
         {/* Name */}
         <div className="mt-4">

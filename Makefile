@@ -1,4 +1,4 @@
-.PHONY: install test start lock start-testnet start-mainnet dev-proxy dev-web dev-proxy-web start-dev
+.PHONY: install test start lock openapi api-generate api-check start-testnet start-mainnet dev-proxy dev-web dev-proxy-web start-dev
 
 # --- Dev convenience variables (override via env when calling make) ---
 # Ports
@@ -44,6 +44,18 @@ test:
 	poetry -C requestor-server install --with dev --no-interaction
 	# Requestor uses service-local pytest.ini to scope coverage sources
 	poetry -C requestor-server run pytest requestor-server/tests || [ $$? -eq 5 ]
+
+openapi:
+	poetry -C central-discovery-server run python ../scripts/export_openapi.py central-discovery ../openapi/central-discovery.json
+	poetry -C port-checker-server run python ../scripts/export_openapi.py port-checker ../openapi/port-checker.json
+	poetry -C provider-server run python ../scripts/export_openapi.py provider ../openapi/provider.json
+	poetry -C requestor-server run python ../scripts/export_openapi.py requestor ../openapi/requestor.json
+
+api-generate: openapi
+	npm --prefix requestor-web run api:generate
+
+api-check: api-generate
+	git diff --exit-code -- openapi requestor-web/lib/generated/api requestor-web/package.json requestor-web/package-lock.json requestor-web/orval.config.ts
 
 start:
 	@set -e; \

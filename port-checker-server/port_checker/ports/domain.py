@@ -27,3 +27,7 @@ class PortCheckResponse(BaseModel):
     success: bool = Field(..., description="Overall success status")
     results: Dict[int, PortStatus] = Field(..., description="Results for each port")
     message: str = Field(..., description="Summary message")
+
+
+class HealthResponse(BaseModel):
+    status: str

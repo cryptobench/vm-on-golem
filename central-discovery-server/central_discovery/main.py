@@ -8,7 +8,7 @@ import time
 
 from .config import settings
 from .api.routes import router
-from .api.models import ErrorResponse
+from .api.models import ErrorResponse, HealthResponse
 from .db.session import init_db, cleanup_db
 from .db.repository import AdvertisementRepository
 from .db.session import AsyncSessionLocal
@@ -115,10 +115,10 @@ async def shutdown_event():
         logger.error(f"Error during shutdown: {e}")
 
 
-@app.get("/health")
+@app.get("/health", response_model=HealthResponse)
 async def health_check():
     """Health check endpoint."""
-    return {"status": "healthy"}
+    return HealthResponse(status="healthy")
 
 
 def start():

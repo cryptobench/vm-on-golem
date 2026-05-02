@@ -14,11 +14,15 @@ export function RentalRowWithData({
   rental,
   busy,
   onCopySSH,
+  onStart,
+  onStop,
   onDestroy,
 }: {
   rental: Rental;
   busy?: boolean;
   onCopySSH?: (r: Rental) => void;
+  onStart?: (r: Rental) => void;
+  onStop?: (r: Rental) => void;
   onDestroy?: (r: Rental) => void;
 }) {
   const router = useRouter();
@@ -94,6 +98,16 @@ export function RentalRowWithData({
           {!isTerminated && (
             <button className="btn btn-secondary w-full sm:w-auto" onClick={(e) => { e.stopPropagation(); onCopySSH?.(rental); }} disabled={!!busy}>
               {busy ? <><Spinner className="h-4 w-4" /> Copy SSH</> : 'Copy SSH'}
+            </button>
+          )}
+          {!isTerminated && st === 'running' && (
+            <button className="btn btn-secondary w-full sm:w-auto" onClick={(e) => { e.stopPropagation(); onStop?.(rental); }} disabled={!!busy}>
+              {busy ? <><Spinner className="h-4 w-4" /> Stop</> : 'Stop'}
+            </button>
+          )}
+          {!isTerminated && (st === 'stopped' || st === 'suspended') && (
+            <button className="btn btn-secondary w-full sm:w-auto" onClick={(e) => { e.stopPropagation(); onStart?.(rental); }} disabled={!!busy}>
+              {busy ? <><Spinner className="h-4 w-4" /> {st === 'suspended' ? 'Resume' : 'Start'}</> : (st === 'suspended' ? 'Resume' : 'Start')}
             </button>
           )}
           <button className="btn btn-danger w-full sm:w-auto" onClick={(e) => { e.stopPropagation(); setConfirmOpen(true); }} disabled={!!busy}>

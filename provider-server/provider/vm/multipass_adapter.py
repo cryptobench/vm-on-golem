@@ -1,5 +1,6 @@
 import asyncio
 import json
+import platform
 import subprocess
 import uuid
 from pathlib import Path
@@ -8,7 +9,16 @@ from typing import Dict, List, Optional
 from ..config import settings
 from ..utils.logging import setup_logger
 from ..utils.retry import NonRetryableError, async_retry_unless_not_found
-from .models import VMConfig, VMError, VMInfo, VMNotFoundError, VMResources, VMStatus
+from .models import (
+    VMConfig,
+    VMError,
+    VMImage,
+    VMInfo,
+    VMNotFoundError,
+    VMResources,
+    VMSnapshot,
+    VMStatus,
+)
 from .provider import VMProvider
 
 logger = setup_logger(__name__)
@@ -59,7 +69,7 @@ class MultipassAdapter(VMProvider):
     ) -> subprocess.CompletedProcess:
         """Run a multipass command."""
         # Commands that produce JSON or version info that we need to parse.
-        commands_to_capture = ["info", "version"]
+        commands_to_capture = ["info", "version", "find"]
         should_capture = args[0] in commands_to_capture
 
         # We add a timeout to the launch command to prevent it from hanging indefinitely
@@ -126,6 +136,7 @@ class MultipassAdapter(VMProvider):
         try:
             result = await self._run_multipass(["version"])
             logger.info(f"🔧 Using Multipass version: {result.stdout.strip()}")
+            self._check_host_virtualization_compatibility()
         except (subprocess.CalledProcessError, FileNotFoundError) as e:
             raise MultipassError(f"Failed to verify multipass installation: {e}")
 
@@ -251,6 +262,160 @@ class MultipassAdapter(VMProvider):
         await self._run_multipass(["stop", multipass_name])
         return await self.get_vm_status(multipass_name)
 
+    async def restart_vm(self, multipass_name: str) -> VMInfo:
+        """Restart a VM."""
+        await self._run_multipass(["restart", multipass_name])
+        return await self.get_vm_status(multipass_name)
+
+    async def suspend_vm(self, multipass_name: str) -> VMInfo:
+        """Suspend a VM."""
+        await self._run_multipass(["suspend", multipass_name])
+        return await self.get_vm_status(multipass_name)
+
+    async def resize_vm(self, multipass_name: str, resources: VMResources) -> VMInfo:
+        """Resize a stopped VM."""
+        settings_to_apply = {
+            "cpus": str(resources.cpu),
+            "memory": f"{resources.memory}G",
+            "disk": f"{resources.storage}G",
+        }
+        for key, value in settings_to_apply.items():
+            await self._run_multipass(["set", f"local.{multipass_name}.{key}={value}"])
+        return await self.get_vm_status(multipass_name)
+
+    async def list_images(self) -> list[VMImage]:
+        """List available Multipass images."""
+        result = await self._run_multipass(["find", "--format", "json"])
+        try:
+            data = json.loads(result.stdout)
+        except json.JSONDecodeError as exc:
+            raise NonRetryableMultipassError(
+                f"Failed to parse Multipass image list: {exc}"
+            ) from exc
+
+        images: list[VMImage] = []
+        entries = data.get("images", data)
+        if isinstance(entries, dict):
+            iterable = entries.values()
+        elif isinstance(entries, list):
+            iterable = entries
+        else:
+            iterable = []
+        for entry in iterable:
+            if not isinstance(entry, dict):
+                continue
+            alias = (
+                entry.get("alias")
+                or entry.get("release")
+                or entry.get("name")
+                or entry.get("os")
+            )
+            if alias:
+                images.append(
+                    VMImage(
+                        alias=str(alias),
+                        version=entry.get("version"),
+                        description=entry.get("description") or entry.get("title"),
+                    )
+                )
+        return images
+
+    async def list_snapshots(self, multipass_name: str) -> list[VMSnapshot]:
+        """List snapshots for a VM."""
+        result = await self._run_multipass(
+            ["info", multipass_name, "--snapshots", "--format", "json"]
+        )
+        try:
+            data = json.loads(result.stdout)
+            vm_info = data.get("info", {}).get(multipass_name, {})
+        except (json.JSONDecodeError, AttributeError) as exc:
+            raise NonRetryableMultipassError(
+                f"Failed to parse Multipass snapshot info: {exc}"
+            ) from exc
+
+        snapshots = vm_info.get("snapshots", {})
+        if isinstance(snapshots, dict):
+            items = snapshots.items()
+        elif isinstance(snapshots, list):
+            items = (
+                (snap.get("name"), snap) for snap in snapshots if isinstance(snap, dict)
+            )
+        else:
+            items = []
+
+        return [
+            VMSnapshot(
+                name=str(name),
+                vm_id=await self._requestor_name_for(multipass_name),
+                comment=snap.get("comment") if isinstance(snap, dict) else None,
+                created_at=(
+                    snap.get("created")
+                    or snap.get("created_at")
+                    or snap.get("creation_time")
+                )
+                if isinstance(snap, dict)
+                else None,
+            )
+            for name, snap in items
+            if name
+        ]
+
+    async def create_snapshot(
+        self, multipass_name: str, name: str | None = None, comment: str | None = None
+    ) -> VMSnapshot:
+        """Create a snapshot for a stopped VM."""
+        args = ["snapshot", multipass_name]
+        if name:
+            args.extend(["--name", name])
+        if comment:
+            args.extend(["--comment", comment])
+        before = {snap.name for snap in await self.list_snapshots(multipass_name)}
+        await self._run_multipass(args)
+        snapshots = await self.list_snapshots(multipass_name)
+        if name:
+            for snapshot in snapshots:
+                if snapshot.name == name:
+                    return snapshot
+            return VMSnapshot(
+                name=name,
+                vm_id=await self._requestor_name_for(multipass_name),
+                comment=comment,
+            )
+        created = [snapshot for snapshot in snapshots if snapshot.name not in before]
+        if created:
+            return created[-1]
+        return VMSnapshot(
+            name="snapshot",
+            vm_id=await self._requestor_name_for(multipass_name),
+            comment=comment,
+        )
+
+    async def restore_snapshot(self, multipass_name: str, snapshot_name: str) -> VMInfo:
+        """Restore a stopped VM from a snapshot."""
+        await self._run_multipass(
+            ["restore", "-d", f"{multipass_name}.{snapshot_name}"]
+        )
+        return await self.get_vm_status(multipass_name)
+
+    async def delete_snapshot(self, multipass_name: str, snapshot_name: str) -> None:
+        """Delete a snapshot."""
+        await self._run_multipass(
+            ["delete", f"{multipass_name}.{snapshot_name}"], check=False
+        )
+
+    async def clone_vm(
+        self, source_multipass_name: str, destination_name: str
+    ) -> VMInfo:
+        """Clone a stopped VM."""
+        await self._run_multipass(
+            ["clone", source_multipass_name, "--name", destination_name]
+        )
+        return await self.get_vm_status(destination_name)
+
+    async def _requestor_name_for(self, multipass_name: str) -> str:
+        requestor_name = await self.name_mapper.get_requestor_name(multipass_name)
+        return requestor_name or multipass_name
+
     async def get_vm_status(self, name_or_id: str) -> VMInfo:
         """Get VM status by multipass name or requestor id."""
         # Resolve identifiers flexibly
@@ -334,3 +499,51 @@ class MultipassAdapter(VMProvider):
     async def cleanup(self) -> None:
         """Cleanup resources used by the provider."""
         pass
+
+    def _check_host_virtualization_compatibility(self) -> None:
+        """Fail early for known host/driver combinations that cannot launch VMs."""
+        if (
+            platform.system().lower() != "darwin"
+            or platform.machine().lower() != "arm64"
+        ):
+            return
+        darwin_major = self._safe_int(platform.release().split(".")[0], 0)
+        if darwin_major < 24:
+            return
+
+        try:
+            driver = subprocess.run(
+                [self.multipass_path, "get", "local.driver"],
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout.strip()
+        except Exception:
+            driver = "qemu"
+        if driver != "qemu":
+            return
+
+        bundled_qemu = (
+            Path(self.multipass_path).resolve().parent / "qemu-system-aarch64"
+        )
+        if not bundled_qemu.exists():
+            return
+        try:
+            qemu_version = subprocess.run(
+                [str(bundled_qemu), "--version"],
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout
+        except Exception:
+            return
+        major = self._safe_int(qemu_version.split("version", 1)[-1].split(".")[0], 0)
+        if major and major < 10:
+            raise MultipassError(
+                "This Multipass installation uses the qemu driver with bundled "
+                f"QEMU {qemu_version.splitlines()[0]} on Apple Silicon/macOS. "
+                "This combination is known to fail before cloud-init with "
+                "\"qemu-system-aarch64: Property 'host-arm-cpu.sme' not found\". "
+                "Upgrade Multipass to a build with a fixed QEMU or a supported "
+                "non-QEMU driver, or run the provider on a Linux host."
+            )

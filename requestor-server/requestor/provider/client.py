@@ -106,6 +106,100 @@ class ProviderClient:
                 raise ProviderError(f"Failed to stop VM: {error_text}")
             return await response.json()
 
+    async def restart_vm(self, vm_id: str) -> Dict:
+        """Restart a VM."""
+        return await self._post_vm_action(vm_id, "restart", "restart VM")
+
+    async def suspend_vm(self, vm_id: str) -> Dict:
+        """Suspend a VM."""
+        return await self._post_vm_action(vm_id, "suspend", "suspend VM")
+
+    async def resume_vm(self, vm_id: str) -> Dict:
+        """Resume a suspended VM."""
+        return await self._post_vm_action(vm_id, "resume", "resume VM")
+
+    async def resize_vm(self, vm_id: str, cpu: int, memory: int, storage: int) -> Dict:
+        """Resize a VM."""
+        session = self._require_session()
+        async with session.post(
+            f"{self.provider_url}/api/v1/vms/{vm_id}/resize",
+            json={"resources": {"cpu": cpu, "memory": memory, "storage": storage}},
+        ) as response:
+            if not response.ok:
+                error_text = await response.text()
+                raise ProviderError(f"Failed to resize VM: {error_text}")
+            return await response.json()
+
+    async def list_images(self) -> list[Dict]:
+        """List provider images."""
+        session = self._require_session()
+        async with session.get(f"{self.provider_url}/api/v1/images") as response:
+            if not response.ok:
+                error_text = await response.text()
+                raise ProviderError(f"Failed to list images: {error_text}")
+            return await response.json()
+
+    async def list_snapshots(self, vm_id: str) -> list[Dict]:
+        """List VM snapshots."""
+        session = self._require_session()
+        async with session.get(
+            f"{self.provider_url}/api/v1/vms/{vm_id}/snapshots"
+        ) as response:
+            if not response.ok:
+                error_text = await response.text()
+                raise ProviderError(f"Failed to list snapshots: {error_text}")
+            return await response.json()
+
+    async def create_snapshot(
+        self, vm_id: str, name: str | None = None, comment: str | None = None
+    ) -> Dict:
+        """Create a VM snapshot."""
+        session = self._require_session()
+        payload = {}
+        if name:
+            payload["name"] = name
+        if comment:
+            payload["comment"] = comment
+        async with session.post(
+            f"{self.provider_url}/api/v1/vms/{vm_id}/snapshots", json=payload
+        ) as response:
+            if not response.ok:
+                error_text = await response.text()
+                raise ProviderError(f"Failed to create snapshot: {error_text}")
+            return await response.json()
+
+    async def restore_snapshot(self, vm_id: str, snapshot_name: str) -> Dict:
+        """Restore a VM snapshot."""
+        session = self._require_session()
+        async with session.post(
+            f"{self.provider_url}/api/v1/vms/{vm_id}/snapshots/{snapshot_name}/restore"
+        ) as response:
+            if not response.ok:
+                error_text = await response.text()
+                raise ProviderError(f"Failed to restore snapshot: {error_text}")
+            return await response.json()
+
+    async def delete_snapshot(self, vm_id: str, snapshot_name: str) -> None:
+        """Delete a VM snapshot."""
+        session = self._require_session()
+        async with session.delete(
+            f"{self.provider_url}/api/v1/vms/{vm_id}/snapshots/{snapshot_name}"
+        ) as response:
+            if not response.ok:
+                error_text = await response.text()
+                raise ProviderError(f"Failed to delete snapshot: {error_text}")
+
+    async def clone_vm(self, vm_id: str, name: str) -> Dict:
+        """Clone a VM."""
+        session = self._require_session()
+        async with session.post(
+            f"{self.provider_url}/api/v1/vms/{vm_id}/clone", json={"name": name}
+        ) as response:
+            if not response.ok:
+                error_text = await response.text()
+                raise ProviderError(f"Failed to clone VM: {error_text}")
+            return await response.json()
+
     async def destroy_vm(self, vm_id: str) -> None:
         """Destroy a VM."""
         session = self._require_session()
@@ -144,3 +238,13 @@ class ProviderClient:
                 "ProviderClient must be used as an async context manager"
             )
         return self.session
+
+    async def _post_vm_action(self, vm_id: str, action: str, label: str) -> Dict:
+        session = self._require_session()
+        async with session.post(
+            f"{self.provider_url}/api/v1/vms/{vm_id}/{action}"
+        ) as response:
+            if not response.ok:
+                error_text = await response.text()
+                raise ProviderError(f"Failed to {label}: {error_text}")
+            return await response.json()

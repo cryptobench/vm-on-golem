@@ -7,7 +7,16 @@ from provider.errors import ExternalServiceError, NotFoundError
 from provider.payments.stream_status_service import StreamStatusService
 
 from .domain import CreateVMCommand, CreateVMJobResult
-from .models import VMAccessInfo, VMConfig, VMInfo, VMNotFoundError, VMStatus
+from .models import (
+    VMAccessInfo,
+    VMConfig,
+    VMImage,
+    VMInfo,
+    VMNotFoundError,
+    VMResources,
+    VMSnapshot,
+    VMStatus,
+)
 from .service import VMService
 
 logger = logging.getLogger(__name__)
@@ -183,6 +192,96 @@ class VMApplicationService:
             raise
         except Exception as exc:
             raise ExternalServiceError(f"failed to stop VM {vm_id}: {exc}") from exc
+
+    async def start_vm(self, vm_id: str) -> VMInfo:
+        try:
+            return await self.vm_service.start_vm(vm_id)
+        except VMNotFoundError:
+            raise
+        except Exception as exc:
+            raise ExternalServiceError(f"failed to start VM {vm_id}: {exc}") from exc
+
+    async def restart_vm(self, vm_id: str) -> VMInfo:
+        try:
+            return await self.vm_service.restart_vm(vm_id)
+        except VMNotFoundError:
+            raise
+        except Exception as exc:
+            raise ExternalServiceError(f"failed to restart VM {vm_id}: {exc}") from exc
+
+    async def suspend_vm(self, vm_id: str) -> VMInfo:
+        try:
+            return await self.vm_service.suspend_vm(vm_id)
+        except VMNotFoundError:
+            raise
+        except Exception as exc:
+            raise ExternalServiceError(f"failed to suspend VM {vm_id}: {exc}") from exc
+
+    async def resize_vm(self, vm_id: str, resources: VMResources) -> VMInfo:
+        try:
+            return await self.vm_service.resize_vm(vm_id, resources)
+        except VMNotFoundError:
+            raise
+        except Exception as exc:
+            raise ExternalServiceError(f"failed to resize VM {vm_id}: {exc}") from exc
+
+    async def list_images(self) -> list[VMImage]:
+        try:
+            return await self.vm_service.list_images()
+        except Exception as exc:
+            raise ExternalServiceError(f"failed to list VM images: {exc}") from exc
+
+    async def list_snapshots(self, vm_id: str) -> list[VMSnapshot]:
+        try:
+            return await self.vm_service.list_snapshots(vm_id)
+        except VMNotFoundError:
+            raise
+        except Exception as exc:
+            raise ExternalServiceError(
+                f"failed to list snapshots for VM {vm_id}: {exc}"
+            ) from exc
+
+    async def create_snapshot(
+        self, vm_id: str, name: str | None = None, comment: str | None = None
+    ) -> VMSnapshot:
+        try:
+            return await self.vm_service.create_snapshot(vm_id, name, comment)
+        except VMNotFoundError:
+            raise
+        except Exception as exc:
+            raise ExternalServiceError(
+                f"failed to create snapshot for VM {vm_id}: {exc}"
+            ) from exc
+
+    async def restore_snapshot(self, vm_id: str, snapshot_name: str) -> VMInfo:
+        try:
+            return await self.vm_service.restore_snapshot(vm_id, snapshot_name)
+        except VMNotFoundError:
+            raise
+        except Exception as exc:
+            raise ExternalServiceError(
+                f"failed to restore snapshot {snapshot_name} for VM {vm_id}: {exc}"
+            ) from exc
+
+    async def delete_snapshot(self, vm_id: str, snapshot_name: str) -> None:
+        try:
+            await self.vm_service.delete_snapshot(vm_id, snapshot_name)
+        except VMNotFoundError:
+            raise
+        except Exception as exc:
+            raise ExternalServiceError(
+                f"failed to delete snapshot {snapshot_name} for VM {vm_id}: {exc}"
+            ) from exc
+
+    async def clone_vm(self, source_vm_id: str, destination_vm_id: str) -> VMInfo:
+        try:
+            return await self.vm_service.clone_vm(source_vm_id, destination_vm_id)
+        except VMNotFoundError:
+            raise
+        except Exception as exc:
+            raise ExternalServiceError(
+                f"failed to clone VM {source_vm_id}: {exc}"
+            ) from exc
 
     async def delete_vm(self, vm_id: str) -> None:
         try:

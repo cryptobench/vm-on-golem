@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Request
 
 from port_checker.config import Settings
 
-from .domain import PortCheckRequest, PortCheckResponse
+from .domain import HealthResponse, PortCheckRequest, PortCheckResponse
 from .service import PortCheckService
 
 router = APIRouter()
@@ -30,6 +30,6 @@ async def check_ports(
     return await service.check_ports(request)
 
 
-@router.get("/health")
-async def health_check() -> dict[str, str]:
-    return {"status": "ok"}
+@router.get("/health", response_model=HealthResponse)
+async def health_check() -> HealthResponse:
+    return HealthResponse(status="ok")

@@ -44,7 +44,10 @@ async def test_verify_installation_success(multipass_adapter):
 
     # Act & Assert
     try:
-        await multipass_adapter.initialize()
+        with patch.object(
+            multipass_adapter, "_check_host_virtualization_compatibility"
+        ):
+            await multipass_adapter.initialize()
     except MultipassError:
         pytest.fail("MultipassError was raised unexpectedly")
 
@@ -57,6 +60,26 @@ async def test_verify_installation_failure(multipass_adapter):
     # Act & Assert
     with pytest.raises(MultipassError):
         await multipass_adapter.initialize()
+
+
+def test_rejects_known_broken_macos_qemu_driver(multipass_adapter, tmp_path):
+    qemu = tmp_path / "qemu-system-aarch64"
+    qemu.write_text("#!/bin/sh\necho 'QEMU emulator version 8.2.1'\n")
+    qemu.chmod(0o755)
+    multipass = tmp_path / "multipass"
+    multipass.write_text("#!/bin/sh\necho qemu\n")
+    multipass.chmod(0o755)
+    multipass_adapter.multipass_path = str(multipass)
+
+    with patch("provider.vm.multipass_adapter.platform.system", return_value="Darwin"):
+        with patch(
+            "provider.vm.multipass_adapter.platform.machine", return_value="arm64"
+        ):
+            with patch(
+                "provider.vm.multipass_adapter.platform.release", return_value="25.2.0"
+            ):
+                with pytest.raises(MultipassError, match="host-arm-cpu.sme"):
+                    multipass_adapter._check_host_virtualization_compatibility()
 
 
 @pytest.mark.asyncio

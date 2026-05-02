@@ -2,13 +2,13 @@ from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends, Query
 
 from requestor.container import Container
-from requestor.discovery.domain import ProviderSearchQuery
+from requestor.discovery.domain import ProviderListResponse, ProviderSearchQuery
 from requestor.discovery.service import ProviderDiscoveryService
 
 router = APIRouter()
 
 
-@router.get("/providers")
+@router.get("/providers", response_model=ProviderListResponse)
 @inject
 async def list_providers(
     cpu: int | None = None,
@@ -22,7 +22,7 @@ async def list_providers(
     discovery_service: ProviderDiscoveryService = Depends(
         Provide[Container.discovery_service]
     ),
-) -> dict:
+) -> ProviderListResponse:
     providers = await discovery_service.find_providers(
         ProviderSearchQuery(
             cpu=cpu,
@@ -35,4 +35,4 @@ async def list_providers(
         ),
         backend=backend,
     )
-    return {"providers": providers}
+    return ProviderListResponse(providers=providers)

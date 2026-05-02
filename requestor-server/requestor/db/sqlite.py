@@ -95,6 +95,23 @@ class Database:
             await db.execute("UPDATE vms SET status = ? WHERE name = ?", (status, name))
             await db.commit()
 
+    async def update_vm_config(
+        self, name: str, config: Dict, status: str | None = None
+    ) -> None:
+        """Update VM config and optionally status."""
+        async with aiosqlite.connect(self.db_path) as db:
+            if status is None:
+                await db.execute(
+                    "UPDATE vms SET config = ? WHERE name = ?",
+                    (json.dumps(config), name),
+                )
+            else:
+                await db.execute(
+                    "UPDATE vms SET config = ?, status = ? WHERE name = ?",
+                    (json.dumps(config), status, name),
+                )
+            await db.commit()
+
     async def list_vms(self) -> List[Dict]:
         """List all VMs."""
         async with aiosqlite.connect(self.db_path) as db:
