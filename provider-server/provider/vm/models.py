@@ -1,7 +1,8 @@
-from enum import Enum
-from pydantic import BaseModel, Field, field_validator
-from typing import Dict, Optional
 from datetime import datetime
+from enum import Enum
+from typing import Dict, Optional
+
+from pydantic import BaseModel, Field, field_validator
 
 
 class VMStatus(str, Enum):
@@ -47,14 +48,16 @@ class VMStatus(str, Enum):
 
 class VMSize(str, Enum):
     """Predefined VM sizes."""
-    SMALL = "small"      # 1 CPU, 1GB RAM, 10GB storage
-    MEDIUM = "medium"    # 2 CPU, 4GB RAM, 20GB storage
-    LARGE = "large"      # 4 CPU, 8GB RAM, 40GB storage
-    XLARGE = "xlarge"    # 8 CPU, 16GB RAM, 80GB storage
+
+    SMALL = "small"  # 1 CPU, 1GB RAM, 10GB storage
+    MEDIUM = "medium"  # 2 CPU, 4GB RAM, 20GB storage
+    LARGE = "large"  # 4 CPU, 8GB RAM, 40GB storage
+    XLARGE = "xlarge"  # 8 CPU, 16GB RAM, 80GB storage
 
 
 class VMResources(BaseModel):
     """VM resource configuration."""
+
     cpu: int = Field(..., ge=1, description="Number of CPU cores")
     memory: int = Field(..., ge=1, description="Memory in GB")
     storage: int = Field(..., ge=10, description="Storage in GB")
@@ -80,22 +83,27 @@ class VMResources(BaseModel):
             VMSize.SMALL: {"cpu": 1, "memory": 1, "storage": 10},
             VMSize.MEDIUM: {"cpu": 2, "memory": 4, "storage": 20},
             VMSize.LARGE: {"cpu": 4, "memory": 8, "storage": 40},
-            VMSize.XLARGE: {"cpu": 8, "memory": 16, "storage": 80}
+            VMSize.XLARGE: {"cpu": 8, "memory": 16, "storage": 80},
         }
         return cls(**sizes[size])
 
 
 class VMCreateRequest(BaseModel):
     """Request to create a new VM."""
-    name: str = Field(..., min_length=3, max_length=64,
-                      pattern="^[a-z0-9][a-z0-9-]*[a-z0-9]$")
+
+    name: str = Field(
+        ..., min_length=3, max_length=64, pattern="^[a-z0-9][a-z0-9-]*[a-z0-9]$"
+    )
     size: Optional[VMSize] = None
     cpu_cores: Optional[int] = None
     memory_gb: Optional[int] = None
     storage_gb: Optional[int] = None
     image: Optional[str] = Field(default="24.04")  # Ubuntu 24.04 LTS
-    ssh_key: str = Field(..., pattern="^(ssh-rsa|ssh-ed25519) ",
-                         description="SSH public key for VM access")
+    ssh_key: str = Field(
+        ...,
+        pattern="^(ssh-rsa|ssh-ed25519) ",
+        description="SSH public key for VM access",
+    )
 
     @field_validator("name")
     def validate_name(cls, v: str) -> str:
@@ -121,13 +129,18 @@ class VMCreateRequest(BaseModel):
 
 class VMConfig(BaseModel):
     """VM configuration."""
-    name: str = Field(..., min_length=3, max_length=64,
-                      pattern="^[a-z0-9][a-z0-9-]*[a-z0-9]$")
+
+    name: str = Field(
+        ..., min_length=3, max_length=64, pattern="^[a-z0-9][a-z0-9-]*[a-z0-9]$"
+    )
     resources: VMResources
     image: str = Field(default="24.04")  # Ubuntu 24.04 LTS
     size: Optional[VMSize] = None
-    ssh_key: str = Field(..., pattern="^(ssh-rsa|ssh-ed25519) ",
-                         description="SSH public key for VM access")
+    ssh_key: str = Field(
+        ...,
+        pattern="^(ssh-rsa|ssh-ed25519) ",
+        description="SSH public key for VM access",
+    )
     cloud_init_path: Optional[str] = None
     # Final multipass VM name to use; if None, provider may generate one.
     multipass_name: Optional[str] = None
@@ -142,6 +155,7 @@ class VMConfig(BaseModel):
 
 class VMInfo(BaseModel):
     """VM information."""
+
     id: str
     name: str
     status: VMStatus
@@ -153,13 +167,12 @@ class VMInfo(BaseModel):
     error_message: Optional[str] = None
 
     class Config:
-        json_encoders = {
-            datetime: lambda v: v.isoformat()
-        }
+        json_encoders = {datetime: lambda v: v.isoformat()}
 
 
 class SSHKey(BaseModel):
     """SSH key information."""
+
     name: str = Field(..., min_length=1, max_length=64)
     public_key: str = Field(..., pattern="^(ssh-rsa|ssh-ed25519) ")
     fingerprint: Optional[str] = None
@@ -167,11 +180,13 @@ class SSHKey(BaseModel):
 
 class VMAccessInfo(BaseModel):
     """VM access information."""
+
     ssh_host: str
     ssh_port: int
     vm_id: str = Field(..., description="Requestor's VM name")
-    multipass_name: str = Field(...,
-                                description="Full multipass VM name with timestamp")
+    multipass_name: str = Field(
+        ..., description="Full multipass VM name with timestamp"
+    )
 
 
 class VMProvider:
@@ -221,19 +236,23 @@ class VMError(Exception):
 
 class VMCreateError(VMError):
     """Error creating VM."""
+
     pass
 
 
 class VMNotFoundError(VMError):
     """VM not found."""
+
     pass
 
 
 class VMStateError(VMError):
     """Invalid VM state for operation."""
+
     pass
 
 
 class ResourceError(VMError):
     """Resource allocation error."""
+
     pass

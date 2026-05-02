@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Any, Dict
+from typing import Any, Dict, Optional
 
-from web3 import Web3
 from eth_account import Account
-from golem_streaming_abi import STREAM_PAYMENT_ABI, ERC20_ABI
+from golem_streaming_abi import ERC20_ABI, STREAM_PAYMENT_ABI
+from web3 import Web3
 
 
 @dataclass
@@ -23,10 +23,16 @@ class StreamPaymentClient:
         self.web3.eth.default_account = self.account.address
 
         self.contract = self.web3.eth.contract(
-            address=Web3.to_checksum_address(cfg.contract_address), abi=STREAM_PAYMENT_ABI
+            address=Web3.to_checksum_address(cfg.contract_address),
+            abi=STREAM_PAYMENT_ABI,
         )
         self.token_address = Web3.to_checksum_address(cfg.glm_token_address)
-        self.native_eth = self.token_address.lower() == Web3.to_checksum_address("0x0000000000000000000000000000000000000000").lower()
+        self.native_eth = (
+            self.token_address.lower()
+            == Web3.to_checksum_address(
+                "0x0000000000000000000000000000000000000000"
+            ).lower()
+        )
         self.erc20 = None
         if not self.native_eth:
             self.erc20 = self.web3.eth.contract(
@@ -40,7 +46,9 @@ class StreamPaymentClient:
         }
         # Fill chainId
         try:
-            base["chainId"] = getattr(self.web3.eth, "chain_id", None) or self.web3.eth.chain_id
+            base["chainId"] = (
+                getattr(self.web3.eth, "chain_id", None) or self.web3.eth.chain_id
+            )
         except Exception:
             pass
         # Try gas estimation and fee fields
@@ -55,7 +63,11 @@ class StreamPaymentClient:
             max_fee = getattr(self.web3.eth, "max_priority_fee", None)
             if max_fee is not None:
                 base.setdefault("maxPriorityFeePerGas", max_fee)
-            base.setdefault("maxFeePerGas", getattr(self.web3.eth, "gas_price", lambda: None)() or self.web3.eth.gas_price)
+            base.setdefault(
+                "maxFeePerGas",
+                getattr(self.web3.eth, "gas_price", lambda: None)()
+                or self.web3.eth.gas_price,
+            )
         except Exception:
             try:
                 base.setdefault("gasPrice", self.web3.eth.gas_price)
@@ -66,27 +78,45 @@ class StreamPaymentClient:
         # In production, sign and send raw; in tests, Account may be a dummy without signer
         if hasattr(self.account, "sign_transaction"):
             signed = self.account.sign_transaction(tx)
-            raw = getattr(signed, "rawTransaction", None) or getattr(signed, "raw_transaction", None)
+            raw = getattr(signed, "rawTransaction", None) or getattr(
+                signed, "raw_transaction", None
+            )
             if raw is None:
-                raise RuntimeError("sign_transaction did not return raw transaction bytes")
+                raise RuntimeError(
+                    "sign_transaction did not return raw transaction bytes"
+                )
             tx_hash = self.web3.eth.send_raw_transaction(raw)
         else:
             tx_hash = self.web3.eth.send_transaction(tx)
         receipt = self.web3.eth.wait_for_transaction_receipt(tx_hash)
-        return {"transactionHash": tx_hash.hex(), "status": receipt.status, "logs": receipt.logs}
+        return {
+            "transactionHash": tx_hash.hex(),
+            "status": receipt.status,
+            "logs": receipt.logs,
+        }
 
-    def create_stream(self, provider_address: str, deposit_wei: int, rate_per_second_wei: int) -> int:
+    def create_stream(
+        self, provider_address: str, deposit_wei: int, rate_per_second_wei: int
+    ) -> int:
         tx_value = None
-        token_param = self.token_address if not self.native_eth else Web3.to_checksum_address("0x0000000000000000000000000000000000000000")
+        token_param = (
+            self.token_address
+            if not self.native_eth
+            else Web3.to_checksum_address("0x0000000000000000000000000000000000000000")
+        )
 
         if not self.native_eth:
             # Approve deposit for the StreamPayment contract (only if needed)
             try:
-                allowance = self.erc20.functions.allowance(self.account.address, self.contract.address).call()
+                allowance = self.erc20.functions.allowance(
+                    self.account.address, self.contract.address
+                ).call()
             except Exception:
                 allowance = 0
             if int(allowance) < int(deposit_wei):
-                approve = self.erc20.functions.approve(self.contract.address, int(deposit_wei))
+                approve = self.erc20.functions.approve(
+                    self.contract.address, int(deposit_wei)
+                )
                 self._send(approve)
         else:
             tx_value = int(deposit_wei)
@@ -108,12 +138,20 @@ class StreamPaymentClient:
             }
             tx = fn.build_transaction(base)
             signed = self.account.sign_transaction(tx)
-            raw = getattr(signed, "rawTransaction", None) or getattr(signed, "raw_transaction", None)
+            raw = getattr(signed, "rawTransaction", None) or getattr(
+                signed, "raw_transaction", None
+            )
             if raw is None:
-                raise RuntimeError("sign_transaction did not return raw transaction bytes")
+                raise RuntimeError(
+                    "sign_transaction did not return raw transaction bytes"
+                )
             tx_hash = self.web3.eth.send_raw_transaction(raw)
             receipt = self.web3.eth.wait_for_transaction_receipt(tx_hash)
-            tx_receipt = {"transactionHash": tx_hash.hex(), "status": receipt.status, "logs": receipt.logs}
+            tx_receipt = {
+                "transactionHash": tx_hash.hex(),
+                "status": receipt.status,
+                "logs": receipt.logs,
+            }
         else:
             tx_receipt = self._send(fn)
 
@@ -143,11 +181,15 @@ class StreamPaymentClient:
         if not self.native_eth:
             # Approve first (only if needed)
             try:
-                allowance = self.erc20.functions.allowance(self.account.address, self.contract.address).call()
+                allowance = self.erc20.functions.allowance(
+                    self.account.address, self.contract.address
+                ).call()
             except Exception:
                 allowance = 0
             if int(allowance) < int(amount_wei):
-                approve = self.erc20.functions.approve(self.contract.address, int(amount_wei))
+                approve = self.erc20.functions.approve(
+                    self.contract.address, int(amount_wei)
+                )
                 self._send(approve)
             fn = self.contract.functions.topUp(int(stream_id), int(amount_wei))
             receipt = self._send(fn)
@@ -162,9 +204,13 @@ class StreamPaymentClient:
             }
             tx = fn.build_transaction(base)
             signed = self.account.sign_transaction(tx)
-            raw = getattr(signed, "rawTransaction", None) or getattr(signed, "raw_transaction", None)
+            raw = getattr(signed, "rawTransaction", None) or getattr(
+                signed, "raw_transaction", None
+            )
             if raw is None:
-                raise RuntimeError("sign_transaction did not return raw transaction bytes")
+                raise RuntimeError(
+                    "sign_transaction did not return raw transaction bytes"
+                )
             tx_hash = self.web3.eth.send_raw_transaction(raw)
             self.web3.eth.wait_for_transaction_receipt(tx_hash)
             return tx_hash.hex()

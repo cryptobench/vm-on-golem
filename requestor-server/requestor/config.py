@@ -1,10 +1,19 @@
-from pathlib import Path
-from typing import Optional, Dict
-import os
-from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field, field_validator, ValidationInfo
 import os
 import sys
+from pathlib import Path
+from typing import Dict, Optional
+
+from pydantic import Field, ValidationInfo, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def normalize_discovery_backend(value: str | None) -> str:
+    raw = (value or "").strip().lower().replace("_", "-")
+    if raw in {"", "arkiv", "golem-base", "golembase"}:
+        return "arkiv"
+    if raw in {"central", "discovery-server", "discovery"}:
+        return "central"
+    raise ValueError("Discovery backend must be 'arkiv' or 'central'")
 
 
 def ensure_config() -> None:
@@ -40,47 +49,50 @@ def ensure_config() -> None:
 
 ensure_config()
 
+
 class RequestorConfig(BaseSettings):
     """Configuration settings for the requestor node."""
 
     model_config = SettingsConfigDict(env_prefix="GOLEM_REQUESTOR_")
-    
+
     # Environment
     environment: str = Field(
         default="production",
-        description="Environment mode: 'development' or 'production'"
+        description="Environment mode: 'development' or 'production'",
     )
     # Network (for discovery filtering and defaults)
     network: str = Field(
-        default="mainnet",
-        description="Target network: 'testnet' or 'mainnet'"
+        default="mainnet", description="Target network: 'testnet' or 'mainnet'"
     )
-    
+
     # Payments chain selection (modular network profiles)
     # Keep current standard as l2.hoodi
     payments_network: str = Field(
         default="l2.hoodi",
-        description="Payments network profile (e.g., 'l2.hoodi', 'kaolin.hoodi', 'mainnet')"
+        description="Payments network profile (e.g., 'l2.hoodi', 'kaolin.hoodi', 'mainnet')",
     )
-    
+
     # Development Settings
     force_localhost: bool = Field(
         default=False,
-        description="Force localhost for provider URLs in development mode"
+        description="Force localhost for provider URLs in development mode",
     )
 
     @property
     def DEV_MODE(self) -> bool:
         return self.environment == "development"
-    
-    # Discovery Service
+
+    # Discovery. "Discovery" is the capability; Arkiv and central are backends.
+    discovery_backend: str = Field(
+        default="arkiv",
+        description="Discovery backend: 'arkiv' or 'central'",
+    )
     discovery_driver: str = Field(
-        default="golem-base",
-        description="Discovery driver: 'central' or 'golem-base'"
+        default="arkiv", description="Deprecated alias for discovery_backend"
     )
     discovery_url: str = Field(
         default="http://195.201.39.101:9001",
-        description="URL of the discovery service (for 'central' driver)"
+        description="URL of the discovery service (for 'central' driver)",
     )
 
     @field_validator("discovery_url")
@@ -90,6 +102,32 @@ class RequestorConfig(BaseSettings):
         if info.data.get("environment") == "development":
             return f"DEVMODE-{v}"
         return v
+
+    @field_validator("discovery_backend", mode="before")
+    @classmethod
+    def resolve_discovery_backend(cls, v: str) -> str:
+        if os.environ.get("GOLEM_REQUESTOR_DISCOVERY_BACKEND"):
+            return normalize_discovery_backend(
+                os.environ["GOLEM_REQUESTOR_DISCOVERY_BACKEND"]
+            )
+        if os.environ.get("GOLEM_REQUESTOR_DISCOVERY_DRIVER"):
+            return normalize_discovery_backend(
+                os.environ["GOLEM_REQUESTOR_DISCOVERY_DRIVER"]
+            )
+        return normalize_discovery_backend(v)
+
+    @field_validator("discovery_driver", mode="before")
+    @classmethod
+    def resolve_legacy_discovery_driver(cls, v: str, info: ValidationInfo) -> str:
+        if os.environ.get("GOLEM_REQUESTOR_DISCOVERY_BACKEND"):
+            return normalize_discovery_backend(
+                os.environ["GOLEM_REQUESTOR_DISCOVERY_BACKEND"]
+            )
+        if os.environ.get("GOLEM_REQUESTOR_DISCOVERY_DRIVER"):
+            return normalize_discovery_backend(
+                os.environ["GOLEM_REQUESTOR_DISCOVERY_DRIVER"]
+            )
+        return normalize_discovery_backend(v or info.data.get("discovery_backend"))
 
     @field_validator("environment", mode="before")
     @classmethod
@@ -114,114 +152,183 @@ class RequestorConfig(BaseSettings):
             return "development"
         return v or "mainnet"
 
-    # Golem Base Settings
+    # Arkiv Settings. GOLEM_BASE_* env vars are accepted as compatibility aliases.
+    arkiv_rpc_url: str = Field(
+        default="https://kaolin.hoodi.arkiv.network/rpc",
+        description="Arkiv RPC URL.",
+    )
+    arkiv_ws_url: str = Field(
+        default="wss://kaolin.hoodi.arkiv.network/rpc/ws",
+        description="Arkiv WebSocket URL.",
+    )
+    arkiv_dev_rpc_url: str = Field(
+        default=os.environ.get(
+            "GOLEM_REQUESTOR_ARKIV_DEV_RPC_URL",
+            os.environ.get(
+                "ARKIV_DEV_RPC_URL",
+                os.environ.get(
+                    "GOLEM_REQUESTOR_GOLEM_BASE_DEV_RPC_URL",
+                    os.environ.get("GOLEM_BASE_DEV_RPC_URL", ""),
+                ),
+            ),
+        ),
+        description="RPC URL for Arkiv development network (used when environment=development)",
+    )
+    arkiv_dev_ws_url: str = Field(
+        default=os.environ.get(
+            "GOLEM_REQUESTOR_ARKIV_DEV_WS_URL",
+            os.environ.get(
+                "ARKIV_DEV_WS_URL",
+                os.environ.get(
+                    "GOLEM_REQUESTOR_GOLEM_BASE_DEV_WS_URL",
+                    os.environ.get("GOLEM_BASE_DEV_WS_URL", ""),
+                ),
+            ),
+        ),
+        description="WebSocket URL for Arkiv development network (used when environment=development)",
+    )
     golem_base_rpc_url: str = Field(
         default="https://kaolin.hoodi.arkiv.network/rpc",
-        description="Golem Base RPC URL"
+        description="Arkiv RPC URL. Field name is kept for compatibility.",
     )
     golem_base_ws_url: str = Field(
         default="wss://kaolin.hoodi.arkiv.network/rpc/ws",
-        description="Golem Base WebSocket URL"
+        description="Arkiv WebSocket URL. Field name is kept for compatibility.",
     )
-    # Optional dev-only overrides for a separate Golem Base development network
+    # Optional dev-only overrides for a separate Arkiv development network
     golem_base_dev_rpc_url: str = Field(
-        default=os.environ.get("GOLEM_REQUESTOR_GOLEM_BASE_DEV_RPC_URL", os.environ.get("GOLEM_BASE_DEV_RPC_URL", "")),
-        description="RPC URL for Golem Base development network (used when environment=development)"
+        default=os.environ.get(
+            "GOLEM_REQUESTOR_ARKIV_DEV_RPC_URL",
+            os.environ.get(
+                "ARKIV_DEV_RPC_URL",
+                os.environ.get(
+                    "GOLEM_REQUESTOR_GOLEM_BASE_DEV_RPC_URL",
+                    os.environ.get("GOLEM_BASE_DEV_RPC_URL", ""),
+                ),
+            ),
+        ),
+        description="RPC URL for Arkiv development network (used when environment=development)",
     )
     golem_base_dev_ws_url: str = Field(
-        default=os.environ.get("GOLEM_REQUESTOR_GOLEM_BASE_DEV_WS_URL", os.environ.get("GOLEM_BASE_DEV_WS_URL", "")),
-        description="WebSocket URL for Golem Base development network (used when environment=development)"
+        default=os.environ.get(
+            "GOLEM_REQUESTOR_ARKIV_DEV_WS_URL",
+            os.environ.get(
+                "ARKIV_DEV_WS_URL",
+                os.environ.get(
+                    "GOLEM_REQUESTOR_GOLEM_BASE_DEV_WS_URL",
+                    os.environ.get("GOLEM_BASE_DEV_WS_URL", ""),
+                ),
+            ),
+        ),
+        description="WebSocket URL for Arkiv development network (used when environment=development)",
     )
 
-    @field_validator("golem_base_rpc_url", mode='before')
+    @field_validator("arkiv_rpc_url", "golem_base_rpc_url", mode="before")
     @classmethod
-    def prefer_dev_gb_rpc(cls, v: str, info: ValidationInfo) -> str:
+    def prefer_dev_arkiv_rpc(cls, v: str, info: ValidationInfo) -> str:
         env = (info.data.get("environment") or "").lower()
         if env == "development":
+            if os.environ.get("GOLEM_REQUESTOR_ARKIV_DEV_RPC_URL"):
+                return os.environ["GOLEM_REQUESTOR_ARKIV_DEV_RPC_URL"]
+            if os.environ.get("ARKIV_DEV_RPC_URL"):
+                return os.environ["ARKIV_DEV_RPC_URL"]
             if os.environ.get("GOLEM_REQUESTOR_GOLEM_BASE_DEV_RPC_URL"):
                 return os.environ["GOLEM_REQUESTOR_GOLEM_BASE_DEV_RPC_URL"]
             if os.environ.get("GOLEM_BASE_DEV_RPC_URL"):
                 return os.environ["GOLEM_BASE_DEV_RPC_URL"]
+            dev_v = (info.data.get("arkiv_dev_rpc_url") or "").strip()
+            if dev_v:
+                return dev_v
             dev_v = (info.data.get("golem_base_dev_rpc_url") or "").strip()
             if dev_v:
                 return dev_v
+        if os.environ.get("GOLEM_REQUESTOR_ARKIV_RPC_URL"):
+            return os.environ["GOLEM_REQUESTOR_ARKIV_RPC_URL"]
+        if os.environ.get("ARKIV_RPC_URL"):
+            return os.environ["ARKIV_RPC_URL"]
         if os.environ.get("GOLEM_REQUESTOR_GOLEM_BASE_RPC_URL"):
             return os.environ["GOLEM_REQUESTOR_GOLEM_BASE_RPC_URL"]
         return v
 
-    @field_validator("golem_base_ws_url", mode='before')
+    @field_validator("arkiv_ws_url", "golem_base_ws_url", mode="before")
     @classmethod
-    def prefer_dev_gb_ws(cls, v: str, info: ValidationInfo) -> str:
+    def prefer_dev_arkiv_ws(cls, v: str, info: ValidationInfo) -> str:
         env = (info.data.get("environment") or "").lower()
         if env == "development":
+            if os.environ.get("GOLEM_REQUESTOR_ARKIV_DEV_WS_URL"):
+                return os.environ["GOLEM_REQUESTOR_ARKIV_DEV_WS_URL"]
+            if os.environ.get("ARKIV_DEV_WS_URL"):
+                return os.environ["ARKIV_DEV_WS_URL"]
             if os.environ.get("GOLEM_REQUESTOR_GOLEM_BASE_DEV_WS_URL"):
                 return os.environ["GOLEM_REQUESTOR_GOLEM_BASE_DEV_WS_URL"]
             if os.environ.get("GOLEM_BASE_DEV_WS_URL"):
                 return os.environ["GOLEM_BASE_DEV_WS_URL"]
+            dev_v = (info.data.get("arkiv_dev_ws_url") or "").strip()
+            if dev_v:
+                return dev_v
             dev_v = (info.data.get("golem_base_dev_ws_url") or "").strip()
             if dev_v:
                 return dev_v
+        if os.environ.get("GOLEM_REQUESTOR_ARKIV_WS_URL"):
+            return os.environ["GOLEM_REQUESTOR_ARKIV_WS_URL"]
+        if os.environ.get("ARKIV_WS_URL"):
+            return os.environ["ARKIV_WS_URL"]
         if os.environ.get("GOLEM_REQUESTOR_GOLEM_BASE_WS_URL"):
             return os.environ["GOLEM_REQUESTOR_GOLEM_BASE_WS_URL"]
         return v
+
     advertisement_interval: int = Field(
         default=3600,
-        description="Advertisement interval in seconds (should match provider's GOLEM_BASE_ADVERTISEMENT_INTERVAL)"
+        description="Advertisement interval in seconds (should match provider Arkiv advertisement interval)",
     )
     ethereum_private_key: str = Field(
         default="0x0000000000000000000000000000000000000000000000000000000000000001",
-        description="Private key for Golem Base"
+        description="Private key for Arkiv",
     )
-    
+
     # Payments (EVM RPC)
     polygon_rpc_url: str = Field(
         default="",
-        description="EVM RPC URL for streaming payments; defaults from payments_network profile"
+        description="EVM RPC URL for streaming payments; defaults from payments_network profile",
     )
     stream_payment_address: str = Field(
         default="",
-        description="Deployed StreamPayment contract address (defaults to contracts/deployments/l2.json)"
+        description="Deployed StreamPayment contract address (defaults to contracts/deployments/l2.json)",
     )
     glm_token_address: str = Field(
         default="",
-        description="Token address (0x0 means native ETH). Defaults from l2.json"
+        description="Token address (0x0 means native ETH). Defaults from l2.json",
     )
     # Stream monitor (auto top-up)
     stream_monitor_enabled: bool = Field(
-        default=True,
-        description="Enable background monitor to auto top-up streams"
+        default=True, description="Enable background monitor to auto top-up streams"
     )
     stream_monitor_interval_seconds: int = Field(
-        default=30,
-        description="How frequently to check and top up streams"
+        default=30, description="How frequently to check and top up streams"
     )
     stream_min_remaining_seconds: int = Field(
-        default=3600,
-        description="Minimum remaining runway to maintain (seconds)"
+        default=3600, description="Minimum remaining runway to maintain (seconds)"
     )
     stream_topup_target_seconds: int = Field(
-        default=3600,
-        description="Target runway after top-up (seconds)"
+        default=3600, description="Target runway after top-up (seconds)"
     )
     # Faucet settings (payments)
     l2_faucet_url: str = Field(
         default="",
-        description="Faucet base URL (no trailing /api). Only used on testnets. Defaults from payments_network profile"
+        description="Faucet base URL (no trailing /api). Only used on testnets. Defaults from payments_network profile",
     )
     captcha_url: str = Field(
-        default="https://cap.gobas.me",
-        description="CAPTCHA base URL"
+        default="https://cap.gobas.me", description="CAPTCHA base URL"
     )
     captcha_api_key: str = Field(
-        default="05381a2cef5e",
-        description="CAPTCHA API key path segment"
+        default="05381a2cef5e", description="CAPTCHA API key path segment"
     )
     provider_eth_address: str = Field(
         default="",
-        description="Optional provider Ethereum address for test/dev streaming"
+        description="Optional provider Ethereum address for test/dev streaming",
     )
 
-    @field_validator("polygon_rpc_url", mode='before')
+    @field_validator("polygon_rpc_url", mode="before")
     @classmethod
     def prefer_alt_env(cls, v: str, info: ValidationInfo) -> str:
         # Accept alt aliases overriding the profile
@@ -239,7 +346,7 @@ class RequestorConfig(BaseSettings):
         pn = info.data.get("payments_network") or "l2.hoodi"
         return RequestorConfig._profile_defaults(pn)["rpc_url"]
 
-    @field_validator("l2_faucet_url", mode='before')
+    @field_validator("l2_faucet_url", mode="before")
     @classmethod
     def default_faucet_env(cls, v: str, info: ValidationInfo) -> str:
         for key in (
@@ -258,26 +365,35 @@ class RequestorConfig(BaseSettings):
         try:
             base = os.environ.get("GOLEM_DEPLOYMENTS_DIR")
             if base:
-                path = Path(base) / f"{RequestorConfig._deployment_basename(network)}.json"
+                path = (
+                    Path(base) / f"{RequestorConfig._deployment_basename(network)}.json"
+                )
             else:
                 # repo root assumption: ../../ relative to this file
                 path = (
                     Path(__file__).resolve().parents[2]
-                    / "contracts" / "deployments" / f"{RequestorConfig._deployment_basename(network)}.json"
+                    / "contracts"
+                    / "deployments"
+                    / f"{RequestorConfig._deployment_basename(network)}.json"
                 )
             if not path.exists():
                 # Try package resource fallback
                 try:
                     import importlib.resources as ir
+
                     with ir.files("requestor.data.deployments").joinpath(
                         f"{RequestorConfig._deployment_basename(network)}.json"
-                    ).open("r") as fh:  # type: ignore[attr-defined]
+                    ).open(
+                        "r"
+                    ) as fh:  # type: ignore[attr-defined]
                         import json as _json
+
                         data = _json.load(fh)
                 except Exception:
                     return None, None
             else:
                 import json as _json
+
                 data = _json.loads(path.read_text())
             sp = data.get("StreamPayment", {})
             addr = sp.get("address")
@@ -321,7 +437,7 @@ class RequestorConfig(BaseSettings):
         }
         return profiles.get(n, profiles["l2.hoodi"])  # default to current standard
 
-    @field_validator("stream_payment_address", mode='before')
+    @field_validator("stream_payment_address", mode="before")
     @classmethod
     def default_stream_addr(cls, v: str, info: ValidationInfo) -> str:
         if v:
@@ -330,7 +446,7 @@ class RequestorConfig(BaseSettings):
         addr, _ = RequestorConfig._load_deployment(network)
         return addr or "0x0000000000000000000000000000000000000000"
 
-    @field_validator("glm_token_address", mode='before')
+    @field_validator("glm_token_address", mode="before")
     @classmethod
     def default_token_addr(cls, v: str, info: ValidationInfo) -> str:
         if v:
@@ -341,12 +457,10 @@ class RequestorConfig(BaseSettings):
 
     # Optional convenience: expose token and gas symbols based on profile
     token_symbol: str = Field(
-        default="",
-        description="Human-friendly symbol of payment token (e.g., GLM)"
+        default="", description="Human-friendly symbol of payment token (e.g., GLM)"
     )
     gas_token_symbol: str = Field(
-        default="",
-        description="Symbol of gas token for the chain (e.g., ETH)"
+        default="", description="Symbol of gas token for the chain (e.g., ETH)"
     )
 
     @field_validator("token_symbol", mode="before")
@@ -368,50 +482,51 @@ class RequestorConfig(BaseSettings):
     # Base Directory
     base_dir: Path = Field(
         default_factory=lambda: Path.home() / ".golem" / "requestor",
-        description="Base directory for all Golem requestor files"
+        description="Base directory for all Golem requestor files",
     )
-    
+
     # SSH Settings
     ssh_key_dir: Path = Field(
-        default=None,
-        description="Directory for SSH keys. Defaults to {base_dir}/ssh"
+        default=None, description="Directory for SSH keys. Defaults to {base_dir}/ssh"
     )
-    
+
     # Database Settings
     db_path: Path = Field(
         default=None,
-        description="Path to SQLite database. Defaults to {base_dir}/vms.db"
+        description="Path to SQLite database. Defaults to {base_dir}/vms.db",
     )
 
     def __init__(self, **kwargs):
         # Allow overriding to dev mode with golem_dev_mode
-        if os.environ.get('golem_dev_mode', 'false').lower() in ('true', '1', 't'):
-            kwargs['environment'] = "development"
+        if os.environ.get("golem_dev_mode", "false").lower() in ("true", "1", "t"):
+            kwargs["environment"] = "development"
         # Fallback: if requestor env not provided but provider env signals development, mirror it
-        if not kwargs.get('environment') and os.environ.get('GOLEM_ENVIRONMENT'):
+        if not kwargs.get("environment") and os.environ.get("GOLEM_ENVIRONMENT"):
             # Mirror unified GOLEM_ENVIRONMENT into requestor environment if not explicitly provided
-            kwargs['environment'] = os.environ.get('GOLEM_ENVIRONMENT')
+            kwargs["environment"] = os.environ.get("GOLEM_ENVIRONMENT")
 
         # Set dependent paths before validation
-        if 'ssh_key_dir' not in kwargs:
-            base_dir = kwargs.get('base_dir', Path.home() / ".golem" / "requestor")
-            kwargs['ssh_key_dir'] = base_dir / "ssh"
-        if 'db_path' not in kwargs:
-            base_dir = kwargs.get('base_dir', Path.home() / ".golem" / "requestor")
-            kwargs['db_path'] = base_dir / "vms.db"
+        if "ssh_key_dir" not in kwargs:
+            base_dir = kwargs.get("base_dir", Path.home() / ".golem" / "requestor")
+            kwargs["ssh_key_dir"] = base_dir / "ssh"
+        if "db_path" not in kwargs:
+            base_dir = kwargs.get("base_dir", Path.home() / ".golem" / "requestor")
+            kwargs["db_path"] = base_dir / "vms.db"
         super().__init__(**kwargs)
 
     @property
     def faucet_enabled(self) -> bool:
         """Whether requesting funds from faucet is allowed for current payments network."""
-        return bool(self._profile_defaults(self.payments_network).get("faucet_enabled", False))
+        return bool(
+            self._profile_defaults(self.payments_network).get("faucet_enabled", False)
+        )
 
     def get_provider_url(self, ip_address: str) -> str:
         """Get provider API URL.
-        
+
         Args:
             ip_address: The IP address of the provider.
-        
+
         Returns:
             The complete provider URL with protocol and port.
         """
@@ -419,5 +534,6 @@ class RequestorConfig(BaseSettings):
             # In dev mode, we might still want to use the real IP
             pass
         return f"http://{ip_address}:7466"
+
 
 config = RequestorConfig()

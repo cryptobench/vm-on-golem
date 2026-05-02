@@ -46,4 +46,3 @@ def set_price_display(mode: Literal["fiat", "native"]) -> None:
     prefs = _read_prefs()
     prefs["price_display"] = mode
     _write_prefs(prefs)
-

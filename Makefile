@@ -5,37 +5,42 @@
 PORT_CHECKER_PORT ?= 9000
 # Shared token between UI and proxy (public in UI; use dev-only value)
 PORT_CHECKER_TOKEN ?= dev-token
-# Golem Base RPC/WS for provider resolution (L3 Kaolin Hoodi)
-GOLEM_BASE_RPC_URL ?= https://kaolin.hoodi.arkiv.network/rpc
-GOLEM_BASE_WS_URL ?= wss://kaolin.hoodi.arkiv.network/rpc/ws
-# Optional dev-only endpoints for Golem Base
-GOLEM_BASE_DEV_RPC_URL ?=
-GOLEM_BASE_DEV_WS_URL ?=
- # Discovery API used by the proxy to resolve provider IPs (central discovery). For local-only setups,
- # point this to any reachable discovery instance. Default to public demo endpoint.
-DISCOVERY_API_URL ?= http://195.201.39.101:9001/api/v1
+# Arkiv RPC/WS for provider resolution (Kaolin Hoodi).
+ARKIV_RPC_URL ?= https://kaolin.hoodi.arkiv.network/rpc
+ARKIV_WS_URL ?= wss://kaolin.hoodi.arkiv.network/rpc/ws
+# Optional dev-only Arkiv endpoints.
+ARKIV_DEV_RPC_URL ?=
+ARKIV_DEV_WS_URL ?=
+# Central discovery API used by the proxy. For local-only setups, point this to
+# any reachable central discovery instance. Default to public demo endpoint.
+CENTRAL_DISCOVERY_API_URL ?= http://195.201.39.101:9001/api/v1
 
 install: lock
-	poetry -C discovery-server install
+	poetry -C central-discovery-server install
+	poetry -C port-checker-server install
 	poetry -C provider-server install
 	poetry -C requestor-server install
 	poetry -C shared-faucet install
 
 lock:
-	poetry -C discovery-server lock
+	poetry -C central-discovery-server lock
+	poetry -C port-checker-server lock
 	poetry -C provider-server lock
 	poetry -C requestor-server lock
 
 test:
 	# Ensure dev deps (e.g., requests for TestClient) are installed per service
-	poetry -C discovery-server lock --no-update
-	poetry -C discovery-server install --with dev --no-interaction
-	poetry -C discovery-server run pytest discovery-server/tests --cov=discovery --cov-report=term-missing --cov-fail-under=100 || [ $$? -eq 5 ]
-	poetry -C provider-server lock --no-update
+	poetry -C central-discovery-server lock
+	poetry -C central-discovery-server install --with dev --no-interaction
+	poetry -C central-discovery-server run pytest central-discovery-server/tests --cov=central_discovery --cov-report=term-missing --cov-fail-under=100 || [ $$? -eq 5 ]
+	poetry -C port-checker-server lock
+	poetry -C port-checker-server install --with dev --no-interaction
+	poetry -C port-checker-server run pytest port-checker-server/tests || [ $$? -eq 5 ]
+	poetry -C provider-server lock
 	poetry -C provider-server install --with dev --no-interaction
 	# Provider uses service-local pytest.ini to scope coverage sources
 	poetry -C provider-server run pytest provider-server/tests --cov-fail-under=100 || [ $$? -eq 5 ]
-	poetry -C requestor-server lock --no-update
+	poetry -C requestor-server lock
 	poetry -C requestor-server install --with dev --no-interaction
 	# Requestor uses service-local pytest.ini to scope coverage sources
 	poetry -C requestor-server run pytest requestor-server/tests || [ $$? -eq 5 ]
@@ -51,31 +56,31 @@ start:
 	PORT_CHECKER_HOST=127.0.0.1 \
 	PORT_CHECKER_PORT=$(PORT_CHECKER_PORT) \
 	PORT_CHECKER_PROXY_TOKEN=$(PORT_CHECKER_TOKEN) \
-	DISCOVERY_API_URL=$(DISCOVERY_API_URL) \
-	GOLEM_BASE_RPC_URL=$(if $(GOLEM_BASE_DEV_RPC_URL),$(GOLEM_BASE_DEV_RPC_URL),$(GOLEM_BASE_RPC_URL)) \
-	GOLEM_BASE_WS_URL=$(if $(GOLEM_BASE_DEV_WS_URL),$(GOLEM_BASE_DEV_WS_URL),$(GOLEM_BASE_WS_URL)) \
+	CENTRAL_DISCOVERY_API_URL=$(CENTRAL_DISCOVERY_API_URL) \
+	ARKIV_RPC_URL=$(if $(ARKIV_DEV_RPC_URL),$(ARKIV_DEV_RPC_URL),$(ARKIV_RPC_URL)) \
+	ARKIV_WS_URL=$(if $(ARKIV_DEV_WS_URL),$(ARKIV_DEV_WS_URL),$(ARKIV_WS_URL)) \
 	poetry -C port-checker-server run port-checker & \
 	# Start requestor web UI (development environment)
 	GOLEM_ENVIRONMENT=development \
 	NEXT_PUBLIC_GOLEM_ENVIRONMENT=development \
-	NEXT_PUBLIC_DISCOVERY_API_URL=$(DISCOVERY_API_URL) \
+	NEXT_PUBLIC_DISCOVERY_API_URL=$(CENTRAL_DISCOVERY_API_URL) \
 	NEXT_PUBLIC_PORT_CHECKER_URL=http://127.0.0.1:$(PORT_CHECKER_PORT) \
 	NEXT_PUBLIC_PORT_CHECKER_TOKEN=$(PORT_CHECKER_TOKEN) \
-	NEXT_PUBLIC_GOLEM_BASE_DEV_RPC_URL=$(GOLEM_BASE_DEV_RPC_URL) \
-	NEXT_PUBLIC_GOLEM_BASE_DEV_WS_URL=$(GOLEM_BASE_DEV_WS_URL) \
+	NEXT_PUBLIC_ARKIV_DEV_RPC_URL=$(ARKIV_DEV_RPC_URL) \
+	NEXT_PUBLIC_ARKIV_DEV_WS_URL=$(ARKIV_DEV_WS_URL) \
 	npm --prefix requestor-web run dev & \
 	wait
 
 start-testnet:
 	@set -e; \
-	GOLEM_PROVIDER_NETWORK=testnet GOLEM_ENVIRONMENT=development poetry -C discovery-server run golem-discovery & \
+	GOLEM_PROVIDER_NETWORK=testnet GOLEM_ENVIRONMENT=development poetry -C central-discovery-server run golem-central-discovery & \
 	GOLEM_PROVIDER_NETWORK=testnet GOLEM_ENVIRONMENT=development poetry -C provider-server run golem-provider start --network testnet & \
 	GOLEM_REQUESTOR_NETWORK=testnet GOLEM_ENVIRONMENT=development poetry -C requestor-server run golem server api --reload & \
 	wait
 
 start-mainnet:
 	@set -e; \
-	GOLEM_PROVIDER_NETWORK=mainnet GOLEM_ENVIRONMENT=production poetry -C discovery-server run golem-discovery & \
+	GOLEM_PROVIDER_NETWORK=mainnet GOLEM_ENVIRONMENT=production poetry -C central-discovery-server run golem-central-discovery & \
 	GOLEM_PROVIDER_NETWORK=mainnet GOLEM_ENVIRONMENT=production poetry -C provider-server run golem-provider start & \
 	GOLEM_REQUESTOR_NETWORK=mainnet GOLEM_ENVIRONMENT=production poetry -C requestor-server run golem server api --reload & \
 	wait
@@ -91,9 +96,9 @@ dev-proxy:
 	PORT_CHECKER_HOST=127.0.0.1 \
 	PORT_CHECKER_PORT=$(PORT_CHECKER_PORT) \
 	PORT_CHECKER_PROXY_TOKEN=$(PORT_CHECKER_TOKEN) \
-	DISCOVERY_API_URL=$(DISCOVERY_API_URL) \
-	GOLEM_BASE_RPC_URL=$(if $(GOLEM_BASE_DEV_RPC_URL),$(GOLEM_BASE_DEV_RPC_URL),$(GOLEM_BASE_RPC_URL)) \
-	GOLEM_BASE_WS_URL=$(if $(GOLEM_BASE_DEV_WS_URL),$(GOLEM_BASE_DEV_WS_URL),$(GOLEM_BASE_WS_URL)) \
+	CENTRAL_DISCOVERY_API_URL=$(CENTRAL_DISCOVERY_API_URL) \
+	ARKIV_RPC_URL=$(if $(ARKIV_DEV_RPC_URL),$(ARKIV_DEV_RPC_URL),$(ARKIV_RPC_URL)) \
+	ARKIV_WS_URL=$(if $(ARKIV_DEV_WS_URL),$(ARKIV_DEV_WS_URL),$(ARKIV_WS_URL)) \
 	poetry -C port-checker-server run port-checker
 
 dev-web:
@@ -103,11 +108,11 @@ dev-web:
 	# Run Next.js dev with proxy + discovery env configured
 	GOLEM_ENVIRONMENT=development \
 	NEXT_PUBLIC_GOLEM_ENVIRONMENT=development \
-	NEXT_PUBLIC_DISCOVERY_API_URL=$(DISCOVERY_API_URL) \
+	NEXT_PUBLIC_DISCOVERY_API_URL=$(CENTRAL_DISCOVERY_API_URL) \
 	NEXT_PUBLIC_PORT_CHECKER_URL=http://127.0.0.1:$(PORT_CHECKER_PORT) \
 	NEXT_PUBLIC_PORT_CHECKER_TOKEN=$(PORT_CHECKER_TOKEN) \
-	NEXT_PUBLIC_GOLEM_BASE_DEV_RPC_URL=$(GOLEM_BASE_DEV_RPC_URL) \
-	NEXT_PUBLIC_GOLEM_BASE_DEV_WS_URL=$(GOLEM_BASE_DEV_WS_URL) \
+	NEXT_PUBLIC_ARKIV_DEV_RPC_URL=$(ARKIV_DEV_RPC_URL) \
+	NEXT_PUBLIC_ARKIV_DEV_WS_URL=$(ARKIV_DEV_WS_URL) \
 	npm --prefix requestor-web run dev
 
 dev-proxy-web:
@@ -120,18 +125,18 @@ dev-proxy-web:
 	PORT_CHECKER_HOST=127.0.0.1 \
 	PORT_CHECKER_PORT=$(PORT_CHECKER_PORT) \
 	PORT_CHECKER_PROXY_TOKEN=$(PORT_CHECKER_TOKEN) \
-	DISCOVERY_API_URL=$(DISCOVERY_API_URL) \
-	GOLEM_BASE_RPC_URL=$(if $(GOLEM_BASE_DEV_RPC_URL),$(GOLEM_BASE_DEV_RPC_URL),$(GOLEM_BASE_RPC_URL)) \
-	GOLEM_BASE_WS_URL=$(if $(GOLEM_BASE_DEV_WS_URL),$(GOLEM_BASE_DEV_WS_URL),$(GOLEM_BASE_WS_URL)) \
+	CENTRAL_DISCOVERY_API_URL=$(CENTRAL_DISCOVERY_API_URL) \
+	ARKIV_RPC_URL=$(if $(ARKIV_DEV_RPC_URL),$(ARKIV_DEV_RPC_URL),$(ARKIV_RPC_URL)) \
+	ARKIV_WS_URL=$(if $(ARKIV_DEV_WS_URL),$(ARKIV_DEV_WS_URL),$(ARKIV_WS_URL)) \
 	poetry -C port-checker-server run port-checker & \
 	# Start web UI
 	GOLEM_ENVIRONMENT=development \
 	NEXT_PUBLIC_GOLEM_ENVIRONMENT=development \
-	NEXT_PUBLIC_DISCOVERY_API_URL=$(DISCOVERY_API_URL) \
+	NEXT_PUBLIC_DISCOVERY_API_URL=$(CENTRAL_DISCOVERY_API_URL) \
 	NEXT_PUBLIC_PORT_CHECKER_URL=http://127.0.0.1:$(PORT_CHECKER_PORT) \
 	NEXT_PUBLIC_PORT_CHECKER_TOKEN=$(PORT_CHECKER_TOKEN) \
-	NEXT_PUBLIC_GOLEM_BASE_DEV_RPC_URL=$(GOLEM_BASE_DEV_RPC_URL) \
-	NEXT_PUBLIC_GOLEM_BASE_DEV_WS_URL=$(GOLEM_BASE_DEV_WS_URL) \
+	NEXT_PUBLIC_ARKIV_DEV_RPC_URL=$(ARKIV_DEV_RPC_URL) \
+	NEXT_PUBLIC_ARKIV_DEV_WS_URL=$(ARKIV_DEV_WS_URL) \
 	npm --prefix requestor-web run dev & \
 	wait
 
@@ -150,18 +155,18 @@ start-dev:
 	PORT_CHECKER_HOST=127.0.0.1 \
 	PORT_CHECKER_PORT=$(PORT_CHECKER_PORT) \
 	PORT_CHECKER_PROXY_TOKEN=$(PORT_CHECKER_TOKEN) \
-	DISCOVERY_API_URL=$(DISCOVERY_API_URL) \
-	GOLEM_BASE_RPC_URL=$(if $(GOLEM_BASE_DEV_RPC_URL),$(GOLEM_BASE_DEV_RPC_URL),$(GOLEM_BASE_RPC_URL)) \
-	GOLEM_BASE_WS_URL=$(if $(GOLEM_BASE_DEV_WS_URL),$(GOLEM_BASE_DEV_WS_URL),$(GOLEM_BASE_WS_URL)) \
+	CENTRAL_DISCOVERY_API_URL=$(CENTRAL_DISCOVERY_API_URL) \
+	ARKIV_RPC_URL=$(if $(ARKIV_DEV_RPC_URL),$(ARKIV_DEV_RPC_URL),$(ARKIV_RPC_URL)) \
+	ARKIV_WS_URL=$(if $(ARKIV_DEV_WS_URL),$(ARKIV_DEV_WS_URL),$(ARKIV_WS_URL)) \
 	poetry -C port-checker-server run port-checker & \
 	# Start web UI (development environment)
 	GOLEM_ENVIRONMENT=development \
 	NEXT_PUBLIC_GOLEM_ENVIRONMENT=development \
-	NEXT_PUBLIC_DISCOVERY_API_URL=$(DISCOVERY_API_URL) \
+	NEXT_PUBLIC_DISCOVERY_API_URL=$(CENTRAL_DISCOVERY_API_URL) \
 	NEXT_PUBLIC_PORT_CHECKER_URL=http://127.0.0.1:$(PORT_CHECKER_PORT) \
 	NEXT_PUBLIC_PORT_CHECKER_TOKEN=$(PORT_CHECKER_TOKEN) \
-	NEXT_PUBLIC_GOLEM_BASE_DEV_RPC_URL=$(GOLEM_BASE_DEV_RPC_URL) \
-	NEXT_PUBLIC_GOLEM_BASE_DEV_WS_URL=$(GOLEM_BASE_DEV_WS_URL) \
+	NEXT_PUBLIC_ARKIV_DEV_RPC_URL=$(ARKIV_DEV_RPC_URL) \
+	NEXT_PUBLIC_ARKIV_DEV_WS_URL=$(ARKIV_DEV_WS_URL) \
 	npm --prefix requestor-web run dev & \
 	wait
 

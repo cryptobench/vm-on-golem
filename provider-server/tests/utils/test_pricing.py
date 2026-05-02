@@ -1,15 +1,16 @@
-import pytest
 from decimal import Decimal
 
+import pytest
+
+from provider.config import settings
 from provider.utils import pricing as pricing_mod
 from provider.utils.pricing import (
     calculate_monthly_cost,
     calculate_monthly_cost_usd,
-    usd_to_glm,
     update_glm_unit_prices_from_usd,
+    usd_to_glm,
 )
 from provider.vm.models import VMResources
-from provider.config import settings
 
 
 def test_calculate_monthly_cost_basic(monkeypatch):
@@ -53,4 +54,3 @@ def test_usd_to_glm_and_update_glm_unit_prices():
 def test_usd_to_glm_invalid_zero_price():
     with pytest.raises(ValueError):
         usd_to_glm(Decimal("1"), Decimal("0"))
-

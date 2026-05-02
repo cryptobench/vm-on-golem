@@ -1,4 +1,5 @@
 from fastapi.testclient import TestClient
+
 from provider.main import app
 
 
@@ -7,11 +8,13 @@ def test_provider_info_endpoint_returns_eth_and_contracts():
     # Override a few config fields
     old = dict(app.container.config())
     cfg = dict(old)
-    cfg.update({
-        "PROVIDER_ID": "0xProv",
-        "STREAM_PAYMENT_ADDRESS": "0xStream",
-        "GLM_TOKEN_ADDRESS": "0xGLM",
-    })
+    cfg.update(
+        {
+            "PROVIDER_ID": "0xProv",
+            "STREAM_PAYMENT_ADDRESS": "0xStream",
+            "GLM_TOKEN_ADDRESS": "0xGLM",
+        }
+    )
     try:
         app.container.config.override(cfg)
         resp = client.get("/api/v1/provider/info")

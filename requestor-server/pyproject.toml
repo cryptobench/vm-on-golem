@@ -46,6 +46,8 @@ pydantic-settings = "^2.1.0"
 web3 = "==7.13.0"
 golem-streaming-abi = ">=0.1.0,<0.2.0"
 golem-faucet = ">=0.1.0,<0.2.0"
+dependency-injector = "^4.41.0"
+sqlalchemy = "^1.4.39"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.2.0"
@@ -63,3 +65,12 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.scripts]
 golem = "requestor.run:main"
+
+[tool.black]
+line-length = 88
+target-version = ['py311']
+include = '\.pyi?$'
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3

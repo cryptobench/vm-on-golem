@@ -103,8 +103,8 @@ graph TB
     VMM --> MP[Multipass Provider]
     VMM --> PM[Proxy Manager]
     RT --> RM[Resource Monitor]
-    RT --> AD[Resource Advertiser]
-    AD --> DS[Discovery Service]
+    RT --> AD[Discovery Publisher]
+    AD --> ARK[Arkiv or Central Discovery]
     PM --> SSH[SSH Proxy]
     PV --> PM
     MP --> VM1[VM 1]
@@ -166,15 +166,15 @@ sequenceDiagram
     participant API as API
     participant RT as Resource Tracker
     participant RM as Resource Monitor
-    participant AD as Advertiser
+    participant AD as Discovery Publisher
 
     API->>RT: Request Resource Allocation
     RT->>RM: Check Available Resources
     RM-->>RT: Resource Status
     RT->>RT: Validate Requirements
     RT-->>API: Allocation Result
-    RT->>AD: Notify Resource Update
-    AD->>DS: Update Advertisement
+    RT->>AD: Notify resource update
+    AD->>AD: Publish via selected backend
 ```
 
 ### VM Management
@@ -447,8 +447,8 @@ golem-provider status [--json]
 
 - Network Selection (`--network` or `GOLEM_PROVIDER_NETWORK`)
   - Chooses the discovery/advertisement scope: providers advertise `golem_network=development|testnet|mainnet` and requestors filter accordingly.
-  - Pair with appropriate RPC envs (`GOLEM_PROVIDER_GOLEM_BASE_RPC_URL`, `GOLEM_PROVIDER_GOLEM_BASE_WS_URL`).
-  - In development, you can supply separate dev endpoints via `GOLEM_PROVIDER_GOLEM_BASE_DEV_RPC_URL` / `GOLEM_PROVIDER_GOLEM_BASE_DEV_WS_URL` (or generic `GOLEM_BASE_DEV_*`).
+  - Pair with appropriate Arkiv RPC envs (`GOLEM_PROVIDER_ARKIV_RPC_URL`, `GOLEM_PROVIDER_ARKIV_WS_URL`).
+  - In development, you can supply separate dev endpoints via `GOLEM_PROVIDER_ARKIV_DEV_RPC_URL` / `GOLEM_PROVIDER_ARKIV_DEV_WS_URL`.
   - Does not change dev ergonomics (logging, reload, or port verification behavior).
 
 - Payments Network (`GOLEM_PROVIDER_PAYMENTS_NETWORK`)
@@ -475,7 +475,7 @@ Notes:
 
 ### Faucet
 
-- L3 (Golem Base adverts): provider auto-requests funds on startup from `FAUCET_URL` (defaults to Kaolin Hoodi) protected by CAPTCHA at `CAPTCHA_URL/05381a2cef5e`.
+- Arkiv adverts: provider auto-requests funds on startup from `FAUCET_URL` (defaults to Kaolin Hoodi) protected by CAPTCHA at `CAPTCHA_URL/05381a2cef5e`.
 - L2 (payments): Use the CLI to request native ETH (enabled only on testnet profiles):
 
 ```bash
@@ -539,8 +539,8 @@ golem-provider config withdraw --enable true --interval 900 --min-wei 1000000000
 sequenceDiagram
     participant P as Provider
     participant RT as Resource Tracker
-    participant AD as Advertiser
-    participant DS as Discovery Service
+    participant AD as Discovery Publisher
+    participant DS as Selected Discovery Backend
 
     P->>RT: Initialize
     P->>RT: Sync with existing VMs
@@ -548,7 +548,7 @@ sequenceDiagram
     loop Every 4 minutes
         AD->>RT: Get Resources
         RT-->>AD: Available Resources
-        AD->>DS: Post Advertisement
+        AD->>DS: Publish advertisement
         DS-->>AD: Confirmation
     end
 ```

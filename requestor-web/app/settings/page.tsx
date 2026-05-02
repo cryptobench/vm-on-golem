@@ -21,13 +21,13 @@ export default function SettingsPage() {
   const [defaultKeyId, setDefaultKeyId] = React.useState<string | undefined>(undefined);
   const [saved, setSaved] = React.useState(false);
   const [displayCurrency, setDisplayCurrency] = React.useState<'fiat'|'token'>('fiat');
-  const [mode, setMode] = React.useState<"golem-base"|"central">(ads.mode);
+  const [mode, setMode] = React.useState<"arkiv"|"central">(ads.mode);
   const [disc, setDisc] = React.useState<string>(ads.discovery_url);
-  const [rpc, setRpc] = React.useState<string>(ads.golem_base_rpc_url);
+  const [rpc, setRpc] = React.useState<string>(ads.arkiv_rpc_url);
   const [chainIdText, setChainIdText] = React.useState<string>(() => {
     try { return '0x' + ads.chain_id.toString(16); } catch { return String(ads.chain_id || ''); }
   });
-  const [ws, setWs] = React.useState<string>(ads.golem_base_ws_url);
+  const [ws, setWs] = React.useState<string>(ads.arkiv_ws_url);
   const [profileName, setProfileName] = React.useState<string>(profiles.find(p => p.id === activeId)?.name || "");
   const [pendingProvider, setPendingProvider] = React.useState<string | null>(null);
   // SSH key add handled by KeyPicker
@@ -53,8 +53,8 @@ export default function SettingsPage() {
     // Sync ads-derived fields (profiles/context already mounted)
     setMode(ads.mode);
     setDisc(ads.discovery_url);
-    setRpc(ads.golem_base_rpc_url);
-    setWs(ads.golem_base_ws_url);
+    setRpc(ads.arkiv_rpc_url);
+    setWs(ads.arkiv_ws_url);
     try { setChainIdText('0x' + ads.chain_id.toString(16)); } catch { setChainIdText(String(ads.chain_id || '')); }
     setProfileName(profiles.find(p => p.id === activeId)?.name || "");
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -71,8 +71,8 @@ export default function SettingsPage() {
     setAds({
       mode,
       discovery_url: disc,
-      golem_base_rpc_url: rpc,
-      golem_base_ws_url: ws,
+      arkiv_rpc_url: rpc,
+      arkiv_ws_url: ws,
       chain_id: Number.isFinite(cid) && cid > 0 ? cid : ads.chain_id,
       advertisement_interval_seconds: ads.advertisement_interval_seconds,
     });
@@ -134,7 +134,7 @@ export default function SettingsPage() {
               <div className="grid gap-2 sm:grid-cols-[1fr_auto_auto] sm:items-end">
                 <div>
                   <label className="label">Active profile</label>
-                  <select className="input" value={activeId} onChange={(e) => { const id = e.target.value; setActive(id); const p = profiles.find(x => x.id === id); if (p) { setProfileName(p.name); setMode(p.config.mode); setDisc(p.config.discovery_url); setRpc(p.config.golem_base_rpc_url); setWs(p.config.golem_base_ws_url); } }}>
+                  <select className="input" value={activeId} onChange={(e) => { const id = e.target.value; setActive(id); const p = profiles.find(x => x.id === id); if (p) { setProfileName(p.name); setMode(p.config.mode); setDisc(p.config.discovery_url); setRpc(p.config.arkiv_rpc_url); setWs(p.config.arkiv_ws_url); } }}>
                     {profiles.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                   </select>
                 </div>
@@ -154,7 +154,7 @@ export default function SettingsPage() {
                 <div>
                   <label className="label">Mode</label>
                   <select className="input" value={mode} onChange={e => setMode(e.target.value as any)}>
-                    <option value="golem-base">Golem Base (default)</option>
+                    <option value="arkiv">Arkiv (default)</option>
                     <option value="central">Central Discovery</option>
                   </select>
                 </div>
@@ -170,11 +170,11 @@ export default function SettingsPage() {
                       <input className="input" value={chainIdText} onChange={e => setChainIdText(e.target.value)} placeholder="0x6013a" />
                     </div>
                     <div>
-                      <label className="label">Golem Base RPC URL</label>
+                      <label className="label">Arkiv RPC URL</label>
                       <input className="input" value={rpc} onChange={e => setRpc(e.target.value)} placeholder="https://.../rpc" />
                     </div>
                     <div>
-                      <label className="label">Golem Base WS URL</label>
+                      <label className="label">Arkiv WS URL</label>
                       <input className="input" value={ws} onChange={e => setWs(e.target.value)} placeholder="wss://.../rpc/ws" />
                     </div>
                   </>

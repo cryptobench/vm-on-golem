@@ -1,7 +1,8 @@
-from typer.testing import CliRunner
-import tempfile
 import os
 import re
+import tempfile
+
+from typer.testing import CliRunner
 
 from provider.main import cli
 
@@ -19,6 +20,7 @@ def test_cli_pricing_set_and_show(monkeypatch):
 
     # Fix GLM price
     from provider.utils import pricing as pricing_mod
+
     monkeypatch.setattr(pricing_mod, "fetch_glm_usd_price", lambda: None)
 
     # Set
@@ -53,6 +55,7 @@ def test_cli_pricing_set_and_show(monkeypatch):
 def test_cli_pricing_set_negative(monkeypatch):
     runner = CliRunner()
     from provider import main as main_mod
+
     monkeypatch.setattr(main_mod, "_env_path_for", lambda dev: os.devnull)
     result = runner.invoke(
         cli,
@@ -73,6 +76,7 @@ def test_cli_pricing_set_negative(monkeypatch):
 def test_cli_pricing_show_requires_price(monkeypatch):
     runner = CliRunner()
     from provider.utils import pricing as pricing_mod
+
     # Simulate failure to fetch price
     monkeypatch.setattr(pricing_mod, "fetch_glm_usd_price", lambda: None)
     result = runner.invoke(cli, ["pricing", "show"])
@@ -83,6 +87,7 @@ def test_cli_pricing_show_requires_price(monkeypatch):
 def test_cli_pricing_show_with_price(monkeypatch):
     runner = CliRunner()
     from provider.utils import pricing as pricing_mod
+
     # Provide a fixed price and verify USD appears in examples
     monkeypatch.setattr(pricing_mod, "fetch_glm_usd_price", lambda: 0.5)
     result = runner.invoke(cli, ["pricing", "show"])

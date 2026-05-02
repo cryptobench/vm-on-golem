@@ -3,7 +3,7 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
 
 
 @dataclass
@@ -47,7 +47,9 @@ class JobStore:
         finally:
             conn.close()
 
-    async def create_job(self, job_id: str, vm_id: str, status: str = "creating") -> None:
+    async def create_job(
+        self, job_id: str, vm_id: str, status: str = "creating"
+    ) -> None:
         now = datetime.now(timezone.utc).isoformat()
 
         def _op():
@@ -63,7 +65,9 @@ class JobStore:
 
         await asyncio.to_thread(_op)
 
-    async def update_job(self, job_id: str, *, status: Optional[str] = None, error: Optional[str] = None) -> None:
+    async def update_job(
+        self, job_id: str, *, status: Optional[str] = None, error: Optional[str] = None
+    ) -> None:
         now = datetime.now(timezone.utc).isoformat()
 
         def _op():
@@ -113,4 +117,3 @@ class JobStore:
                 conn.close()
 
         return await asyncio.to_thread(_op)
-

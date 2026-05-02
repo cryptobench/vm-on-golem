@@ -1,16 +1,16 @@
 from .models import (
-    VMConfig,
-    VMInfo,
-    VMStatus,
-    VMSize,
-    VMResources,
+    ResourceError,
     SSHKey,
-    VMProvider,
-    VMError,
+    VMConfig,
     VMCreateError,
+    VMError,
+    VMInfo,
     VMNotFoundError,
+    VMProvider,
+    VMResources,
+    VMSize,
     VMStateError,
-    ResourceError
+    VMStatus,
 )
 from .multipass_adapter import MultipassAdapter
 
@@ -27,5 +27,5 @@ __all__ = [
     "VMCreateError",
     "VMNotFoundError",
     "VMStateError",
-    "ResourceError"
+    "ResourceError",
 ]

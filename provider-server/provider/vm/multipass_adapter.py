@@ -1,14 +1,14 @@
-import json
-import uuid
-import subprocess
-from pathlib import Path
 import asyncio
+import json
+import subprocess
+import uuid
+from pathlib import Path
 from typing import Dict, List, Optional
-from ..utils.retry import async_retry_unless_not_found, NonRetryableError
 
 from ..config import settings
 from ..utils.logging import setup_logger
-from .models import VMConfig, VMInfo, VMResources, VMStatus, VMError, VMNotFoundError
+from ..utils.retry import NonRetryableError, async_retry_unless_not_found
+from .models import VMConfig, VMError, VMInfo, VMNotFoundError, VMResources, VMStatus
 from .provider import VMProvider
 
 logger = setup_logger(__name__)
@@ -16,11 +16,13 @@ logger = setup_logger(__name__)
 
 class MultipassError(VMError):
     """Raised when multipass operations fail."""
+
     pass
 
 
 class NonRetryableMultipassError(MultipassError, NonRetryableError):
     """Multipass error that should not be retried (e.g., parse/validation errors)."""
+
     pass
 
 
@@ -52,15 +54,17 @@ class MultipassAdapter(VMProvider):
         except (ValueError, TypeError):
             return default
 
-    async def _run_multipass(self, args: List[str], check: bool = True) -> subprocess.CompletedProcess:
+    async def _run_multipass(
+        self, args: List[str], check: bool = True
+    ) -> subprocess.CompletedProcess:
         """Run a multipass command."""
         # Commands that produce JSON or version info that we need to parse.
-        commands_to_capture = ['info', 'version']
+        commands_to_capture = ["info", "version"]
         should_capture = args[0] in commands_to_capture
 
         # We add a timeout to the launch command to prevent it from hanging indefinitely
         # e.g. during image download. 300 seconds = 5 minutes.
-        timeout = settings.LAUNCH_TIMEOUT_SECONDS if args[0] == 'launch' else None
+        timeout = settings.LAUNCH_TIMEOUT_SECONDS if args[0] == "launch" else None
 
         try:
             return await asyncio.to_thread(
@@ -69,14 +73,24 @@ class MultipassAdapter(VMProvider):
                 capture_output=should_capture,
                 text=True,
                 check=check,
-                timeout=timeout
+                timeout=timeout,
             )
         except subprocess.CalledProcessError as e:
-            stderr = e.stderr if should_capture and e.stderr else "No stderr captured. See provider logs for command output."
+            stderr = (
+                e.stderr
+                if should_capture and e.stderr
+                else "No stderr captured. See provider logs for command output."
+            )
             raise MultipassError(f"Multipass command failed: {stderr}")
         except subprocess.TimeoutExpired as e:
-            stderr = e.stderr if should_capture and e.stderr else "No stderr captured. See provider logs for command output."
-            raise MultipassError(f"Multipass command '{' '.join(args)}' timed out after {timeout} seconds. Stderr: {stderr}")
+            stderr = (
+                e.stderr
+                if should_capture and e.stderr
+                else "No stderr captured. See provider logs for command output."
+            )
+            raise MultipassError(
+                f"Multipass command '{' '.join(args)}' timed out after {timeout} seconds. Stderr: {stderr}"
+            )
 
     @async_retry_unless_not_found(
         retries=settings.RETRY_ATTEMPTS,
@@ -93,7 +107,9 @@ class MultipassAdapter(VMProvider):
             vm_info = info["info"][vm_id]
             essential_fields = ["state", "ipv4", "cpu_count", "memory", "disks"]
             if not all(field in vm_info for field in essential_fields):
-                raise KeyError(f"Essential fields missing from VM info. Got: {list(vm_info.keys())}")
+                raise KeyError(
+                    f"Essential fields missing from VM info. Got: {list(vm_info.keys())}"
+                )
             return vm_info
         except MultipassError as e:
             if "does not exist" in str(e):
@@ -128,11 +144,16 @@ class MultipassAdapter(VMProvider):
         launch_cmd = [
             "launch",
             config.image,
-            "--name", multipass_name,
-            "--cloud-init", config.cloud_init_path,
-            "--cpus", str(config.resources.cpu),
-            "--memory", f"{config.resources.memory}G",
-            "--disk", f"{config.resources.storage}G"
+            "--name",
+            multipass_name,
+            "--cloud-init",
+            config.cloud_init_path,
+            "--cpus",
+            str(config.resources.cpu),
+            "--memory",
+            f"{config.resources.memory}G",
+            "--disk",
+            f"{config.resources.storage}G",
         ]
         try:
             logger.info(f"Running multipass command: {' '.join(launch_cmd)}")
@@ -148,18 +169,26 @@ class MultipassAdapter(VMProvider):
                     if info.get("state", "").lower() == "running" and info.get("ipv4"):
                         ip_address = info["ipv4"][0]
                         break
-                    logger.debug(f"VM {config.name} status is {info.get('state')}, waiting...")
+                    logger.debug(
+                        f"VM {config.name} status is {info.get('state')}, waiting..."
+                    )
                 except (MultipassError, VMNotFoundError):
-                    logger.debug(f"VM {config.name} not found yet, retrying in {retry_delay}s...")
-                
+                    logger.debug(
+                        f"VM {config.name} not found yet, retrying in {retry_delay}s..."
+                    )
+
                 await asyncio.sleep(retry_delay)
-            
+
             if not ip_address:
-                raise MultipassError(f"VM {config.name} did not become ready or get an IP in time.")
+                raise MultipassError(
+                    f"VM {config.name} did not become ready or get an IP in time."
+                )
 
             # Configure proxy to allocate a port
             if not await self.proxy_manager.add_vm(multipass_name, ip_address):
-                raise MultipassError(f"Failed to configure proxy for VM {multipass_name}")
+                raise MultipassError(
+                    f"Failed to configure proxy for VM {multipass_name}"
+                )
 
             # Now get the full status, which will include the allocated port
             vm_info = await self.get_vm_status(multipass_name)
@@ -167,8 +196,12 @@ class MultipassAdapter(VMProvider):
             return vm_info
 
         except Exception as e:
-            logger.error(f"VM creation for {config.name} failed. Cleaning up.", exc_info=True)
-            await self._run_multipass(["delete", multipass_name, "--purge"], check=False)
+            logger.error(
+                f"VM creation for {config.name} failed. Cleaning up.", exc_info=True
+            )
+            await self._run_multipass(
+                ["delete", multipass_name, "--purge"], check=False
+            )
             await self.proxy_manager.remove_vm(multipass_name)
             await self.name_mapper.remove_mapping(config.name)
             raise MultipassError(f"Failed to create VM {config.name}: {e}") from e
@@ -177,7 +210,9 @@ class MultipassAdapter(VMProvider):
         """Delete a VM."""
         requestor_name = await self.name_mapper.get_requestor_name(multipass_name)
         if not requestor_name:
-            logger.warning(f"No mapping found for {multipass_name}, cannot remove mapping.")
+            logger.warning(
+                f"No mapping found for {multipass_name}, cannot remove mapping."
+            )
         else:
             await self.name_mapper.remove_mapping(requestor_name)
         await self._run_multipass(["delete", multipass_name, "--purge"], check=False)
@@ -235,7 +270,7 @@ class MultipassAdapter(VMProvider):
         ipv4 = info.get("ipv4")
         ip_address = ipv4[0] if ipv4 else None
         logger.debug(f"Parsed VM info for {requestor_name}: {info}")
-        
+
         disks_info = info.get("disks", {})
         total_storage = 0
         for disk in disks_info.values():
@@ -250,10 +285,10 @@ class MultipassAdapter(VMProvider):
             resources=VMResources(
                 cpu=self._safe_int(info.get("cpu_count"), 1),
                 memory=round(mem_total_bytes / (1024**3)),
-                storage=round(total_storage / (1024**3)) if total_storage > 0 else 10
+                storage=round(total_storage / (1024**3)) if total_storage > 0 else 10,
             ),
             ip_address=ip_address,
-            ssh_port=self.proxy_manager.get_port(multipass_name)
+            ssh_port=self.proxy_manager.get_port(multipass_name),
         )
         logger.debug(f"Constructed VMInfo object: {vm_info_obj.dict()}")
         return vm_info_obj
@@ -269,11 +304,15 @@ class MultipassAdapter(VMProvider):
                 total_storage = 0
                 for disk in disks_info.values():
                     total_storage += self._safe_int(disk.get("total"), 0)
-                mem_total_bytes = self._safe_int(info.get("memory", {}).get("total"), 1024**3)
+                mem_total_bytes = self._safe_int(
+                    info.get("memory", {}).get("total"), 1024**3
+                )
                 vm_resources[requestor_name] = VMResources(
                     cpu=self._safe_int(info.get("cpu_count"), 1),
                     memory=round(mem_total_bytes / (1024**3)),
-                    storage=round(total_storage / (1024**3)) if total_storage > 0 else 10
+                    storage=round(total_storage / (1024**3))
+                    if total_storage > 0
+                    else 10,
                 )
             except (MultipassError, VMNotFoundError):
                 logger.warning(

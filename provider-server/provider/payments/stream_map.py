@@ -37,4 +37,3 @@ class StreamMap:
         tmp = self._path.with_suffix(".tmp")
         tmp.write_text(json.dumps(self._data, indent=2))
         tmp.replace(self._path)
-

@@ -2,14 +2,20 @@ import types
 
 import pytest
 
-from provider.payments.blockchain_service import StreamPaymentClient, StreamPaymentConfig
+from provider.payments.blockchain_service import (
+    StreamPaymentClient,
+    StreamPaymentConfig,
+)
 
 
 class DummyContract:
     def __init__(self):
         class Funcs:
             def withdraw(self, *args):
-                return types.SimpleNamespace(build_transaction=lambda kwargs: {"to": "withdraw", **kwargs})
+                return types.SimpleNamespace(
+                    build_transaction=lambda kwargs: {"to": "withdraw", **kwargs}
+                )
+
         self.functions = Funcs()
 
 
@@ -45,10 +51,14 @@ def _patch_env(monkeypatch, raw_field: str):
             return Signed()
 
     monkeypatch.setattr(bs, "Web3", DummyWeb3)
-    monkeypatch.setattr(bs, "Account", types.SimpleNamespace(from_key=lambda k: Signer()))
+    monkeypatch.setattr(
+        bs, "Account", types.SimpleNamespace(from_key=lambda k: Signer())
+    )
 
 
-@pytest.mark.parametrize("field", ["rawTransaction", "raw_transaction"])  # support both web3 variants
+@pytest.mark.parametrize(
+    "field", ["rawTransaction", "raw_transaction"]
+)  # support both web3 variants
 def test_withdraw_supports_raw_fields(monkeypatch, field):
     _patch_env(monkeypatch, field)
     cfg = StreamPaymentConfig(
@@ -59,4 +69,3 @@ def test_withdraw_supports_raw_fields(monkeypatch, field):
     client = StreamPaymentClient(cfg)
     tx = client.withdraw(42)
     assert len(tx) > 0
-

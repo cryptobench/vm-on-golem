@@ -1,10 +1,11 @@
 import asyncio
 import types
+
 import pytest
 
-from provider.discovery.advertiser import DiscoveryServerAdvertiser
-from provider.discovery.golem_base_advertiser import GolemBaseAdvertiser
 from provider.config import settings
+from provider.discovery.arkiv_publisher import ArkivDiscoveryPublisher
+from provider.discovery.publishers import CentralDiscoveryPublisher
 
 
 class StubResourceTracker:
@@ -52,14 +53,16 @@ class StubSession:
 
 
 @pytest.mark.asyncio
-async def test_discovery_advertiser_includes_pricing(monkeypatch):
+async def test_central_publisher_includes_pricing(monkeypatch):
     resources = {"cpu": 2, "memory": 2, "storage": 10}
     rt = StubResourceTracker(resources)
-    adv = DiscoveryServerAdvertiser(rt, discovery_url="http://x")
+    adv = CentralDiscoveryPublisher(rt, discovery_url="http://x")
     capture = {}
     adv.session = StubSession(capture)
     # Avoid public IP fetch
-    monkeypatch.setattr(adv, "_get_public_ip", lambda: asyncio.sleep(0, result="1.2.3.4"))
+    monkeypatch.setattr(
+        adv, "_get_public_ip", lambda: asyncio.sleep(0, result="1.2.3.4")
+    )
 
     # Known pricing
     settings.PRICE_USD_PER_CORE_MONTH = 6.0
@@ -76,7 +79,7 @@ async def test_discovery_advertiser_includes_pricing(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_golem_base_advertiser_annotations_include_pricing(monkeypatch):
+async def test_arkiv_publisher_annotations_include_pricing(monkeypatch):
     # Stub client to capture created entity
     class StubClient:
         async def disconnect(self):
@@ -89,17 +92,23 @@ async def test_golem_base_advertiser_annotations_include_pricing(monkeypatch):
             # Return fake receipt
             class R:
                 entity_key = "abc"
+
             return [R()]
 
     nonlocal_capture = {}
     rt = StubResourceTracker({"cpu": 2, "memory": 2, "storage": 10})
-    adv = GolemBaseAdvertiser(rt)
+    adv = ArkivDiscoveryPublisher(rt)
     adv.client = StubClient()
     settings.PUBLIC_IP = "1.2.3.4"
 
     # Ensure it takes the create path
-    from provider.discovery import golem_base_advertiser as gba
-    monkeypatch.setattr(gba, "get_provider_entity_keys", lambda *a, **k: asyncio.sleep(0, result=[]))
+    from provider.discovery import arkiv_publisher
+
+    monkeypatch.setattr(
+        arkiv_publisher,
+        "get_provider_entity_keys",
+        lambda *a, **k: asyncio.sleep(0, result=[]),
+    )
 
     # Known pricing
     settings.PRICE_USD_PER_CORE_MONTH = 6.0
@@ -110,8 +119,10 @@ async def test_golem_base_advertiser_annotations_include_pricing(monkeypatch):
     settings.PRICE_GLM_PER_GB_STORAGE_MONTH = 0.24
 
     await adv.post_advertisement()
-    # With updated advertiser, pricing is stored as string annotations
-    str_anns = {a.key: a.value for a in getattr(nonlocal_capture, "string_annotations", [])}
+    # Arkiv stores pricing as string annotations.
+    str_anns = {
+        a.key: a.value for a in getattr(nonlocal_capture, "string_annotations", [])
+    }
     # Older StubClient only captured numeric_annotations; adapt to capture both
     if not str_anns and "string_annotations" in nonlocal_capture:
         str_anns = {a.key: a.value for a in nonlocal_capture["string_annotations"]}

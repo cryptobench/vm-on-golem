@@ -9,8 +9,8 @@ export function useProjectRentals(projectId: string) {
 
   const adsKey = React.useMemo(() => {
     const mode = ads?.mode || "";
-    const rpc = ads?.golem_base_rpc_url || "";
-    const ws = ads?.golem_base_ws_url || "";
+    const rpc = ads?.arkiv_rpc_url || "";
+    const ws = ads?.arkiv_ws_url || "";
     const chain = ads?.chain_id || "";
     return `${mode}|${rpc}|${ws}|${chain}`;
   }, [ads]);

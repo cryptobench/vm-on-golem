@@ -1,13 +1,14 @@
 """Database service for VM management."""
-from typing import Dict, List, Optional
 from pathlib import Path
+from typing import Dict, List, Optional
 
 from ..db.sqlite import Database
 from ..errors import DatabaseError
 
+
 class DatabaseService:
     """Service for database operations."""
-    
+
     def __init__(self, db_path: Path):
         self.db = Database(db_path)
 
@@ -24,7 +25,7 @@ class DatabaseService:
         provider_ip: str,
         vm_id: str,
         config: Dict,
-        status: str = 'running'
+        status: str = "running",
     ) -> None:
         """Save VM details."""
         try:
@@ -33,7 +34,7 @@ class DatabaseService:
                 provider_ip=provider_ip,
                 vm_id=vm_id,
                 config=config,
-                status=status
+                status=status,
             )
         except Exception as e:
             raise DatabaseError(f"Failed to save VM: {str(e)}")

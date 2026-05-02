@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from typing import Optional, List, Tuple
+from typing import List, Optional, Tuple
 
-from web3 import Web3
 from golem_faucet import PowFaucetClient
+from web3 import Web3
+
 from ..utils.logging import setup_logger
 
 logger = setup_logger(__name__)
@@ -20,7 +21,9 @@ class L2FaucetService:
         self.cfg = config
         self.web3 = Web3(Web3.HTTPProvider(config.POLYGON_RPC_URL))
         self.client = PowFaucetClient(
-            faucet_url=getattr(config, "L2_FAUCET_URL", "https://l2.hoodi.arkiv.network/faucet"),
+            faucet_url=getattr(
+                config, "L2_FAUCET_URL", "https://l2.hoodi.arkiv.network/faucet"
+            ),
             captcha_base_url=getattr(config, "L2_CAPTCHA_URL", "https://cap.gobas.me"),
             captcha_api_key=getattr(config, "L2_CAPTCHA_API_KEY", "05381a2cef5e"),
         )
@@ -39,7 +42,9 @@ class L2FaucetService:
         Returns tx hash string on payout, or None if skipped/failed.
         """
         # Respect profile gating only if explicitly present and false
-        if hasattr(self.cfg, "FAUCET_ENABLED") and not bool(getattr(self.cfg, "FAUCET_ENABLED")):
+        if hasattr(self.cfg, "FAUCET_ENABLED") and not bool(
+            getattr(self.cfg, "FAUCET_ENABLED")
+        ):
             logger.info("Faucet disabled for current payments network; skipping.")
             return None
         bal = self._balance_eth(address)

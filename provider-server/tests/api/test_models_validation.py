@@ -28,6 +28,7 @@ def test_create_vm_request_accepts_vmresources_instance():
 def test_create_vm_request_uses_size_when_no_resources():
     # Call the validator directly to exercise the size path
     from types import SimpleNamespace
+
     v = None
     values = SimpleNamespace(data={"size": VMSize.MEDIUM})
     out = CreateVMRequest.validate_resources(v, values)  # type: ignore[arg-type]
@@ -38,6 +39,7 @@ def test_create_vm_request_uses_size_when_no_resources():
 def test_create_vm_request_defaults_when_no_size_or_resources():
     # Call the validator directly to exercise defaults path
     from types import SimpleNamespace
+
     v = None
     values = SimpleNamespace(data={})
     out = CreateVMRequest.validate_resources(v, values)  # type: ignore[arg-type]

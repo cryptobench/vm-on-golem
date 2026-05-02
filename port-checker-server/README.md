@@ -133,9 +133,9 @@ There are two modes. For better security, use provider-based routing.
 - Provider-based (recommended):
   - `ANY /proxy/provider/{provider_id}/{path}?port=<port>`
   - Headers:
-  - `X-Proxy-Source: discovery|golem-base` (required; defaults to `golem-base` if omitted)
+  - `X-Proxy-Source: central|arkiv` (defaults to `arkiv` if omitted)
     - `X-Proxy-Token: <shared secret>` (required)
-  - Resolves provider IP via Discovery (default in docs) or Golem Base and forwards over HTTP to `port` (default 80).
+  - Resolves provider IP via central discovery or Arkiv and forwards over HTTP to `port` (default 80).
 
 - Direct IP (optional, disabled by default):
   - `ANY /proxy/{path}` with headers:
@@ -157,18 +157,18 @@ Environment variables:
 - `PORT_CHECKER_PROXY_CONNECT_TIMEOUT` (seconds, default `5.0`)
 - `PORT_CHECKER_PROXY_READ_TIMEOUT` (seconds, default `10.0`)
 - `PORT_CHECKER_CORS_ORIGINS` (comma-separated, default `*`)
-- `DISCOVERY_API_URL` (default `http://localhost:9001/api/v1`)
+- `CENTRAL_DISCOVERY_API_URL` (default `http://localhost:9001/api/v1`)
 - `PORT_CHECKER_PROXY_ALLOW_DIRECT_IP` (default `false`)
  - `PORT_CHECKER_PROXY_TOKEN` (required to enable proxying)
   
-Golem Base (default; if using `source=golem-base`):
-- `GOLEM_BASE_RPC_URL` (required if not provided per-request)
-- `GOLEM_BASE_WS_URL` (required if not provided per-request)
+Arkiv (default; if using `source=arkiv`):
+- `ARKIV_RPC_URL` (required if not provided per-request)
+- `ARKIV_WS_URL` (required if not provided per-request)
  - `GOLEM_ENVIRONMENT` (optional; set `development` to prefer `dev_*` annotations)
 
 Per-request overrides (headers):
-- `X-Proxy-Golem-Base-Rpc`: override RPC URL for this request
-- `X-Proxy-Golem-Base-Ws`: override WS URL for this request
+- `X-Proxy-Arkiv-Rpc`: override RPC URL for this request
+- `X-Proxy-Arkiv-Ws`: override WS URL for this request
 
 Forwarded tracing headers to providers:
 - `X-Forwarded-For` includes the original client IP (appends to chain)
@@ -176,15 +176,15 @@ Forwarded tracing headers to providers:
 
 Examples:
 ```bash
-# Provider-based (Discovery)
+# Provider-based (central discovery)
 curl -i \
-  -H "X-Proxy-Source: discovery" \
+  -H "X-Proxy-Source: central" \
   -H "X-Proxy-Token: $TOKEN" \
   "http://localhost:9000/proxy/provider/PROVIDER123/status?port=8080"
 
-# Provider-based (Golem Base)
+# Provider-based (Arkiv)
 curl -i \
-  -H "X-Proxy-Source: golem-base" \
+  -H "X-Proxy-Source: arkiv" \
   -H "X-Proxy-Token: $TOKEN" \
   "http://localhost:9000/proxy/provider/PROVIDER123/status?port=8080"
 
