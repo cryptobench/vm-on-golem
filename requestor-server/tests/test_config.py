@@ -22,9 +22,9 @@ def test_dev_mode_env(monkeypatch):
     assert cfg.DEV_MODE is True
 
 
-def test_discovery_url_dev_mode():
+def test_discovery_url_dev_mode_remains_valid_url():
     cfg = RequestorConfig(environment="development")
-    assert cfg.discovery_url.startswith("DEVMODE-")
+    assert cfg.discovery_url.startswith("http://")
 
 
 def test_get_provider_url():

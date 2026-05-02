@@ -4,22 +4,34 @@ import { useRouter } from "next/navigation";
 import { BrowserProvider, Contract, parseEther } from "ethers";
 import streamPayment from "../../public/abi/StreamPayment.json";
 import erc20 from "../../public/abi/ERC20.json";
-import { createVm, loadSettings, saveRentals, loadRentals, saveSettings, vmAccess, vmJobStatus, type AdsConfig, type CreateVMRequest, type ProviderAd, type SSHKey } from "../../lib/api";
+import { createVm, loadSettings, saveRentals, loadRentals, vmAccess, vmJobStatus, type AdsConfig, type CreateVMRequest, type ProviderAd, type SSHKey } from "../../lib/api";
 import { Modal } from "../ui/Modal";
 import { useWallet } from "../../context/WalletContext";
 import { useProjects } from "../../context/ProjectsContext";
-import { ensureNetwork, getPaymentsChain } from "../../lib/chain";
+import { getPaymentNetworkErrorMessage } from "../../lib/chain";
 import { Spinner } from "../ui/Spinner";
 import { computeEstimate } from "../../lib/api";
 import { parseHumanDuration } from "../../lib/time";
 import { humanDuration } from "../../lib/streams";
 import { useSettings } from "../../hooks/useSettings";
 import { KeyPicker } from "../ssh/KeyPicker";
+import { PAYMENT_PRICE_MAX_AGE_MS, usdToTokenAsync } from "../../lib/prices";
 
 export function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provider: ProviderAd; defaultSpec: { cpu?: number; memory?: number; storage?: number }; onClose: () => void; adsMode: AdsConfig; }) {
   const router = useRouter();
   const { displayCurrency } = useSettings();
-  const { isInstalled, isConnected, connect, account } = useWallet();
+  const {
+    isInstalled,
+    isConnected,
+    account,
+    expectedChain,
+    paymentReady,
+    paymentMessage,
+    networkStatus,
+    connect,
+    switchToPaymentsNetwork,
+    ensurePaymentsNetwork,
+  } = useWallet();
   const { activeId: activeProjectId } = useProjects();
   const [name, setName] = React.useState("");
   // Use spec provided from the Providers page; not editable here
@@ -37,9 +49,7 @@ export function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provid
   const [creating, setCreating] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [streamId, setStreamId] = React.useState<string | null>(null);
-  const [usingNative, setUsingNative] = React.useState<boolean>(true);
   const [connecting, setConnecting] = React.useState<boolean>(false);
-  const [nameTouched, setNameTouched] = React.useState<boolean>(false);
 
   const est = computeEstimate(provider, cpu, memory, storage);
 
@@ -54,8 +64,6 @@ export function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provid
     const secs = parseHumanDuration(customInput || '');
     return secs && secs > 0 ? secs : 0;
   }, [preset, customInput]);
-  const durationHoursFloat = durationSeconds / 3600;
-
   const hourlyRate = React.useMemo(() => {
     if (!est) return null;
     if (displayCurrency === 'token' && (est as any).glm_per_month != null) return (est as any).glm_per_month / 730.0;
@@ -70,9 +78,9 @@ export function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provid
 
   const openStream = async (): Promise<string> => {
     setError(null);
+    await ensurePaymentsNetwork();
     const { ethereum } = window as any;
     if (!ethereum) throw new Error("MetaMask not detected");
-    await ensureNetwork(ethereum, getPaymentsChain());
     const providerInfoJson = await (await import("../../lib/api")).providerInfo(provider.provider_id, adsMode).catch(() => null);
     const cfg = loadSettings();
     const spAddr = (providerInfoJson?.stream_payment_address || cfg.stream_payment_address || process.env.NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS || '').trim();
@@ -89,25 +97,28 @@ export function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provid
       let ethPerMonth: number | null = (est as any).eth_per_month ?? null;
       if (ethPerMonth == null) {
         const usdPerMonth = est.usd_per_month;
-        const { usdToToken, getPriceUSD } = await import("../../lib/prices");
-        const price = getPriceUSD('ETH');
-        if (price == null || !Number.isFinite(usdPerMonth)) throw new Error("ETH/USD price unavailable to compute rate");
-        ethPerMonth = usdPerMonth / price;
+        ethPerMonth = await usdToTokenAsync("ETH", usdPerMonth, {
+          maxAgeMs: PAYMENT_PRICE_MAX_AGE_MS,
+        });
+        if (ethPerMonth == null) {
+          throw new Error("ETH/USD price unavailable to compute rate");
+        }
       }
       const ethPerSecond = (ethPerMonth as number) / (30.4167 * 24 * 3600);
       ratePerSecondWei = parseEther(ethPerSecond.toFixed(18));
       const seconds = BigInt(Math.max(1, durationSeconds));
       // approximate by converting to wei/sec and multiply
       depositWei = BigInt(Math.floor(ethPerSecond * 1e18)) * seconds;
-      setUsingNative(true);
     } else {
       let glmPerMonth: number | null = (est as any).glm_per_month ?? null;
       if (glmPerMonth == null) {
         const usdPerMonth = est.usd_per_month;
-        const { usdToToken, getPriceUSD } = await import("../../lib/prices");
-        const price = getPriceUSD('GLM');
-        if (price == null || !Number.isFinite(usdPerMonth)) throw new Error("GLM/USD price unavailable to compute rate");
-        glmPerMonth = usdPerMonth / price;
+        glmPerMonth = await usdToTokenAsync("GLM", usdPerMonth, {
+          maxAgeMs: PAYMENT_PRICE_MAX_AGE_MS,
+        });
+        if (glmPerMonth == null) {
+          throw new Error("GLM/USD price unavailable to compute rate");
+        }
       }
       const glmPerSecond = (glmPerMonth as number) / (30.4167 * 24 * 3600);
       const provider = new BrowserProvider(ethereum);
@@ -117,7 +128,6 @@ export function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provid
       ratePerSecondWei = BigInt(Math.floor(glmPerSecond * scale));
       const seconds = Math.max(1, durationSeconds);
       depositWei = BigInt(Math.floor(glmPerSecond * seconds * scale));
-      setUsingNative(false);
       // Ask wallet to watch GLM so prompts display a familiar asset
       try {
         await (ethereum as any).request?.({
@@ -164,11 +174,6 @@ export function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provid
   const create = async () => {
     try {
       setCreating(true); setError(null);
-      if (!isConnected) {
-        setConnecting(true);
-        try { await connect(); } finally { setConnecting(false); }
-        if (!isConnected) return;
-      }
       const sid = streamId || await openStream();
       const payload: CreateVMRequest = {
         name: name.trim() || provider.provider_id,
@@ -217,9 +222,22 @@ export function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provid
       onClose();
       router.push(`/vm?id=${encodeURIComponent(vmId)}`);
     } catch (e: any) {
-      setError(e?.message || String(e));
+      setError(getPaymentNetworkErrorMessage(e, expectedChain));
     } finally {
       setCreating(false);
+    }
+  };
+
+  const paymentAction = async () => {
+    setConnecting(true);
+    setError(null);
+    try {
+      if (!isConnected) await connect();
+      else await switchToPaymentsNetwork();
+    } catch (e) {
+      setError(getPaymentNetworkErrorMessage(e, expectedChain));
+    } finally {
+      setConnecting(false);
     }
   };
 
@@ -231,7 +249,7 @@ export function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provid
         {/* Name */}
         <div className="mt-4">
           <label className="label">Name</label>
-          <input className="input" value={name} onChange={(e) => { setName(e.target.value); setNameTouched(true); }} placeholder="My VM" />
+          <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="My VM" />
           <div className="mt-1 text-xs text-gray-600">Spec: {cpu} vCPU • {memory} GB RAM • {storage} GB Storage</div>
         </div>
 
@@ -283,11 +301,27 @@ export function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provid
             )}
           </div>
         </div>
+        {!paymentReady && (
+          <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3">
+            <div className="text-sm text-amber-900">{paymentMessage}</div>
+            {isInstalled && (
+              <button
+                type="button"
+                className="btn btn-secondary mt-3"
+                onClick={paymentAction}
+                disabled={connecting || networkStatus === "switching"}
+              >
+                {(connecting || networkStatus === "switching") && <Spinner className="h-4 w-4" />}
+                {!isConnected ? "Connect Wallet" : "Switch Network"}
+              </button>
+            )}
+          </div>
+        )}
         {error && <div className="mt-3 text-sm text-red-600">{error}</div>}
       </div>
       <div className="flex items-center justify-end gap-2 border-t px-5 py-4">
         <button className="btn btn-secondary" onClick={onClose} disabled={creating}>Cancel</button>
-        <button className="btn btn-primary disabled:opacity-60 disabled:cursor-not-allowed" onClick={create} disabled={!isConnected || creating || !sshKey.trim() || !name.trim() || !durationSeconds}>
+        <button className="btn btn-primary disabled:opacity-60 disabled:cursor-not-allowed" onClick={create} disabled={!paymentReady || creating || !sshKey.trim() || !name.trim() || !durationSeconds}>
           {creating ? (<span className="inline-flex items-center gap-2"><Spinner className="h-4 w-4 text-white" /> Creating…</span>) : (streamId ? 'Create VM' : 'Open Stream & Create VM')}
         </button>
       </div>

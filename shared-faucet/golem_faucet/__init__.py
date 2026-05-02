@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from typing import Optional, List, Tuple
 
 import httpx
@@ -45,12 +46,33 @@ class PowFaucetClient:
             return None
 
     async def request_funds(self, address: str, captcha_token: str) -> Optional[str]:
+        tx_hash: Optional[str] = None
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 url = f"{self.faucet_url}/api/faucet"
-                r = await client.post(url, json={"address": address, "captchaToken": captcha_token})
-                r.raise_for_status()
-                data = r.json()
-                return data.get("txHash") or data.get("tx") or data.get("hash")
+                async with client.stream(
+                    "POST",
+                    url,
+                    json={"address": address, "captchaToken": captcha_token},
+                ) as response:
+                    response.raise_for_status()
+                    async for line in response.aiter_lines():
+                        tx_hash = _tx_hash_from_faucet_line(line) or tx_hash
+        except httpx.RemoteProtocolError:
+            return tx_hash
         except Exception:
             return None
+        return tx_hash
+
+
+def _tx_hash_from_faucet_line(line: str) -> Optional[str]:
+    raw = line.strip()
+    if not raw:
+        return None
+    if raw.startswith("data:"):
+        raw = raw[5:].strip()
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    return data.get("txHash") or data.get("tx") or data.get("hash")

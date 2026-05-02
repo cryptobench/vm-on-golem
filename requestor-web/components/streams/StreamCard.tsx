@@ -24,11 +24,13 @@ export type StreamCardProps = {
   displayCurrency: 'fiat' | 'token';
   onTopUp?: (seconds: number) => void;
   busy?: boolean;
+  actionsDisabled?: boolean;
+  actionsDisabledReason?: string | null;
   actionsRight?: React.ReactNode;
   detailsHref?: string;
 };
 
-export function StreamCard({ title, streamId, chain, remaining, meta, displayCurrency, onTopUp, busy, actionsRight, detailsHref }: StreamCardProps) {
+export function StreamCard({ title, streamId, chain, remaining, meta, displayCurrency, onTopUp, busy, actionsDisabled, actionsDisabledReason, actionsRight, detailsHref }: StreamCardProps) {
   const router = useRouter();
   const [localRemaining, setLocalRemaining] = React.useState<number>(remaining);
   const dec = meta.tokenDecimals || 18;
@@ -82,6 +84,7 @@ export function StreamCard({ title, streamId, chain, remaining, meta, displayCur
   const navigate = () => { if (detailsHref) router.push(detailsHref); };
   const [lastTopup, setLastTopup] = React.useState<'1800' | '3600' | '7200' | 'custom' | null>(null);
   React.useEffect(() => { if (!busy) setLastTopup(null); }, [busy]);
+  const topUpDisabled = !!busy || !!actionsDisabled;
 
   return (
     <Card className={detailsHref ? "cursor-pointer" : undefined} onClick={detailsHref ? navigate : undefined}>
@@ -130,13 +133,16 @@ export function StreamCard({ title, streamId, chain, remaining, meta, displayCur
           <div className="mt-5 pt-4 border-t border-gray-100 flex flex-wrap items-center gap-3" onClick={(e) => e.stopPropagation()}>
             {onTopUp && !chain.halted && (
               <>
-                <button className="btn btn-secondary" disabled={busy} onClick={(e) => { e.stopPropagation(); setLastTopup('1800'); onTopUp(1800); }}>
+                {actionsDisabledReason && (
+                  <div className="w-full text-sm text-amber-800">{actionsDisabledReason}</div>
+                )}
+                <button className="btn btn-secondary" disabled={topUpDisabled} onClick={(e) => { e.stopPropagation(); setLastTopup('1800'); onTopUp(1800); }}>
                   {busy && lastTopup === '1800' ? (<Spinner className="h-4 w-4" />) : '+30 min'}
                 </button>
-                <button className="btn btn-secondary" disabled={busy} onClick={(e) => { e.stopPropagation(); setLastTopup('3600'); onTopUp(3600); }}>
+                <button className="btn btn-secondary" disabled={topUpDisabled} onClick={(e) => { e.stopPropagation(); setLastTopup('3600'); onTopUp(3600); }}>
                   {busy && lastTopup === '3600' ? (<Spinner className="h-4 w-4" />) : '+1 h'}
                 </button>
-                <button className="btn btn-secondary" disabled={busy} onClick={(e) => { e.stopPropagation(); setLastTopup('7200'); onTopUp(7200); }}>
+                <button className="btn btn-secondary" disabled={topUpDisabled} onClick={(e) => { e.stopPropagation(); setLastTopup('7200'); onTopUp(7200); }}>
                   {busy && lastTopup === '7200' ? (<Spinner className="h-4 w-4" />) : '+2 h'}
                 </button>
                 {/* Spacer to push custom controls to the far right on large screens only */}
@@ -158,11 +164,11 @@ export function StreamCard({ title, streamId, chain, remaining, meta, displayCur
                     }}
                     onClick={(e) => e.stopPropagation()}
                     onFocus={(e) => e.stopPropagation()}
-                    disabled={busy}
+                    disabled={topUpDisabled}
                   />
                   <button
                     className="btn btn-secondary h-10"
-                    disabled={busy || !((() => { const secs = parseHumanTime(customInput); return !!(secs && secs > 0); })())}
+                    disabled={topUpDisabled || !((() => { const secs = parseHumanTime(customInput); return !!(secs && secs > 0); })())}
                     onClick={(e) => {
                       e.stopPropagation();
                       const secs = parseHumanTime(customInput);

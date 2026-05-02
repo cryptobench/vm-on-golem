@@ -3,6 +3,7 @@
 import { BrowserProvider, Contract } from "ethers";
 import streamPayment from "../public/abi/StreamPayment.json";
 import erc20 from "../public/abi/ERC20.json";
+import { requirePaymentsNetwork } from "./chain";
 import { getPriceUSD } from "./prices";
 
 export type ChainStream = {
@@ -34,6 +35,7 @@ export function humanDuration(totalSec: number | bigint): string {
 export async function fetchStreamWithMeta(spAddr: string, streamId: bigint) {
   const { ethereum } = window as any;
   if (!ethereum) throw new Error("wallet unavailable");
+  await requirePaymentsNetwork(ethereum);
   const provider = new BrowserProvider(ethereum);
   const contract = new Contract(spAddr, (streamPayment as any).abi, provider);
   const chain = (await contract.streams(streamId)) as ChainStream;

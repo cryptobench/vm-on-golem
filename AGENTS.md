@@ -19,6 +19,7 @@ This document is the **architectural baseline** for the repo. Some sections desc
 
 - `make install` - Install Poetry dependencies for central discovery, provider, requestor, and shared packages.
 - `make test` - Run pytest for the three core Python services.
+- `make local` - Preferred full-stack local workflow on ARM macOS: starts local central discovery, provider, port-checker proxy, requestor API, requestor web, and provider GUI with one supervisor process. This intentionally uses local central discovery for deterministic development; Arkiv remains the canonical product default outside this local workflow.
 - `make start` - Start provider CLI, port-checker proxy, and requestor web (development mode).
 - Per-service: `poetry -C <svc> run pytest`, `poetry -C provider-server run dev`, `poetry -C central-discovery-server run golem-central-discovery`, `poetry -C requestor-server run golem server api --reload`.
 - GUIs: in `provider-gui/` or `requestor-gui/`: `npm install && npm start`.

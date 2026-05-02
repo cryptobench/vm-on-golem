@@ -22,13 +22,16 @@ Data fetching (SWR)
 
 Price cache (USD)
 
-- A centralized background poller runs in the global layout and refreshes ETH/GLM USD prices once per minute.
-- Results are stored in localStorage under `requestor_prices_v1` and broadcast via a `requestor_prices_updated` event.
+- A centralized background poller runs in the global layout and refreshes ETH/GLM USD prices at most once every 5 minutes.
+- Results are stored in localStorage under `requestor_prices_v2` and broadcast via a `requestor_prices_updated` event. The old `requestor_prices_v1` key is read only as a compatibility fallback.
+- Price lookups use one shared in-flight request and source-level backoff. Components must not fetch price APIs directly.
+- Source order is Binance, DEX Screener, CoinGecko, then CoinPaprika. This keeps normal traffic far below published public limits and reserves lower-quota sources for fallback.
 - Use helpers in `lib/prices.ts`:
   - `startPricePolling()` to start/stop the poller (already wired in `app/layout.tsx`).
-  - `getPriceUSD(symbol)` and `usdToToken(symbol, usd)` for conversions.
+  - `getPriceUSD(symbol)` and `usdToToken(symbol, usd)` for display-only cached conversions.
+  - `ensurePricesUSD()` and `usdToTokenAsync(symbol, usd, { maxAgeMs })` for payment flows that need a fresh quote.
   - `onPricesUpdated(cb)` to subscribe to changes.
-- Cross-tab locking prevents stampedes and keeps within CoinGecko limits. Do not fetch CoinGecko directly in components.
+- Rent/payment creation prefers provider-advertised token pricing. If a provider only advertises USD pricing, the UI requires a price refreshed within 10 minutes before opening a stream.
 
 Styling
 
@@ -44,13 +47,23 @@ SSH Keys
 Env vars (public)
 
 - NEXT_PUBLIC_DISCOVERY_API_URL: discovery service base, e.g. http://localhost:9001/api/v1
+- NEXT_PUBLIC_DISCOVERY_MODE: default profile mode, `arkiv` or `central`
 - NEXT_PUBLIC_PORT_CHECKER_URL: port-checker proxy base, e.g. http://localhost:9000
 - NEXT_PUBLIC_PORT_CHECKER_TOKEN: shared proxy token (exposed to users)
 - NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS: default StreamPayment contract (can be overridden in Settings or provider info)
 - NEXT_PUBLIC_GLM_TOKEN_ADDRESS: GLM token address (0x00.. means native)
-- NEXT_PUBLIC_EVM_CHAIN_ID: hex chain id for MetaMask (e.g., 0x4268)
+- NEXT_PUBLIC_EVM_CHAIN_ID: hex chain id for MetaMask (Arkiv L2 Hoodi is `0x6013a`)
+- NEXT_PUBLIC_EVM_CHAIN_NAME: wallet display name for the payments chain
+- NEXT_PUBLIC_EVM_RPC_URL: wallet RPC URL for the payments chain
+- NEXT_PUBLIC_EVM_EXPLORER_URL: block explorer URL for the payments chain
 - NEXT_PUBLIC_GOLEM_ENVIRONMENT: set to `development` to switch defaults to the Arkiv dev RPC/WS
 - NEXT_PUBLIC_ARKIV_DEV_RPC_URL / NEXT_PUBLIC_ARKIV_DEV_WS_URL: dev Arkiv endpoints used when environment=development
+
+Payment chain values can also be overridden in Settings -> Payments. Wallet
+connection, stream reads, stream creation, and top-ups all use the same payment
+chain configuration. The `make local` supervisor and Makefile web helper targets
+pass the StreamPayment, token, chain ID, RPC, and explorer values into the web
+app so local development uses the same payment metadata as the Python services.
 
 Notes and alignment with backend
 

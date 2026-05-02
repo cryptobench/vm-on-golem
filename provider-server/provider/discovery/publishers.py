@@ -115,11 +115,13 @@ class CentralDiscoveryPublisher(DiscoveryPublisher):
             logger.warning("Resources too low, skipping advertisement")
             return
 
-        try:
-            ip_address = await self._get_public_ip()
-        except Exception as e:
-            logger.error(f"Could not get public IP after retries: {e}")
-            return
+        ip_address = settings.PUBLIC_IP
+        if not ip_address:
+            try:
+                ip_address = await self._get_public_ip()
+            except Exception as e:
+                logger.error(f"Could not get public IP after retries: {e}")
+                return
 
         try:
             import platform as _plat

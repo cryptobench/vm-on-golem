@@ -283,6 +283,7 @@ class Settings(BaseSettings):
     )
 
     # Faucet settings for Arkiv advertisements
+    ARKIV_FAUCET_ENABLED: bool = True
     FAUCET_URL: str = "https://kaolin.hoodi.arkiv.network/faucet"
     CAPTCHA_URL: str = "https://cap.gobas.me"
     CAPTCHA_API_KEY: str = "05381a2cef5e"
@@ -811,6 +812,10 @@ class Settings(BaseSettings):
     @field_validator("PUBLIC_IP", mode="before")
     def get_public_ip(cls, v: Optional[str], values: dict) -> Optional[str]:
         """Get public IP if set to 'auto'."""
+        if v and v != "auto":
+            logger.info(f"Using manually provided IP: {v}")
+            return v
+
         if values.data.get("ENVIRONMENT") == "development":
             try:
                 hostname = socket.gethostname()
@@ -850,8 +855,6 @@ class Settings(BaseSettings):
             except Exception:
                 return None
 
-        if v:
-            logger.info(f"Using manually provided IP: {v}")
         return v
 
     # Pricing Settings (configured in USD; auto-converted to GLM)

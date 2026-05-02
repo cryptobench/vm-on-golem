@@ -1,5 +1,12 @@
 "use client";
 
+import { loadSettings, type Settings } from "./api";
+
+const DEFAULT_CHAIN_ID = "0x6013a";
+const DEFAULT_CHAIN_NAME = "Arkiv L2 Hoodi";
+const DEFAULT_RPC_URL = "https://l2.hoodi.arkiv.network/rpc";
+const DEFAULT_EXPLORER_URL = "https://explorer.l2.hoodi.arkiv.network";
+
 export type PaymentsChain = {
   chainId: string;
   chainName: string;
@@ -8,30 +15,269 @@ export type PaymentsChain = {
   blockExplorerUrls?: string[];
 };
 
-export function getPaymentsChain(): PaymentsChain {
-  const chainId = process.env.NEXT_PUBLIC_EVM_CHAIN_ID || "0x4268";
+export type PaymentNetworkErrorCode =
+  | "missing_wallet"
+  | "rpc_unhealthy"
+  | "user_rejected"
+  | "wrong_network"
+  | "switch_failed";
+
+export class PaymentNetworkError extends Error {
+  code: PaymentNetworkErrorCode;
+  cause?: unknown;
+
+  constructor(code: PaymentNetworkErrorCode, message: string, cause?: unknown) {
+    super(message);
+    this.name = "PaymentNetworkError";
+    this.code = code;
+    this.cause = cause;
+  }
+}
+
+export function normalizeChainId(
+  value: string | number | null | undefined,
+  fallback = DEFAULT_CHAIN_ID,
+): string {
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+    return `0x${Math.floor(value).toString(16)}`;
+  }
+
+  const text = String(value || "").trim().toLowerCase();
+  if (!text) return fallback.toLowerCase();
+
+  const parsed = text.startsWith("0x")
+    ? Number.parseInt(text.slice(2), 16)
+    : Number.parseInt(text, 10);
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return `0x${parsed.toString(16)}`;
+  }
+
+  return fallback.toLowerCase();
+}
+
+export function getPaymentsChain(settings: Partial<Settings> = loadSettings()): PaymentsChain {
+  const chainId = normalizeChainId(
+    settings.evm_chain_id || process.env.NEXT_PUBLIC_EVM_CHAIN_ID,
+  );
+  const rpcUrl = (
+    settings.evm_rpc_url ||
+    process.env.NEXT_PUBLIC_EVM_RPC_URL ||
+    DEFAULT_RPC_URL
+  ).trim();
+  const explorerUrl = (
+    settings.evm_explorer_url ||
+    process.env.NEXT_PUBLIC_EVM_EXPLORER_URL ||
+    DEFAULT_EXPLORER_URL
+  ).trim();
+
   return {
     chainId,
-    chainName: process.env.NEXT_PUBLIC_EVM_CHAIN_NAME || "Golem Payments",
+    chainName:
+      settings.evm_chain_name ||
+      process.env.NEXT_PUBLIC_EVM_CHAIN_NAME ||
+      DEFAULT_CHAIN_NAME,
     nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 },
-    rpcUrls: [process.env.NEXT_PUBLIC_EVM_RPC_URL || "http://localhost:8545"],
+    rpcUrls: [rpcUrl],
+    blockExplorerUrls: explorerUrl ? [explorerUrl] : undefined,
   };
 }
 
-export async function ensureNetwork(ethereum: any, chain: PaymentsChain) {
-  if (!ethereum?.request) throw new Error("wallet unavailable");
-  const current = await ethereum.request({ method: "eth_chainId" }).catch(() => null);
-  if (String(current).toLowerCase() === chain.chainId.toLowerCase()) return;
+export function isExpectedPaymentsChain(
+  currentChainId: string | number | null | undefined,
+  expected: PaymentsChain = getPaymentsChain(),
+): boolean {
+  return normalizeChainId(currentChainId) === normalizeChainId(expected.chainId);
+}
+
+export async function ensureNetwork(
+  ethereum: any,
+  chain: PaymentsChain = getPaymentsChain(),
+): Promise<void> {
+  await switchToPaymentsNetwork(ethereum, chain);
+}
+
+export async function requirePaymentsNetwork(
+  ethereum: any,
+  chain: PaymentsChain = getPaymentsChain(),
+): Promise<void> {
+  if (!ethereum?.request) {
+    throw new PaymentNetworkError("missing_wallet", "MetaMask is not available.");
+  }
+  const current = await readWalletChainId(ethereum);
+  if (!isExpectedPaymentsChain(current, chain)) {
+    throw new PaymentNetworkError(
+      "wrong_network",
+      `MetaMask is not connected to ${chain.chainName}.`,
+    );
+  }
+}
+
+export async function switchToPaymentsNetwork(
+  ethereum: any,
+  chain: PaymentsChain = getPaymentsChain(),
+): Promise<void> {
+  if (!ethereum?.request) {
+    throw new PaymentNetworkError("missing_wallet", "MetaMask is not available.");
+  }
+
+  let current: string;
+  try {
+    current = await readWalletChainId(ethereum);
+  } catch (error) {
+    await addOrUpdatePaymentsNetwork(ethereum, chain, error);
+    const next = await readWalletChainId(ethereum);
+    if (isExpectedPaymentsChain(next, chain)) return;
+    throw new PaymentNetworkError(
+      "rpc_unhealthy",
+      "MetaMask cannot reach the payments RPC endpoint.",
+      error,
+    );
+  }
+  if (isExpectedPaymentsChain(current, chain)) return;
+
   try {
     await ethereum.request({
       method: "wallet_switchEthereumChain",
       params: [{ chainId: chain.chainId }],
     });
   } catch (error: any) {
-    if (error?.code !== 4902) throw error;
+    if (error?.code === 4001) {
+      throw new PaymentNetworkError(
+        "user_rejected",
+        `Switch to ${chain.chainName} was rejected.`,
+        error,
+      );
+    }
+    if (error?.code !== 4902) {
+      throw new PaymentNetworkError(
+        "switch_failed",
+        `Could not switch MetaMask to ${chain.chainName}.`,
+        error,
+      );
+    }
+    await addOrUpdatePaymentsNetwork(ethereum, chain, error);
+  }
+
+  const next = await readWalletChainId(ethereum);
+  if (!isExpectedPaymentsChain(next, chain)) {
+    throw new PaymentNetworkError(
+      "wrong_network",
+      `MetaMask is not connected to ${chain.chainName}.`,
+    );
+  }
+}
+
+async function addOrUpdatePaymentsNetwork(
+  ethereum: any,
+  chain: PaymentsChain,
+  cause?: unknown,
+): Promise<void> {
+  try {
     await ethereum.request({
       method: "wallet_addEthereumChain",
       params: [chain],
     });
+  } catch (error: any) {
+    if (error?.code === 4001) {
+      throw new PaymentNetworkError(
+        "user_rejected",
+        `Adding ${chain.chainName} was rejected.`,
+        error,
+      );
+    }
+    throw new PaymentNetworkError(
+      "switch_failed",
+      `Could not add or update ${chain.chainName} in MetaMask.`,
+      cause || error,
+    );
   }
+}
+
+export async function readWalletChainId(ethereum: any): Promise<string> {
+  try {
+    const chainId = await ethereum.request({ method: "eth_chainId" });
+    return normalizeChainId(chainId);
+  } catch (error) {
+    throw new PaymentNetworkError(
+      "rpc_unhealthy",
+      "MetaMask cannot reach the payments RPC endpoint.",
+      error,
+    );
+  }
+}
+
+export function getPaymentNetworkErrorMessage(
+  error: unknown,
+  chain: PaymentsChain = getPaymentsChain(),
+): string {
+  const paymentError = toPaymentNetworkError(error);
+  if (paymentError?.code === "missing_wallet") {
+    return "MetaMask is required for payment streams.";
+  }
+  if (paymentError?.code === "user_rejected") {
+    return paymentError.message;
+  }
+  if (paymentError?.code === "wrong_network") {
+    return `Switch MetaMask to ${chain.chainName} before continuing.`;
+  }
+  if (paymentError?.code === "rpc_unhealthy" || looksLikeRpcFailure(error)) {
+    return `MetaMask cannot reach ${chain.chainName}. Use MetaMask's Update RPC option or set the RPC URL to ${chain.rpcUrls[0]}.`;
+  }
+  if (paymentError?.code === "switch_failed") {
+    return `Could not switch MetaMask to ${chain.chainName}. Check the network settings and retry.`;
+  }
+
+  return error instanceof Error ? error.message : String(error);
+}
+
+export function toPaymentNetworkError(error: unknown): PaymentNetworkError | null {
+  if (error instanceof PaymentNetworkError) return error;
+  if (typeof error === "object" && error !== null && "code" in error) {
+    const code = (error as { code?: unknown }).code;
+    if (code === 4001) {
+      return new PaymentNetworkError(
+        "user_rejected",
+        "The wallet request was rejected.",
+        error,
+      );
+    }
+  }
+  if (looksLikeRpcFailure(error)) {
+    return new PaymentNetworkError(
+      "rpc_unhealthy",
+      "MetaMask cannot reach the payments RPC endpoint.",
+      error,
+    );
+  }
+  return null;
+}
+
+function looksLikeRpcFailure(error: unknown): boolean {
+  const text = collectErrorText(error).toLowerCase();
+  return (
+    text.includes("rpc endpoint returned too many errors") ||
+    text.includes("could not coalesce error") ||
+    text.includes("failed to fetch") ||
+    text.includes("network error") ||
+    text.includes("server error") ||
+    text.includes("connection") ||
+    text.includes("-32002")
+  );
+}
+
+function collectErrorText(error: unknown): string {
+  if (error == null) return "";
+  if (typeof error === "string") return error;
+  if (error instanceof Error) {
+    const cause = (error as Error & { cause?: unknown }).cause;
+    return `${error.message} ${collectErrorText(cause)}`;
+  }
+  if (typeof error === "object") {
+    try {
+      return JSON.stringify(error);
+    } catch {
+      return String(error);
+    }
+  }
+  return String(error);
 }

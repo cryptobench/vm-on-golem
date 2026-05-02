@@ -23,10 +23,9 @@ import { useToast } from "../../components/ui/Toast";
 import { Spinner } from "../../components/ui/Spinner";
 import { StatusBadge } from "../../components/ui/StatusBadge";
 import { Skeleton } from "../../components/ui/Skeleton";
-import { BrowserProvider, Contract } from "ethers";
-import streamPayment from "../../public/abi/StreamPayment.json";
 import { useStreamActions } from "../../hooks/useStreamActions";
 import { useWallet } from "../../context/WalletContext";
+import { getPaymentNetworkErrorMessage } from "../../lib/chain";
 import { buildSshCommand } from "../../lib/ssh";
 import { humanDuration, type ChainStream, fetchStreamWithMeta } from "../../lib/streams";
 import { parseHumanDuration } from "../../lib/time";
@@ -34,8 +33,9 @@ import { getPriceUSD, onPricesUpdated } from "../../lib/prices";
 import { RiCpuLine, RiStackLine, RiHardDrive2Line, RiFileCopyLine } from "@remixicon/react";
 import { StreamCard } from "../../components/streams/StreamCard";
 import { countryFlagEmoji, countryFullName } from "../../lib/intl";
-import { useProviderInfo, useVmAccess, useVmStatusSafe, useVmStatus, useVmMetricsLatest } from "../../hooks/useApiSWR";
+import { useProviderInfo, useVmAccess, useVmStatusSafe, useVmStatus, useVmMetricsLatest, useVmMetricsHistory } from "../../hooks/useApiSWR";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
+import { VmMetricsCharts } from "../../components/vm/VmMetricsCharts";
 
 // ChainStream imported from lib/streams
 
@@ -58,12 +58,11 @@ export default function VmDetailsClient() {
   const [stream, setStream] = React.useState<{ chain: ChainStream; remaining: bigint } | null>(null);
   const [remaining, setRemaining] = React.useState<number>(0);
   const [err, setErr] = React.useState<string | null>(null);
-  const { account } = useWallet();
+  const { paymentReady, paymentMessage } = useWallet();
   const [provider, setProvider] = React.useState<{ country?: string | null; platform?: string | null; ip_address?: string | null } | null>(null);
   const [tokenSymbol, setTokenSymbol] = React.useState<string>('');
   const [tokenDecimals, setTokenDecimals] = React.useState<number>(18);
   const [usdPrice, setUsdPrice] = React.useState<number | null>(null);
-  const [customTopup, setCustomTopup] = React.useState<string>("");
   const [displayCurrency, setDisplayCurrency] = React.useState<'fiat'|'token'>(loadSettings().display_currency === 'token' ? 'token' : 'fiat');
   const [snapshots, setSnapshots] = React.useState<Array<{ name: string; comment?: string | null; created_at?: string | null }>>([]);
   const [snapshotName, setSnapshotName] = React.useState("");
@@ -71,6 +70,7 @@ export default function VmDetailsClient() {
   const [resizeCpu, setResizeCpu] = React.useState<number>(1);
   const [resizeMemory, setResizeMemory] = React.useState<number>(1);
   const [resizeStorage, setResizeStorage] = React.useState<number>(10);
+  const [metricsRange, setMetricsRange] = React.useState<"1h" | "6h" | "24h" | "7d">("1h");
 
   const vmId = search.get('id') || '';
   const [vm, setVm] = React.useState<ReturnType<typeof loadRentals>[number] | null>(null);
@@ -112,6 +112,12 @@ export default function VmDetailsClient() {
   const { data: swrStatus } = useVmStatusSafe(vm?.provider_id, vm?.vm_id, { refreshInterval: 8000 });
   const { data: swrVm } = useVmStatus(vm?.provider_id, vm?.vm_id, { refreshInterval: 8000 });
   const { data: swrMetrics, isLoading: metricsLoading } = useVmMetricsLatest(vm?.provider_id, vm?.vm_id, { refreshInterval: 10000 });
+  const { data: swrMetricsHistory, isLoading: metricsHistoryLoading } = useVmMetricsHistory(
+    vm?.provider_id,
+    vm?.vm_id,
+    metricsRange,
+    { refreshInterval: 30000 },
+  );
 
   React.useEffect(() => {
     if (swrProvider) setProvider({ country: (swrProvider as any).country, platform: (swrProvider as any).platform, ip_address: (swrProvider as any).ip_address });
@@ -234,6 +240,7 @@ export default function VmDetailsClient() {
     const run = async () => {
       if (!vm?.stream_id || !spAddr) { if (!cancelled) setStream(null); return; }
       try {
+        setErr(null);
         const res = await fetchStreamWithMeta(spAddr, BigInt(vm.stream_id));
         if (cancelled) return;
         setStream({ chain: res.chain as any, remaining: BigInt(res.remaining) });
@@ -241,8 +248,11 @@ export default function VmDetailsClient() {
         setTokenSymbol(String(res.tokenSymbol || 'ETH'));
         setTokenDecimals(Number(res.tokenDecimals || 18));
         setUsdPrice(res.usdPrice ?? null);
-      } catch {
-        if (!cancelled) setStream(null);
+      } catch (e) {
+        if (!cancelled) {
+          setStream(null);
+          setErr(getPaymentNetworkErrorMessage(e));
+        }
       }
     };
     run();
@@ -510,17 +520,11 @@ export default function VmDetailsClient() {
       setBusy(true);
       await topUpAction(BigInt(vm.stream_id), stream.chain.token, stream.chain.ratePerSecond, seconds);
       show("Top-up sent");
-      // refresh stream
-      const { ethereum } = window as any;
-      const provider = new BrowserProvider(ethereum);
-      const contract = new Contract(spAddr, (streamPayment as any).abi, provider);
-      const res = (await contract.streams(BigInt(vm.stream_id))) as ChainStream;
-      const now = BigInt((await provider.getBlock("latest"))!.timestamp!);
-      const remaining = res.stopTime > now ? (res.stopTime - now) : 0n;
-      setStream({ chain: res, remaining });
-      setRemaining(Number(remaining));
+      const res = await fetchStreamWithMeta(spAddr, BigInt(vm.stream_id));
+      setStream({ chain: res.chain as any, remaining: BigInt(res.remaining) });
+      setRemaining(Number(res.remaining));
     } catch (e) {
-      show("Top-up failed");
+      show(getPaymentNetworkErrorMessage(e));
     } finally { setBusy(false); }
   };
 
@@ -703,6 +707,13 @@ export default function VmDetailsClient() {
         </div>
       </div>
 
+      <VmMetricsCharts
+        history={swrMetricsHistory}
+        loading={metricsHistoryLoading}
+        range={metricsRange}
+        onRangeChange={setMetricsRange}
+      />
+
       <div className="card">
         <div className="card-body">
           <div className="grid gap-6 lg:grid-cols-2">
@@ -776,6 +787,7 @@ export default function VmDetailsClient() {
         <div className="card"><div className="card-body"><div className="text-sm text-gray-600">No stream mapped for this VM.</div></div></div>
       ) : (!mounted || !stream) ? (
         <div className="card"><div className="card-body">
+          {err && <div className="mb-4 text-sm text-red-600">{err}</div>}
           <div className="grid gap-6 sm:grid-cols-2">
             <div className="grid gap-3">
               <Skeleton className="h-4 w-24" />
@@ -808,6 +820,8 @@ export default function VmDetailsClient() {
           displayCurrency={displayCurrency}
           onTopUp={(secs) => topUp(secs)}
           busy={busy}
+          actionsDisabled={!paymentReady}
+          actionsDisabledReason={!paymentReady ? paymentMessage : null}
         />
       )}
       {/* Terminate confirmation modal */}

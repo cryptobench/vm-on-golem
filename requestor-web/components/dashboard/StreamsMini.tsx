@@ -1,14 +1,11 @@
 "use client";
 import React from "react";
-import { BrowserProvider, Contract } from "ethers";
 import { loadRentals, loadSettings, type Rental } from "../../lib/api";
 import { useToast } from "../ui/Toast";
-import { Spinner } from "../ui/Spinner";
-import { ensureNetwork, getPaymentsChain } from "../../lib/chain";
+import { getPaymentNetworkErrorMessage } from "../../lib/chain";
 import { useWallet } from "../../context/WalletContext";
 import { fetchStreamWithMeta } from "../../lib/streams";
 import { StreamCard } from "../streams/StreamCard";
-import streamPayment from "../../public/abi/StreamPayment.json";
 import { useStreamActions } from "../../hooks/useStreamActions";
 
 export function StreamsMini({ projectId }: { projectId: string }) {
@@ -19,7 +16,7 @@ export function StreamsMini({ projectId }: { projectId: string }) {
   const [busy, setBusy] = React.useState<string | null>(null);
   const spAddr = (loadSettings().stream_payment_address || process.env.NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS || '').trim();
   const [displayCurrency, setDisplayCurrency] = React.useState<'fiat'|'token'>(loadSettings().display_currency === 'token' ? 'token' : 'fiat');
-  const { account } = useWallet();
+  const { paymentReady, paymentMessage } = useWallet();
 
   const load = async () => {
     if (!spAddr || !rentals.length) { setRows([]); return; }
@@ -31,13 +28,13 @@ export function StreamsMini({ projectId }: { projectId: string }) {
           const data = await fetchStreamWithMeta(spAddr, BigInt(r.stream_id!));
           return { ok: true, r, data };
         } catch (e: any) {
-          return { ok: false, r, error: e?.message || String(e) };
+          return { ok: false, r, error: getPaymentNetworkErrorMessage(e) };
         }
       }));
       // Dashboard: show only active (not halted and remaining > 0)
       const filtered = list.filter(row => row.ok && row.data && !row.data.chain.halted && (row.data.remaining > 0));
       setRows(filtered);
-    } catch (e: any) { setError(e?.message || String(e)); }
+    } catch (e: any) { setError(getPaymentNetworkErrorMessage(e)); }
   };
 
   React.useEffect(() => { load(); }, [projectId]);
@@ -63,7 +60,7 @@ export function StreamsMini({ projectId }: { projectId: string }) {
       show("Top-up sent");
       await load();
     } catch (e) {
-      show("Top-up failed");
+      show(getPaymentNetworkErrorMessage(e));
     } finally { setBusy(null); }
   };
 
@@ -93,6 +90,8 @@ export function StreamsMini({ projectId }: { projectId: string }) {
                   detailsHref={`/vm?id=${encodeURIComponent(row.r.vm_id)}`}
                   onTopUp={(secs) => topUpSeconds(row.r, row.data.chain.ratePerSecond, row.data.chain.token, secs)}
                   busy={busy === row.r.vm_id}
+                  actionsDisabled={!paymentReady}
+                  actionsDisabledReason={!paymentReady ? paymentMessage : null}
                 />
               )}
             </div>

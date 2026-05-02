@@ -15,6 +15,8 @@ type StoredAdsConfig = Partial<AdsConfig>;
 
 const BASE_RPC_URL = 'https://kaolin.hoodi.arkiv.network/rpc';
 const BASE_WS_URL = 'wss://kaolin.hoodi.arkiv.network/rpc/ws';
+const LOCAL_CENTRAL_PROFILE_ID = 'local-central';
+const LOCAL_CENTRAL_PROFILE_NAME = 'Local Central';
 const DEFAULTS: AdsConfig = (() => {
   const isDevEnv = (process.env.NEXT_PUBLIC_GOLEM_ENVIRONMENT || '').toLowerCase() === 'development';
   // Allow explicit dev overrides when GOLEM_ENVIRONMENT=development
@@ -22,8 +24,9 @@ const DEFAULTS: AdsConfig = (() => {
   const devWs = process.env.NEXT_PUBLIC_ARKIV_DEV_WS_URL || '';
   const baseRpc = isDevEnv && devRpc ? devRpc : BASE_RPC_URL;
   const baseWs = isDevEnv && devWs ? devWs : BASE_WS_URL;
+  const mode = (process.env.NEXT_PUBLIC_DISCOVERY_MODE || '').toLowerCase() === 'central' ? 'central' : 'arkiv';
   return {
-    mode: 'arkiv',
+    mode,
     discovery_url: process.env.NEXT_PUBLIC_DISCOVERY_API_URL || 'http://195.201.39.101:9001/api/v1',
     arkiv_rpc_url: baseRpc,
     arkiv_ws_url: baseWs,
@@ -51,6 +54,31 @@ function normalizeAdsConfig(config: StoredAdsConfig): AdsConfig {
   return next;
 }
 
+function isLauncherCentralMode(): boolean {
+  return DEFAULTS.mode === 'central';
+}
+
+function localCentralProfile(): AdsProfile {
+  return {
+    id: LOCAL_CENTRAL_PROFILE_ID,
+    name: LOCAL_CENTRAL_PROFILE_NAME,
+    config: {
+      ...DEFAULTS,
+      mode: 'central',
+      discovery_url: DEFAULTS.discovery_url,
+    },
+  };
+}
+
+function upsertLocalCentralProfile(profiles: AdsProfile[]): AdsProfile[] {
+  const localProfile = localCentralProfile();
+  const idx = profiles.findIndex((profile) => profile.id === LOCAL_CENTRAL_PROFILE_ID);
+  if (idx < 0) return [localProfile, ...profiles];
+  const copy = profiles.slice();
+  copy[idx] = localProfile;
+  return copy;
+}
+
 function loadProfiles(): { profiles: AdsProfile[]; activeId: string } {
   if (typeof window === 'undefined') return { profiles: [{ id: 'default', name: 'Default', config: DEFAULTS }], activeId: 'default' };
   try {
@@ -68,15 +96,22 @@ function loadProfiles(): { profiles: AdsProfile[]; activeId: string } {
       profiles = [{ id: 'default', name: 'Default', config: normalizeAdsConfig(legacy) }];
       shouldPersistProfiles = true;
     }
-    if (!profiles.length) {
-      profiles = [{ id: 'default', name: 'Default', config: DEFAULTS }];
-      shouldPersistProfiles = true;
-    }
+	    if (!profiles.length) {
+	      profiles = [{ id: 'default', name: 'Default', config: DEFAULTS }];
+	      shouldPersistProfiles = true;
+	    }
 
-    if (shouldPersistProfiles) {
-      localStorage.setItem(PROFILES_KEY, JSON.stringify(profiles));
-    }
-    const activeId = String(localStorage.getItem(ACTIVE_KEY) || profiles[0].id);
+	    if (isLauncherCentralMode()) {
+	      profiles = upsertLocalCentralProfile(profiles);
+	      shouldPersistProfiles = true;
+	    }
+
+	    if (shouldPersistProfiles) {
+	      localStorage.setItem(PROFILES_KEY, JSON.stringify(profiles));
+	    }
+	    const activeId = isLauncherCentralMode()
+	      ? LOCAL_CENTRAL_PROFILE_ID
+	      : String(localStorage.getItem(ACTIVE_KEY) || profiles[0].id);
     if (shouldPersistProfiles) {
       localStorage.setItem(ACTIVE_KEY, activeId);
     }

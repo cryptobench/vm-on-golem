@@ -1,4 +1,4 @@
-.PHONY: install test start lock openapi api-generate api-check start-testnet start-mainnet dev-proxy dev-web dev-proxy-web start-dev
+.PHONY: install test local start lock openapi api-generate api-check start-testnet start-mainnet dev-proxy dev-web dev-proxy-web start-dev
 
 # --- Dev convenience variables (override via env when calling make) ---
 # Ports
@@ -14,6 +14,13 @@ ARKIV_DEV_WS_URL ?=
 # Central discovery API used by the proxy. For local-only setups, point this to
 # any reachable central discovery instance. Default to public demo endpoint.
 CENTRAL_DISCOVERY_API_URL ?= http://195.201.39.101:9001/api/v1
+# Payments chain used by MetaMask/requestor-web.
+L2_RPC_URL ?= https://l2.hoodi.arkiv.network/rpc
+L2_EXPLORER_URL ?= https://explorer.l2.hoodi.arkiv.network
+L2_CHAIN_ID_HEX ?= 0x6013a
+L2_CHAIN_NAME ?= Arkiv L2 Hoodi
+STREAM_PAYMENT_ADDRESS ?= $(shell python3 -c "import json; print(json.load(open('contracts/deployments/l2.json'))['StreamPayment']['address'])")
+GLM_TOKEN_ADDRESS ?= $(shell python3 -c "import json; print(json.load(open('contracts/deployments/l2.json'))['StreamPayment'].get('glmToken') or '0x0000000000000000000000000000000000000000')")
 
 install: lock
 	poetry -C central-discovery-server install
@@ -44,6 +51,9 @@ test:
 	poetry -C requestor-server install --with dev --no-interaction
 	# Requestor uses service-local pytest.ini to scope coverage sources
 	poetry -C requestor-server run pytest requestor-server/tests || [ $$? -eq 5 ]
+
+local:
+	python3 scripts/local_stack.py $(LOCAL_STACK_ARGS)
 
 openapi:
 	poetry -C central-discovery-server run python ../scripts/export_openapi.py central-discovery ../openapi/central-discovery.json
@@ -78,6 +88,12 @@ start:
 	NEXT_PUBLIC_DISCOVERY_API_URL=$(CENTRAL_DISCOVERY_API_URL) \
 	NEXT_PUBLIC_PORT_CHECKER_URL=http://127.0.0.1:$(PORT_CHECKER_PORT) \
 	NEXT_PUBLIC_PORT_CHECKER_TOKEN=$(PORT_CHECKER_TOKEN) \
+	NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS=$(STREAM_PAYMENT_ADDRESS) \
+	NEXT_PUBLIC_GLM_TOKEN_ADDRESS=$(GLM_TOKEN_ADDRESS) \
+	NEXT_PUBLIC_EVM_CHAIN_ID=$(L2_CHAIN_ID_HEX) \
+	NEXT_PUBLIC_EVM_CHAIN_NAME="$(L2_CHAIN_NAME)" \
+	NEXT_PUBLIC_EVM_RPC_URL=$(L2_RPC_URL) \
+	NEXT_PUBLIC_EVM_EXPLORER_URL=$(L2_EXPLORER_URL) \
 	NEXT_PUBLIC_ARKIV_DEV_RPC_URL=$(ARKIV_DEV_RPC_URL) \
 	NEXT_PUBLIC_ARKIV_DEV_WS_URL=$(ARKIV_DEV_WS_URL) \
 	npm --prefix requestor-web run dev & \
@@ -123,6 +139,12 @@ dev-web:
 	NEXT_PUBLIC_DISCOVERY_API_URL=$(CENTRAL_DISCOVERY_API_URL) \
 	NEXT_PUBLIC_PORT_CHECKER_URL=http://127.0.0.1:$(PORT_CHECKER_PORT) \
 	NEXT_PUBLIC_PORT_CHECKER_TOKEN=$(PORT_CHECKER_TOKEN) \
+	NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS=$(STREAM_PAYMENT_ADDRESS) \
+	NEXT_PUBLIC_GLM_TOKEN_ADDRESS=$(GLM_TOKEN_ADDRESS) \
+	NEXT_PUBLIC_EVM_CHAIN_ID=$(L2_CHAIN_ID_HEX) \
+	NEXT_PUBLIC_EVM_CHAIN_NAME="$(L2_CHAIN_NAME)" \
+	NEXT_PUBLIC_EVM_RPC_URL=$(L2_RPC_URL) \
+	NEXT_PUBLIC_EVM_EXPLORER_URL=$(L2_EXPLORER_URL) \
 	NEXT_PUBLIC_ARKIV_DEV_RPC_URL=$(ARKIV_DEV_RPC_URL) \
 	NEXT_PUBLIC_ARKIV_DEV_WS_URL=$(ARKIV_DEV_WS_URL) \
 	npm --prefix requestor-web run dev
@@ -147,6 +169,12 @@ dev-proxy-web:
 	NEXT_PUBLIC_DISCOVERY_API_URL=$(CENTRAL_DISCOVERY_API_URL) \
 	NEXT_PUBLIC_PORT_CHECKER_URL=http://127.0.0.1:$(PORT_CHECKER_PORT) \
 	NEXT_PUBLIC_PORT_CHECKER_TOKEN=$(PORT_CHECKER_TOKEN) \
+	NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS=$(STREAM_PAYMENT_ADDRESS) \
+	NEXT_PUBLIC_GLM_TOKEN_ADDRESS=$(GLM_TOKEN_ADDRESS) \
+	NEXT_PUBLIC_EVM_CHAIN_ID=$(L2_CHAIN_ID_HEX) \
+	NEXT_PUBLIC_EVM_CHAIN_NAME="$(L2_CHAIN_NAME)" \
+	NEXT_PUBLIC_EVM_RPC_URL=$(L2_RPC_URL) \
+	NEXT_PUBLIC_EVM_EXPLORER_URL=$(L2_EXPLORER_URL) \
 	NEXT_PUBLIC_ARKIV_DEV_RPC_URL=$(ARKIV_DEV_RPC_URL) \
 	NEXT_PUBLIC_ARKIV_DEV_WS_URL=$(ARKIV_DEV_WS_URL) \
 	npm --prefix requestor-web run dev & \
@@ -177,6 +205,12 @@ start-dev:
 	NEXT_PUBLIC_DISCOVERY_API_URL=$(CENTRAL_DISCOVERY_API_URL) \
 	NEXT_PUBLIC_PORT_CHECKER_URL=http://127.0.0.1:$(PORT_CHECKER_PORT) \
 	NEXT_PUBLIC_PORT_CHECKER_TOKEN=$(PORT_CHECKER_TOKEN) \
+	NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS=$(STREAM_PAYMENT_ADDRESS) \
+	NEXT_PUBLIC_GLM_TOKEN_ADDRESS=$(GLM_TOKEN_ADDRESS) \
+	NEXT_PUBLIC_EVM_CHAIN_ID=$(L2_CHAIN_ID_HEX) \
+	NEXT_PUBLIC_EVM_CHAIN_NAME="$(L2_CHAIN_NAME)" \
+	NEXT_PUBLIC_EVM_RPC_URL=$(L2_RPC_URL) \
+	NEXT_PUBLIC_EVM_EXPLORER_URL=$(L2_EXPLORER_URL) \
 	NEXT_PUBLIC_ARKIV_DEV_RPC_URL=$(ARKIV_DEV_RPC_URL) \
 	NEXT_PUBLIC_ARKIV_DEV_WS_URL=$(ARKIV_DEV_WS_URL) \
 	npm --prefix requestor-web run dev & \

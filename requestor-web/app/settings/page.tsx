@@ -24,10 +24,11 @@ export default function SettingsPage() {
   const [mode, setMode] = React.useState<"arkiv"|"central">(ads.mode);
   const [disc, setDisc] = React.useState<string>(ads.discovery_url);
   const [rpc, setRpc] = React.useState<string>(ads.arkiv_rpc_url);
-  const [chainIdText, setChainIdText] = React.useState<string>(() => {
-    try { return '0x' + ads.chain_id.toString(16); } catch { return String(ads.chain_id || ''); }
-  });
   const [ws, setWs] = React.useState<string>(ads.arkiv_ws_url);
+  const [evmChainIdText, setEvmChainIdText] = React.useState<string>(process.env.NEXT_PUBLIC_EVM_CHAIN_ID || "0x6013a");
+  const [evmChainName, setEvmChainName] = React.useState<string>(process.env.NEXT_PUBLIC_EVM_CHAIN_NAME || "Arkiv L2 Hoodi");
+  const [evmRpcUrl, setEvmRpcUrl] = React.useState<string>(process.env.NEXT_PUBLIC_EVM_RPC_URL || "https://l2.hoodi.arkiv.network/rpc");
+  const [evmExplorerUrl, setEvmExplorerUrl] = React.useState<string>(process.env.NEXT_PUBLIC_EVM_EXPLORER_URL || "https://explorer.l2.hoodi.arkiv.network");
   const [profileName, setProfileName] = React.useState<string>(profiles.find(p => p.id === activeId)?.name || "");
   const [pendingProvider, setPendingProvider] = React.useState<string | null>(null);
   // SSH key add handled by KeyPicker
@@ -50,30 +51,37 @@ export default function SettingsPage() {
     setSshKeys(keys);
     setDefaultKeyId(initial.default_ssh_key_id || (keys[0]?.id) || (initial.ssh_public_key ? 'default' : undefined));
     setDisplayCurrency(initial.display_currency === 'token' ? 'token' : 'fiat');
+    setEvmChainIdText(initial.evm_chain_id || (process.env.NEXT_PUBLIC_EVM_CHAIN_ID || "0x6013a"));
+    setEvmChainName(initial.evm_chain_name || (process.env.NEXT_PUBLIC_EVM_CHAIN_NAME || "Arkiv L2 Hoodi"));
+    setEvmRpcUrl(initial.evm_rpc_url || (process.env.NEXT_PUBLIC_EVM_RPC_URL || "https://l2.hoodi.arkiv.network/rpc"));
+    setEvmExplorerUrl(initial.evm_explorer_url || (process.env.NEXT_PUBLIC_EVM_EXPLORER_URL || "https://explorer.l2.hoodi.arkiv.network"));
     // Sync ads-derived fields (profiles/context already mounted)
     setMode(ads.mode);
     setDisc(ads.discovery_url);
     setRpc(ads.arkiv_rpc_url);
     setWs(ads.arkiv_ws_url);
-    try { setChainIdText('0x' + ads.chain_id.toString(16)); } catch { setChainIdText(String(ads.chain_id || '')); }
     setProfileName(profiles.find(p => p.id === activeId)?.name || "");
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mounted]);
 
   const save = () => {
-    saveSettings({ ssh_keys: sshKeys, default_ssh_key_id: defaultKeyId, stream_payment_address: sp, glm_token_address: glm, display_currency: displayCurrency });
-    // Parse chain id from text (accept hex 0x.. or decimal)
-    let cid = ads.chain_id;
-    const t = (chainIdText || '').trim();
-    if (t) {
-      try { cid = t.startsWith('0x') ? parseInt(t, 16) : parseInt(t, 10); } catch {}
-    }
+    saveSettings({
+      ssh_keys: sshKeys,
+      default_ssh_key_id: defaultKeyId,
+      stream_payment_address: sp,
+      glm_token_address: glm,
+      evm_chain_id: evmChainIdText.trim(),
+      evm_chain_name: evmChainName.trim(),
+      evm_rpc_url: evmRpcUrl.trim(),
+      evm_explorer_url: evmExplorerUrl.trim(),
+      display_currency: displayCurrency,
+    });
     setAds({
       mode,
       discovery_url: disc,
       arkiv_rpc_url: rpc,
       arkiv_ws_url: ws,
-      chain_id: Number.isFinite(cid) && cid > 0 ? cid : ads.chain_id,
+      chain_id: ads.chain_id,
       advertisement_interval_seconds: ads.advertisement_interval_seconds,
     });
     if (profileName.trim().length) renameProfile(activeId, profileName.trim());
@@ -154,7 +162,7 @@ export default function SettingsPage() {
                 <div>
                   <label className="label">Mode</label>
                   <select className="input" value={mode} onChange={e => setMode(e.target.value as any)}>
-                    <option value="arkiv">Arkiv (default)</option>
+                    <option value="arkiv">Arkiv</option>
                     <option value="central">Central Discovery</option>
                   </select>
                 </div>
@@ -165,10 +173,6 @@ export default function SettingsPage() {
                   </div>
                 ) : (
                   <>
-                    <div>
-                      <label className="label">Payments chain ID (hex or decimal)</label>
-                      <input className="input" value={chainIdText} onChange={e => setChainIdText(e.target.value)} placeholder="0x6013a" />
-                    </div>
                     <div>
                       <label className="label">Arkiv RPC URL</label>
                       <input className="input" value={rpc} onChange={e => setRpc(e.target.value)} placeholder="https://.../rpc" />
@@ -210,6 +214,22 @@ export default function SettingsPage() {
               <div>
                 <label className="label">GLM token address (set 0x0… to pay in native token)</label>
                 <input className="input" value={glm} onChange={e => setGlm(e.target.value)} placeholder="0x..." />
+              </div>
+              <div>
+                <label className="label">Payments chain ID (hex or decimal)</label>
+                <input className="input" value={evmChainIdText} onChange={e => setEvmChainIdText(e.target.value)} placeholder="0x6013a" />
+              </div>
+              <div>
+                <label className="label">Payments chain name</label>
+                <input className="input" value={evmChainName} onChange={e => setEvmChainName(e.target.value)} placeholder="Arkiv L2 Hoodi" />
+              </div>
+              <div>
+                <label className="label">Payments RPC URL</label>
+                <input className="input" value={evmRpcUrl} onChange={e => setEvmRpcUrl(e.target.value)} placeholder="https://.../rpc" />
+              </div>
+              <div>
+                <label className="label">Payments explorer URL</label>
+                <input className="input" value={evmExplorerUrl} onChange={e => setEvmExplorerUrl(e.target.value)} placeholder="https://..." />
               </div>
               <div className="flex items-center gap-3 pt-2">
                 <button className="btn btn-primary" onClick={save}>Save</button>

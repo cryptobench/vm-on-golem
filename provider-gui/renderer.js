@@ -18,6 +18,16 @@ const webhookList = document.getElementById('webhookList');
 const webhookAdd = document.getElementById('webhookAdd');
 const webhookName = document.getElementById('webhookName');
 const webhookUrl = document.getElementById('webhookUrl');
+const chartSubtitle = document.getElementById('chartSubtitle');
+const chartRanges = document.getElementById('chartRanges');
+const hostUsageChartCanvas = document.getElementById('hostUsageChart');
+const hostNetworkChartCanvas = document.getElementById('hostNetworkChart');
+const vmUsageChartCanvas = document.getElementById('vmUsageChart');
+const vmNetworkChartCanvas = document.getElementById('vmNetworkChart');
+const hostUsageEmpty = document.getElementById('hostUsageEmpty');
+const hostNetworkEmpty = document.getElementById('hostNetworkEmpty');
+const vmUsageEmpty = document.getElementById('vmUsageEmpty');
+const vmNetworkEmpty = document.getElementById('vmNetworkEmpty');
 
 const API = (window.config && window.config.apiBaseUrl) || 'http://127.0.0.1:7466/api/v1';
 
@@ -34,6 +44,9 @@ function fmtPricing(p) {
 }
 
 let monitoring = null;
+let selectedVmId = null;
+let chartRange = '1h';
+const charts = {};
 
 function pct(value) {
   const n = Number(value && value.value != null ? value.value : value);
@@ -51,11 +64,15 @@ function renderVMs(vms) {
   vmListDiv.innerHTML = '';
   const list = Array.isArray(vms) ? vms : [];
   if (list.length === 0) {
+    selectedVmId = null;
     const empty = document.createElement('div');
     empty.className = 'vm-row';
     empty.textContent = 'No VMs running';
     vmListDiv.appendChild(empty);
     return;
+  }
+  if (!selectedVmId || !list.some(vm => vm.id === selectedVmId)) {
+    selectedVmId = list[0].id;
   }
   list.forEach((vm, idx) => {
     const row = document.createElement('div');
@@ -64,7 +81,11 @@ function renderVMs(vms) {
     radio.type = 'radio';
     radio.name = 'vmSelect';
     radio.value = vm.id;
-    if (idx === 0) radio.checked = true;
+    radio.checked = vm.id === selectedVmId;
+    radio.addEventListener('change', () => {
+      selectedVmId = vm.id;
+      fetchCharts();
+    });
     const id = document.createElement('div');
     id.className = 'vm-id';
     id.textContent = vm.id;
@@ -135,6 +156,187 @@ async function fetchMonitoring() {
     hostDisk.textContent = '—'; hostDiskBar.style.width = '0%';
     if (alertsList) alertsList.innerHTML = '<div class="small">Monitoring unavailable.</div>';
   }
+}
+
+async function fetchHistory(scope, extra = {}) {
+  const params = new URLSearchParams({ scope, range: chartRange });
+  Object.entries(extra).forEach(([key, value]) => {
+    if (value != null && value !== '') params.set(key, value);
+  });
+  const resp = await fetch(`${API}/monitoring/metrics/history?${params.toString()}`, { cache: 'no-store' });
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  return resp.json();
+}
+
+async function fetchCharts() {
+  if (!window.Chart) return;
+  try {
+    const [hostHistory, vmHistory] = await Promise.all([
+      fetchHistory('host'),
+      selectedVmId ? fetchHistory('vm', { vm_id: selectedVmId }) : Promise.resolve({ samples: [] }),
+    ]);
+    renderHistoryCharts(hostHistory.samples || [], vmHistory.samples || []);
+    if (chartSubtitle) {
+      chartSubtitle.textContent = selectedVmId ? `Host and ${selectedVmId}` : 'Host metrics';
+    }
+  } catch {
+    showEmpty(hostUsageChartCanvas, hostUsageEmpty, true);
+    showEmpty(hostNetworkChartCanvas, hostNetworkEmpty, true);
+    showEmpty(vmUsageChartCanvas, vmUsageEmpty, true);
+    showEmpty(vmNetworkChartCanvas, vmNetworkEmpty, true);
+  }
+}
+
+function renderHistoryCharts(hostSamples, vmSamples) {
+  const hostUsage = percentSeries(hostSamples, 'infrastructure', {
+    cpu_percent: 'CPU',
+    memory_percent: 'RAM',
+    disk_percent: 'Disk',
+  });
+  const hostNetwork = rateSeries(hostSamples, 'infrastructure', {
+    network_rx_bytes: 'RX',
+    network_tx_bytes: 'TX',
+  });
+  const vmUsage = percentSeries(vmSamples, 'guest_agent', {
+    cpu_percent: 'CPU',
+    memory_percent: 'RAM',
+    disk_percent: 'Disk',
+  });
+  const vmNetworkGuest = rateSeries(vmSamples, 'guest_agent', {
+    network_rx_bytes: 'RX',
+    network_tx_bytes: 'TX',
+  });
+  const vmNetworkInfra = rateSeries(vmSamples, 'infrastructure', {
+    proxy_rx_bytes: 'Proxy RX',
+    proxy_tx_bytes: 'Proxy TX',
+  });
+  const vmNetwork = vmNetworkGuest.labels.length > 0 ? vmNetworkGuest : vmNetworkInfra;
+
+  renderChart('hostUsage', hostUsageChartCanvas, hostUsageEmpty, hostUsage, percentFormatter);
+  renderChart('hostNetwork', hostNetworkChartCanvas, hostNetworkEmpty, hostNetwork, rateFormatter);
+  renderChart('vmUsage', vmUsageChartCanvas, vmUsageEmpty, vmUsage, percentFormatter);
+  renderChart('vmNetwork', vmNetworkChartCanvas, vmNetworkEmpty, vmNetwork, rateFormatter);
+}
+
+function percentSeries(samples, source, metrics) {
+  const rows = collectRows(samples, source, Object.keys(metrics), (sample) => clamp(sample.value, 0, 100));
+  return toChartData(rows, metrics);
+}
+
+function rateSeries(samples, source, metrics) {
+  const previous = {};
+  const rows = new Map();
+  samples
+    .filter(sample => sample.source === source && Object.prototype.hasOwnProperty.call(metrics, sample.metric))
+    .sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp))
+    .forEach(sample => {
+      const timestamp = Date.parse(sample.timestamp);
+      const last = previous[sample.metric];
+      previous[sample.metric] = { timestamp, value: Number(sample.value) };
+      if (!last) return;
+      const seconds = Math.max(1, (timestamp - last.timestamp) / 1000);
+      const delta = Math.max(0, Number(sample.value) - last.value);
+      const key = sample.timestamp;
+      const row = rows.get(key) || { label: timeLabel(sample.timestamp), values: {} };
+      row.values[sample.metric] = delta / seconds;
+      rows.set(key, row);
+    });
+  return toChartData(rows, metrics);
+}
+
+function collectRows(samples, source, metricNames, valueMapper) {
+  const rows = new Map();
+  samples
+    .filter(sample => sample.source === source && metricNames.includes(sample.metric))
+    .sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp))
+    .forEach(sample => {
+      const key = sample.timestamp;
+      const row = rows.get(key) || { label: timeLabel(sample.timestamp), values: {} };
+      row.values[sample.metric] = valueMapper(sample);
+      rows.set(key, row);
+    });
+  return rows;
+}
+
+function toChartData(rows, metrics) {
+  const rowList = Array.from(rows.values());
+  const labels = rowList.map(row => row.label);
+  const colors = ['#181E9F', '#0a7a26', '#a56600', '#5b21b6'];
+  const datasets = Object.entries(metrics).map(([metric, label], idx) => ({
+    label,
+    data: rowList.map(row => row.values[metric] ?? null),
+    borderColor: colors[idx % colors.length],
+    backgroundColor: colors[idx % colors.length],
+    borderWidth: 2,
+    pointRadius: 0,
+    tension: 0.25,
+    spanGaps: true,
+  }));
+  const hasData = datasets.some(dataset => dataset.data.some(value => value != null));
+  return { labels, datasets, hasData };
+}
+
+function renderChart(key, canvas, emptyEl, data, formatter) {
+  const empty = !data.hasData;
+  showEmpty(canvas, emptyEl, empty);
+  if (empty || !canvas) {
+    if (charts[key]) {
+      charts[key].destroy();
+      delete charts[key];
+    }
+    return;
+  }
+  const config = {
+    type: 'line',
+    data: { labels: data.labels, datasets: data.datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'bottom', labels: { boxWidth: 10, usePointStyle: true } },
+        tooltip: { callbacks: { label: item => `${item.dataset.label}: ${formatter(item.parsed.y || 0)}` } },
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { maxTicksLimit: 6 } },
+        y: { beginAtZero: true, ticks: { callback: value => formatter(Number(value)) } },
+      },
+    },
+  };
+  if (charts[key]) {
+    charts[key].data = config.data;
+    charts[key].options = config.options;
+    charts[key].update();
+  } else {
+    charts[key] = new Chart(canvas, config);
+  }
+}
+
+function showEmpty(canvas, emptyEl, empty) {
+  const frame = canvas && canvas.closest ? canvas.closest('.chart-frame') : null;
+  if (frame) frame.classList.toggle('hidden', empty);
+  else if (canvas) canvas.classList.toggle('hidden', empty);
+  if (emptyEl) emptyEl.classList.toggle('hidden', !empty);
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, Number(value)));
+}
+
+function percentFormatter(value) {
+  return `${Number(value).toFixed(0)}%`;
+}
+
+function rateFormatter(value) {
+  const n = Number(value);
+  if (n >= 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB/s`;
+  if (n >= 1024) return `${(n / 1024).toFixed(1)} KB/s`;
+  return `${n.toFixed(0)} B/s`;
+}
+
+function timeLabel(timestamp) {
+  return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
 async function fetchWebhooks() {
@@ -214,6 +416,17 @@ if (stopBtn && startBtn && statusDiv) {
     });
   }
 
+  if (chartRanges) {
+    chartRanges.querySelectorAll('.range-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        chartRange = btn.dataset.range || '1h';
+        chartRanges.querySelectorAll('.range-btn').forEach(item => item.classList.remove('active'));
+        btn.classList.add('active');
+        fetchCharts();
+      });
+    });
+  }
+
   // First-run Multipass check
   if (window.electronAPI && window.electronAPI.checkMultipass) {
     window.electronAPI.checkMultipass().then((res) => {
@@ -263,8 +476,9 @@ if (stopBtn && startBtn && statusDiv) {
     });
   }
   // initial and poll
-  fetchSummary();
+  fetchSummary().then(fetchCharts);
   setInterval(fetchSummary, 3000);
+  setInterval(fetchCharts, 30000);
 } else {
   document.body.innerHTML = '<h1>Failed to initialize GUI</h1>';
 }

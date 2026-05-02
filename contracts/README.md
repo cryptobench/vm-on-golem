@@ -48,7 +48,7 @@ KAOLIN (Hoodi) test network
   - RPC (WS): `wss://kaolin.hoodi.arkiv.network/rpc/ws`
   - Faucet: `https://kaolin.hoodi.arkiv.network/faucet/`
   - Faucet challenge: `curl 'https://cap.gobas.me/05381a2cef5e/api/challenge' -X POST -H 'origin: https://kaolin.hoodi.arkiv.network'` (see faucet UI for full header set)
-  - Bridge: `0xa85E4E3C73E83C627C1a55E2f2B4e4794367431f`
+  - Bridge: `0x6db217C596Cd203256058dBbFcA37d5A62161b78`
   - Network ID (chainId): `60138453025`
 - Env vars:
   - `KAOLIN_RPC_URL` — defaults to the HTTP RPC above
@@ -80,8 +80,10 @@ L2 (Hoodi) test network
   - RPC (WS): `wss://l2.hoodi.arkiv.network/rpc/ws`
   - Faucet: `https://l2.hoodi.arkiv.network/faucet/`
   - Faucet challenge: `https://cap.gobas.me/05381a2cef5e/api/challenge`
-  - Bridge: `0xD770652eB62C12cA12AAd6D7C56B34Ed4970655c`
+  - Explorer: `https://explorer.l2.hoodi.arkiv.network`
+  - Bridge: `0x0b332403271e8Ea0490e6f32a1e4B7eEe8842220`
   - Network ID (chainId): `393530`
+  - StreamPayment: `0x00E67b653b70dC07385CBE4c0Be6BF7B6EA45f7C`
 - Env vars:
   - `L2_RPC_URL` — defaults to the HTTP RPC above
   - `L2_CHAIN_ID` — optional; set to `393530`

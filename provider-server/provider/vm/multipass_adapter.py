@@ -523,6 +523,21 @@ class MultipassAdapter(VMProvider):
         if driver != "qemu":
             return
 
+        try:
+            multipass_version = subprocess.run(
+                [self.multipass_path, "version"],
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout
+        except Exception:
+            return
+        first_multipass_line = (
+            multipass_version.splitlines()[0] if multipass_version.splitlines() else ""
+        )
+        if "1.16.2+mac" not in first_multipass_line:
+            return
+
         bundled_qemu = (
             Path(self.multipass_path).resolve().parent / "qemu-system-aarch64"
         )
@@ -540,10 +555,12 @@ class MultipassAdapter(VMProvider):
         major = self._safe_int(qemu_version.split("version", 1)[-1].split(".")[0], 0)
         if major and major < 10:
             raise MultipassError(
-                "This Multipass installation uses the qemu driver with bundled "
+                "This Multipass installation uses "
+                f"{first_multipass_line} with the qemu driver and bundled "
                 f"QEMU {qemu_version.splitlines()[0]} on Apple Silicon/macOS. "
                 "This combination is known to fail before cloud-init with "
                 "\"qemu-system-aarch64: Property 'host-arm-cpu.sme' not found\". "
-                "Upgrade Multipass to a build with a fixed QEMU or a supported "
-                "non-QEMU driver, or run the provider on a Linux host."
+                "Downgrade to Multipass 1.16.1+mac, upgrade to a build with a "
+                "fix, use a supported non-QEMU driver, or run the provider on a "
+                "Linux host."
             )

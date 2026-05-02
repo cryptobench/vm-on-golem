@@ -4,50 +4,142 @@
     <meta charset="UTF-8">
     <title>Golem Provider GUI</title>
     <style>
-        body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; padding: 16px; color: #222; background:#f7f8fb; }
-        h1 { margin: 0 0 12px 0; font-size: 20px; }
-        h2 { margin: 0 0 8px 0; font-size: 15px; }
-        .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-        .card { border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px; background: #fff; }
-        .wide { grid-column: span 2; }
-        .muted { color: #666; font-size: 12px; }
-        #controls { margin: 12px 0; }
-        #controls button { margin-right: 8px; padding: 8px 12px; }
-        #status { font-weight: 600; }
-        .ok { color: #0a7a26; }
+        :root {
+            --brand: #181E9F;
+            --bg: #f7f8fb;
+            --border: #e1e4ea;
+            --text: #22242a;
+            --muted: #60646c;
+            --success: #0a7a26;
+            --warning: #7a5100;
+            --danger: #a11;
+        }
+        * { box-sizing: border-box; }
+        html { min-height: 100%; background: var(--bg); }
+        body {
+            min-height: 100%;
+            margin: 0;
+            color: var(--text);
+            background: var(--bg);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            font-size: 14px;
+        }
+        .app-shell {
+            width: min(100%, 1184px);
+            margin: 0 auto;
+            padding: 24px;
+        }
+        h1 { margin: 0 0 16px; font-size: 24px; font-weight: 700; line-height: 1.2; }
+        h2 { margin: 0 0 8px; font-size: 18px; font-weight: 700; line-height: 1.25; }
+        button {
+            min-height: 40px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: #fff;
+            color: var(--text);
+            padding: 0 12px;
+            font: inherit;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        button:hover { background: #f4f5f8; }
+        button:disabled { cursor: default; opacity: 0.6; }
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 12px;
+        }
+        .card {
+            min-width: 0;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
+            background: #fff;
+            box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+        }
+        .muted { color: var(--muted); font-size: 13px; line-height: 1.35; }
+        .value { margin-top: 4px; overflow-wrap: anywhere; font-size: 16px; font-weight: 600; line-height: 1.25; white-space: pre-line; }
+        #status { font-size: 18px; font-weight: 700; line-height: 1.15; }
+        .ok { color: var(--success); }
         .warn { color: #a56600; }
-        .err { color: #a11; }
+        .err { color: var(--danger); }
         .section { margin-top: 16px; }
-        .vm-list { border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden; }
-        .vm-row { display: grid; grid-template-columns: 24px 1fr 120px 170px 170px; gap: 8px; align-items: center; padding: 8px 12px; border-bottom: 1px solid #eee; }
+        #controls {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 8px;
+            margin: 16px 0 0;
+        }
+        #stopBtn { border-color: #f0c5c5; color: var(--danger); }
+        .vm-list {
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            overflow-x: auto;
+            background: #fff;
+        }
+        .vm-row {
+            display: grid;
+            grid-template-columns: 24px minmax(12rem, 1fr) 8rem 12rem 14rem;
+            gap: 10px;
+            align-items: center;
+            min-width: 720px;
+            padding: 10px 12px;
+            border-bottom: 1px solid #edf0f5;
+        }
         .vm-row:last-child { border-bottom: 0; }
-        .vm-id { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-        .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; background: #eee; }
-        .pill.running { background: #e6f7ed; color: #0a7a26; }
-        .pill.stopped { background: #fdeaea; color: #a11; }
-        .pill.warn { background:#fff7e6; color:#7a5100; }
-        .pill.critical { background:#fdeaea; color:#a11; }
-        .small { font-size: 12px; color: #555; }
-        .metric { font-size: 22px; font-weight: 650; margin-top: 4px; }
-        .bar { height: 6px; background:#edf0f5; border-radius: 999px; overflow: hidden; margin-top: 8px; }
-        .bar > span { display:block; height:100%; background:#181E9F; }
-        .alert-row { display:grid; grid-template-columns: 90px 1fr 110px; gap:8px; padding:8px 0; border-bottom:1px solid #eee; }
+        .vm-id { overflow: hidden; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; text-overflow: ellipsis; white-space: nowrap; }
+        .pill { display: inline-flex; align-items: center; min-height: 22px; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; background: #eef0f4; }
+        .pill.running { background: #e6f7ed; color: var(--success); }
+        .pill.stopped { background: #fdeaea; color: var(--danger); }
+        .pill.warn { background:#fff7e6; color: var(--warning); }
+        .pill.critical { background:#fdeaea; color: var(--danger); }
+        .small { color: #555b66; font-size: 12px; line-height: 1.35; }
+        .metric { margin-top: 4px; font-size: 24px; font-weight: 750; line-height: 1.15; }
+        .bar { height: 8px; background:#edf0f5; border-radius: 999px; overflow: hidden; margin-top: 12px; }
+        .bar > span { display:block; height:100%; background: var(--brand); }
+        .alert-row { display:grid; grid-template-columns: 96px minmax(0, 1fr) 110px; gap:10px; padding:10px 0; border-bottom:1px solid #edf0f5; }
         .alert-row:last-child { border-bottom:0; }
-        .tabs { display:flex; gap:8px; margin:16px 0 8px; }
-        .tab { border:1px solid #d6d9e0; background:#fff; padding:7px 10px; border-radius:6px; cursor:pointer; }
-        .tab.active { background:#181E9F; color:white; border-color:#181E9F; }
-        .hidden { display:none; }
-        .webhook-form { display:flex; gap:8px; margin-top:8px; }
-        .webhook-form input { padding:8px; border:1px solid #d6d9e0; border-radius:6px; }
-        .webhook-form input[type=text] { flex:1; }
+        .tabs { display:flex; flex-wrap: wrap; gap:8px; margin:16px 0 8px; }
+        .tab { min-height: 36px; padding: 0 12px; }
+        .tab.active { background: var(--brand); color:white; border-color: var(--brand); }
+        .hidden { display:none !important; }
+        .webhook-form { display:grid; grid-template-columns: minmax(9rem, 14rem) minmax(14rem, 1fr) auto; gap:8px; margin-top:8px; }
+        .webhook-form input { min-height: 40px; min-width: 0; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font: inherit; }
+        .chart-header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:16px; }
+        .range-group { display:inline-flex; min-height:40px; border:1px solid var(--border); border-radius:8px; overflow:hidden; background:#fff; }
+        .range-btn { min-height: 38px; border:0; border-radius:0; background:#fff; padding:0 12px; color:#333; }
+        .range-btn.active { background: var(--brand); color:#fff; }
+        .chart-grid { display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:16px; }
+        .chart-panel { min-width: 0; border:1px solid var(--border); border-radius:8px; padding:16px; background:#fff; }
+        .chart-title { font-size:14px; font-weight:700; margin-bottom:12px; }
+        .chart-frame { position: relative; width: 100%; height: clamp(220px, 30vh, 300px); }
+        .chart-empty { height: clamp(220px, 30vh, 300px); display:flex; align-items:center; justify-content:center; border:1px dashed var(--border); border-radius: 8px; color: var(--muted); font-size:13px; text-align: center; }
+        canvas { display: block; width: 100% !important; height: 100% !important; }
+        @media (max-width: 980px) {
+            .app-shell { padding: 20px; }
+            .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .chart-grid { grid-template-columns: 1fr; }
+        }
+        @media (max-width: 680px) {
+            .app-shell { padding: 16px; }
+            h1 { font-size: 22px; }
+            .summary-grid { grid-template-columns: 1fr; }
+            .chart-header { align-items: stretch; flex-direction: column; }
+            .range-group { width: 100%; }
+            .range-btn { flex: 1; }
+            .webhook-form { grid-template-columns: 1fr; }
+            .alert-row { grid-template-columns: 1fr; }
+        }
     </style>
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://127.0.0.1:* http://localhost:* https://*">
 </head>
 <body>
+  <main class="app-shell">
     <h1>Golem Provider</h1>
     <div id="banner" style="display:none;padding:8px 12px;margin:10px 0;border:1px solid #f0c36d;background:#fff7e6;border-radius:6px;color:#7a5100"></div>
 
-    <div class="grid">
+    <div class="summary-grid">
       <div class="card">
         <div class="muted">Status</div>
         <div id="status" class="ok">Running</div>
@@ -55,11 +147,11 @@
       </div>
       <div class="card">
         <div class="muted">Resources (available / total)</div>
-        <div id="resources"></div>
+        <div class="value" id="resources"></div>
       </div>
       <div class="card">
         <div class="muted">Pricing (per month)</div>
-        <div id="pricing"></div>
+        <div class="value" id="pricing"></div>
       </div>
       <div class="card">
         <div class="muted">Host CPU</div>
@@ -75,6 +167,45 @@
         <div class="muted">Host Disk</div>
         <div class="metric" id="hostDisk">—</div>
         <div class="bar"><span id="hostDiskBar" style="width:0%"></span></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="card">
+        <div class="chart-header">
+          <div>
+            <h2>Usage Charts</h2>
+            <div class="muted" id="chartSubtitle">Host metrics</div>
+          </div>
+          <div class="range-group" id="chartRanges">
+            <button class="range-btn active" data-range="1h">1H</button>
+            <button class="range-btn" data-range="6h">6H</button>
+            <button class="range-btn" data-range="24h">24H</button>
+            <button class="range-btn" data-range="7d">7D</button>
+          </div>
+        </div>
+        <div class="chart-grid">
+          <div class="chart-panel">
+            <div class="chart-title">Host CPU, RAM, Disk</div>
+            <div class="chart-frame"><canvas id="hostUsageChart"></canvas></div>
+            <div class="chart-empty hidden" id="hostUsageEmpty">Waiting for host metric samples.</div>
+          </div>
+          <div class="chart-panel">
+            <div class="chart-title">Host Network</div>
+            <div class="chart-frame"><canvas id="hostNetworkChart"></canvas></div>
+            <div class="chart-empty hidden" id="hostNetworkEmpty">Waiting for network samples.</div>
+          </div>
+          <div class="chart-panel">
+            <div class="chart-title">Selected VM CPU, RAM, Disk</div>
+            <div class="chart-frame"><canvas id="vmUsageChart"></canvas></div>
+            <div class="chart-empty hidden" id="vmUsageEmpty">Select a VM with guest metrics.</div>
+          </div>
+          <div class="chart-panel">
+            <div class="chart-title">Selected VM Network</div>
+            <div class="chart-frame"><canvas id="vmNetworkChart"></canvas></div>
+            <div class="chart-empty hidden" id="vmNetworkEmpty">Select a VM with network samples.</div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -113,7 +244,9 @@
       </div>
     </div>
 
+  </main>
     <!-- Link to the renderer script -->
+    <script src="./node_modules/chart.js/dist/chart.umd.js"></script>
     <script src="./renderer.js"></script>
 </body>
 </html>

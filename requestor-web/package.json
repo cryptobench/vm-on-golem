@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "test": "tsx --test lib/*.test.ts",
     "lint": "eslint . --ignore-pattern .next --ignore-pattern out --ignore-pattern lib/generated/api",
     "api:generate": "orval --config ./orval.config.ts",
     "api:check": "npm run api:generate && git diff --exit-code -- ../openapi lib/generated/api package.json package-lock.json orval.config.ts"
@@ -37,6 +38,7 @@
     "postcss": "^8.4.41",
     "prettier": "^3.8.3",
     "tailwindcss": "^3.4.10",
+    "tsx": "^4.21.0",
     "typescript": "^5.4.5"
   }
 }
