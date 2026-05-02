@@ -90,6 +90,37 @@ class ResourceTracker:
 
             await self._notify_update()
 
+    async def resize(self, vm_id: str, new_resources: VMResources) -> bool:
+        """Update an existing VM allocation if the provider has enough capacity."""
+        async with self._lock:
+            old_resources = self._allocated_vms.get(vm_id)
+            if old_resources is None:
+                old_resources = VMResources(cpu=0, memory=0, storage=0)
+
+            delta = {
+                "cpu": new_resources.cpu - old_resources.cpu,
+                "memory": new_resources.memory - old_resources.memory,
+                "storage": new_resources.storage - old_resources.storage,
+            }
+            available = self.get_available_resources()
+            if any(delta[key] > available[key] for key in delta):
+                return False
+
+            self.allocated_resources["cpu"] += delta["cpu"]
+            self.allocated_resources["memory"] += delta["memory"]
+            self.allocated_resources["storage"] += delta["storage"]
+            self._allocated_vms[vm_id] = new_resources
+
+            logger.info(
+                "Resized allocation for %s: CPU=%s Memory=%sGB Storage=%sGB",
+                vm_id,
+                new_resources.cpu,
+                new_resources.memory,
+                new_resources.storage,
+            )
+            await self._notify_update()
+            return True
+
     def get_allocated_vms(self) -> List[str]:
         """Get list of allocated VM IDs."""
         return list(self._allocated_vms.keys())

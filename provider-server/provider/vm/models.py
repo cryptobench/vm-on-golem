@@ -170,6 +170,49 @@ class VMInfo(BaseModel):
         json_encoders = {datetime: lambda v: v.isoformat()}
 
 
+class VMImage(BaseModel):
+    """Available VM image entry."""
+
+    alias: str
+    version: Optional[str] = None
+    description: Optional[str] = None
+
+
+class VMSnapshot(BaseModel):
+    """Snapshot metadata for a VM."""
+
+    name: str
+    vm_id: str
+    comment: Optional[str] = None
+    created_at: Optional[str] = None
+
+
+class ResizeVMRequest(BaseModel):
+    """Request to resize an existing VM."""
+
+    resources: VMResources
+
+
+class CreateSnapshotRequest(BaseModel):
+    """Request to create a VM snapshot."""
+
+    name: Optional[str] = Field(
+        default=None,
+        min_length=1,
+        max_length=64,
+        pattern="^[a-z0-9][a-z0-9-]*[a-z0-9]$",
+    )
+    comment: Optional[str] = Field(default=None, max_length=256)
+
+
+class CloneVMRequest(BaseModel):
+    """Request to clone a stopped VM."""
+
+    name: str = Field(
+        ..., min_length=3, max_length=64, pattern="^[a-z0-9][a-z0-9-]*[a-z0-9]$"
+    )
+
+
 class SSHKey(BaseModel):
     """SSH key information."""
 

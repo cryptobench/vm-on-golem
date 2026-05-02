@@ -39,10 +39,6 @@ def get_direct_proxy_service(
     return DirectProxyService(settings)
 
 
-@router.api_route(
-    "/proxy/provider/{provider_id}/{path:path}",
-    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-)
 async def http_proxy_provider(
     request: Request,
     provider_id: str,
@@ -73,10 +69,6 @@ async def http_proxy_provider(
     return _to_response(result)
 
 
-@router.api_route(
-    "/proxy/{path:path}",
-    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-)
 async def http_proxy(
     request: Request,
     path: str,
@@ -101,3 +93,18 @@ async def http_proxy(
         )
     )
     return _to_response(result)
+
+
+for _method in ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]:
+    router.add_api_route(
+        "/proxy/provider/{provider_id}/{path:path}",
+        http_proxy_provider,
+        methods=[_method],
+        operation_id=f"proxy_provider_{_method.lower()}",
+    )
+    router.add_api_route(
+        "/proxy/{path:path}",
+        http_proxy,
+        methods=[_method],
+        operation_id=f"proxy_direct_{_method.lower()}",
+    )

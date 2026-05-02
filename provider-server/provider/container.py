@@ -9,6 +9,8 @@ from .discovery.publishers import CentralDiscoveryPublisher
 from .discovery.publishing_service import DiscoveryPublishingService
 from .discovery.resource_tracker import ResourceTracker
 from .jobs.store import JobStore
+from .monitoring.repo import MonitoringRepository
+from .monitoring.services import MonitoringService
 from .payments.blockchain_service import StreamPaymentClient
 from .payments.blockchain_service import StreamPaymentConfig as _SPC
 from .payments.blockchain_service import StreamPaymentReader
@@ -85,6 +87,13 @@ class Container(containers.DeclarativeContainer):
         name_mapper=vm_name_mapper,
     )
 
+    monitoring_repo = providers.Singleton(
+        MonitoringRepository,
+        db_path=providers.Callable(
+            lambda base: str(Path(base) / "monitoring.sqlite"), config.VM_DATA_DIR
+        ),
+    )
+
     vm_provider = providers.Singleton(
         MultipassAdapter,
         proxy_manager=proxy_manager,
@@ -96,6 +105,15 @@ class Container(containers.DeclarativeContainer):
         provider=vm_provider,
         resource_tracker=resource_tracker,
         name_mapper=vm_name_mapper,
+        monitoring_repo=monitoring_repo,
+    )
+
+    monitoring_service = providers.Singleton(
+        MonitoringService,
+        settings=config,
+        repo=monitoring_repo,
+        vm_service=vm_service,
+        proxy_manager=proxy_manager,
     )
 
     # Payments
@@ -138,6 +156,7 @@ class Container(containers.DeclarativeContainer):
         vm_service=vm_service,
         advertisement_service=advertisement_service,
         port_manager=port_manager,
+        monitoring_service=monitoring_service,
     )
 
     # Async job store for VM creations

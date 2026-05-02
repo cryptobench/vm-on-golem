@@ -17,6 +17,8 @@ downloads/
 eggs/
 .eggs/
 lib/
+!requestor-web/lib/
+!requestor-web/lib/**
 lib64/
 parts/
 sdist/

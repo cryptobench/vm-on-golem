@@ -2,15 +2,7 @@
 import React from "react";
 import { RiCpuLine, RiHardDrive2Line, RiStackLine } from "@remixicon/react";
 import { countryFlagEmoji } from "../../lib/intl";
-
-type Pricing = {
-  usd_per_core_month?: number | null;
-  usd_per_gb_ram_month?: number | null;
-  usd_per_gb_storage_month?: number | null;
-  glm_per_core_month?: number | null;
-  glm_per_gb_ram_month?: number | null;
-  glm_per_gb_storage_month?: number | null;
-} | null;
+import type { ProviderAd } from "../../lib/api";
 
 // Use shared intl helper for flags
 
@@ -21,15 +13,7 @@ export function ProviderRow({
   selected,
   onToggle,
 }: {
-  provider: {
-    provider_id: string;
-    provider_name?: string | null;
-    ip_address?: string | null;
-    country?: string | null;
-    platform?: string | null;
-    resources: { cpu: number; memory: number; storage: number };
-    pricing?: Pricing;
-  };
+  provider: ProviderAd;
   estimate: null | {
     usd_per_month?: number;
     usd_per_hour?: number;
@@ -39,7 +23,7 @@ export function ProviderRow({
   selected: boolean;
   onToggle: () => void;
 }) {
-  const name = provider.provider_name?.trim() || provider.provider_id.slice(0, 8);
+  const name = provider.provider_id.slice(0, 8);
   const flag = countryFlagEmoji(provider.country || '');
 
   // Price summary lines
@@ -77,7 +61,7 @@ export function ProviderRow({
           <div className="flex min-w-0 flex-1 flex-col justify-center gap-2">
             <div className="flex items-center gap-2 min-w-0">
               {flag && <span className="text-base leading-none" title={provider.country || ''}>{flag}</span>}
-              <div className="truncate text-base font-medium text-gray-900" title={provider.provider_name || provider.provider_id}>{name}</div>
+              <div className="truncate text-base font-medium text-gray-900" title={provider.provider_id}>{name}</div>
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-600 ring-2 ring-emerald-200" aria-hidden />
             </div>
             <div className="flex items-center gap-3 text-xs text-gray-500">

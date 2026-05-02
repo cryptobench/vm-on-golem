@@ -218,7 +218,7 @@ DISCOVERY_URL = "http://discovery.golem.network:9001"
 
 ### requestor-web (Next.js + Tailwind)
 
-**API boundary:** all calls to backend services go through a single typed `lib/api/` (or equivalent) module. Components never call `fetch()` directly. As schemas stabilize, the goal is a generated typed client; until then, hand‑written typed wrappers live behind the same boundary.
+**API boundary:** all calls to backend services go through Orval-generated clients, optionally behind thin runtime adapters in `lib/api/` (or equivalent). Components never call `fetch()` directly for backend APIs. Frontend code MUST NOT define manual request/response DTOs for backend APIs; the OpenAPI spec and Orval output are the only source of truth. UI-local state types are allowed only when they are not backend contracts. Regenerate OpenAPI and Orval (`make api-generate`, or `npm --prefix requestor-web run api:generate` after `make openapi`) before frontend changes that touch API usage, payloads, responses, or backend-facing data flow.
 
 **Token‑based styling — mandatory:** colors, spacing, typography come from Tailwind config tokens (and any `tokens.ts` extension). No raw hex codes, no inline pixel values. Refactor hardcoded values you encounter.
 

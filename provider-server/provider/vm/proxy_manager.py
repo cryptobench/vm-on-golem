@@ -14,9 +14,10 @@ logger = logging.getLogger(__name__)
 class SSHProxyProtocol(Protocol):
     """Protocol for handling SSH proxy connections."""
 
-    def __init__(self, target_host: str, target_port: int):
+    def __init__(self, target_host: str, target_port: int, counters: dict):
         self.target_host = target_host
         self.target_port = target_port
+        self.counters = counters
         self.transport: Optional[Transport] = None
         self.target_transport: Optional[Transport] = None
         self.target_protocol: Optional["SSHTargetProtocol"] = None
@@ -25,6 +26,7 @@ class SSHProxyProtocol(Protocol):
     def connection_made(self, transport: Transport) -> None:
         """Called when connection is established."""
         self.transport = transport
+        self.counters["connections"] = self.counters.get("connections", 0) + 1
         asyncio.create_task(self.connect_to_target())
 
     async def connect_to_target(self) -> None:
@@ -49,6 +51,7 @@ class SSHProxyProtocol(Protocol):
 
     def data_received(self, data: bytes) -> None:
         """Forward received data to target."""
+        self.counters["tx_bytes"] = self.counters.get("tx_bytes", 0) + len(data)
         if self.target_transport and not self.target_transport.is_closing():
             self.target_transport.write(data)
         else:
@@ -84,6 +87,9 @@ class SSHTargetProtocol(Protocol):
 
     def data_received(self, data: bytes) -> None:
         """Forward received data to client."""
+        self.client_protocol.counters["rx_bytes"] = self.client_protocol.counters.get(
+            "rx_bytes", 0
+        ) + len(data)
         if (
             self.client_protocol.transport
             and not self.client_protocol.transport.is_closing()
@@ -105,7 +111,13 @@ class SSHTargetProtocol(Protocol):
 class ProxyServer:
     """Manages a single proxy server instance."""
 
-    def __init__(self, listen_port: int, target_host: str, target_port: int = 22):
+    def __init__(
+        self,
+        listen_port: int,
+        target_host: str,
+        target_port: int = 22,
+        counters: Optional[dict] = None,
+    ):
         """Initialize proxy server.
 
         Args:
@@ -116,6 +128,7 @@ class ProxyServer:
         self.listen_port = listen_port
         self.target_host = target_host
         self.target_port = target_port
+        self.counters = counters if counters is not None else {}
         self.server: Optional[asyncio.AbstractServer] = None
 
     async def start(self) -> None:
@@ -124,7 +137,9 @@ class ProxyServer:
 
         try:
             self.server = await loop.create_server(
-                lambda: SSHProxyProtocol(self.target_host, self.target_port),
+                lambda: SSHProxyProtocol(
+                    self.target_host, self.target_port, self.counters
+                ),
                 "0.0.0.0",  # Listen on all interfaces
                 self.listen_port,
             )
@@ -175,6 +190,7 @@ class PythonProxyManager:
         self._proxies: Dict[str, ProxyServer] = {}  # multipass_name -> ProxyServer
         self._state_version = 1  # For future state schema migrations
         self._active_ports: Dict[str, int] = {}  # multipass_name -> port
+        self._traffic_counters: Dict[str, dict] = {}
 
     def get_active_ports(self) -> Set[int]:
         """Get set of ports that should be considered in use.
@@ -280,7 +296,10 @@ class PythonProxyManager:
                     return False
 
                 # Attempt to create proxy
-                proxy = ProxyServer(port, vm_ip)
+                counters = self._traffic_counters.setdefault(
+                    multipass_name, {"rx_bytes": 0, "tx_bytes": 0, "connections": 0}
+                )
+                proxy = ProxyServer(port, vm_ip, counters=counters)
                 await proxy.start()
 
                 self._proxies[multipass_name] = proxy
@@ -350,7 +369,10 @@ class PythonProxyManager:
                 port = allocated_port
 
             # Create and start proxy server
-            proxy = ProxyServer(port, vm_ip)
+            counters = self._traffic_counters.setdefault(
+                vm_id, {"rx_bytes": 0, "tx_bytes": 0, "connections": 0}
+            )
+            proxy = ProxyServer(port, vm_ip, counters=counters)
             await proxy.start()
 
             self._proxies[vm_id] = proxy
@@ -376,6 +398,7 @@ class PythonProxyManager:
             if vm_id in self._proxies:
                 proxy = self._proxies.pop(vm_id)
                 await proxy.stop()
+                self._traffic_counters.pop(vm_id, None)
                 self.port_manager.deallocate_port(vm_id)
                 await self._save_state()
                 logger.info(f"Removed proxy for VM {vm_id}")
@@ -385,6 +408,20 @@ class PythonProxyManager:
     def get_port(self, vm_id: str) -> Optional[int]:
         """Get allocated port for a VM."""
         return self.port_manager.get_port(vm_id)
+
+    def get_traffic_counters(self) -> Dict[str, dict]:
+        """Return proxy byte counters keyed by both multipass and requestor VM names."""
+        counters = {key: dict(value) for key, value in self._traffic_counters.items()}
+        try:
+            for (
+                requestor_name,
+                multipass_name,
+            ) in self.name_mapper.list_mappings().items():
+                if multipass_name in counters:
+                    counters[requestor_name] = dict(counters[multipass_name])
+        except Exception:
+            pass
+        return counters
 
     async def cleanup(self) -> None:
         """Remove all proxy configurations."""

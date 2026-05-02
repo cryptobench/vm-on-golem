@@ -8,6 +8,7 @@ from ..db.repository import AdvertisementRepository
 from .models import (
     AdvertisementCreate,
     AdvertisementResponse,
+    DeleteAdvertisementResponse,
     ResourceRequirements,
     ErrorResponse,
 )
@@ -131,13 +132,14 @@ async def get_advertisement(
 
 @router.delete(
     "/advertisements/{provider_id}",
+    response_model=DeleteAdvertisementResponse,
     responses={401: {"model": ErrorResponse}, 404: {"model": ErrorResponse}},
 )
 async def delete_advertisement(
     provider_id: str,
     current_provider: str = Depends(verify_provider_headers),
     repo: AdvertisementRepository = Depends(get_repository),
-) -> dict:
+) -> DeleteAdvertisementResponse:
     """Delete an advertisement."""
     # Verify provider owns the advertisement
     if provider_id != current_provider:
@@ -156,4 +158,4 @@ async def delete_advertisement(
             detail={"code": "ADV_004", "message": "Advertisement not found"},
         )
 
-    return {"status": "success"}
+    return DeleteAdvertisementResponse(status="success")

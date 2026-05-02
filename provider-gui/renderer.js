@@ -7,6 +7,17 @@ const pricingDiv = document.getElementById('pricing');
 const vmListDiv = document.getElementById('vmList');
 const actionMsg = document.getElementById('actionMsg');
 const bannerDiv = document.getElementById('banner');
+const hostCpu = document.getElementById('hostCpu');
+const hostMemory = document.getElementById('hostMemory');
+const hostDisk = document.getElementById('hostDisk');
+const hostCpuBar = document.getElementById('hostCpuBar');
+const hostMemoryBar = document.getElementById('hostMemoryBar');
+const hostDiskBar = document.getElementById('hostDiskBar');
+const alertsList = document.getElementById('alertsList');
+const webhookList = document.getElementById('webhookList');
+const webhookAdd = document.getElementById('webhookAdd');
+const webhookName = document.getElementById('webhookName');
+const webhookUrl = document.getElementById('webhookUrl');
 
 const API = (window.config && window.config.apiBaseUrl) || 'http://127.0.0.1:7466/api/v1';
 
@@ -20,6 +31,20 @@ function fmtPricing(p) {
   const usd = `USD: CPU $${p.usd_per_core_month}/core, RAM $${p.usd_per_gb_ram_month}/GB, Disk $${p.usd_per_gb_storage_month}/GB`;
   const glm = `GLM: CPU ${p.glm_per_core_month}/core, RAM ${p.glm_per_gb_ram_month}/GB, Disk ${p.glm_per_gb_storage_month}/GB`;
   return `${usd}\n${glm}`;
+}
+
+let monitoring = null;
+
+function pct(value) {
+  const n = Number(value && value.value != null ? value.value : value);
+  if (!Number.isFinite(n)) return null;
+  return Math.max(0, Math.min(100, n));
+}
+
+function renderHostMetric(el, bar, sample) {
+  const value = pct(sample);
+  el.textContent = value == null ? '—' : `${value.toFixed(0)}%`;
+  bar.style.width = `${value == null ? 0 : value}%`;
 }
 
 function renderVMs(vms) {
@@ -52,16 +77,90 @@ function renderVMs(vms) {
     res.className = 'small';
     const r = vm.resources || {};
     res.textContent = `CPU ${r.cpu ?? '—'}, RAM ${r.memory ?? '—'}GB, Disk ${r.storage ?? '—'}GB`;
+    const metrics = document.createElement('div');
+    metrics.className = 'small';
+    const vmMetrics = monitoring && monitoring.vms && monitoring.vms[vm.id];
+    const guest = vmMetrics && vmMetrics.guest_agent;
+    if (guest && guest.cpu_percent) {
+      const cpu = pct(guest.cpu_percent);
+      const mem = pct(guest.memory_percent);
+      const disk = pct(guest.disk_percent);
+      metrics.textContent = `CPU ${cpu == null ? '—' : cpu.toFixed(0) + '%'} • RAM ${mem == null ? '—' : mem.toFixed(0) + '%'} • Disk ${disk == null ? '—' : disk.toFixed(0) + '%'}`;
+    } else {
+      metrics.innerHTML = '<span class="pill warn">Guest metrics unavailable</span>';
+    }
     row.appendChild(radio);
     row.appendChild(id);
     row.appendChild(status);
     row.appendChild(res);
+    row.appendChild(metrics);
     vmListDiv.appendChild(row);
   });
 }
 
+function renderAlerts(alerts) {
+  const list = Array.isArray(alerts) ? alerts : [];
+  alertsList.innerHTML = '';
+  if (!list.length) {
+    alertsList.innerHTML = '<div class="small">No active alerts.</div>';
+    return;
+  }
+  list.forEach(alert => {
+    const row = document.createElement('div');
+    row.className = 'alert-row';
+    row.innerHTML = `
+      <span class="pill ${alert.severity === 'critical' ? 'critical' : 'warn'}">${(alert.severity || 'warning').toUpperCase()}</span>
+      <div><strong>${alert.name || alert.metric}</strong><div class="small">${alert.vm_id || 'provider'} • value ${alert.last_value ?? '—'}</div></div>
+      <div class="small">${alert.fired_at ? new Date(alert.fired_at).toLocaleTimeString() : ''}</div>
+    `;
+    alertsList.appendChild(row);
+  });
+}
+
+async function fetchMonitoring() {
+  try {
+    const resp = await fetch(`${API}/monitoring/overview`, { cache: 'no-store' });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    monitoring = {};
+    (data.vms || []).forEach(vm => { monitoring.vms = { ...(monitoring.vms || {}), [vm.id]: vm.metrics || {} }; });
+    renderHostMetric(hostCpu, hostCpuBar, data.host && data.host.cpu_percent);
+    renderHostMetric(hostMemory, hostMemoryBar, data.host && data.host.memory_percent);
+    renderHostMetric(hostDisk, hostDiskBar, data.host && data.host.disk_percent);
+    renderAlerts(data.active_alerts);
+  } catch {
+    monitoring = null;
+    hostCpu.textContent = '—'; hostCpuBar.style.width = '0%';
+    hostMemory.textContent = '—'; hostMemoryBar.style.width = '0%';
+    hostDisk.textContent = '—'; hostDiskBar.style.width = '0%';
+    if (alertsList) alertsList.innerHTML = '<div class="small">Monitoring unavailable.</div>';
+  }
+}
+
+async function fetchWebhooks() {
+  try {
+    const resp = await fetch(`${API}/monitoring/webhooks`, { cache: 'no-store' });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const hooks = await resp.json();
+    webhookList.innerHTML = '';
+    if (!hooks.length) {
+      webhookList.innerHTML = '<div class="small">No webhooks configured.</div>';
+      return;
+    }
+    hooks.forEach(hook => {
+      const row = document.createElement('div');
+      row.className = 'alert-row';
+      row.innerHTML = `<div>${hook.enabled ? 'Enabled' : 'Disabled'}</div><div><strong>${hook.name}</strong><div class="small">${hook.url}</div></div><div class="small">${hook.last_status || 'Never sent'}</div>`;
+      webhookList.appendChild(row);
+    });
+  } catch {
+    webhookList.innerHTML = '<div class="small">Failed to load webhooks.</div>';
+  }
+}
+
 async function fetchSummary() {
   try {
+    await fetchMonitoring();
     const resp = await fetch(`${API}/summary`, { cache: 'no-store' });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const data = await resp.json();
@@ -83,6 +182,38 @@ async function fetchSummary() {
 }
 
 if (stopBtn && startBtn && statusDiv) {
+  document.querySelectorAll('.tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.section').forEach(p => p.classList.add('hidden'));
+      btn.classList.add('active');
+      const panel = document.getElementById(btn.dataset.tab);
+      if (panel) panel.classList.remove('hidden');
+      if (btn.dataset.tab === 'integrationsPanel') fetchWebhooks();
+    });
+  });
+
+  if (webhookAdd) {
+    webhookAdd.addEventListener('click', async () => {
+      const name = (webhookName.value || '').trim();
+      const url = (webhookUrl.value || '').trim();
+      if (!name || !url) return;
+      webhookAdd.disabled = true;
+      try {
+        await fetch(`${API}/monitoring/webhooks`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, url, enabled: true }),
+        });
+        webhookName.value = '';
+        webhookUrl.value = '';
+        await fetchWebhooks();
+      } finally {
+        webhookAdd.disabled = false;
+      }
+    });
+  }
+
   // First-run Multipass check
   if (window.electronAPI && window.electronAPI.checkMultipass) {
     window.electronAPI.checkMultipass().then((res) => {

@@ -63,6 +63,15 @@ class DatabaseService:
         except Exception as e:
             raise DatabaseError(f"Failed to update VM status: {str(e)}")
 
+    async def update_vm_config(
+        self, name: str, config: Dict, status: str | None = None
+    ) -> None:
+        """Update VM config and optionally status."""
+        try:
+            await self.db.update_vm_config(name, config, status)
+        except Exception as e:
+            raise DatabaseError(f"Failed to update VM config: {str(e)}")
+
     async def list_vms(self) -> List[Dict]:
         """List all VMs."""
         try:

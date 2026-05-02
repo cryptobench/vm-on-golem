@@ -18,10 +18,12 @@ class ProviderService:
         vm_service: VMService,
         advertisement_service: DiscoveryPublishingService,
         port_manager,
+        monitoring_service=None,
     ):
         self.vm_service = vm_service
         self.advertisement_service = advertisement_service
         self.port_manager = port_manager
+        self.monitoring_service = monitoring_service
         self._pricing_updater: PricingAutoUpdater | None = None
         self._pricing_task: asyncio.Task | None = None
         self._stream_monitor = None
@@ -131,6 +133,8 @@ class ProviderService:
             await faucet_client.get_funds(settings.PROVIDER_ID)
 
             await self.advertisement_service.start()
+            if self.monitoring_service is not None:
+                await self.monitoring_service.start()
             # Start pricing auto-updater; trigger re-advertise after updates
             async def _on_price_updated(platform: str, glm_usd):
                 await self.advertisement_service.trigger_update()
@@ -161,6 +165,13 @@ class ProviderService:
         """Cleanup provider components."""
         logger.process("🔄 Cleaning up provider...")
         from .config import settings
+
+        # Stop advertising loop
+        try:
+            if self.monitoring_service is not None:
+                await self.monitoring_service.stop()
+        except Exception:
+            pass
 
         # Stop advertising loop
         try:

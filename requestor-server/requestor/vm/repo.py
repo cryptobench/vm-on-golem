@@ -64,6 +64,16 @@ class VMRepository:
             model.status = status
             session.commit()
 
+    def update_config(self, name: str, config: dict, status: str | None = None) -> None:
+        with self.session_factory() as session:
+            model = session.get(VMModel, name)
+            if model is None:
+                raise NotFoundError(f"VM '{name}' not found")
+            model.config = json.dumps(config)
+            if status is not None:
+                model.status = status
+            session.commit()
+
     def delete(self, name: str) -> None:
         with self.session_factory() as session:
             model = session.get(VMModel, name)

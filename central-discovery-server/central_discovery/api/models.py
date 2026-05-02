@@ -72,3 +72,11 @@ class ErrorResponse(BaseModel):
     code: str
     message: str
     timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+
+class DeleteAdvertisementResponse(BaseModel):
+    status: str
+
+
+class HealthResponse(BaseModel):
+    status: str

@@ -51,7 +51,7 @@ async def lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(lifespan=lifespan)
+    app = FastAPI(lifespan=lifespan, openapi_url="/api/v1/openapi.json")
     app.container = container
     container.wire(
         modules=[

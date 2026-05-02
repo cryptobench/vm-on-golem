@@ -4,6 +4,7 @@ import pytest
 
 from provider.config import Settings
 from provider.discovery.resource_tracker import ResourceTracker
+from provider.errors import ConflictError
 from provider.vm.models import VMConfig, VMInfo, VMResources, VMStatus
 from provider.vm.provider import VMProvider
 from provider.vm.service import VMService
@@ -162,6 +163,84 @@ async def test_delete_vm_no_mapping_raises(vm_service, mock_vm_provider):
         await vm_service.delete_vm("ghost")
     mock_vm_provider.get_vm_status.assert_not_awaited()
     mock_vm_provider.delete_vm.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_resize_vm_requires_stopped(vm_service, mock_vm_provider):
+    mock_vm_provider.get_vm_status.return_value = VMInfo(
+        id="test-vm",
+        name="test-vm",
+        status=VMStatus.RUNNING,
+        resources=VMResources(cpu=1, memory=1, storage=10),
+    )
+
+    with pytest.raises(ConflictError, match="stopped"):
+        await vm_service.resize_vm("test-vm", VMResources(cpu=2, memory=2, storage=20))
+
+    mock_vm_provider.resize_vm.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_resize_vm_updates_tracker_and_provider(
+    vm_service, mock_resource_tracker, mock_vm_provider
+):
+    current = VMInfo(
+        id="test-vm",
+        name="test-vm",
+        status=VMStatus.STOPPED,
+        resources=VMResources(cpu=1, memory=1, storage=10),
+    )
+    resized = VMInfo(
+        id="test-vm",
+        name="test-vm",
+        status=VMStatus.STOPPED,
+        resources=VMResources(cpu=2, memory=4, storage=20),
+    )
+    mock_vm_provider.get_vm_status.return_value = current
+    mock_vm_provider.resize_vm = AsyncMock(return_value=resized)
+    mock_resource_tracker.resize = AsyncMock(return_value=True)
+
+    result = await vm_service.resize_vm(
+        "test-vm", VMResources(cpu=2, memory=4, storage=20)
+    )
+
+    assert result is resized
+    mock_resource_tracker.resize.assert_awaited_once_with(
+        "test-vm", VMResources(cpu=2, memory=4, storage=20)
+    )
+    mock_vm_provider.resize_vm.assert_awaited_once_with(
+        "test-vm", VMResources(cpu=2, memory=4, storage=20)
+    )
+
+
+@pytest.mark.asyncio
+async def test_clone_vm_allocates_and_maps_destination(
+    vm_service, mock_resource_tracker, mock_vm_provider
+):
+    source = VMInfo(
+        id="source",
+        name="source",
+        status=VMStatus.STOPPED,
+        resources=VMResources(cpu=1, memory=1, storage=10),
+    )
+    clone = VMInfo(
+        id="clone",
+        name="clone",
+        status=VMStatus.STOPPED,
+        resources=source.resources,
+    )
+    vm_service.name_mapper.get_multipass_name = AsyncMock(
+        side_effect=[None, "source-mp"]
+    )
+    mock_vm_provider.get_vm_status.return_value = source
+    mock_vm_provider.clone_vm = AsyncMock(return_value=clone)
+
+    result = await vm_service.clone_vm("source", "clone")
+
+    assert result is clone
+    mock_resource_tracker.allocate.assert_awaited_once_with(source.resources, "clone")
+    vm_service.name_mapper.add_mapping.assert_awaited_once()
+    mock_vm_provider.clone_vm.assert_awaited_once()
 
 
 @pytest.mark.asyncio

@@ -167,3 +167,27 @@ class CreateVMJobResponse(BaseModel):
     job_id: str = Field(..., description="Server-side job identifier for creation task")
     vm_id: str = Field(..., description="Requestor VM identifier (name)")
     status: str = Field("creating", description="Initial status indicator")
+
+
+class CreateVMJobStatus(BaseModel):
+    """Current state for an async VM creation job."""
+
+    job_id: str
+    vm_id: str
+    status: str
+    error: Optional[str] = None
+    created_at: str
+    updated_at: str
+
+
+class VMAccessPendingResponse(BaseModel):
+    """Response returned while VM access details are not ready yet."""
+
+    vm_id: str
+    multipass_name: str
+    status: str = "creating"
+    ssh_port: None = None
+
+
+class AdminShutdownResponse(BaseModel):
+    ok: bool

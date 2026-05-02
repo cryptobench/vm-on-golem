@@ -2,7 +2,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 
 from .api import routes
 from .container import Container
@@ -23,7 +23,10 @@ from .vm.multipass_adapter import MultipassError
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="VM on Golem Provider")
+    app = FastAPI(
+        title="VM on Golem Provider",
+        openapi_url="/api/v1/openapi.json",
+    )
     container = Container()
     app.container = container
     _configure_safe_defaults(container)
@@ -31,8 +34,19 @@ def create_app() -> FastAPI:
     _register_exception_handlers(app)
     _register_middleware(app)
     _register_lifecycle(app, container)
+    _register_prometheus_route(app)
     app.include_router(routes.router, prefix="/api/v1")
     return app
+
+
+def _register_prometheus_route(app: FastAPI) -> None:
+    @app.get("/metrics")
+    async def prometheus_metrics():
+        monitoring_service = app.container.monitoring_service()
+        return PlainTextResponse(
+            await monitoring_service.prometheus_metrics(),
+            media_type="text/plain; version=0.0.4",
+        )
 
 
 def _wire_container(container: Container) -> None:
@@ -43,6 +57,7 @@ def _wire_container(container: Container) -> None:
             ".api.payments_routes",
             ".api.provider_routes",
             ".api.summary_routes",
+            ".api.monitoring_routes",
         ]
     )
 
