@@ -104,5 +104,8 @@
       "allowAnywhere": true,
       "scripts": "build/macos"
     }
+  },
+  "dependencies": {
+    "chart.js": "^4.5.1"
   }
 }

@@ -124,13 +124,19 @@ class ProviderService:
             except Exception as e:
                 logger.warning(f"Failed to reconcile VMs with payment streams: {e}")
 
-            # Check wallet balance and request funds if needed
-            faucet_client = FaucetClient(
-                faucet_url=settings.FAUCET_URL,
-                captcha_url=settings.CAPTCHA_URL,
-                captcha_api_key=settings.CAPTCHA_API_KEY,
-            )
-            await faucet_client.get_funds(settings.PROVIDER_ID)
+            # Check Arkiv wallet balance and request funds only when Arkiv publishing
+            # is enabled. Local central-discovery stacks must not depend on Arkiv.
+            if settings.DISCOVERY_BACKEND in {"arkiv", "both"} and bool(
+                settings.ARKIV_FAUCET_ENABLED
+            ):
+                faucet_client = FaucetClient(
+                    faucet_url=settings.FAUCET_URL,
+                    captcha_url=settings.CAPTCHA_URL,
+                    captcha_api_key=settings.CAPTCHA_API_KEY,
+                )
+                await faucet_client.get_funds(settings.PROVIDER_ID)
+            else:
+                logger.info("Arkiv faucet disabled for current discovery backend")
 
             await self.advertisement_service.start()
             if self.monitoring_service is not None:

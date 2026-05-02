@@ -156,9 +156,37 @@ golem-provider pricing show
 
 ```
 make install   # install Poetry deps
-make start     # run provider (dev), proxy, requestor web (dev)
+make local     # run the full local stack: discovery, provider, proxy, APIs, web, provider GUI
 make test      # run tests
 ```
+
+### Local full stack on ARM macOS
+
+For local end-to-end development on Apple Silicon, use:
+
+```
+make local
+```
+
+This starts local central discovery, the provider API, port-checker proxy,
+requestor API, requestor web UI, and provider GUI with one supervisor process.
+It uses central discovery intentionally so local provider/requestor/web checks do
+not depend on Arkiv discovery RPC/WS availability. Arkiv remains the default
+product discovery backend outside this deterministic local workflow.
+
+Streaming payments still use the current Arkiv L2 Hoodi profile. `make local`
+loads `contracts/deployments/l2.json`, injects the StreamPayment address into
+provider, requestor, and web processes, and verifies the contract has bytecode on
+`https://l2.hoodi.arkiv.network/rpc` before startup. For offline UI-only smoke
+checks, use `make local LOCAL_STACK_ARGS="--no-open --skip-chain-check"`.
+
+Useful variant for smoke checks:
+
+```
+make local LOCAL_STACK_ARGS=--no-open
+```
+
+Requirements: Poetry, Node/npm, and Multipass.
 
 Service READMEs:
 

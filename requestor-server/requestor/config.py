@@ -97,10 +97,8 @@ class RequestorConfig(BaseSettings):
 
     @field_validator("discovery_url")
     @classmethod
-    def set_discovery_url(cls, v: str, info: ValidationInfo) -> str:
-        """Prefix discovery URL with DEVMODE if in development."""
-        if info.data.get("environment") == "development":
-            return f"DEVMODE-{v}"
+    def set_discovery_url(cls, v: str) -> str:
+        """Keep central discovery URLs valid in every environment."""
         return v
 
     @field_validator("discovery_backend", mode="before")

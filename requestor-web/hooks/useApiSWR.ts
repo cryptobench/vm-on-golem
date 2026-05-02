@@ -9,6 +9,7 @@ import {
   vmStatus as apiVmStatus,
   vmStreamStatus as apiVmStreamStatus,
   vmMetricsLatest as apiVmMetricsLatest,
+  vmMetricsHistory as apiVmMetricsHistory,
 } from "../lib/api";
 
 // Generic helpers to create tuple keys that include Ads config snapshot
@@ -80,6 +81,22 @@ export function useVmMetricsLatest(providerId?: string | null, vmId?: string | n
   const { ads } = useAds();
   const key = useMemo(() => ((providerId && vmId) ? keyWithAds("vm-metrics-latest", ads, providerId, vmId) : null), [providerId, vmId, ads]);
   return useSWR(key, () => apiVmMetricsLatest(providerId!, vmId!, ads), {
+    revalidateOnFocus: true,
+    revalidateOnReconnect: true,
+    revalidateIfStale: true,
+    ...config,
+  });
+}
+
+export function useVmMetricsHistory(
+  providerId?: string | null,
+  vmId?: string | null,
+  range = "1h",
+  config?: SWRConfiguration,
+) {
+  const { ads } = useAds();
+  const key = useMemo(() => ((providerId && vmId) ? keyWithAds("vm-metrics-history", ads, providerId, vmId, range) : null), [providerId, vmId, range, ads]);
+  return useSWR(key, () => apiVmMetricsHistory(providerId!, vmId!, ads, range), {
     revalidateOnFocus: true,
     revalidateOnReconnect: true,
     revalidateIfStale: true,

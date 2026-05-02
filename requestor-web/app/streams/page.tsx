@@ -1,13 +1,9 @@
 "use client";
 import React from "react";
-import { useRouter } from "next/navigation";
-import { BrowserProvider, Contract } from "ethers";
-import streamPayment from "../../public/abi/StreamPayment.json";
 import { loadRentals, loadSettings, saveSettings } from "../../lib/api";
-import { Spinner } from "../../components/ui/Spinner";
 import { Skeleton } from "../../components/ui/Skeleton";
 import { useToast } from "../../components/ui/Toast";
-import { ensureNetwork, getPaymentsChain } from "../../lib/chain";
+import { getPaymentNetworkErrorMessage } from "../../lib/chain";
 import { useStreamActions } from "../../hooks/useStreamActions";
 import { useProjects } from "../../context/ProjectsContext";
 import { useWallet } from "../../context/WalletContext";
@@ -27,19 +23,16 @@ type Row = {
 };
 
 export default function StreamsPage() {
-  const router = useRouter();
   const { show } = useToast();
-  const { account } = useWallet();
+  const { paymentReady, paymentMessage } = useWallet();
   const { activeId: activeProjectId } = useProjects();
   const [rentals, setRentals] = React.useState<ReturnType<typeof loadRentals> | null>(null);
   const [rows, setRows] = React.useState<Row[] | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const spAddr = (loadSettings().stream_payment_address || process.env.NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS || '').trim();
-  const glmAddr = (loadSettings().glm_token_address || process.env.NEXT_PUBLIC_GLM_TOKEN_ADDRESS || '').toLowerCase();
   const [displayCurrency, setDisplayCurrency] = React.useState<'fiat'|'token'>(loadSettings().display_currency === 'token' ? 'token' : 'fiat');
   const [nowSec, setNowSec] = React.useState<number>(() => Math.floor(Date.now()/1000));
   const [busy, setBusy] = React.useState<Record<string, boolean>>({});
-  const [customTopup, setCustomTopup] = React.useState<Record<string, string>>({});
   const [showEnded, setShowEnded] = React.useState<boolean>(false);
   React.useEffect(() => { const t = setInterval(() => setNowSec(Math.floor(Date.now()/1000)), 1000); return () => clearInterval(t); }, []);
 
@@ -62,14 +55,18 @@ export default function StreamsPage() {
     try {
       setRows(null);
       const list: Row[] = [];
+      let firstError: string | null = null;
       for (const r of (rentals || []).filter(r => r.stream_id).filter(r => (r.project_id || 'default') === activeProjectId)) {
         try {
           const data = await fetchStreamWithMeta(spAddr, BigInt(r.stream_id!));
           list.push({ r, chain: data.chain as ChainStream, tokenSymbol: data.tokenSymbol, tokenDecimals: data.tokenDecimals, usdPrice: data.usdPrice });
-        } catch {}
+        } catch (e) {
+          firstError ||= getPaymentNetworkErrorMessage(e);
+        }
       }
+      if (firstError) setError(firstError);
       setRows(list);
-    } catch (e: any) { setError(e?.message || String(e)); }
+    } catch (e: any) { setError(getPaymentNetworkErrorMessage(e)); }
   };
 
   // Mount-gate rentals to avoid SSR hydration mismatch from localStorage
@@ -143,7 +140,7 @@ export default function StreamsPage() {
       show("Top-up sent");
       await refreshOne(sid);
     } catch (e) {
-      show("Top-up failed");
+      show(getPaymentNetworkErrorMessage(e));
     } finally {
       setBusy(prev => ({ ...prev, [sid]: false }));
     }
@@ -167,6 +164,8 @@ export default function StreamsPage() {
             displayCurrency={displayCurrency}
             onTopUp={allowTopUp && !row.chain.halted ? ((secs) => topUp(row, secs)) : undefined}
             busy={isBusy}
+            actionsDisabled={!paymentReady}
+            actionsDisabledReason={!paymentReady ? paymentMessage : null}
             detailsHref={`/vm?id=${encodeURIComponent(row.r.vm_id)}`}
           />
         );

@@ -67,7 +67,11 @@ def test_rejects_known_broken_macos_qemu_driver(multipass_adapter, tmp_path):
     qemu.write_text("#!/bin/sh\necho 'QEMU emulator version 8.2.1'\n")
     qemu.chmod(0o755)
     multipass = tmp_path / "multipass"
-    multipass.write_text("#!/bin/sh\necho qemu\n")
+    multipass.write_text(
+        "#!/bin/sh\n"
+        "if [ \"$1\" = 'get' ]; then echo qemu; exit 0; fi\n"
+        "if [ \"$1\" = 'version' ]; then echo 'multipass   1.16.2+mac'; exit 0; fi\n"
+    )
     multipass.chmod(0o755)
     multipass_adapter.multipass_path = str(multipass)
 
@@ -80,6 +84,29 @@ def test_rejects_known_broken_macos_qemu_driver(multipass_adapter, tmp_path):
             ):
                 with pytest.raises(MultipassError, match="host-arm-cpu.sme"):
                     multipass_adapter._check_host_virtualization_compatibility()
+
+
+def test_allows_multipass_1_16_1_macos_qemu_driver(multipass_adapter, tmp_path):
+    qemu = tmp_path / "qemu-system-aarch64"
+    qemu.write_text("#!/bin/sh\necho 'QEMU emulator version 8.2.1'\n")
+    qemu.chmod(0o755)
+    multipass = tmp_path / "multipass"
+    multipass.write_text(
+        "#!/bin/sh\n"
+        "if [ \"$1\" = 'get' ]; then echo qemu; exit 0; fi\n"
+        "if [ \"$1\" = 'version' ]; then echo 'multipass   1.16.1+mac'; exit 0; fi\n"
+    )
+    multipass.chmod(0o755)
+    multipass_adapter.multipass_path = str(multipass)
+
+    with patch("provider.vm.multipass_adapter.platform.system", return_value="Darwin"):
+        with patch(
+            "provider.vm.multipass_adapter.platform.machine", return_value="arm64"
+        ):
+            with patch(
+                "provider.vm.multipass_adapter.platform.release", return_value="25.2.0"
+            ):
+                multipass_adapter._check_host_virtualization_compatibility()
 
 
 @pytest.mark.asyncio

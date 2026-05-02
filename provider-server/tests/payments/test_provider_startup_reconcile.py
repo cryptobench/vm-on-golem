@@ -133,6 +133,8 @@ async def test_startup_terminates_vms_without_active_stream(monkeypatch):
     settings.POLYGON_RPC_URL = "http://localhost"
     settings.STREAM_MONITOR_ENABLED = False
     settings.STREAM_WITHDRAW_ENABLED = False
+    settings.DISCOVERY_BACKEND = "arkiv"
+    settings.ARKIV_FAUCET_ENABLED = True
 
     # Patch external collaborators (faucet + pricing updater)
     import provider.security.faucet as faucet_mod
@@ -177,6 +179,8 @@ async def test_startup_keeps_vms_with_active_stream(monkeypatch):
     settings.POLYGON_RPC_URL = "http://localhost"
     settings.STREAM_MONITOR_ENABLED = False
     settings.STREAM_WITHDRAW_ENABLED = False
+    settings.DISCOVERY_BACKEND = "arkiv"
+    settings.ARKIV_FAUCET_ENABLED = True
 
     # Patch external collaborators
     import provider.security.faucet as faucet_mod
@@ -220,6 +224,8 @@ async def test_startup_skips_stream_checks_when_payments_disabled(monkeypatch):
     settings.POLYGON_RPC_URL = ""
     settings.STREAM_MONITOR_ENABLED = False
     settings.STREAM_WITHDRAW_ENABLED = False
+    settings.DISCOVERY_BACKEND = "arkiv"
+    settings.ARKIV_FAUCET_ENABLED = True
 
     # Patch external collaborators
     import provider.security.faucet as faucet_mod
@@ -261,4 +267,40 @@ async def test_startup_skips_stream_checks_when_payments_disabled(monkeypatch):
     # No deletions; synced at least once and advertising started
     assert vm_service.deleted == []
     assert vm_service.resource_tracker.sync_calls >= 1
+    assert adv.started is True
+
+
+@pytest.mark.asyncio
+async def test_startup_skips_arkiv_faucet_for_central_discovery(monkeypatch):
+    from provider import service as ps
+    from provider.config import settings
+
+    settings.STREAM_PAYMENT_ADDRESS = "0x0000000000000000000000000000000000000000"
+    settings.POLYGON_RPC_URL = ""
+    settings.STREAM_MONITOR_ENABLED = False
+    settings.STREAM_WITHDRAW_ENABLED = False
+    settings.DISCOVERY_BACKEND = "central"
+    settings.ARKIV_FAUCET_ENABLED = True
+
+    import provider.security.faucet as faucet_mod
+
+    monkeypatch.setattr(
+        faucet_mod,
+        "FaucetClient",
+        lambda *a, **k: pytest.fail("Arkiv faucet should not be constructed"),
+    )
+    monkeypatch.setattr(ps, "PricingAutoUpdater", DummyPricingUpdater)
+
+    vm_service = DummyVMService({})
+    adv = DummyDiscoveryPublishingService()
+    provider_service = ProviderService(
+        vm_service=vm_service,
+        advertisement_service=adv,
+        port_manager=DummyPortManager(),
+    )
+
+    app = DummyApp(DummyStreamMap({}), DummyReader({}))
+
+    await provider_service.setup(app)  # type: ignore[arg-type]
+
     assert adv.started is True

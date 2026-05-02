@@ -79,6 +79,24 @@ async def test_central_publisher_includes_pricing(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_central_publisher_uses_configured_public_ip(monkeypatch):
+    rt = StubResourceTracker({"cpu": 2, "memory": 2, "storage": 10})
+    adv = CentralDiscoveryPublisher(rt, discovery_url="http://x")
+    capture = {}
+    adv.session = StubSession(capture)
+    monkeypatch.setattr(settings, "PUBLIC_IP", "127.0.0.1")
+
+    async def fail_public_ip_lookup():
+        raise AssertionError("public IP lookup should not be called")
+
+    monkeypatch.setattr(adv, "_get_public_ip", fail_public_ip_lookup)
+
+    await adv.post_advertisement()
+
+    assert capture["json"]["ip_address"] == "127.0.0.1"
+
+
+@pytest.mark.asyncio
 async def test_arkiv_publisher_annotations_include_pricing(monkeypatch):
     # Stub client to capture created entity
     class StubClient:
