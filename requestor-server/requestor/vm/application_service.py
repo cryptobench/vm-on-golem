@@ -7,6 +7,7 @@ from requestor.discovery.service import ProviderDiscoveryService
 from requestor.errors import ConflictError, ExternalServiceError, ValidationError
 from requestor.provider_client.factory import ProviderClientFactory
 
+from .access import require_ssh_user
 from .domain import (
     CloneVMCommand,
     CreateVMCommand,
@@ -106,6 +107,7 @@ class VMApplicationService:
             "memory": command.memory,
             "storage": command.storage,
             "ssh_port": access.get("ssh_port"),
+            "ssh_user": require_ssh_user(access),
             **(
                 {"stream_id": command.stream_id}
                 if command.stream_id is not None
@@ -148,7 +150,29 @@ class VMApplicationService:
         return self.vm_repo.list()
 
     async def get_vm(self, name: str) -> VMRecord:
-        return self.vm_repo.require(name)
+        vm = self.vm_repo.require(name)
+        return await self._ensure_ssh_user(vm)
+
+    async def _ensure_ssh_user(self, vm: VMRecord) -> VMRecord:
+        if vm.config.get("ssh_user"):
+            return vm
+
+        async with self.provider_client_factory.for_provider_ip(
+            vm.provider_ip
+        ) as client:
+            access = await client.get_vm_access(vm.vm_id)
+
+        config = {
+            **vm.config,
+            "ssh_user": require_ssh_user(access),
+            **(
+                {"ssh_port": access.get("ssh_port")}
+                if access.get("ssh_port") is not None
+                else {}
+            ),
+        }
+        self.vm_repo.update_config(vm.name, config, status=vm.status)
+        return self.vm_repo.require(vm.name)
 
     async def start_vm(self, name: str) -> VMRecord:
         vm = self.vm_repo.require(name)
@@ -319,6 +343,11 @@ class VMApplicationService:
             **(
                 {"ssh_port": result.get("ssh_port")}
                 if result.get("ssh_port") is not None
+                else {}
+            ),
+            **(
+                {"ssh_user": require_ssh_user(result)}
+                if result.get("ssh_user") is not None
                 else {}
             ),
         }

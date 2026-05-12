@@ -85,6 +85,9 @@ class Container(containers.DeclarativeContainer):
         PythonProxyManager,
         port_manager=port_manager,
         name_mapper=vm_name_mapper,
+        state_file=providers.Callable(
+            os.path.join, config.PROXY_STATE_DIR, "proxy_state.json"
+        ),
     )
 
     monitoring_repo = providers.Singleton(

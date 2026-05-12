@@ -57,6 +57,17 @@ class ProviderClient:
                 "_vm": data,
             }
 
+    async def get_create_job(self, job_id: str) -> Dict:
+        """Get provider-side VM creation job lifecycle status."""
+        session = self._require_session()
+        async with session.get(
+            f"{self.provider_url}/api/v1/vms/jobs/{job_id}"
+        ) as response:
+            if not response.ok:
+                error_text = await response.text()
+                raise ProviderError(f"Failed to get VM creation job: {error_text}")
+            return await response.json()
+
     async def get_vm_info(self, vm_id: str) -> Dict:
         session = self._require_session()
         async with session.get(f"{self.provider_url}/api/v1/vms/{vm_id}") as response:

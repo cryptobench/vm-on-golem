@@ -41,8 +41,7 @@ function deriveStatus(
   const storedStatus = String(rental.status || "").toLowerCase();
   const sshPort =
     (accessData as { ssh_port?: number | null } | null)?.ssh_port ??
-    (statusData as { ssh_port?: number | null } | null)?.ssh_port ??
-    rental.ssh_port;
+    (statusData as { ssh_port?: number | null } | null)?.ssh_port;
 
   if (liveStatus) return liveStatus;
   if (storedStatus) return storedStatus;
@@ -125,7 +124,7 @@ export function RentalRowWithData({
   const providerIp =
     (provider as { ip_address?: string | null } | null)?.ip_address ||
     rental.provider_ip ||
-    (access as { host?: string | null } | null)?.host ||
+    (access as { ssh_host?: string | null } | null)?.ssh_host ||
     "";
   const remainingSeconds = (
     stream as { computed?: { remaining_seconds?: number | null } } | null

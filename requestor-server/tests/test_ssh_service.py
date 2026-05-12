@@ -1,18 +1,18 @@
-from pathlib import Path
 import subprocess
+import sys
+from pathlib import Path
 
 import pytest
 
-import sys
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-from requestor.services.ssh_service import SSHService
 from requestor.errors import SSHError
+from requestor.services.ssh_service import SSHService
 
 
 def test_format_ssh_command(tmp_path):
     svc = SSHService(tmp_path)
-    cmd = svc.format_ssh_command("host", 22, tmp_path / "key")
+    cmd = svc.format_ssh_command("host", 22, tmp_path / "key", username="ubuntu")
     assert "ssh -i" in cmd and "host" in cmd
 
 
@@ -32,15 +32,20 @@ def test_parse_stats():
 def test_format_ssh_command_colorize(tmp_path, monkeypatch):
     svc = SSHService(tmp_path)
     import click
+
     monkeypatch.setattr(click, "style", lambda x, **k: f"c:{x}")
-    cmd = svc.format_ssh_command("h", 22, tmp_path / "k", colorize=True)
+    cmd = svc.format_ssh_command(
+        "h", 22, tmp_path / "k", username="ubuntu", colorize=True
+    )
     assert cmd.startswith("c:")
 
 
 def test_get_key_pair_sync_error(tmp_path, monkeypatch):
     svc = SSHService(tmp_path)
+
     def boom():
         raise RuntimeError("x")
+
     monkeypatch.setattr(svc.ssh_manager, "get_key_pair_sync", boom)
     with pytest.raises(SSHError):
         svc.get_key_pair_sync()
@@ -49,26 +54,33 @@ def test_get_key_pair_sync_error(tmp_path, monkeypatch):
 def test_connect_to_vm_calls_subprocess(tmp_path, monkeypatch):
     svc = SSHService(tmp_path)
     called = {}
+
     def fake_run(cmd, check):
         called["cmd"] = cmd
+
     monkeypatch.setattr(subprocess, "run", fake_run)
-    svc.connect_to_vm("host", 22, tmp_path / "k")
+    svc.connect_to_vm("host", 22, tmp_path / "k", username="ubuntu")
     assert called["cmd"][0] == "ssh"
+    assert called["cmd"][-1] == "ubuntu@host"
 
 
 def test_connect_to_vm_error(tmp_path, monkeypatch):
     svc = SSHService(tmp_path)
+
     def fake_run(cmd, check):
         raise RuntimeError("bad")
+
     monkeypatch.setattr(subprocess, "run", fake_run)
     with pytest.raises(SSHError):
-        svc.connect_to_vm("host", 22, tmp_path / "k")
+        svc.connect_to_vm("host", 22, tmp_path / "k", username="ubuntu")
 
 
 def test_get_vm_stats_error(tmp_path, monkeypatch):
     svc = SSHService(tmp_path)
+
     def fake_run(*a, **k):
         raise subprocess.CalledProcessError(1, "cmd", "err")
+
     monkeypatch.setattr(subprocess, "run", fake_run)
     with pytest.raises(SSHError):
-        svc.get_vm_stats("h", 22, tmp_path / "k")
+        svc.get_vm_stats("h", 22, tmp_path / "k", username="ubuntu")

@@ -9,6 +9,7 @@ from typing import Dict, List, Optional
 from ..config import settings
 from ..utils.logging import setup_logger
 from ..utils.retry import NonRetryableError, async_retry_unless_not_found
+from .lifecycle import ProgressCallback, creation_lifecycle, lifecycle_for_status
 from .models import (
     VMConfig,
     VMError,
@@ -137,10 +138,18 @@ class MultipassAdapter(VMProvider):
             result = await self._run_multipass(["version"])
             logger.info(f"🔧 Using Multipass version: {result.stdout.strip()}")
             self._check_host_virtualization_compatibility()
+            if hasattr(self.proxy_manager, "initialize"):
+                await self.proxy_manager.initialize()
+            await self._restore_missing_proxy_listeners()
+            await self._log_startup_mapping_summary()
         except (subprocess.CalledProcessError, FileNotFoundError) as e:
             raise MultipassError(f"Failed to verify multipass installation: {e}")
 
-    async def create_vm(self, config: VMConfig) -> VMInfo:
+    async def create_vm(
+        self,
+        config: VMConfig,
+        progress_callback: ProgressCallback | None = None,
+    ) -> VMInfo:
         """Create a new VM.
 
         Uses a pre-assigned multipass_name from VMConfig when provided to keep
@@ -168,8 +177,20 @@ class MultipassAdapter(VMProvider):
         ]
         try:
             logger.info(f"Running multipass command: {' '.join(launch_cmd)}")
+            await self._report_progress(
+                progress_callback,
+                "launching",
+                "Launching VM image",
+                35,
+            )
             await self._run_multipass(launch_cmd)
             logger.info(f"VM {multipass_name} launched, waiting for it to be ready...")
+            await self._report_progress(
+                progress_callback,
+                "waiting_for_guest",
+                "Waiting for VM to start",
+                60,
+            )
 
             ip_address = None
             max_retries = settings.CREATE_VM_MAX_RETRIES
@@ -180,6 +201,13 @@ class MultipassAdapter(VMProvider):
                     if info.get("state", "").lower() == "running" and info.get("ipv4"):
                         ip_address = info["ipv4"][0]
                         break
+                    state = info.get("state") or "starting"
+                    await self._report_progress(
+                        progress_callback,
+                        "waiting_for_guest",
+                        f"Multipass reports {state}",
+                        min(85, 60 + attempt),
+                    )
                     logger.debug(
                         f"VM {config.name} status is {info.get('state')}, waiting..."
                     )
@@ -196,6 +224,12 @@ class MultipassAdapter(VMProvider):
                 )
 
             # Configure proxy to allocate a port
+            await self._report_progress(
+                progress_callback,
+                "configuring_access",
+                "Configuring SSH access",
+                90,
+            )
             if not await self.proxy_manager.add_vm(multipass_name, ip_address):
                 raise MultipassError(
                     f"Failed to configure proxy for VM {multipass_name}"
@@ -203,6 +237,12 @@ class MultipassAdapter(VMProvider):
 
             # Now get the full status, which will include the allocated port
             vm_info = await self.get_vm_status(multipass_name)
+            await self._report_progress(
+                progress_callback,
+                "ready",
+                "VM is online",
+                100,
+            )
             logger.info(f"Successfully created VM: {vm_info.dict()}")
             return vm_info
 
@@ -455,8 +495,91 @@ class MultipassAdapter(VMProvider):
             ip_address=ip_address,
             ssh_port=self.proxy_manager.get_port(multipass_name),
         )
+        lifecycle = lifecycle_for_status(vm_info_obj.status)
+        vm_info_obj.lifecycle_stage = lifecycle.lifecycle_stage
+        vm_info_obj.status_message = lifecycle.status_message
+        vm_info_obj.progress = lifecycle.progress
+        vm_info_obj.transitioning = lifecycle.transitioning
+        vm_info_obj.next_poll_seconds = lifecycle.next_poll_seconds
         logger.debug(f"Constructed VMInfo object: {vm_info_obj.dict()}")
         return vm_info_obj
+
+    async def _restore_missing_proxy_listeners(self) -> None:
+        """Start SSH proxies for running mapped VMs whose proxy is not listening."""
+        if not hasattr(self.name_mapper, "list_mappings"):
+            return
+        mappings = self.name_mapper.list_mappings()
+        if not mappings:
+            logger.info("No VM name mappings found during proxy restoration")
+            return
+        logger.info(f"Checking {len(mappings)} VM mapping(s) for SSH proxy listeners")
+        for requestor_name, multipass_name in list(mappings.items()):
+            if self.proxy_manager.get_port(multipass_name) is not None:
+                continue
+            try:
+                info = await self._get_vm_info(multipass_name)
+            except (MultipassError, VMNotFoundError) as exc:
+                logger.warning(
+                    f"Could not restore SSH proxy for {requestor_name}: {exc}"
+                )
+                continue
+            if info.get("state", "").lower() != "running" or not info.get("ipv4"):
+                continue
+            vm_ip = info["ipv4"][0]
+            if await self.proxy_manager.add_vm(multipass_name, vm_ip):
+                logger.info(
+                    f"Restored missing SSH proxy for {requestor_name} ({multipass_name})"
+                )
+            else:
+                logger.error(
+                    f"Failed to restore SSH proxy for {requestor_name} ({multipass_name})"
+                )
+
+    async def _log_startup_mapping_summary(self) -> None:
+        """Log requestor-to-Multipass mappings and live SSH proxy state."""
+        if not hasattr(self.name_mapper, "list_mappings"):
+            return
+        mappings = self.name_mapper.list_mappings()
+        if not mappings:
+            logger.info("Startup VM mapping summary: no VM mappings")
+            return
+
+        logger.info(f"Startup VM mapping summary: {len(mappings)} mapping(s)")
+        for requestor_name, multipass_name in sorted(mappings.items()):
+            proxy_port = self.proxy_manager.get_port(multipass_name)
+            try:
+                info = await self._get_vm_info(multipass_name)
+                state = info.get("state") or "unknown"
+                ipv4 = info.get("ipv4") or []
+                ip_address = ipv4[0] if ipv4 else None
+                logger.info(
+                    "VM mapping "
+                    f"requestor_vm={requestor_name} "
+                    f"multipass={multipass_name} "
+                    f"multipass_state={state} "
+                    f"ip={ip_address or 'none'} "
+                    f"ssh_proxy_port={proxy_port or 'not_listening'}"
+                )
+            except (MultipassError, VMNotFoundError) as exc:
+                logger.warning(
+                    "VM mapping "
+                    f"requestor_vm={requestor_name} "
+                    f"multipass={multipass_name} "
+                    f"multipass_state=unavailable "
+                    f"ssh_proxy_port={proxy_port or 'not_listening'} "
+                    f"error={exc}"
+                )
+
+    @staticmethod
+    async def _report_progress(
+        progress_callback: ProgressCallback | None,
+        stage: str,
+        message: str,
+        progress: int,
+    ) -> None:
+        if progress_callback is None:
+            return
+        await progress_callback(creation_lifecycle(stage, message, progress))
 
     async def get_all_vms_resources(self) -> Dict[str, VMResources]:
         """Get resources for all running VMs."""

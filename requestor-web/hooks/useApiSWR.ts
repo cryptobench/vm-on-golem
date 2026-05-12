@@ -5,6 +5,7 @@ import { useAds } from "../context/AdsContext";
 import {
   providerInfo as apiProviderInfo,
   vmAccess as apiVmAccess,
+  vmJobStatus as apiVmJobStatus,
   vmStatusSafe as apiVmStatusSafe,
   vmStatus as apiVmStatus,
   vmStreamStatus as apiVmStreamStatus,
@@ -22,9 +23,15 @@ function keyWithAds<T extends any[]>(prefix: string, ads: any, ...parts: T) {
   return [prefix, ...parts, mode, rpc, ws, chain] as const;
 }
 
-export function useProviderInfo(providerId?: string | null, config?: SWRConfiguration) {
+export function useProviderInfo(
+  providerId?: string | null,
+  config?: SWRConfiguration,
+) {
   const { ads } = useAds();
-  const key = useMemo(() => (providerId ? keyWithAds("provider-info", ads, providerId) : null), [providerId, ads]);
+  const key = useMemo(
+    () => (providerId ? keyWithAds("provider-info", ads, providerId) : null),
+    [providerId, ads],
+  );
   return useSWR(key, () => apiProviderInfo(providerId!, ads), {
     revalidateOnFocus: true,
     revalidateOnReconnect: true,
@@ -33,9 +40,19 @@ export function useProviderInfo(providerId?: string | null, config?: SWRConfigur
   });
 }
 
-export function useVmAccess(providerId?: string | null, vmId?: string | null, config?: SWRConfiguration) {
+export function useVmAccess(
+  providerId?: string | null,
+  vmId?: string | null,
+  config?: SWRConfiguration,
+) {
   const { ads } = useAds();
-  const key = useMemo(() => ((providerId && vmId) ? keyWithAds("vm-access", ads, providerId, vmId) : null), [providerId, vmId, ads]);
+  const key = useMemo(
+    () =>
+      providerId && vmId
+        ? keyWithAds("vm-access", ads, providerId, vmId)
+        : null,
+    [providerId, vmId, ads],
+  );
   return useSWR(key, () => apiVmAccess(providerId!, vmId!, ads), {
     revalidateOnFocus: true,
     revalidateOnReconnect: true,
@@ -44,9 +61,40 @@ export function useVmAccess(providerId?: string | null, vmId?: string | null, co
   });
 }
 
-export function useVmStatusSafe(providerId?: string | null, vmId?: string | null, config?: SWRConfiguration) {
+export function useVmCreateJobStatus(
+  providerId?: string | null,
+  jobId?: string | null,
+  config?: SWRConfiguration,
+) {
   const { ads } = useAds();
-  const key = useMemo(() => ((providerId && vmId) ? keyWithAds("vm-status-safe", ads, providerId, vmId) : null), [providerId, vmId, ads]);
+  const key = useMemo(
+    () =>
+      providerId && jobId
+        ? keyWithAds("vm-create-job", ads, providerId, jobId)
+        : null,
+    [providerId, jobId, ads],
+  );
+  return useSWR(key, () => apiVmJobStatus(providerId!, jobId!, ads), {
+    revalidateOnFocus: true,
+    revalidateOnReconnect: true,
+    revalidateIfStale: true,
+    ...config,
+  });
+}
+
+export function useVmStatusSafe(
+  providerId?: string | null,
+  vmId?: string | null,
+  config?: SWRConfiguration,
+) {
+  const { ads } = useAds();
+  const key = useMemo(
+    () =>
+      providerId && vmId
+        ? keyWithAds("vm-status-safe", ads, providerId, vmId)
+        : null,
+    [providerId, vmId, ads],
+  );
   return useSWR(key, () => apiVmStatusSafe(providerId!, vmId!, ads), {
     revalidateOnFocus: true,
     revalidateOnReconnect: true,
@@ -55,9 +103,19 @@ export function useVmStatusSafe(providerId?: string | null, vmId?: string | null
   });
 }
 
-export function useVmStatus(providerId?: string | null, vmId?: string | null, config?: SWRConfiguration) {
+export function useVmStatus(
+  providerId?: string | null,
+  vmId?: string | null,
+  config?: SWRConfiguration,
+) {
   const { ads } = useAds();
-  const key = useMemo(() => ((providerId && vmId) ? keyWithAds("vm-status", ads, providerId, vmId) : null), [providerId, vmId, ads]);
+  const key = useMemo(
+    () =>
+      providerId && vmId
+        ? keyWithAds("vm-status", ads, providerId, vmId)
+        : null,
+    [providerId, vmId, ads],
+  );
   return useSWR(key, () => apiVmStatus(providerId!, vmId!, ads), {
     revalidateOnFocus: true,
     revalidateOnReconnect: true,
@@ -66,9 +124,19 @@ export function useVmStatus(providerId?: string | null, vmId?: string | null, co
   });
 }
 
-export function useVmStreamStatus(providerId?: string | null, vmId?: string | null, config?: SWRConfiguration) {
+export function useVmStreamStatus(
+  providerId?: string | null,
+  vmId?: string | null,
+  config?: SWRConfiguration,
+) {
   const { ads } = useAds();
-  const key = useMemo(() => ((providerId && vmId) ? keyWithAds("vm-stream-status", ads, providerId, vmId) : null), [providerId, vmId, ads]);
+  const key = useMemo(
+    () =>
+      providerId && vmId
+        ? keyWithAds("vm-stream-status", ads, providerId, vmId)
+        : null,
+    [providerId, vmId, ads],
+  );
   return useSWR(key, () => apiVmStreamStatus(providerId!, vmId!, ads), {
     revalidateOnFocus: true,
     revalidateOnReconnect: true,
@@ -77,9 +145,19 @@ export function useVmStreamStatus(providerId?: string | null, vmId?: string | nu
   });
 }
 
-export function useVmMetricsLatest(providerId?: string | null, vmId?: string | null, config?: SWRConfiguration) {
+export function useVmMetricsLatest(
+  providerId?: string | null,
+  vmId?: string | null,
+  config?: SWRConfiguration,
+) {
   const { ads } = useAds();
-  const key = useMemo(() => ((providerId && vmId) ? keyWithAds("vm-metrics-latest", ads, providerId, vmId) : null), [providerId, vmId, ads]);
+  const key = useMemo(
+    () =>
+      providerId && vmId
+        ? keyWithAds("vm-metrics-latest", ads, providerId, vmId)
+        : null,
+    [providerId, vmId, ads],
+  );
   return useSWR(key, () => apiVmMetricsLatest(providerId!, vmId!, ads), {
     revalidateOnFocus: true,
     revalidateOnReconnect: true,
@@ -95,13 +173,23 @@ export function useVmMetricsHistory(
   config?: SWRConfiguration,
 ) {
   const { ads } = useAds();
-  const key = useMemo(() => ((providerId && vmId) ? keyWithAds("vm-metrics-history", ads, providerId, vmId, range) : null), [providerId, vmId, range, ads]);
-  return useSWR(key, () => apiVmMetricsHistory(providerId!, vmId!, ads, range), {
-    revalidateOnFocus: true,
-    revalidateOnReconnect: true,
-    revalidateIfStale: true,
-    ...config,
-  });
+  const key = useMemo(
+    () =>
+      providerId && vmId
+        ? keyWithAds("vm-metrics-history", ads, providerId, vmId, range)
+        : null,
+    [providerId, vmId, range, ads],
+  );
+  return useSWR(
+    key,
+    () => apiVmMetricsHistory(providerId!, vmId!, ads, range),
+    {
+      revalidateOnFocus: true,
+      revalidateOnReconnect: true,
+      revalidateIfStale: true,
+      ...config,
+    },
+  );
 }
 
 export const mutate = globalMutate;

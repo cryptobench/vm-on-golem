@@ -9,6 +9,21 @@ export interface AdminShutdownResponse {
   ok: boolean;
 }
 
+export type AlertRuleId = number | null;
+
+export interface AlertRule {
+  duration_seconds?: number;
+  enabled?: boolean;
+  id?: AlertRuleId;
+  metric: string;
+  name: string;
+  operator?: string;
+  scope: MetricScope;
+  severity?: string;
+  source: MetricSource;
+  threshold: number;
+}
+
 /**
  * Request to clone a stopped VM.
  */
@@ -39,8 +54,25 @@ export interface CreateSnapshotRequest {
 export interface CreateVMJobResponse {
   /** Server-side job identifier for creation task */
   job_id: string;
+  /** Detailed lifecycle stage for the creation job */
+  lifecycle_stage?: string;
+  /**
+   * Suggested polling cadence
+   * @minimum 1
+   */
+  next_poll_seconds?: number;
+  /**
+   * Creation progress percent
+   * @minimum 0
+   * @maximum 100
+   */
+  progress?: number;
   /** Initial status indicator */
   status?: string;
+  /** Human-readable lifecycle status */
+  status_message?: string;
+  /** True while creation is active */
+  transitioning?: boolean;
   /** Requestor VM identifier (name) */
   vm_id: string;
 }
@@ -54,7 +86,17 @@ export interface CreateVMJobStatus {
   created_at: string;
   error?: CreateVMJobStatusError;
   job_id: string;
+  lifecycle_stage: string;
+  /** @minimum 1 */
+  next_poll_seconds?: number;
+  /**
+   * @minimum 0
+   * @maximum 100
+   */
+  progress: number;
   status: string;
+  status_message: string;
+  transitioning: boolean;
   updated_at: string;
   vm_id: string;
 }
@@ -90,8 +132,100 @@ export interface CreateVMRequest {
   stream_id?: CreateVMRequestStreamId;
 }
 
+export type GuestMetricPayloadCpuPercent = number | null;
+
+export type GuestMetricPayloadDiskTotalBytes = number | null;
+
+export type GuestMetricPayloadDiskUsedBytes = number | null;
+
+export type GuestMetricPayloadLoad1m = number | null;
+
+export type GuestMetricPayloadMemoryTotalBytes = number | null;
+
+export type GuestMetricPayloadMemoryUsedBytes = number | null;
+
+export type GuestMetricPayloadNetworkRxBytes = number | null;
+
+export type GuestMetricPayloadNetworkTxBytes = number | null;
+
+export type GuestMetricPayloadTimestamp = string | null;
+
+export interface GuestMetricPayload {
+  agent_version?: string;
+  cpu_percent?: GuestMetricPayloadCpuPercent;
+  disk_total_bytes?: GuestMetricPayloadDiskTotalBytes;
+  disk_used_bytes?: GuestMetricPayloadDiskUsedBytes;
+  load_1m?: GuestMetricPayloadLoad1m;
+  memory_total_bytes?: GuestMetricPayloadMemoryTotalBytes;
+  memory_used_bytes?: GuestMetricPayloadMemoryUsedBytes;
+  network_rx_bytes?: GuestMetricPayloadNetworkRxBytes;
+  network_tx_bytes?: GuestMetricPayloadNetworkTxBytes;
+  timestamp?: GuestMetricPayloadTimestamp;
+  token: string;
+}
+
 export interface HTTPValidationError {
   detail?: ValidationError[];
+}
+
+export type MetricSampleVmId = string | null;
+
+export interface MetricSample {
+  metric: string;
+  scope: MetricScope;
+  source: MetricSource;
+  timestamp?: string;
+  unit: string;
+  value: number;
+  vm_id?: MetricSampleVmId;
+}
+
+export type MetricScope = (typeof MetricScope)[keyof typeof MetricScope];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const MetricScope = {
+  host: "host",
+  vm: "vm",
+} as const;
+
+export type MetricSource = (typeof MetricSource)[keyof typeof MetricSource];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const MetricSource = {
+  infrastructure: "infrastructure",
+  guest_agent: "guest_agent",
+} as const;
+
+export interface MetricsHistoryResponse {
+  samples: MetricSample[];
+}
+
+export type MetricsLatestResponseHost = { [key: string]: unknown };
+
+export type MetricsLatestResponseVms = {
+  [key: string]: { [key: string]: unknown };
+};
+
+export interface MetricsLatestResponse {
+  generated_at: string;
+  host: MetricsLatestResponseHost;
+  vms: MetricsLatestResponseVms;
+}
+
+export type MonitoringOverviewActiveAlertsItem = { [key: string]: unknown };
+
+export type MonitoringOverviewHost = { [key: string]: unknown };
+
+export type MonitoringOverviewLastSampleAt = string | null;
+
+export type MonitoringOverviewVmsItem = { [key: string]: unknown };
+
+export interface MonitoringOverview {
+  active_alerts: MonitoringOverviewActiveAlertsItem[];
+  host: MonitoringOverviewHost;
+  last_sample_at?: MonitoringOverviewLastSampleAt;
+  status: string;
+  vms: MonitoringOverviewVmsItem[];
 }
 
 export type ProviderInfoCountry = string | null;
@@ -169,6 +303,8 @@ export interface VMAccessInfo {
   multipass_name: string;
   ssh_host: string;
   ssh_port: number;
+  /** SSH login user for this VM */
+  ssh_user: string;
   /** Requestor's VM name */
   vm_id: string;
 }
@@ -177,9 +313,21 @@ export interface VMAccessInfo {
  * Response returned while VM access details are not ready yet.
  */
 export interface VMAccessPendingResponse {
+  lifecycle_stage?: string;
   multipass_name: string;
+  /** @minimum 1 */
+  next_poll_seconds?: number;
+  /**
+   * @minimum 0
+   * @maximum 100
+   */
+  progress?: number;
   ssh_port?: null;
+  /** SSH login user for this VM, currently ubuntu */
+  ssh_user: string;
   status?: string;
+  status_message?: string;
+  transitioning?: boolean;
   vm_id: string;
 }
 
@@ -210,10 +358,27 @@ export interface VMInfo {
   error_message?: VMInfoErrorMessage;
   id: string;
   ip_address?: VMInfoIpAddress;
+  /** Provider lifecycle stage for transitional or terminal states */
+  lifecycle_stage?: string;
   name: string;
+  /**
+   * Suggested client polling cadence for this state
+   * @minimum 1
+   */
+  next_poll_seconds?: number;
+  /**
+   * Best-effort lifecycle progress percentage
+   * @minimum 0
+   * @maximum 100
+   */
+  progress?: number;
   resources: VMResources;
   ssh_port?: VMInfoSshPort;
   status: VMStatus;
+  /** Human-readable lifecycle status suitable for UI display */
+  status_message?: string;
+  /** True while the VM is actively changing lifecycle state */
+  transitioning?: boolean;
   updated_at?: string;
 }
 
@@ -294,8 +459,56 @@ export interface ValidationError {
   type: string;
 }
 
+export type WebhookConfigId = number | null;
+
+export type WebhookConfigLastDeliveredAt = string | null;
+
+export type WebhookConfigLastError = string | null;
+
+export type WebhookConfigLastStatus = string | null;
+
+export interface WebhookConfig {
+  enabled?: boolean;
+  id?: WebhookConfigId;
+  last_delivered_at?: WebhookConfigLastDeliveredAt;
+  last_error?: WebhookConfigLastError;
+  last_status?: WebhookConfigLastStatus;
+  name: string;
+  url: string;
+}
+
+export type WebhookTestResponseError = string | null;
+
+export type WebhookTestResponseStatus = number | null;
+
+export interface WebhookTestResponse {
+  error?: WebhookTestResponseError;
+  ok: boolean;
+  status?: WebhookTestResponseStatus;
+}
+
+export type ActiveAlertsApiV1MonitoringAlertsGet200Item = {
+  [key: string]: unknown;
+};
+
+export type RecordGuestSampleApiV1MonitoringGuestVmIdSamplesPost200 = {
+  [key: string]: string;
+};
+
+export type MonitoringHistoryApiV1MonitoringMetricsHistoryGetParams = {
+  scope?: MetricScope;
+  range?: string;
+  vm_id?: string | null;
+  source?: MetricSource | null;
+};
+
 export type CreateVmApiV1VmsPostParams = {
   async?: boolean;
+};
+
+export type VmMetricsHistoryApiV1VmsRequestorNameMetricsHistoryGetParams = {
+  range?: string;
+  source?: MetricSource | null;
 };
 
 /**
@@ -358,6 +571,420 @@ export const listImagesApiV1ImagesGet = async (
     {
       ...options,
       method: "GET",
+    },
+  );
+};
+
+/**
+ * @summary Prometheus Metrics
+ */
+export type prometheusMetricsApiV1MetricsGetResponse200 = {
+  data: unknown;
+  status: 200;
+};
+
+export type prometheusMetricsApiV1MetricsGetResponseComposite =
+  prometheusMetricsApiV1MetricsGetResponse200;
+
+export type prometheusMetricsApiV1MetricsGetResponse =
+  prometheusMetricsApiV1MetricsGetResponseComposite & {
+    headers: Headers;
+  };
+
+export const getPrometheusMetricsApiV1MetricsGetUrl = () => {
+  return `/api/v1/metrics`;
+};
+
+export const prometheusMetricsApiV1MetricsGet = async (
+  options?: RequestInit,
+): Promise<prometheusMetricsApiV1MetricsGetResponse> => {
+  return orvalFetch<prometheusMetricsApiV1MetricsGetResponse>(
+    getPrometheusMetricsApiV1MetricsGetUrl(),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+/**
+ * @summary List Alert Rules
+ */
+export type listAlertRulesApiV1MonitoringAlertRulesGetResponse200 = {
+  data: AlertRule[];
+  status: 200;
+};
+
+export type listAlertRulesApiV1MonitoringAlertRulesGetResponseComposite =
+  listAlertRulesApiV1MonitoringAlertRulesGetResponse200;
+
+export type listAlertRulesApiV1MonitoringAlertRulesGetResponse =
+  listAlertRulesApiV1MonitoringAlertRulesGetResponseComposite & {
+    headers: Headers;
+  };
+
+export const getListAlertRulesApiV1MonitoringAlertRulesGetUrl = () => {
+  return `/api/v1/monitoring/alert-rules`;
+};
+
+export const listAlertRulesApiV1MonitoringAlertRulesGet = async (
+  options?: RequestInit,
+): Promise<listAlertRulesApiV1MonitoringAlertRulesGetResponse> => {
+  return orvalFetch<listAlertRulesApiV1MonitoringAlertRulesGetResponse>(
+    getListAlertRulesApiV1MonitoringAlertRulesGetUrl(),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+/**
+ * @summary Create Alert Rule
+ */
+export type createAlertRuleApiV1MonitoringAlertRulesPostResponse200 = {
+  data: AlertRule;
+  status: 200;
+};
+
+export type createAlertRuleApiV1MonitoringAlertRulesPostResponse422 = {
+  data: HTTPValidationError;
+  status: 422;
+};
+
+export type createAlertRuleApiV1MonitoringAlertRulesPostResponseComposite =
+  | createAlertRuleApiV1MonitoringAlertRulesPostResponse200
+  | createAlertRuleApiV1MonitoringAlertRulesPostResponse422;
+
+export type createAlertRuleApiV1MonitoringAlertRulesPostResponse =
+  createAlertRuleApiV1MonitoringAlertRulesPostResponseComposite & {
+    headers: Headers;
+  };
+
+export const getCreateAlertRuleApiV1MonitoringAlertRulesPostUrl = () => {
+  return `/api/v1/monitoring/alert-rules`;
+};
+
+export const createAlertRuleApiV1MonitoringAlertRulesPost = async (
+  alertRule: AlertRule,
+  options?: RequestInit,
+): Promise<createAlertRuleApiV1MonitoringAlertRulesPostResponse> => {
+  return orvalFetch<createAlertRuleApiV1MonitoringAlertRulesPostResponse>(
+    getCreateAlertRuleApiV1MonitoringAlertRulesPostUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(alertRule),
+    },
+  );
+};
+
+/**
+ * @summary Active Alerts
+ */
+export type activeAlertsApiV1MonitoringAlertsGetResponse200 = {
+  data: ActiveAlertsApiV1MonitoringAlertsGet200Item[];
+  status: 200;
+};
+
+export type activeAlertsApiV1MonitoringAlertsGetResponseComposite =
+  activeAlertsApiV1MonitoringAlertsGetResponse200;
+
+export type activeAlertsApiV1MonitoringAlertsGetResponse =
+  activeAlertsApiV1MonitoringAlertsGetResponseComposite & {
+    headers: Headers;
+  };
+
+export const getActiveAlertsApiV1MonitoringAlertsGetUrl = () => {
+  return `/api/v1/monitoring/alerts`;
+};
+
+export const activeAlertsApiV1MonitoringAlertsGet = async (
+  options?: RequestInit,
+): Promise<activeAlertsApiV1MonitoringAlertsGetResponse> => {
+  return orvalFetch<activeAlertsApiV1MonitoringAlertsGetResponse>(
+    getActiveAlertsApiV1MonitoringAlertsGetUrl(),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+/**
+ * @summary Record Guest Sample
+ */
+export type recordGuestSampleApiV1MonitoringGuestVmIdSamplesPostResponse200 = {
+  data: RecordGuestSampleApiV1MonitoringGuestVmIdSamplesPost200;
+  status: 200;
+};
+
+export type recordGuestSampleApiV1MonitoringGuestVmIdSamplesPostResponse422 = {
+  data: HTTPValidationError;
+  status: 422;
+};
+
+export type recordGuestSampleApiV1MonitoringGuestVmIdSamplesPostResponseComposite =
+
+    | recordGuestSampleApiV1MonitoringGuestVmIdSamplesPostResponse200
+    | recordGuestSampleApiV1MonitoringGuestVmIdSamplesPostResponse422;
+
+export type recordGuestSampleApiV1MonitoringGuestVmIdSamplesPostResponse =
+  recordGuestSampleApiV1MonitoringGuestVmIdSamplesPostResponseComposite & {
+    headers: Headers;
+  };
+
+export const getRecordGuestSampleApiV1MonitoringGuestVmIdSamplesPostUrl = (
+  vmId: string,
+) => {
+  return `/api/v1/monitoring/guest/${vmId}/samples`;
+};
+
+export const recordGuestSampleApiV1MonitoringGuestVmIdSamplesPost = async (
+  vmId: string,
+  guestMetricPayload: GuestMetricPayload,
+  options?: RequestInit,
+): Promise<recordGuestSampleApiV1MonitoringGuestVmIdSamplesPostResponse> => {
+  return orvalFetch<recordGuestSampleApiV1MonitoringGuestVmIdSamplesPostResponse>(
+    getRecordGuestSampleApiV1MonitoringGuestVmIdSamplesPostUrl(vmId),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(guestMetricPayload),
+    },
+  );
+};
+
+/**
+ * @summary Monitoring History
+ */
+export type monitoringHistoryApiV1MonitoringMetricsHistoryGetResponse200 = {
+  data: MetricsHistoryResponse;
+  status: 200;
+};
+
+export type monitoringHistoryApiV1MonitoringMetricsHistoryGetResponse422 = {
+  data: HTTPValidationError;
+  status: 422;
+};
+
+export type monitoringHistoryApiV1MonitoringMetricsHistoryGetResponseComposite =
+  | monitoringHistoryApiV1MonitoringMetricsHistoryGetResponse200
+  | monitoringHistoryApiV1MonitoringMetricsHistoryGetResponse422;
+
+export type monitoringHistoryApiV1MonitoringMetricsHistoryGetResponse =
+  monitoringHistoryApiV1MonitoringMetricsHistoryGetResponseComposite & {
+    headers: Headers;
+  };
+
+export const getMonitoringHistoryApiV1MonitoringMetricsHistoryGetUrl = (
+  params?: MonitoringHistoryApiV1MonitoringMetricsHistoryGetParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/v1/monitoring/metrics/history?${stringifiedParams}`
+    : `/api/v1/monitoring/metrics/history`;
+};
+
+export const monitoringHistoryApiV1MonitoringMetricsHistoryGet = async (
+  params?: MonitoringHistoryApiV1MonitoringMetricsHistoryGetParams,
+  options?: RequestInit,
+): Promise<monitoringHistoryApiV1MonitoringMetricsHistoryGetResponse> => {
+  return orvalFetch<monitoringHistoryApiV1MonitoringMetricsHistoryGetResponse>(
+    getMonitoringHistoryApiV1MonitoringMetricsHistoryGetUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+/**
+ * @summary Monitoring Latest
+ */
+export type monitoringLatestApiV1MonitoringMetricsLatestGetResponse200 = {
+  data: MetricsLatestResponse;
+  status: 200;
+};
+
+export type monitoringLatestApiV1MonitoringMetricsLatestGetResponseComposite =
+  monitoringLatestApiV1MonitoringMetricsLatestGetResponse200;
+
+export type monitoringLatestApiV1MonitoringMetricsLatestGetResponse =
+  monitoringLatestApiV1MonitoringMetricsLatestGetResponseComposite & {
+    headers: Headers;
+  };
+
+export const getMonitoringLatestApiV1MonitoringMetricsLatestGetUrl = () => {
+  return `/api/v1/monitoring/metrics/latest`;
+};
+
+export const monitoringLatestApiV1MonitoringMetricsLatestGet = async (
+  options?: RequestInit,
+): Promise<monitoringLatestApiV1MonitoringMetricsLatestGetResponse> => {
+  return orvalFetch<monitoringLatestApiV1MonitoringMetricsLatestGetResponse>(
+    getMonitoringLatestApiV1MonitoringMetricsLatestGetUrl(),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+/**
+ * @summary Monitoring Overview
+ */
+export type monitoringOverviewApiV1MonitoringOverviewGetResponse200 = {
+  data: MonitoringOverview;
+  status: 200;
+};
+
+export type monitoringOverviewApiV1MonitoringOverviewGetResponseComposite =
+  monitoringOverviewApiV1MonitoringOverviewGetResponse200;
+
+export type monitoringOverviewApiV1MonitoringOverviewGetResponse =
+  monitoringOverviewApiV1MonitoringOverviewGetResponseComposite & {
+    headers: Headers;
+  };
+
+export const getMonitoringOverviewApiV1MonitoringOverviewGetUrl = () => {
+  return `/api/v1/monitoring/overview`;
+};
+
+export const monitoringOverviewApiV1MonitoringOverviewGet = async (
+  options?: RequestInit,
+): Promise<monitoringOverviewApiV1MonitoringOverviewGetResponse> => {
+  return orvalFetch<monitoringOverviewApiV1MonitoringOverviewGetResponse>(
+    getMonitoringOverviewApiV1MonitoringOverviewGetUrl(),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+/**
+ * @summary List Webhooks
+ */
+export type listWebhooksApiV1MonitoringWebhooksGetResponse200 = {
+  data: WebhookConfig[];
+  status: 200;
+};
+
+export type listWebhooksApiV1MonitoringWebhooksGetResponseComposite =
+  listWebhooksApiV1MonitoringWebhooksGetResponse200;
+
+export type listWebhooksApiV1MonitoringWebhooksGetResponse =
+  listWebhooksApiV1MonitoringWebhooksGetResponseComposite & {
+    headers: Headers;
+  };
+
+export const getListWebhooksApiV1MonitoringWebhooksGetUrl = () => {
+  return `/api/v1/monitoring/webhooks`;
+};
+
+export const listWebhooksApiV1MonitoringWebhooksGet = async (
+  options?: RequestInit,
+): Promise<listWebhooksApiV1MonitoringWebhooksGetResponse> => {
+  return orvalFetch<listWebhooksApiV1MonitoringWebhooksGetResponse>(
+    getListWebhooksApiV1MonitoringWebhooksGetUrl(),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+/**
+ * @summary Create Webhook
+ */
+export type createWebhookApiV1MonitoringWebhooksPostResponse200 = {
+  data: WebhookConfig;
+  status: 200;
+};
+
+export type createWebhookApiV1MonitoringWebhooksPostResponse422 = {
+  data: HTTPValidationError;
+  status: 422;
+};
+
+export type createWebhookApiV1MonitoringWebhooksPostResponseComposite =
+  | createWebhookApiV1MonitoringWebhooksPostResponse200
+  | createWebhookApiV1MonitoringWebhooksPostResponse422;
+
+export type createWebhookApiV1MonitoringWebhooksPostResponse =
+  createWebhookApiV1MonitoringWebhooksPostResponseComposite & {
+    headers: Headers;
+  };
+
+export const getCreateWebhookApiV1MonitoringWebhooksPostUrl = () => {
+  return `/api/v1/monitoring/webhooks`;
+};
+
+export const createWebhookApiV1MonitoringWebhooksPost = async (
+  webhookConfig: WebhookConfig,
+  options?: RequestInit,
+): Promise<createWebhookApiV1MonitoringWebhooksPostResponse> => {
+  return orvalFetch<createWebhookApiV1MonitoringWebhooksPostResponse>(
+    getCreateWebhookApiV1MonitoringWebhooksPostUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(webhookConfig),
+    },
+  );
+};
+
+/**
+ * @summary Test Webhook
+ */
+export type testWebhookApiV1MonitoringWebhooksWebhookIdTestPostResponse200 = {
+  data: WebhookTestResponse;
+  status: 200;
+};
+
+export type testWebhookApiV1MonitoringWebhooksWebhookIdTestPostResponse422 = {
+  data: HTTPValidationError;
+  status: 422;
+};
+
+export type testWebhookApiV1MonitoringWebhooksWebhookIdTestPostResponseComposite =
+
+    | testWebhookApiV1MonitoringWebhooksWebhookIdTestPostResponse200
+    | testWebhookApiV1MonitoringWebhooksWebhookIdTestPostResponse422;
+
+export type testWebhookApiV1MonitoringWebhooksWebhookIdTestPostResponse =
+  testWebhookApiV1MonitoringWebhooksWebhookIdTestPostResponseComposite & {
+    headers: Headers;
+  };
+
+export const getTestWebhookApiV1MonitoringWebhooksWebhookIdTestPostUrl = (
+  webhookId: number,
+) => {
+  return `/api/v1/monitoring/webhooks/${webhookId}/test`;
+};
+
+export const testWebhookApiV1MonitoringWebhooksWebhookIdTestPost = async (
+  webhookId: number,
+  options?: RequestInit,
+): Promise<testWebhookApiV1MonitoringWebhooksWebhookIdTestPostResponse> => {
+  return orvalFetch<testWebhookApiV1MonitoringWebhooksWebhookIdTestPostResponse>(
+    getTestWebhookApiV1MonitoringWebhooksWebhookIdTestPostUrl(webhookId),
+    {
+      ...options,
+      method: "POST",
     },
   );
 };
@@ -755,6 +1382,109 @@ export const cloneVmApiV1VmsRequestorNameClonePost = async (
       method: "POST",
       headers: { "Content-Type": "application/json", ...options?.headers },
       body: JSON.stringify(cloneVMRequest),
+    },
+  );
+};
+
+/**
+ * @summary Vm Metrics History
+ */
+export type vmMetricsHistoryApiV1VmsRequestorNameMetricsHistoryGetResponse200 =
+  {
+    data: MetricsHistoryResponse;
+    status: 200;
+  };
+
+export type vmMetricsHistoryApiV1VmsRequestorNameMetricsHistoryGetResponse422 =
+  {
+    data: HTTPValidationError;
+    status: 422;
+  };
+
+export type vmMetricsHistoryApiV1VmsRequestorNameMetricsHistoryGetResponseComposite =
+
+    | vmMetricsHistoryApiV1VmsRequestorNameMetricsHistoryGetResponse200
+    | vmMetricsHistoryApiV1VmsRequestorNameMetricsHistoryGetResponse422;
+
+export type vmMetricsHistoryApiV1VmsRequestorNameMetricsHistoryGetResponse =
+  vmMetricsHistoryApiV1VmsRequestorNameMetricsHistoryGetResponseComposite & {
+    headers: Headers;
+  };
+
+export const getVmMetricsHistoryApiV1VmsRequestorNameMetricsHistoryGetUrl = (
+  requestorName: string,
+  params?: VmMetricsHistoryApiV1VmsRequestorNameMetricsHistoryGetParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/v1/vms/${requestorName}/metrics/history?${stringifiedParams}`
+    : `/api/v1/vms/${requestorName}/metrics/history`;
+};
+
+export const vmMetricsHistoryApiV1VmsRequestorNameMetricsHistoryGet = async (
+  requestorName: string,
+  params?: VmMetricsHistoryApiV1VmsRequestorNameMetricsHistoryGetParams,
+  options?: RequestInit,
+): Promise<vmMetricsHistoryApiV1VmsRequestorNameMetricsHistoryGetResponse> => {
+  return orvalFetch<vmMetricsHistoryApiV1VmsRequestorNameMetricsHistoryGetResponse>(
+    getVmMetricsHistoryApiV1VmsRequestorNameMetricsHistoryGetUrl(
+      requestorName,
+      params,
+    ),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+/**
+ * @summary Vm Metrics Latest
+ */
+export type vmMetricsLatestApiV1VmsRequestorNameMetricsLatestGetResponse200 = {
+  data: MetricsLatestResponse;
+  status: 200;
+};
+
+export type vmMetricsLatestApiV1VmsRequestorNameMetricsLatestGetResponse422 = {
+  data: HTTPValidationError;
+  status: 422;
+};
+
+export type vmMetricsLatestApiV1VmsRequestorNameMetricsLatestGetResponseComposite =
+
+    | vmMetricsLatestApiV1VmsRequestorNameMetricsLatestGetResponse200
+    | vmMetricsLatestApiV1VmsRequestorNameMetricsLatestGetResponse422;
+
+export type vmMetricsLatestApiV1VmsRequestorNameMetricsLatestGetResponse =
+  vmMetricsLatestApiV1VmsRequestorNameMetricsLatestGetResponseComposite & {
+    headers: Headers;
+  };
+
+export const getVmMetricsLatestApiV1VmsRequestorNameMetricsLatestGetUrl = (
+  requestorName: string,
+) => {
+  return `/api/v1/vms/${requestorName}/metrics/latest`;
+};
+
+export const vmMetricsLatestApiV1VmsRequestorNameMetricsLatestGet = async (
+  requestorName: string,
+  options?: RequestInit,
+): Promise<vmMetricsLatestApiV1VmsRequestorNameMetricsLatestGetResponse> => {
+  return orvalFetch<vmMetricsLatestApiV1VmsRequestorNameMetricsLatestGetResponse>(
+    getVmMetricsLatestApiV1VmsRequestorNameMetricsLatestGetUrl(requestorName),
+    {
+      ...options,
+      method: "GET",
     },
   );
 };
@@ -1226,6 +1956,38 @@ export const suspendVmApiV1VmsRequestorNameSuspendPost = async (
     {
       ...options,
       method: "POST",
+    },
+  );
+};
+
+/**
+ * @summary Prometheus Metrics
+ */
+export type prometheusMetricsMetricsGetResponse200 = {
+  data: unknown;
+  status: 200;
+};
+
+export type prometheusMetricsMetricsGetResponseComposite =
+  prometheusMetricsMetricsGetResponse200;
+
+export type prometheusMetricsMetricsGetResponse =
+  prometheusMetricsMetricsGetResponseComposite & {
+    headers: Headers;
+  };
+
+export const getPrometheusMetricsMetricsGetUrl = () => {
+  return `/metrics`;
+};
+
+export const prometheusMetricsMetricsGet = async (
+  options?: RequestInit,
+): Promise<prometheusMetricsMetricsGetResponse> => {
+  return orvalFetch<prometheusMetricsMetricsGetResponse>(
+    getPrometheusMetricsMetricsGetUrl(),
+    {
+      ...options,
+      method: "GET",
     },
   );
 };

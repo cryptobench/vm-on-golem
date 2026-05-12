@@ -1,11 +1,15 @@
 """VM management service."""
+import logging
 from datetime import datetime
 from typing import Dict, List, Optional
 
 from ..errors import RequestorError, VMError
 from ..provider.client import ProviderClient
+from ..vm.access import require_ssh_user
 from .database_service import DatabaseService
 from .ssh_service import SSHService
+
+logger = logging.getLogger(__name__)
 
 
 class VMService:
@@ -95,6 +99,7 @@ class VMService:
                 "memory": memory,
                 "storage": storage,
                 "ssh_port": access_info["ssh_port"],
+                "ssh_user": require_ssh_user(access_info),
                 **({"stream_id": stream_id} if stream_id is not None else {}),
             }
             await self.db.save_vm(
@@ -137,8 +142,10 @@ class VMService:
                 if stream_id is not None and self.blockchain_client:
                     self.blockchain_client.terminate(stream_id)
             except Exception:
-                # Best-effort: do not block deletion on chain failure
-                pass
+                logger.exception(
+                    "failed to terminate stream while destroying VM",
+                    extra={"vm_name": name, "stream_id": stream_id},
+                )
 
             # Remove from database
             await self.db.delete_vm(name)
@@ -183,7 +190,10 @@ class VMService:
                 if stream_id is not None and self.blockchain_client:
                     self.blockchain_client.terminate(stream_id)
             except Exception:
-                pass
+                logger.exception(
+                    "failed to terminate stream while stopping VM",
+                    extra={"vm_name": name, "stream_id": stream_id},
+                )
 
         except Exception as e:
             raise VMError(f"Failed to stop VM: {str(e)}")
@@ -303,9 +313,31 @@ class VMService:
             vm = await self.db.get_vm(name)
             if not vm:
                 return None
-            return vm
+            return await self._ensure_ssh_user(vm)
         except Exception as e:
             raise VMError(f"Failed to get VM details: {str(e)}")
+
+    async def _ensure_ssh_user(self, vm: Dict) -> Dict:
+        if vm.get("config", {}).get("ssh_user"):
+            return vm
+        if self.provider_client is None:
+            raise VMError(
+                "VM access details are missing SSH login user and provider "
+                "connection is unavailable"
+            )
+
+        access_info = await self.provider_client.get_vm_access(vm["vm_id"])
+        config = {
+            **vm["config"],
+            "ssh_user": require_ssh_user(access_info),
+            **(
+                {"ssh_port": access_info.get("ssh_port")}
+                if access_info.get("ssh_port") is not None
+                else {}
+            ),
+        }
+        await self.db.update_vm_config(vm["name"], config, vm.get("status"))
+        return {**vm, "config": config}
 
     async def _vm_action(
         self, name: str, method_name: str, fallback_status: str
@@ -348,6 +380,11 @@ class VMService:
                 if result.get("ssh_port") is not None
                 else {}
             ),
+            **(
+                {"ssh_user": require_ssh_user(result)}
+                if result.get("ssh_user") is not None
+                else {}
+            ),
         }
         await self.db.update_vm_config(
             name, config, result.get("status", fallback_status or vm["status"])
@@ -362,6 +399,7 @@ class VMService:
             host=vm["provider_ip"],
             port=vm["config"].get("ssh_port", "N/A"),
             private_key_path=key_pair.private_key.absolute(),
+            username=self._local_ssh_user(vm),
         )
 
         row = [
@@ -411,7 +449,7 @@ class VMService:
     async def get_vm_stats(self, name: str) -> Dict:
         """Get VM stats by name."""
         try:
-            vm = await self.db.get_vm(name)
+            vm = await self.get_vm(name)
             if not vm:
                 raise VMError(f"VM '{name}' not found")
 
@@ -421,6 +459,11 @@ class VMService:
                 host=vm["provider_ip"],
                 port=vm["config"]["ssh_port"],
                 private_key_path=key_pair.private_key,
+                username=require_ssh_user(vm["config"]),
             )
         except Exception as e:
             raise VMError(f"Failed to get VM stats: {str(e)}")
+
+    @staticmethod
+    def _local_ssh_user(vm: Dict) -> str:
+        return require_ssh_user(vm.get("config", {}))

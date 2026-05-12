@@ -23,6 +23,10 @@ export type VmAction = {
 export function VmDetailsHeader({
   name,
   status,
+  statusMessage,
+  lifecycleStage,
+  progress,
+  transitioning,
   lastUpdated,
   copySshDisabled,
   busy,
@@ -31,12 +35,19 @@ export function VmDetailsHeader({
 }: {
   name: string;
   status: string;
+  statusMessage?: string | null;
+  lifecycleStage?: string | null;
+  progress?: number | null;
+  transitioning?: boolean;
   lastUpdated?: string | null;
   copySshDisabled?: boolean;
   busy?: boolean;
   actions: VmAction[];
   onCopySsh: () => void;
 }) {
+  const showProgress = Boolean(transitioning && progress != null);
+  const progressValue = Math.max(0, Math.min(100, Math.round(progress || 0)));
+
   return (
     <header className="vm-page-enter relative z-40 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
       <div className="min-w-0">
@@ -46,14 +57,37 @@ export function VmDetailsHeader({
           <span className="truncate text-text-primary">{name}</span>
         </div>
         <div className="mt-3 flex min-w-0 flex-wrap items-center gap-3">
-          <h1 className="truncate text-2xl font-semibold text-text-primary">{name}</h1>
+          <h1 className="truncate text-2xl font-semibold text-text-primary">
+            {name}
+          </h1>
           <StatusBadge status={status} />
         </div>
         <div className="mt-2 flex items-center gap-2 text-sm text-text-secondary">
-          <span>Last updated:</span>
-          <span>{lastUpdated || "just now"}</span>
+          <span>{statusMessage || "Checking provider status"}</span>
+          {lifecycleStage && lifecycleStage !== status ? (
+            <>
+              <span aria-hidden>&middot;</span>
+              <span>{formatStage(lifecycleStage)}</span>
+            </>
+          ) : null}
+          {showProgress ? (
+            <>
+              <span aria-hidden>&middot;</span>
+              <span>{progressValue}%</span>
+            </>
+          ) : null}
+          <span aria-hidden>&middot;</span>
+          <span>Updated {lastUpdated || "just now"}</span>
           <RiRefreshLine className="h-4 w-4 text-text-muted" aria-hidden />
         </div>
+        {showProgress ? (
+          <div className="mt-3 h-1.5 w-full max-w-xl overflow-hidden rounded-full bg-surface-muted">
+            <div
+              className="h-full rounded-full bg-warning transition-all duration-500"
+              style={{ width: `${progressValue}%` }}
+            />
+          </div>
+        ) : null}
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
@@ -108,4 +142,12 @@ export function VmDetailsHeader({
       </div>
     </header>
   );
+}
+
+function formatStage(stage: string) {
+  return stage
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }

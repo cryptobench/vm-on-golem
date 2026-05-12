@@ -64,7 +64,7 @@ export function RentalActionsMenu({
 
   return (
     <>
-      <div className="relative flex justify-end" ref={ref}>
+      <div className="relative z-40 flex justify-end" ref={ref}>
         {canStart ? (
           <div className="inline-flex h-10 rounded-md shadow-soft">
             <button
@@ -119,7 +119,7 @@ export function RentalActionsMenu({
 
         {open && (
           <div
-            className="vm-action-menu absolute right-0 top-12 z-30 w-56 rounded-lg border border-border bg-surface py-1 shadow-popover"
+            className="vm-action-menu absolute right-0 top-12 z-50 w-56 rounded-lg border border-border bg-surface py-1 shadow-popover"
             onClick={(event) => event.stopPropagation()}
           >
             <button

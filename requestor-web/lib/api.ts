@@ -71,8 +71,15 @@ export type Rental = {
   provider_ip?: string | null;
   vm_id: string;
   status: string;
+  lifecycle_stage?: string | null;
+  status_message?: string | null;
+  progress?: number | null;
+  transitioning?: boolean | null;
+  next_poll_seconds?: number | null;
+  creation_job_id?: string | null;
   resources?: VMResources;
   ssh_port?: number | null;
+  ssh_user?: string | null;
   stream_id?: number | string | null;
   project_id?: string;
   platform?: string | null;
@@ -83,7 +90,16 @@ export type Rental = {
 
 export type VmMonitoringLatest = {
   host: Record<string, unknown>;
-  vms: Record<string, Record<string, Record<string, { value: number; unit: string; timestamp: string; source: string }>>>;
+  vms: Record<
+    string,
+    Record<
+      string,
+      Record<
+        string,
+        { value: number; unit: string; timestamp: string; source: string }
+      >
+    >
+  >;
   generated_at: string;
 };
 
@@ -109,7 +125,8 @@ export function loadSettings(): Settings {
   if (typeof window === "undefined") return {};
   try {
     const settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
-    const defaultStreamPayment = process.env.NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS || "";
+    const defaultStreamPayment =
+      process.env.NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS || "";
     const currentStreamPayment = String(
       settings.stream_payment_address || "",
     ).toLowerCase();
@@ -209,7 +226,9 @@ export function computeEstimate(
   const glmStorage = pricing.glm_per_gb_storage_month;
   const glm =
     glmCore != null && glmRam != null && glmStorage != null
-      ? Number(glmCore) * cpu + Number(glmRam) * memory + Number(glmStorage) * storage
+      ? Number(glmCore) * cpu +
+        Number(glmRam) * memory +
+        Number(glmStorage) * storage
       : undefined;
   return {
     usd_per_month: Number(usd.toFixed(4)),
@@ -226,7 +245,10 @@ export function computePriceRange(
   const memory = spec?.memory || 0;
   const storage = spec?.storage || 0;
   const values = providers
-    .map((provider) => computeEstimate(provider, cpu, memory, storage).usd_per_month)
+    .map(
+      (provider) =>
+        computeEstimate(provider, cpu, memory, storage).usd_per_month,
+    )
     .filter((value) => Number.isFinite(value) && value > 0);
   if (!values.length) return null;
   return { min: Math.min(...values), max: Math.max(...values) };
@@ -243,37 +265,66 @@ export async function createVm(
   providerId: string,
   payload: CreateVMRequest,
   ads: AdsConfig,
-) : Promise<VMInfo | CreateVMJobResponse> {
+): Promise<VMInfo | CreateVMJobResponse> {
   return unwrapAs<VMInfo | CreateVMJobResponse>(
-    await createVmApiV1VmsPost(payload, { async: true }, providerOptions(providerId, ads)),
+    await createVmApiV1VmsPost(
+      payload,
+      { async: true },
+      providerOptions(providerId, ads),
+    ),
     200,
     202,
   );
 }
 
-export async function vmJobStatus(providerId: string, jobId: string, ads: AdsConfig) {
+export async function vmJobStatus(
+  providerId: string,
+  jobId: string,
+  ads: AdsConfig,
+) {
   return unwrapAs<CreateVMJobStatus>(
-    await getCreateJobApiV1VmsJobsJobIdGet(jobId, providerOptions(providerId, ads)),
+    await getCreateJobApiV1VmsJobsJobIdGet(
+      jobId,
+      providerOptions(providerId, ads),
+    ),
     200,
   );
 }
 
-export async function vmAccess(providerId: string, vmId: string, ads: AdsConfig) {
+export async function vmAccess(
+  providerId: string,
+  vmId: string,
+  ads: AdsConfig,
+) {
   return unwrapAs<VMAccessInfo | VMAccessPendingResponse>(
-    await getVmAccessApiV1VmsRequestorNameAccessGet(vmId, providerOptions(providerId, ads)),
+    await getVmAccessApiV1VmsRequestorNameAccessGet(
+      vmId,
+      providerOptions(providerId, ads),
+    ),
     200,
     202,
   );
 }
 
-export async function vmStatus(providerId: string, vmId: string, ads: AdsConfig) {
+export async function vmStatus(
+  providerId: string,
+  vmId: string,
+  ads: AdsConfig,
+) {
   return unwrapAs<VMInfo>(
-    await getVmStatusApiV1VmsRequestorNameGet(vmId, providerOptions(providerId, ads)),
+    await getVmStatusApiV1VmsRequestorNameGet(
+      vmId,
+      providerOptions(providerId, ads),
+    ),
     200,
   );
 }
 
-export async function vmStatusSafe(providerId: string, vmId: string, ads: AdsConfig) {
+export async function vmStatusSafe(
+  providerId: string,
+  vmId: string,
+  ads: AdsConfig,
+) {
   try {
     return { exists: true, data: await vmStatus(providerId, vmId, ads) };
   } catch (error) {
@@ -286,7 +337,11 @@ export async function vmStatusSafe(providerId: string, vmId: string, ads: AdsCon
   }
 }
 
-export async function vmStreamStatus(providerId: string, vmId: string, ads: AdsConfig) {
+export async function vmStreamStatus(
+  providerId: string,
+  vmId: string,
+  ads: AdsConfig,
+) {
   return unwrapAs<StreamStatus>(
     await getVmStreamStatusApiV1VmsRequestorNameStreamGet(
       vmId,
@@ -296,7 +351,11 @@ export async function vmStreamStatus(providerId: string, vmId: string, ads: AdsC
   );
 }
 
-export async function vmMetricsLatest(providerId: string, vmId: string, ads: AdsConfig) {
+export async function vmMetricsLatest(
+  providerId: string,
+  vmId: string,
+  ads: AdsConfig,
+) {
   return providerFetch<VmMonitoringLatest>(
     providerId,
     `/api/v1/vms/${encodeURIComponent(vmId)}/metrics/latest`,
@@ -319,7 +378,10 @@ export async function vmMetricsHistory(
 
 export const vmStart = (providerId: string, vmId: string, ads: AdsConfig) =>
   unwrapAs<VMInfo>(
-    startVmApiV1VmsRequestorNameStartPost(vmId, providerOptions(providerId, ads)),
+    startVmApiV1VmsRequestorNameStartPost(
+      vmId,
+      providerOptions(providerId, ads),
+    ),
     200,
   );
 export const vmStop = (providerId: string, vmId: string, ads: AdsConfig) =>
@@ -329,17 +391,26 @@ export const vmStop = (providerId: string, vmId: string, ads: AdsConfig) =>
   );
 export const vmRestart = (providerId: string, vmId: string, ads: AdsConfig) =>
   unwrapAs<VMInfo>(
-    restartVmApiV1VmsRequestorNameRestartPost(vmId, providerOptions(providerId, ads)),
+    restartVmApiV1VmsRequestorNameRestartPost(
+      vmId,
+      providerOptions(providerId, ads),
+    ),
     200,
   );
 export const vmSuspend = (providerId: string, vmId: string, ads: AdsConfig) =>
   unwrapAs<VMInfo>(
-    suspendVmApiV1VmsRequestorNameSuspendPost(vmId, providerOptions(providerId, ads)),
+    suspendVmApiV1VmsRequestorNameSuspendPost(
+      vmId,
+      providerOptions(providerId, ads),
+    ),
     200,
   );
 export const vmResume = (providerId: string, vmId: string, ads: AdsConfig) =>
   unwrapAs<VMInfo>(
-    resumeVmApiV1VmsRequestorNameResumePost(vmId, providerOptions(providerId, ads)),
+    resumeVmApiV1VmsRequestorNameResumePost(
+      vmId,
+      providerOptions(providerId, ads),
+    ),
     200,
   );
 export const vmDestroy = (providerId: string, vmId: string, ads: AdsConfig) =>
@@ -365,7 +436,11 @@ export function vmResize(
   );
 }
 
-export const listSnapshots = (providerId: string, vmId: string, ads: AdsConfig) =>
+export const listSnapshots = (
+  providerId: string,
+  vmId: string,
+  ads: AdsConfig,
+) =>
   unwrapAs<VMSnapshot[]>(
     listSnapshotsApiV1VmsRequestorNameSnapshotsGet(
       vmId,
@@ -425,7 +500,10 @@ type ApiResponse<TData, TStatus extends number = number> = {
   headers: Headers;
 };
 
-async function unwrapAs<TData, TResponse extends ApiResponse<unknown> = ApiResponse<unknown>>(
+async function unwrapAs<
+  TData,
+  TResponse extends ApiResponse<unknown> = ApiResponse<unknown>,
+>(
   responseOrPromise: TResponse | Promise<TResponse>,
   ...okStatuses: Array<TResponse["status"]>
 ): Promise<TData> {
@@ -443,7 +521,9 @@ function apiError(status: number, data: unknown): Error & { status: number } {
       : typeof data === "string"
         ? data
         : JSON.stringify(data);
-  const error = new Error(message || `HTTP ${status}`) as Error & { status: number };
+  const error = new Error(message || `HTTP ${status}`) as Error & {
+    status: number;
+  };
   error.status = status;
   return error;
 }
@@ -460,8 +540,9 @@ function providerOptions(providerId: string, ads: AdsConfig): RequestInit {
 }
 
 function proxyProviderOrigin(providerId: string): string {
-  const base = (process.env.NEXT_PUBLIC_PORT_CHECKER_URL || "http://localhost:9000")
-    .replace(/\/$/, "");
+  const base = (
+    process.env.NEXT_PUBLIC_PORT_CHECKER_URL || "http://localhost:9000"
+  ).replace(/\/$/, "");
   return `${base}/proxy/provider/${encodeURIComponent(providerId)}`;
 }
 
@@ -506,6 +587,9 @@ function providerProxyHeaders(ads: AdsConfig): Record<string, string> {
   return headers;
 }
 
-function withBaseUrl(baseUrl: string, init: ApiRequestOptions = {}): RequestInit {
+function withBaseUrl(
+  baseUrl: string,
+  init: ApiRequestOptions = {},
+): RequestInit {
   return { ...init, baseUrl } as RequestInit;
 }

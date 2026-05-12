@@ -5,7 +5,7 @@ from dependency_injector import providers
 from fastapi.testclient import TestClient
 
 from provider.main import app
-from provider.vm.models import VMInfo, VMResources, VMStatus
+from provider.vm.models import MULTIPASS_SSH_USER, VMInfo, VMResources, VMStatus
 from provider.vm.multipass_adapter import MultipassError
 
 
@@ -72,10 +72,32 @@ def test_get_vm_access_happy_path(monkeypatch, client: TestClient):
         data = resp.json()
         assert data["ssh_host"] == "1.2.3.4"
         assert data["ssh_port"] == 2222
+        assert data["ssh_user"] == MULTIPASS_SSH_USER
         assert data["vm_id"] == "test-vm"
         assert data["multipass_name"] == "test-vm-20250101"
     finally:
         app.container.config.override(old)
+
+
+def test_get_vm_access_pending_includes_ssh_user(client: TestClient):
+    vm_info = VMInfo(
+        id="test-vm",
+        name="test-vm",
+        status=VMStatus.CREATING,
+        resources=VMResources(cpu=1, memory=1, storage=10),
+        ssh_port=None,
+    )
+    app.container.vm_service().get_vm_status = AsyncMock(return_value=vm_info)
+    app.container.vm_service().name_mapper.get_multipass_name = AsyncMock(
+        return_value="test-vm-20250101"
+    )
+
+    resp = client.get("/api/v1/vms/test-vm/access")
+
+    assert resp.status_code == 202
+    data = resp.json()
+    assert data["ssh_port"] is None
+    assert data["ssh_user"] == MULTIPASS_SSH_USER
 
 
 def test_get_vm_access_vm_not_found(monkeypatch, client: TestClient):
