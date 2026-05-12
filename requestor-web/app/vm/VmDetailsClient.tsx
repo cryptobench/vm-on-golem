@@ -20,32 +20,23 @@ import {
 } from "../../lib/api";
 import { useAds } from "../../context/AdsContext";
 import { useToast } from "../../components/ui/Toast";
-import { Spinner } from "../../components/ui/Spinner";
-import { StatusBadge } from "../../components/ui/StatusBadge";
-import { Skeleton } from "../../components/ui/Skeleton";
 import { useStreamActions } from "../../hooks/useStreamActions";
 import { useWallet } from "../../context/WalletContext";
 import { getPaymentNetworkErrorMessage } from "../../lib/chain";
-import { buildSshCommand } from "../../lib/ssh";
+import { buildSshCommand, copyText } from "../../lib/ssh";
 import { humanDuration, type ChainStream, fetchStreamWithMeta } from "../../lib/streams";
-import { parseHumanDuration } from "../../lib/time";
 import { getPriceUSD, onPricesUpdated } from "../../lib/prices";
-import { RiCpuLine, RiStackLine, RiHardDrive2Line, RiFileCopyLine } from "@remixicon/react";
-import { StreamCard } from "../../components/streams/StreamCard";
-import { countryFlagEmoji, countryFullName } from "../../lib/intl";
 import { useProviderInfo, useVmAccess, useVmStatusSafe, useVmStatus, useVmMetricsLatest, useVmMetricsHistory } from "../../hooks/useApiSWR";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { VmMetricsCharts } from "../../components/vm/VmMetricsCharts";
-
-// ChainStream imported from lib/streams
-
-// StatusBadge imported from shared UI
-
-// Country helpers imported from lib/intl
-
-// humanDuration provided by lib/streams
-
-const parseTimeInput = parseHumanDuration;
+import { VmDetailsHeader, type VmAction } from "../../components/vm/details/VmDetailsHeader";
+import { VmOverviewPanel } from "../../components/vm/details/VmOverviewPanel";
+import { VmMetricsSummary } from "../../components/vm/details/VmMetricsSummary";
+import { VmSnapshotsPanel } from "../../components/vm/details/VmSnapshotsPanel";
+import { VmResizePanel } from "../../components/vm/details/VmResizePanel";
+import { VmPaymentStreamPanel } from "../../components/vm/details/VmPaymentStreamPanel";
+import { VmDetailsSkeleton } from "../../components/vm/details/VmDetailsSkeleton";
+import { VmStopNotice } from "../../components/vm/details/VmStopNotice";
 
 export default function VmDetailsClient() {
   const search = useSearchParams();
@@ -65,11 +56,11 @@ export default function VmDetailsClient() {
   const [usdPrice, setUsdPrice] = React.useState<number | null>(null);
   const [displayCurrency, setDisplayCurrency] = React.useState<'fiat'|'token'>(loadSettings().display_currency === 'token' ? 'token' : 'fiat');
   const [snapshots, setSnapshots] = React.useState<Array<{ name: string; comment?: string | null; created_at?: string | null }>>([]);
-  const [snapshotName, setSnapshotName] = React.useState("");
   const [snapshotBusy, setSnapshotBusy] = React.useState<string | null>(null);
   const [resizeCpu, setResizeCpu] = React.useState<number>(1);
   const [resizeMemory, setResizeMemory] = React.useState<number>(1);
   const [resizeStorage, setResizeStorage] = React.useState<number>(10);
+  const [resizeInitializedKey, setResizeInitializedKey] = React.useState<string | null>(null);
   const [metricsRange, setMetricsRange] = React.useState<"1h" | "6h" | "24h" | "7d">("1h");
 
   const vmId = search.get('id') || '';
@@ -245,7 +236,7 @@ export default function VmDetailsClient() {
         if (cancelled) return;
         setStream({ chain: res.chain as any, remaining: BigInt(res.remaining) });
         setRemaining(Number(res.remaining));
-        setTokenSymbol(String(res.tokenSymbol || 'ETH'));
+        setTokenSymbol(String(res.tokenSymbol || 'GLM'));
         setTokenDecimals(Number(res.tokenDecimals || 18));
         setUsdPrice(res.usdPrice ?? null);
       } catch (e) {
@@ -291,63 +282,19 @@ export default function VmDetailsClient() {
       .catch(() => setSnapshots([]));
   }, [vm?.provider_id, vm?.vm_id, vm?.status, ads]);
 
+  React.useEffect(() => {
+    const resources = getEffectiveResources(swrVm, vm);
+    if (!vm || !resources) return;
+    const key = `${vm.provider_id}:${vm.vm_id}:${resources.cpu}:${resources.memory}:${resources.storage}`;
+    if (resizeInitializedKey === key) return;
+    setResizeCpu(resources.cpu);
+    setResizeMemory(resources.memory);
+    setResizeStorage(resources.storage);
+    setResizeInitializedKey(key);
+  }, [swrVm, vm, resizeInitializedKey]);
+
   if (!mounted) {
-    // Full-page skeleton to align with Suspense fallback and prevent hydration mismatch
-    return (
-      <div className="space-y-6">
-        <div className="card"><div className="card-body">
-          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <Skeleton className="h-5 w-24" />
-                <Skeleton className="h-7 w-40" />
-              </div>
-              <div className="mt-1 flex flex-wrap items-center gap-2">
-                <Skeleton className="h-4 w-24" />
-                <Skeleton className="h-4 w-16" />
-                <Skeleton className="h-4 w-24" />
-              </div>
-            </div>
-            <div className="flex flex-col items-start gap-2 sm:items-end">
-              <Skeleton className="h-4 w-40" />
-              <div className="flex gap-2">
-                <Skeleton className="h-9 w-24" />
-                <Skeleton className="h-9 w-24" />
-                <Skeleton className="h-9 w-24" />
-              </div>
-            </div>
-          </div>
-        </div></div>
-        <div className="grid gap-4 sm:grid-cols-3">
-          <div className="card"><div className="card-body"><Skeleton className="h-6 w-24" /></div></div>
-          <div className="card"><div className="card-body"><Skeleton className="h-6 w-24" /></div></div>
-          <div className="card"><div className="card-body"><Skeleton className="h-6 w-24" /></div></div>
-        </div>
-        <div className="card"><div className="card-body">
-          <div className="grid gap-6 sm:grid-cols-2">
-            <div className="grid gap-3">
-              <Skeleton className="h-4 w-24" />
-              <Skeleton className="h-4 w-48" />
-              <Skeleton className="h-4 w-24" />
-              <Skeleton className="h-4 w-28" />
-              <Skeleton className="h-4 w-20" />
-            </div>
-            <div className="grid gap-3 content-start">
-              <Skeleton className="h-4 w-32" />
-              <div className="flex gap-2">
-                <Skeleton className="h-9 w-20" />
-                <Skeleton className="h-9 w-20" />
-                <Skeleton className="h-9 w-20" />
-              </div>
-              <div className="flex items-center gap-2">
-                <Skeleton className="h-9 w-full" />
-                <Skeleton className="h-9 w-16" />
-              </div>
-            </div>
-          </div>
-        </div></div>
-      </div>
-    );
+    return <VmDetailsSkeleton />;
   }
 
   if (!vm) {
@@ -368,12 +315,21 @@ export default function VmDetailsClient() {
   const isRunning = effectiveStatus === 'running';
   const isTerminated = effectiveStatus === 'terminated' || effectiveStatus === 'deleted';
 
+  const copyValue = async (value: string) => {
+    try {
+      const copied = await copyText(value);
+      show(copied ? "Copied" : "Could not copy");
+    } catch {
+      show("Could not copy");
+    }
+  };
+
   const copySSH = async () => {
     try {
       if (vm?.status === 'terminated') { show("VM has been terminated by provider"); return; }
       if (!sshCmd) { show("SSH port unavailable"); return; }
-      await navigator.clipboard.writeText(sshCmd);
-      show("SSH command copied");
+      const copied = await copyText(sshCmd);
+      show(copied ? "SSH command copied" : "Could not copy SSH command");
     } catch { show("Could not copy SSH command"); }
   };
 
@@ -430,10 +386,9 @@ export default function VmDetailsClient() {
       await createSnapshot(
         vm.provider_id,
         vm.vm_id,
-        { name: snapshotName.trim() || undefined },
+        {},
         ads,
       );
-      setSnapshotName("");
       await refreshSnapshots();
       show("Snapshot created");
     } catch {
@@ -529,301 +484,136 @@ export default function VmDetailsClient() {
   };
 
   // Pick VM spec from provider status if exposed, else from saved rental (no hook to avoid order issues)
-  const effectiveResources = (() => {
-    const s = (swrVm as any) || {};
-    const r = (s?.resources && typeof s.resources === 'object') ? s.resources : s;
-    const cpu = Number((r as any)?.cpu);
-    const memory = Number((r as any)?.memory);
-    const storage = Number((r as any)?.storage);
-    if ([cpu, memory, storage].every((n) => Number.isFinite(n) && n > 0)) return { cpu, memory, storage };
-    return vm?.resources || null;
-  })();
+  const effectiveResources = getEffectiveResources(swrVm, vm);
 
   const guestMetrics = (() => {
     const byVm = (swrMetrics as any)?.vms || {};
     return byVm[vm.vm_id]?.guest_agent || null;
   })();
-  const metricPercent = (name: string) => {
-    const value = Number(guestMetrics?.[name]?.value);
-    return Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : null;
-  };
-  const metricText = (name: string) => {
-    const value = metricPercent(name);
-    return value == null ? "—" : `${value.toFixed(0)}%`;
-  };
   const metricsUpdatedAt = guestMetrics?.agent_heartbeat?.timestamp
     ? new Date(guestMetrics.agent_heartbeat.timestamp).toLocaleTimeString()
     : null;
+  const lastUpdated = metricsUpdatedAt || "just now";
+  const explorerUrl = buildExplorerUrl(loadSettings().evm_explorer_url || process.env.NEXT_PUBLIC_EVM_EXPLORER_URL || null, spAddr);
+  const actionItems: VmAction[] = [
+    {
+      label: isSuspended ? "Resume VM" : "Start VM",
+      onClick: isSuspended ? resumeVm : startVm,
+      disabled: busy || isTerminated || (!isStopped && !isSuspended),
+    },
+    {
+      label: "Stop VM",
+      onClick: stopVm,
+      disabled: busy || isTerminated || !isRunning,
+    },
+    {
+      label: "Restart VM",
+      onClick: restartVm,
+      disabled: busy || isTerminated || !isRunning,
+    },
+    {
+      label: "Suspend VM",
+      onClick: suspendVm,
+      disabled: busy || isTerminated || !isRunning,
+    },
+    {
+      label: "Terminate VM",
+      onClick: openDestroy,
+      disabled: busy,
+      danger: true,
+    },
+  ];
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="card">
-        <div className="card-body">
-          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <StatusBadge status={((swrVm as any)?.status || (swrStatus as any)?.data?.status || vm.status || (sshPort ? 'running' : 'creating'))} />
-                <h2 className="truncate">{vm.name}</h2>
-              </div>
-              {/* Provider wallet (secondary label) */}
-              <div className="mt-1 font-mono text-xs sm:text-sm text-gray-700 break-all" title="Provider wallet">
-                {vm.provider_id}
-              </div>
-              {/* Country and architecture */}
-              <div className="mt-1 text-sm text-gray-600">
-                {(!mounted || provider === null) ? (
-                  <div className="flex items-center gap-2">
-                    <Skeleton className="h-4 w-6" />
-                    <Skeleton className="h-4 w-32" />
-                    <Skeleton className="h-4 w-16" />
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <span className="text-lg leading-none">{provider?.country ? countryFlagEmoji(provider.country) : '🏳️'}</span>
-                    <span>{provider?.country ? countryFullName(provider.country) : 'Unknown region'}</span>
-                    {provider?.platform && (
-                      <>
-                        <span>•</span>
-                        <span className="rounded border px-1.5 py-0.5 text-[11px] text-gray-700" title="Architecture">{provider.platform}</span>
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
-              {/* IP with copy icon */}
-              <div className="mt-1 text-sm text-gray-700">
-                {(!mounted || provider === null) ? (
-                  <Skeleton className="h-4 w-40" />
-                ) : (
-                  (() => {
-                    const ip = provider?.ip_address || vm.provider_ip || null;
-                    const copy = async () => {
-                      try {
-                        if (!ip) { show('IP unavailable'); return; }
-                        await navigator.clipboard.writeText(String(ip));
-                        show('IP copied');
-                      } catch { show('Could not copy IP'); }
-                    };
-                    return (
-                      <div className="inline-flex items-center gap-1">
-                        <button type="button" onClick={copy} className="font-mono text-sm text-gray-800 hover:underline" title="Copy IP">
-                          {ip ? `${ip}` : '—'}
-                        </button>
-                        <button type="button" onClick={copy} className="text-gray-600 hover:text-gray-900" aria-label="Copy IP" title="Copy IP">
-                          <RiFileCopyLine className="h-4 w-4" />
-                        </button>
-                      </div>
-                    );
-                  })()
-                )}
-              </div>
-            </div>
-            <div className="flex flex-col items-start gap-2 sm:items-end">
-              <div className="flex gap-2">
-                <button className="btn btn-secondary" onClick={copySSH} disabled={!sshCmd || isTerminated}>Copy SSH</button>
-                {(isStopped || isSuspended) && (
-                  <button className="btn btn-secondary" onClick={isSuspended ? resumeVm : startVm} disabled={busy || isTerminated}>
-                    {busy ? <><Spinner className="h-4 w-4" /> {isSuspended ? 'Resume' : 'Start'}</> : (isSuspended ? 'Resume' : 'Start')}
-                  </button>
-                )}
-                {isRunning && (
-                  <>
-                    <button className="btn btn-secondary" onClick={stopVm} disabled={busy || isTerminated}>
-                      {busy ? <><Spinner className="h-4 w-4" /> Stop</> : 'Stop'}
-                    </button>
-                    <button className="btn btn-secondary" onClick={restartVm} disabled={busy || isTerminated}>
-                      {busy ? <><Spinner className="h-4 w-4" /> Restart</> : 'Restart'}
-                    </button>
-                    <button className="btn btn-secondary" onClick={suspendVm} disabled={busy || isTerminated}>
-                      {busy ? <><Spinner className="h-4 w-4" /> Suspend</> : 'Suspend'}
-                    </button>
-                  </>
-                )}
-                <button className="btn btn-danger" onClick={openDestroy} disabled={busy}>Terminate</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Specs */}
-      <div className="grid gap-4 sm:grid-cols-3">
-        <div className="card"><div className="card-body">
-          <div className="text-sm text-gray-500 inline-flex items-center gap-1.5"><RiCpuLine className="h-4 w-4 text-gray-500" /> vCPU</div>
-          <div className="mt-1 text-lg font-semibold">
-            {(!mounted || !effectiveResources?.cpu) ? (<Skeleton className="h-6 w-24" />) : (<>{effectiveResources.cpu} vCPU</>)}
-          </div>
-        </div></div>
-        <div className="card"><div className="card-body">
-          <div className="text-sm text-gray-500 inline-flex items-center gap-1.5"><RiStackLine className="h-4 w-4 text-gray-500" /> RAM</div>
-          <div className="mt-1 text-lg font-semibold">
-            {(!mounted || !effectiveResources?.memory) ? (<Skeleton className="h-6 w-24" />) : (<>{effectiveResources.memory} GB</>)}
-          </div>
-        </div></div>
-        <div className="card"><div className="card-body">
-          <div className="text-sm text-gray-500 inline-flex items-center gap-1.5"><RiHardDrive2Line className="h-4 w-4 text-gray-500" /> Storage</div>
-          <div className="mt-1 text-lg font-semibold">
-            {(!mounted || !effectiveResources?.storage) ? (<Skeleton className="h-6 w-24" />) : (<>{effectiveResources.storage} GB</>)}
-          </div>
-        </div></div>
-      </div>
-
-      <div className="card">
-        <div className="card-body">
-          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-            <h3>Live Metrics</h3>
-            <div className="text-xs text-gray-500">
-              {metricsUpdatedAt ? `Updated ${metricsUpdatedAt}` : "Guest metrics unavailable"}
-            </div>
-          </div>
-          {metricsLoading ? (
-            <div className="mt-4 grid gap-4 sm:grid-cols-3">
-              <Skeleton className="h-20 w-full" />
-              <Skeleton className="h-20 w-full" />
-              <Skeleton className="h-20 w-full" />
-            </div>
-          ) : guestMetrics ? (
-            <div className="mt-4 grid gap-4 sm:grid-cols-3">
-              {[
-                ["CPU", "cpu_percent"],
-                ["RAM", "memory_percent"],
-                ["Disk", "disk_percent"],
-              ].map(([label, key]) => (
-                <div key={key} className="border border-gray-200 p-3">
-                  <div className="text-sm text-gray-500">{label}</div>
-                  <div className="mt-1 text-xl font-semibold">{metricText(key)}</div>
-                  <div className="mt-3 h-2 bg-gray-100">
-                    <div className="h-2 bg-brand-600" style={{ width: `${metricPercent(key) || 0}%` }} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="mt-4 border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-              Guest metrics are not available yet. The default VM agent only publishes metrics and does not give providers shell or file access.
-            </div>
-          )}
-        </div>
-      </div>
-
-      <VmMetricsCharts
-        history={swrMetricsHistory}
-        loading={metricsHistoryLoading}
-        range={metricsRange}
-        onRangeChange={setMetricsRange}
+    <div className="space-y-5">
+      <VmDetailsHeader
+        name={vm.name}
+        status={effectiveStatus || (sshPort ? "running" : "creating")}
+        lastUpdated={lastUpdated}
+        copySshDisabled={!sshCmd || isTerminated}
+        busy={busy}
+        actions={actionItems}
+        onCopySsh={copySSH}
       />
 
-      <div className="card">
-        <div className="card-body">
-          <div className="grid gap-6 lg:grid-cols-2">
-            <div>
-              <div className="flex items-center justify-between gap-3">
-                <h3>Snapshots</h3>
-                <button className="btn btn-secondary" onClick={refreshSnapshots} disabled={!!snapshotBusy}>Refresh</button>
-              </div>
-              <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-                <input
-                  className="input"
-                  value={snapshotName}
-                  onChange={(e) => setSnapshotName(e.target.value)}
-                  placeholder="snapshot-name"
-                  disabled={!!snapshotBusy || !isStopped}
-                />
-                <button className="btn btn-primary" onClick={createVmSnapshot} disabled={!!snapshotBusy || !isStopped}>
-                  {snapshotBusy === 'create' ? <><Spinner className="h-4 w-4 text-white" /> Creating...</> : 'Create'}
-                </button>
-              </div>
-              <div className="mt-4 divide-y divide-gray-100">
-                {snapshots.length ? snapshots.map((snapshot) => (
-                  <div key={snapshot.name} className="flex items-center justify-between gap-3 py-3">
-                    <div className="min-w-0">
-                      <div className="truncate text-sm font-medium text-gray-900">{snapshot.name}</div>
-                      {snapshot.comment && <div className="truncate text-xs text-gray-500">{snapshot.comment}</div>}
-                    </div>
-                    <div className="flex gap-2">
-                      <button className="btn btn-secondary" onClick={() => restoreVmSnapshot(snapshot.name)} disabled={!!snapshotBusy || !isStopped}>
-                        {snapshotBusy === `restore:${snapshot.name}` ? <><Spinner className="h-4 w-4" /> Restore</> : 'Restore'}
-                      </button>
-                      <button className="btn btn-secondary" onClick={() => deleteVmSnapshot(snapshot.name)} disabled={!!snapshotBusy}>
-                        {snapshotBusy === `delete:${snapshot.name}` ? <><Spinner className="h-4 w-4" /> Delete</> : 'Delete'}
-                      </button>
-                    </div>
-                  </div>
-                )) : (
-                  <div className="py-3 text-sm text-gray-600">No snapshots.</div>
-                )}
-              </div>
-            </div>
-            <div>
-              <h3>Resize</h3>
-              <div className="mt-3 grid gap-3 sm:grid-cols-3">
-                <div>
-                  <label className="label">vCPU</label>
-                  <input className="input" type="number" min={1} value={resizeCpu} onChange={(e) => setResizeCpu(Number(e.target.value))} disabled={!isStopped || busy} />
-                </div>
-                <div>
-                  <label className="label">RAM GB</label>
-                  <input className="input" type="number" min={1} value={resizeMemory} onChange={(e) => setResizeMemory(Number(e.target.value))} disabled={!isStopped || busy} />
-                </div>
-                <div>
-                  <label className="label">Disk GB</label>
-                  <input className="input" type="number" min={effectiveResources?.storage || 10} value={resizeStorage} onChange={(e) => setResizeStorage(Number(e.target.value))} disabled={!isStopped || busy} />
-                </div>
-              </div>
-              <div className="mt-4 flex items-center justify-between gap-3">
-                <div className="text-sm text-gray-600">Resize requires a stopped VM. Disk can only increase.</div>
-                <button className="btn btn-primary" onClick={resizeVm} disabled={!isStopped || busy}>
-                  {busy ? <><Spinner className="h-4 w-4 text-white" /> Applying...</> : 'Apply Resize'}
-                </button>
-              </div>
-            </div>
-          </div>
+      <VmOverviewPanel
+        providerId={vm.provider_id}
+        vmId={vm.vm_id}
+        country={provider?.country}
+        platform={provider?.platform || vm.platform}
+        providerIp={provider?.ip_address || vm.provider_ip}
+        sshPort={sshPort}
+        resources={effectiveResources}
+        onCopy={copyValue}
+      />
+
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_23rem]">
+        <div className="space-y-5">
+          <VmMetricsSummary
+            guestMetrics={guestMetrics}
+            history={swrMetricsHistory}
+            loading={metricsLoading}
+          />
+          <VmMetricsCharts
+            history={swrMetricsHistory}
+            loading={metricsHistoryLoading}
+            range={metricsRange}
+            onRangeChange={setMetricsRange}
+          />
+          <VmSnapshotsPanel
+            snapshots={snapshots}
+            stopped={isStopped}
+            busy={snapshotBusy}
+            onCreate={createVmSnapshot}
+            onRestore={restoreVmSnapshot}
+            onDelete={deleteVmSnapshot}
+            onRefresh={refreshSnapshots}
+          />
         </div>
+
+        <aside className="space-y-5">
+          {vm.stream_id && stream ? (
+            <VmPaymentStreamPanel
+              streamId={vm.stream_id}
+              stream={stream.chain}
+              remaining={remaining}
+              tokenSymbol={tokenSymbol}
+              tokenDecimals={tokenDecimals}
+              usdPrice={usdPrice}
+              displayCurrency={displayCurrency}
+              busy={busy}
+              actionsDisabled={!paymentReady}
+              actionsDisabledReason={!paymentReady ? paymentMessage : null}
+              explorerUrl={explorerUrl}
+              onCopy={copyValue}
+              onTopUp={topUp}
+            />
+          ) : (
+            <div className="card vm-page-enter">
+              <div className="card-body">
+                <h3 className="text-base font-semibold text-text-primary">Payment stream</h3>
+                <div className="mt-3 text-sm text-text-secondary">
+                  {err || "No stream mapped for this VM."}
+                </div>
+              </div>
+            </div>
+          )}
+          <VmResizePanel
+            cpu={resizeCpu}
+            memory={resizeMemory}
+            storage={resizeStorage}
+            minStorage={effectiveResources?.storage || 10}
+            stopped={isStopped}
+            busy={busy}
+            onCpuChange={setResizeCpu}
+            onMemoryChange={setResizeMemory}
+            onStorageChange={setResizeStorage}
+            onResize={resizeVm}
+          />
+        </aside>
       </div>
 
-      {/* Stream section via shared component */}
-      {!vm.stream_id ? (
-        <div className="card"><div className="card-body"><div className="text-sm text-gray-600">No stream mapped for this VM.</div></div></div>
-      ) : (!mounted || !stream) ? (
-        <div className="card"><div className="card-body">
-          {err && <div className="mb-4 text-sm text-red-600">{err}</div>}
-          <div className="grid gap-6 sm:grid-cols-2">
-            <div className="grid gap-3">
-              <Skeleton className="h-4 w-24" />
-              <Skeleton className="h-4 w-48" />
-              <Skeleton className="h-4 w-24" />
-              <Skeleton className="h-4 w-28" />
-              <Skeleton className="h-4 w-20" />
-            </div>
-            <div className="grid gap-3 content-start">
-              <Skeleton className="h-4 w-32" />
-              <div className="flex gap-2">
-                <Skeleton className="h-9 w-20" />
-                <Skeleton className="h-9 w-20" />
-                <Skeleton className="h-9 w-20" />
-              </div>
-              <div className="flex items-center gap-2">
-                <Skeleton className="h-9 w-full" />
-                <Skeleton className="h-9 w-16" />
-              </div>
-            </div>
-          </div>
-        </div></div>
-      ) : (
-        <StreamCard
-          title={`Stream`}
-          streamId={vm.stream_id}
-          chain={stream.chain as any}
-          remaining={remaining}
-          meta={{ tokenSymbol, tokenDecimals, usdPrice }}
-          displayCurrency={displayCurrency}
-          onTopUp={(secs) => topUp(secs)}
-          busy={busy}
-          actionsDisabled={!paymentReady}
-          actionsDisabledReason={!paymentReady ? paymentMessage : null}
-        />
-      )}
+      <VmStopNotice running={isRunning} busy={busy} onStop={stopVm} />
       {/* Terminate confirmation modal */}
       <ConfirmDialog
         open={confirmDestroyOpen}
@@ -837,4 +627,30 @@ export default function VmDetailsClient() {
       />
     </div>
   );
+}
+
+function getEffectiveResources(swrVm: unknown, vm: Rental | null) {
+  const status = (swrVm as any) || {};
+  const source =
+    status?.resources && typeof status.resources === "object"
+      ? status.resources
+      : status;
+  const cpu = Number(source?.cpu);
+  const memory = Number(source?.memory);
+  const storage = Number(source?.storage);
+
+  if ([cpu, memory, storage].every((value) => Number.isFinite(value) && value > 0)) {
+    return { cpu, memory, storage };
+  }
+
+  return vm?.resources || null;
+}
+
+function buildExplorerUrl(baseUrl: string | null | undefined, address: string) {
+  if (!baseUrl || !address) return null;
+  const trimmed = baseUrl.replace(/\/$/, "");
+  if (trimmed.includes("{address}")) {
+    return trimmed.replace("{address}", address);
+  }
+  return `${trimmed}/address/${address}`;
 }

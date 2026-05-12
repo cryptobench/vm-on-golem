@@ -1,26 +1,28 @@
 import types
 
-from requestor.payments.blockchain_service import StreamPaymentClient, StreamPaymentConfig
-
-
-class DummyERC20:
-    def __init__(self):
-        class Funcs:
-            def allowance(self, *a, **k):
-                return types.SimpleNamespace(call=lambda: 0)
-
-            def approve(self, *args):
-                return types.SimpleNamespace(build_transaction=lambda kwargs: {"to": "approve", **kwargs})
-
-        self.functions = Funcs()
+from requestor.payments.blockchain_service import (
+    StreamPaymentClient,
+    StreamPaymentConfig,
+)
 
 
 class DummyContract:
     def __init__(self):
         self.address = "0xstream"
+
         class Funcs:
             def topUp(self, *args):
-                return types.SimpleNamespace(build_transaction=lambda kwargs: {"to": "topUp", **kwargs})
+                return types.SimpleNamespace(
+                    build_transaction=lambda kwargs: {"to": "topUp", **kwargs}
+                )
+
+            def allowance(self, *args):
+                return types.SimpleNamespace(call=lambda: 0)
+
+            def approve(self, *args):
+                return types.SimpleNamespace(
+                    build_transaction=lambda kwargs: {"to": "approve", **kwargs}
+                )
 
         self.functions = Funcs()
 
@@ -45,9 +47,11 @@ class DummyWeb3:
             estimate_gas=lambda tx: 21000,
             gas_price=42,
             chain_id=31337,
-            max_priority_fee=None,
+            max_priority_fee=1,
             send_raw_transaction=lambda raw: types.SimpleNamespace(hex=lambda: "0xabc"),
-            wait_for_transaction_receipt=lambda h: types.SimpleNamespace(status=1, logs=[{"data": "ok"}]),
+            wait_for_transaction_receipt=lambda h: types.SimpleNamespace(
+                status=1, logs=[{"data": "ok"}]
+            ),
             contract=lambda address=None, abi=None: DummyContract(),
         )
 
@@ -72,18 +76,15 @@ def test_send_path_eip1559_and_gas_estimation(monkeypatch):
             return Signed()
 
     monkeypatch.setattr(bs, "Web3", DummyWeb3)
-    monkeypatch.setattr(bs, "Account", types.SimpleNamespace(from_key=lambda k: Signer()))
-    # Ensure ERC20 path
-    monkeypatch.setattr(bs, "ERC20_ABI", bs.ERC20_ABI)
-
+    monkeypatch.setattr(
+        bs, "Account", types.SimpleNamespace(from_key=lambda k: Signer())
+    )
     cfg = StreamPaymentConfig(
         rpc_url="http://localhost",
         contract_address="0xcontract",
-        glm_token_address="0xglm",  # ERC20
+        glm_token_address="0x1111111111111111111111111111111111111111",
         private_key="0x01",
     )
     client = StreamPaymentClient(cfg)
-    # inject dummy erc20
-    client.erc20 = DummyERC20()
     tx = client.top_up(1, 123)
     assert tx == "0xabc"

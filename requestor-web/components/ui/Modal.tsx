@@ -3,7 +3,7 @@ import React from "react";
 import { Dialog, DialogPanel } from "@tremor/react";
 import { cn } from "./cn";
 
-type ModalSize = 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl';
+type ModalSize = 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '6xl';
 
 export function Modal({ open, onClose, children, className, labelledBy, size }: { open: boolean; onClose: () => void; children: React.ReactNode; className?: string; labelledBy?: string; size?: ModalSize }) {
   const widthClass = (
@@ -13,13 +13,14 @@ export function Modal({ open, onClose, children, className, labelledBy, size }: 
     size === 'xl' ? 'sm:max-w-xl' :
     size === '2xl' ? 'sm:max-w-2xl' :
     size === '3xl' ? 'sm:max-w-3xl' :
+    size === '6xl' ? 'sm:max-w-6xl' :
     'sm:max-w-lg'
   );
   return (
     <Dialog open={open} onClose={onClose} aria-labelledby={labelledBy} className="z-[100]">
       <DialogPanel
         className={cn(
-          "w-full max-h-[90vh] overflow-y-auto rounded-xl bg-white shadow-lg ring-1 ring-gray-200",
+          "w-full max-h-[90vh] overflow-y-auto rounded-xl bg-surface shadow-lg ring-1 ring-border",
           widthClass,
           className,
         )}

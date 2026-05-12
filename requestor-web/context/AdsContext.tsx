@@ -32,8 +32,8 @@ const DEFAULTS: AdsConfig = (() => {
     arkiv_ws_url: baseWs,
     chain_id: (() => {
       // Keep existing default for backward compat; payments chain handled separately in UI
-      const def = process.env.NEXT_PUBLIC_EVM_CHAIN_ID || '0x6013a';
-      try { return parseInt(def, 16); } catch { return 393530; }
+      const def = process.env.NEXT_PUBLIC_EVM_CHAIN_ID || '0x88bb0';
+      try { return parseInt(def, 16); } catch { return 560048; }
     })(),
     advertisement_interval_seconds: 240,
   };

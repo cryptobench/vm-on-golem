@@ -51,7 +51,7 @@ export function Wallet() {
         disabled={busy || networkStatus === "switching"}
       >
         {busy || networkStatus === "switching" ? <Spinner className="h-4 w-4 text-white" /> : <MetaMaskLogo />}
-        Connect Wallet
+        Connect wallet
       </button>
     );
   }
@@ -69,13 +69,13 @@ export function Wallet() {
           {busy || networkStatus === "switching" ? <Spinner className="h-4 w-4 text-white" /> : <MetaMaskLogo />}
           {networkStatus === "rpc_error" ? "Update RPC" : "Switch Network"}
         </button>
-        <div className="text-xs text-gray-600">{message}</div>
+        <div className="text-xs text-text-secondary">{message}</div>
       </div>
     );
   }
 
   return (
-    <span className="w-full inline-flex items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm">
+    <span className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-border bg-surface px-3 py-1.5 text-sm">
       <MetaMaskLogo />
       {label}
     </span>

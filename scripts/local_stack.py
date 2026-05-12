@@ -35,6 +35,12 @@ REQUESTOR_HOST = "127.0.0.1"
 REQUESTOR_PORT = 8000
 WEB_HOST = "127.0.0.1"
 WEB_PORT = 3000
+WEB_WATCH_ENV_DEFAULTS = {
+    "WATCHPACK_POLLING": "true",
+    "WATCHPACK_POLLING_INTERVAL": "1000",
+    "CHOKIDAR_USEPOLLING": "true",
+    "CHOKIDAR_INTERVAL": "1000",
+}
 
 CENTRAL_URL = f"http://{CENTRAL_HOST}:{CENTRAL_PORT}"
 CENTRAL_API_URL = f"{CENTRAL_URL}/api/v1"
@@ -45,13 +51,17 @@ WEB_URL = f"http://{WEB_HOST}:{WEB_PORT}"
 PORT_CHECKER_TOKEN = "dev-token"
 ARKIV_RPC_URL = "https://kaolin.hoodi.arkiv.network/rpc"
 ARKIV_WS_URL = "wss://kaolin.hoodi.arkiv.network/rpc/ws"
-L2_RPC_URL = "https://l2.hoodi.arkiv.network/rpc"
-L2_WS_URL = "wss://l2.hoodi.arkiv.network/rpc/ws"
-L2_FAUCET_URL = "https://l2.hoodi.arkiv.network/faucet"
-L2_EXPLORER_URL = "https://explorer.l2.hoodi.arkiv.network"
-L2_CHAIN_ID_DEC = "393530"
-L2_CHAIN_ID_HEX = "0x6013a"
-PAYMENTS_NETWORK = "l2.hoodi"
+L2_RPC_URL = "https://ethereum-hoodi-rpc.publicnode.com"
+L2_RPC_FALLBACK_URLS = [
+    L2_RPC_URL,
+    "https://rpc.hoodi.ethpandaops.io",
+]
+L2_WS_URL = ""
+L2_FAUCET_URL = ""
+L2_EXPLORER_URL = "https://hoodi.etherscan.io"
+L2_CHAIN_ID_DEC = "560048"
+L2_CHAIN_ID_HEX = "0x88bb0"
+PAYMENTS_NETWORK = "hoodi"
 ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 
 
@@ -78,6 +88,14 @@ def merged_env(extra: dict[str, str]) -> dict[str, str]:
     env = os.environ.copy()
     env.update({key: str(value) for key, value in extra.items()})
     return env
+
+
+def requestor_web_watch_env() -> dict[str, str]:
+    """Use polling so Next.js detects edits reliably under the stack supervisor."""
+    return {
+        key: os.environ.get(key, default)
+        for key, default in WEB_WATCH_ENV_DEFAULTS.items()
+    }
 
 
 def command_exists(command: str) -> bool:
@@ -148,18 +166,50 @@ def rpc_call(rpc_url: str, method: str, params: list[object]) -> object:
     request = urllib.request.Request(
         rpc_url,
         data=payload,
-        headers={"content-type": "application/json"},
+        headers={
+            "content-type": "application/json",
+            "user-agent": "vm-on-golem-local-stack/1.0",
+        },
         method="POST",
     )
-    with urllib.request.urlopen(request, timeout=8) as response:
-        data = json.loads(response.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(request, timeout=8) as response:
+            data = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        raise LocalStackError(
+            f"{method} failed against {rpc_url}: HTTP {exc.code} {exc.reason}"
+        ) from exc
+    except (OSError, json.JSONDecodeError) as exc:
+        raise LocalStackError(f"{method} failed against {rpc_url}: {exc}") from exc
     if "error" in data:
-        raise LocalStackError(f"{method} failed: {data['error']}")
+        raise LocalStackError(f"{method} failed against {rpc_url}: {data['error']}")
     return data.get("result")
 
 
+def find_working_l2_rpc(deployment: dict[str, str]) -> str:
+    failures: list[str] = []
+    address = deployment["stream_payment_address"]
+    for rpc_url in L2_RPC_FALLBACK_URLS:
+        try:
+            chain_id = rpc_call(rpc_url, "eth_chainId", [])
+            if str(chain_id).lower() != L2_CHAIN_ID_HEX:
+                raise LocalStackError(
+                    f"unexpected chain id {chain_id}; expected {L2_CHAIN_ID_HEX}"
+                )
+            code = str(rpc_call(rpc_url, "eth_getCode", [address, "latest"]))
+            if not code or code == "0x":
+                raise LocalStackError(f"no StreamPayment bytecode at {address}")
+            return rpc_url
+        except LocalStackError as exc:
+            failures.append(f"{rpc_url}: {exc}")
+    raise LocalStackError(
+        "No working Ethereum Hoodi RPC found for local stack preflight:\n"
+        + "\n".join(f"  - {failure}" for failure in failures)
+    )
+
+
 def load_l2_deployment() -> dict[str, str]:
-    path = ROOT / "contracts" / "deployments" / "l2.json"
+    path = ROOT / "contracts" / "deployments" / "hoodi.json"
     try:
         data = json.loads(path.read_text())
         stream_payment = data["StreamPayment"]
@@ -167,11 +217,11 @@ def load_l2_deployment() -> dict[str, str]:
         glm_token = str(stream_payment.get("glmToken") or ZERO_ADDRESS)
         oracle = str(stream_payment.get("oracle") or "")
     except (OSError, KeyError, TypeError, ValueError) as exc:
-        raise LocalStackError(f"Invalid L2 deployment metadata in {path}") from exc
+        raise LocalStackError(f"Invalid Hoodi deployment metadata in {path}") from exc
 
     if not address or address == ZERO_ADDRESS:
         raise LocalStackError(
-            f"L2 deployment metadata has no StreamPayment address: {path}"
+            f"Hoodi deployment metadata has no StreamPayment address: {path}"
         )
 
     return {
@@ -182,21 +232,7 @@ def load_l2_deployment() -> dict[str, str]:
 
 
 def check_l2_deployment(deployment: dict[str, str]) -> None:
-    chain_id = rpc_call(L2_RPC_URL, "eth_chainId", [])
-    if str(chain_id).lower() != L2_CHAIN_ID_HEX:
-        raise LocalStackError(
-            f"Unexpected L2 chain id from {L2_RPC_URL}: {chain_id}; "
-            f"expected {L2_CHAIN_ID_HEX}"
-        )
-
-    address = deployment["stream_payment_address"]
-    code = str(rpc_call(L2_RPC_URL, "eth_getCode", [address, "latest"]))
-    if not code or code == "0x":
-        raise LocalStackError(
-            "StreamPayment is not deployed on Arkiv L2 Hoodi at "
-            f"{address}. Redeploy with contracts/scripts/deploy.js and update "
-            "contracts/deployments/l2.json."
-        )
+    deployment["rpc_url"] = find_working_l2_rpc(deployment)
 
 
 def check_multipass_compatibility(multipass_version: str) -> None:
@@ -512,7 +548,7 @@ def build_services(include_gui: bool, deployment: dict[str, str]) -> list[Servic
                 "GOLEM_PROVIDER_DISCOVERY_BACKEND": "central",
                 "GOLEM_PROVIDER_DISCOVERY_URL": CENTRAL_URL,
                 "GOLEM_PROVIDER_PAYMENTS_NETWORK": PAYMENTS_NETWORK,
-                "GOLEM_PROVIDER_L2_RPC_URL": L2_RPC_URL,
+                "GOLEM_PROVIDER_L2_RPC_URL": deployment.get("rpc_url", L2_RPC_URL),
                 "GOLEM_PROVIDER_L2_FAUCET_URL": L2_FAUCET_URL,
                 "GOLEM_PROVIDER_STREAM_PAYMENT_ADDRESS": deployment[
                     "stream_payment_address"
@@ -575,7 +611,7 @@ def build_services(include_gui: bool, deployment: dict[str, str]) -> list[Servic
                 "GOLEM_REQUESTOR_DISCOVERY_BACKEND": "central",
                 "GOLEM_REQUESTOR_DISCOVERY_URL": CENTRAL_URL,
                 "GOLEM_REQUESTOR_PAYMENTS_NETWORK": PAYMENTS_NETWORK,
-                "GOLEM_REQUESTOR_L2_RPC_URL": L2_RPC_URL,
+                "GOLEM_REQUESTOR_L2_RPC_URL": deployment.get("rpc_url", L2_RPC_URL),
                 "GOLEM_REQUESTOR_L2_FAUCET_URL": L2_FAUCET_URL,
                 "GOLEM_REQUESTOR_STREAM_PAYMENT_ADDRESS": deployment[
                     "stream_payment_address"
@@ -609,16 +645,18 @@ def build_services(include_gui: bool, deployment: dict[str, str]) -> list[Servic
                 "NEXT_PUBLIC_DISCOVERY_API_URL": CENTRAL_API_URL,
                 "NEXT_PUBLIC_PORT_CHECKER_URL": PORT_CHECKER_URL,
                 "NEXT_PUBLIC_PORT_CHECKER_TOKEN": PORT_CHECKER_TOKEN,
+                "NEXT_PUBLIC_PROVIDER_API_PORT": str(PROVIDER_PORT),
                 "NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS": deployment[
                     "stream_payment_address"
                 ],
                 "NEXT_PUBLIC_GLM_TOKEN_ADDRESS": deployment["glm_token_address"],
                 "NEXT_PUBLIC_EVM_CHAIN_ID": L2_CHAIN_ID_HEX,
-                "NEXT_PUBLIC_EVM_CHAIN_NAME": "Arkiv L2 Hoodi",
-                "NEXT_PUBLIC_EVM_RPC_URL": L2_RPC_URL,
+                "NEXT_PUBLIC_EVM_CHAIN_NAME": "Ethereum Hoodi",
+                "NEXT_PUBLIC_EVM_RPC_URL": deployment.get("rpc_url", L2_RPC_URL),
                 "NEXT_PUBLIC_EVM_EXPLORER_URL": L2_EXPLORER_URL,
                 "NEXT_PUBLIC_ARKIV_DEV_RPC_URL": ARKIV_RPC_URL,
                 "NEXT_PUBLIC_ARKIV_DEV_WS_URL": ARKIV_WS_URL,
+                **requestor_web_watch_env(),
             },
             ready=lambda: http_ok(WEB_URL),
         ),
@@ -692,6 +730,7 @@ def run_stack(args: argparse.Namespace) -> int:
         log(f"  Port checker:       {PORT_CHECKER_URL}")
         log(f"  Requestor API:      {REQUESTOR_API_URL}")
         log(f"  Payments network:   {PAYMENTS_NETWORK} ({L2_CHAIN_ID_HEX})")
+        log(f"  Payments RPC:       {deployment.get('rpc_url', L2_RPC_URL)}")
         log(f"  StreamPayment:      {deployment['stream_payment_address']}")
         log("")
         log("Press Ctrl+C to stop the stack.")

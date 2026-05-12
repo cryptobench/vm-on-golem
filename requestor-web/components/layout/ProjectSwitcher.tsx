@@ -1,9 +1,11 @@
 "use client";
 import React from "react";
+import { RiArrowDownSLine, RiFolderLine } from "@remixicon/react";
 import { useProjects } from "../../context/ProjectsContext";
 import { Modal } from "../ui/Modal";
+import { cn } from "../ui/cn";
 
-export function ProjectSwitcher() {
+export function ProjectSwitcher({ className }: { className?: string }) {
   const { projects, activeId, setActive, addProject } = useProjects();
   const [open, setOpen] = React.useState(false);
   const [showNew, setShowNew] = React.useState(false);
@@ -19,7 +21,19 @@ export function ProjectSwitcher() {
     return () => document.removeEventListener('mousedown', onDocClick);
   }, [open]);
 
+  React.useEffect(() => {
+    const openSwitcher = () => setOpen(true);
+    const openNewProject = () => setShowNew(true);
+    window.addEventListener("requestor-open-project-switcher", openSwitcher);
+    window.addEventListener("requestor-open-new-project", openNewProject);
+    return () => {
+      window.removeEventListener("requestor-open-project-switcher", openSwitcher);
+      window.removeEventListener("requestor-open-new-project", openNewProject);
+    };
+  }, []);
+
   const active = projects.find(p => p.id === activeId) || projects[0];
+  const hasSelectedProject = !!active && !(active.id === "default" && active.name === "Default Project");
 
   const createProject = () => {
     const trimmed = name.trim();
@@ -30,39 +44,42 @@ export function ProjectSwitcher() {
   };
 
   return (
-    <div className="px-4 py-4 border-b" ref={ref}>
-      <div className="label mb-1">Project</div>
+    <div className={cn("relative w-full sm:max-w-md", className)} ref={ref}>
       <div className="relative">
         <button
-          className="w-full inline-flex items-center justify-between rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm hover:bg-gray-50"
+          className="inline-flex h-14 w-full items-center justify-between rounded-lg border border-border bg-surface px-5 text-left shadow-sm transition hover:bg-surface-muted"
           onClick={() => setOpen(o => !o)}
           aria-haspopup="listbox"
           aria-expanded={open}
         >
-          <span className="truncate text-left">{active?.name}</span>
-          <svg className="ml-2 h-4 w-4 text-gray-500" viewBox="0 0 20 20" fill="currentColor" aria-hidden>
-            <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 10.94l3.71-3.71a.75.75 0 111.06 1.06l-4.24 4.24a.75.75 0 01-1.06 0L5.25 8.29a.75.75 0 01-.02-1.08z" clipRule="evenodd" />
-          </svg>
+          <span className="min-w-0">
+            <span className="block text-xs text-text-muted">Active project</span>
+            <span className="mt-1 flex min-w-0 items-center gap-2 text-sm font-medium text-text-primary">
+              <RiFolderLine className="h-4 w-4 shrink-0 text-text-secondary" aria-hidden />
+              <span className="truncate">{hasSelectedProject ? active.name : "No project selected"}</span>
+            </span>
+          </span>
+          <RiArrowDownSLine className="ml-3 h-5 w-5 shrink-0 text-text-secondary" aria-hidden />
         </button>
         {open && (
-          <div className="absolute z-20 mt-2 w-full rounded-md border border-gray-200 bg-white shadow-lg">
+          <div className="absolute z-20 mt-2 w-full rounded-lg border border-border bg-surface shadow-popover">
             <ul role="listbox" className="max-h-60 overflow-auto py-1 text-sm">
               {projects.map(p => (
                 <li
                   key={p.id}
                   role="option"
                   aria-selected={activeId === p.id}
-                  className={"flex cursor-pointer items-center justify-between px-3 py-2 hover:bg-gray-50 " + (activeId === p.id ? 'bg-gray-50' : '')}
+                  className={"flex cursor-pointer items-center justify-between px-3 py-2 hover:bg-surface-muted " + (activeId === p.id ? 'bg-surface-muted' : '')}
                   onClick={() => { setActive(p.id); setOpen(false); }}
                 >
-                  <span className="truncate">{p.name}</span>
-                  {activeId === p.id && <span className="text-xs text-brand-600">Selected</span>}
+                  <span className="truncate">{p.id === "default" && p.name === "Default Project" ? "No project selected" : p.name}</span>
+                  {activeId === p.id && <span className="text-xs text-primary">Selected</span>}
                 </li>
               ))}
-              <li className="my-1 border-t" />
+              <li className="my-1 border-t border-border" />
               <li
                 role="option"
-                className="cursor-pointer px-3 py-2 text-brand-700 hover:bg-brand-50"
+                className="cursor-pointer px-3 py-2 text-primary hover:bg-primary-soft"
                 onClick={() => { setOpen(false); setShowNew(true); }}
               >
                 Create new project…

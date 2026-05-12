@@ -1,353 +1,309 @@
 "use client";
+
 import React from "react";
-import { loadRentals, loadSettings, saveSettings } from "../../lib/api";
-import { Skeleton } from "../../components/ui/Skeleton";
-import { useToast } from "../../components/ui/Toast";
 import { getPaymentNetworkErrorMessage } from "../../lib/chain";
-import { useStreamActions } from "../../hooks/useStreamActions";
-import { useProjects } from "../../context/ProjectsContext";
-import { useWallet } from "../../context/WalletContext";
-import { fetchStreamWithMeta, type ChainStream } from "../../lib/streams";
+import { loadRentals, loadSettings, saveSettings, type Rental } from "../../lib/api";
+import { fetchStreamWithMeta } from "../../lib/streams";
 import { getPriceUSD, onPricesUpdated } from "../../lib/prices";
-import { StreamCard } from "../../components/streams/StreamCard";
-import { RiCheckboxCircleFill, RiTimeFill, RiStackLine } from "@remixicon/react";
+import { useProjects } from "../../context/ProjectsContext";
+import { useStreamActions } from "../../hooks/useStreamActions";
+import { useToast } from "../../components/ui/Toast";
+import { useWallet } from "../../context/WalletContext";
+import { StreamsEmptyState, StreamsInfoBanner } from "../../components/streams/StreamsEmptyState";
+import { StreamsSkeleton } from "../../components/streams/StreamsSkeleton";
+import { StreamsSummary } from "../../components/streams/StreamsSummary";
+import { StreamsTable } from "../../components/streams/StreamsTable";
+import { StreamsToolbar } from "../../components/streams/StreamsToolbar";
+import {
+  isEndedStream,
+  type DisplayCurrency,
+  type StreamRow,
+} from "../../components/streams/streamModel";
 
-// ChainStream type now sourced from lib/streams
-
-type Row = {
-  r: ReturnType<typeof loadRentals>[number];
-  chain: ChainStream;
-  tokenSymbol: string;
-  tokenDecimals: number;
-  usdPrice: number | null;
-};
+const STREAM_REFRESH_MS = 15000;
 
 export default function StreamsPage() {
   const { show } = useToast();
   const { paymentReady, paymentMessage } = useWallet();
   const { activeId: activeProjectId } = useProjects();
-  const [rentals, setRentals] = React.useState<ReturnType<typeof loadRentals> | null>(null);
-  const [rows, setRows] = React.useState<Row[] | null>(null);
+  const [mounted, setMounted] = React.useState(false);
+  const [rentals, setRentals] = React.useState<Rental[]>([]);
+  const [rows, setRows] = React.useState<StreamRow[] | null>(null);
   const [error, setError] = React.useState<string | null>(null);
-  const spAddr = (loadSettings().stream_payment_address || process.env.NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS || '').trim();
-  const [displayCurrency, setDisplayCurrency] = React.useState<'fiat'|'token'>(loadSettings().display_currency === 'token' ? 'token' : 'fiat');
-  const [nowSec, setNowSec] = React.useState<number>(() => Math.floor(Date.now()/1000));
   const [busy, setBusy] = React.useState<Record<string, boolean>>({});
-  const [showEnded, setShowEnded] = React.useState<boolean>(false);
-  React.useEffect(() => { const t = setInterval(() => setNowSec(Math.floor(Date.now()/1000)), 1000); return () => clearInterval(t); }, []);
+  const [refreshing, setRefreshing] = React.useState(false);
+  const [showEnded, setShowEnded] = React.useState(false);
+  const [nowSec, setNowSec] = React.useState(() => Math.floor(Date.now() / 1000));
+  const [displayCurrency, setDisplayCurrency] = React.useState<DisplayCurrency>("fiat");
+  const [streamPaymentAddress, setStreamPaymentAddress] = React.useState("");
+  const { topUp: topUpAction } = useStreamActions(streamPaymentAddress);
 
-  // Initialize showEnded from settings and react to changes
-  React.useEffect(() => {
-    try { setShowEnded(!!(loadSettings().show_ended_streams)); } catch {}
-    const onSettings = (e: any) => { try { setShowEnded(!!e?.detail?.show_ended_streams); } catch {} };
-    const onStorage = () => { try { setShowEnded(!!loadSettings().show_ended_streams); } catch {} };
-    window.addEventListener('requestor_settings_changed', onSettings as any);
-    window.addEventListener('storage', onStorage);
-    return () => {
-      window.removeEventListener('requestor_settings_changed', onSettings as any);
-      window.removeEventListener('storage', onStorage);
-    };
+  const syncSettings = React.useCallback(() => {
+    const settings = loadSettings();
+    setDisplayCurrency(settings.display_currency === "token" ? "token" : "fiat");
+    setShowEnded(!!settings.show_ended_streams);
+    setStreamPaymentAddress(
+      (
+        settings.stream_payment_address ||
+        process.env.NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS ||
+        ""
+      ).trim(),
+    );
   }, []);
 
-  const load = async () => {
-    if (!spAddr) { setError("StreamPayment address not configured (Settings)"); return; }
-    setError(null);
-    try {
-      setRows(null);
-      const list: Row[] = [];
-      let firstError: string | null = null;
-      for (const r of (rentals || []).filter(r => r.stream_id).filter(r => (r.project_id || 'default') === activeProjectId)) {
-        try {
-          const data = await fetchStreamWithMeta(spAddr, BigInt(r.stream_id!));
-          list.push({ r, chain: data.chain as ChainStream, tokenSymbol: data.tokenSymbol, tokenDecimals: data.tokenDecimals, usdPrice: data.usdPrice });
-        } catch (e) {
-          firstError ||= getPaymentNetworkErrorMessage(e);
-        }
+  const syncRentals = React.useCallback(() => {
+    setRentals(loadRentals());
+  }, []);
+
+  React.useEffect(() => {
+    setMounted(true);
+    syncSettings();
+    syncRentals();
+  }, [syncRentals, syncSettings]);
+
+  React.useEffect(() => {
+    const timer = window.setInterval(() => setNowSec(Math.floor(Date.now() / 1000)), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  React.useEffect(() => {
+    if (!mounted) return;
+
+    const onSettings = () => syncSettings();
+    const onRentals = () => syncRentals();
+
+    window.addEventListener("requestor_settings_changed", onSettings);
+    window.addEventListener("requestor_rentals_changed", onRentals);
+    window.addEventListener("storage", onSettings);
+    window.addEventListener("storage", onRentals);
+    return () => {
+      window.removeEventListener("requestor_settings_changed", onSettings);
+      window.removeEventListener("requestor_rentals_changed", onRentals);
+      window.removeEventListener("storage", onSettings);
+      window.removeEventListener("storage", onRentals);
+    };
+  }, [mounted, syncRentals, syncSettings]);
+
+  const projectStreamRentals = React.useMemo(
+    () =>
+      rentals.filter(
+        (rental) =>
+          rental.stream_id && (rental.project_id || "default") === activeProjectId,
+      ),
+    [activeProjectId, rentals],
+  );
+
+  const loadStreams = React.useCallback(
+    async ({ background = false }: { background?: boolean } = {}) => {
+      if (!mounted) return;
+      if (!projectStreamRentals.length) {
+        setRows([]);
+        setError(null);
+        setRefreshing(false);
+        return;
       }
-      if (firstError) setError(firstError);
-      setRows(list);
-    } catch (e: any) { setError(getPaymentNetworkErrorMessage(e)); }
-  };
+      if (!streamPaymentAddress) {
+        setRows([]);
+        setError("StreamPayment address not configured in Settings.");
+        return;
+      }
 
-  // Mount-gate rentals to avoid SSR hydration mismatch from localStorage
-  React.useEffect(() => {
-    const t = setTimeout(() => setRentals(loadRentals()), 0);
-    return () => clearTimeout(t);
-  }, []);
+      if (!background) setRows(null);
+      setRefreshing(background);
+      setError(null);
 
-  // Load stream rows once rentals are available
-  React.useEffect(() => { if (rentals) load(); }, [rentals, activeProjectId]);
-  // React to settings changes (e.g., fiat/token toggle) without reload
-  React.useEffect(() => {
-    const onSettings = (e: any) => {
       try {
-        const mode = (e?.detail?.display_currency === 'token' ? 'token' : 'fiat') as 'fiat'|'token';
-        setDisplayCurrency(mode);
-      } catch {}
-    };
-    const onStorage = () => {
-      const cur = (loadSettings().display_currency === 'token' ? 'token' : 'fiat') as 'fiat'|'token';
-      setDisplayCurrency(cur);
-    };
-    window.addEventListener('requestor_settings_changed', onSettings as any);
-    window.addEventListener('storage', onStorage);
-    return () => {
-      window.removeEventListener('requestor_settings_changed', onSettings as any);
-      window.removeEventListener('storage', onStorage);
-    };
-  }, []);
+        const results = await Promise.all(
+          projectStreamRentals.map(async (rental) => {
+            try {
+              const data = await fetchStreamWithMeta(
+                streamPaymentAddress,
+                BigInt(rental.stream_id!),
+              );
+              return {
+                ok: true as const,
+                row: {
+                  r: rental,
+                  chain: data.chain,
+                  tokenSymbol: data.tokenSymbol,
+                  tokenDecimals: data.tokenDecimals,
+                  usdPrice: data.usdPrice,
+                },
+              };
+            } catch (streamError) {
+              return {
+                ok: false as const,
+                message: getPaymentNetworkErrorMessage(streamError),
+              };
+            }
+          }),
+        );
 
-  // React to global price updates and refresh USD mappings in place
+        const nextRows = results.flatMap((result) => (result.ok ? [result.row] : []));
+        const firstError = results.find((result) => !result.ok);
+        setRows(nextRows);
+        setError(firstError && !firstError.ok ? firstError.message : null);
+      } catch (loadError) {
+        setError(getPaymentNetworkErrorMessage(loadError));
+        setRows([]);
+      } finally {
+        setRefreshing(false);
+      }
+    },
+    [mounted, projectStreamRentals, streamPaymentAddress],
+  );
+
+  React.useEffect(() => {
+    if (!mounted) return;
+    loadStreams();
+  }, [loadStreams, mounted]);
+
+  React.useEffect(() => {
+    if (!mounted) return;
+    const timer = window.setInterval(() => {
+      loadStreams({ background: true });
+    }, STREAM_REFRESH_MS);
+    return () => window.clearInterval(timer);
+  }, [loadStreams, mounted]);
+
   React.useEffect(() => {
     const off = onPricesUpdated(() => {
-      setRows(prev => {
-        if (!prev) return prev;
-        return prev.map(row => {
-          const sym = (row.tokenSymbol || '').toUpperCase();
-          const p = (sym === 'ETH' || sym === 'WETH') ? getPriceUSD('ETH') : (sym === 'GLM' ? getPriceUSD('GLM') : null);
-          return { ...row, usdPrice: p };
+      setRows((current) => {
+        if (!current) return current;
+        return current.map((row) => {
+          const symbol = (row.tokenSymbol || "").toUpperCase();
+          const usdPrice =
+            symbol === "ETH" || symbol === "WETH"
+              ? getPriceUSD("ETH")
+              : symbol === "GLM" || symbol === "GNT"
+                ? getPriceUSD("GLM")
+                : null;
+          return { ...row, usdPrice };
         });
       });
     });
-    return () => { try { off && off(); } catch {} };
+    return () => {
+      off();
+    };
   }, []);
 
-  const refreshOne = async (streamId: string) => {
-    try {
-      const idx = rows?.findIndex(x => String(x.r.stream_id) === String(streamId));
-      if (idx == null || idx < 0 || !rows) return;
-      const data = await fetchStreamWithMeta(spAddr, BigInt(streamId));
-      const cur = rows[idx];
-      const next = [...rows];
-      next[idx] = {
-        ...cur,
-        chain: data.chain as ChainStream,
-        tokenSymbol: data.tokenSymbol,
-        tokenDecimals: data.tokenDecimals,
-        usdPrice: data.usdPrice,
-      };
-      setRows(next);
-    } catch {}
+  const active = React.useMemo(
+    () => (rows || []).filter((row) => !isEndedStream(row, nowSec)),
+    [nowSec, rows],
+  );
+  const ended = React.useMemo(
+    () => (rows || []).filter((row) => isEndedStream(row, nowSec)),
+    [nowSec, rows],
+  );
+
+  const updateDisplayCurrency = (value: DisplayCurrency) => {
+    setDisplayCurrency(value);
+    saveSettings({ display_currency: value });
   };
 
-  const { topUp: topUpAction } = useStreamActions(spAddr);
-  const topUp = async (row: Row, seconds: number) => {
-    const sid = String(row.r.stream_id);
+  const updateShowEnded = (value: boolean) => {
+    setShowEnded(value);
+    saveSettings({ show_ended_streams: value });
+  };
+
+  const refreshOne = async (streamId: string) => {
+    const current = rows || [];
+    const index = current.findIndex((row) => String(row.r.stream_id) === streamId);
+    if (index < 0) return;
+
+    const data = await fetchStreamWithMeta(streamPaymentAddress, BigInt(streamId));
+    const next = [...current];
+    next[index] = {
+      ...next[index],
+      chain: data.chain,
+      tokenSymbol: data.tokenSymbol,
+      tokenDecimals: data.tokenDecimals,
+      usdPrice: data.usdPrice,
+    };
+    setRows(next);
+  };
+
+  const topUp = async (row: StreamRow, seconds: number) => {
+    const streamId = String(row.r.stream_id);
+    if (!streamId || !streamPaymentAddress) return;
+
+    setBusy((current) => ({ ...current, [streamId]: true }));
     try {
-      if (!sid || !spAddr) return;
-      setBusy(prev => ({ ...prev, [sid]: true }));
-      await topUpAction(BigInt(sid), row.chain.token, row.chain.ratePerSecond, seconds);
+      await topUpAction(BigInt(streamId), row.chain.token, row.chain.ratePerSecond, seconds);
       show("Top-up sent");
-      await refreshOne(sid);
-    } catch (e) {
-      show(getPaymentNetworkErrorMessage(e));
+      await refreshOne(streamId);
+    } catch (topUpError) {
+      show(getPaymentNetworkErrorMessage(topUpError));
     } finally {
-      setBusy(prev => ({ ...prev, [sid]: false }));
+      setBusy((current) => ({ ...current, [streamId]: false }));
     }
   };
 
-  // Partition streams into active vs ended (depleted or halted)
-  const renderRows = (list: Row[], allowTopUp: boolean) => (
-    <div className="grid gap-6 sm:grid-cols-2">
-      {list.map((row, i) => {
-        const sid = String(row.r.stream_id);
-        const isBusy = !!busy[sid];
-        const remaining = Math.max(0, Number(row.chain.stopTime || 0n) - nowSec);
-        return (
-          <StreamCard
-            key={i}
-            title={row.r.name}
-            streamId={row.r.stream_id}
-            chain={row.chain as any}
-            remaining={remaining}
-            meta={{ tokenSymbol: row.tokenSymbol, tokenDecimals: row.tokenDecimals, usdPrice: row.usdPrice }}
-            displayCurrency={displayCurrency}
-            onTopUp={allowTopUp && !row.chain.halted ? ((secs) => topUp(row, secs)) : undefined}
-            busy={isBusy}
-            actionsDisabled={!paymentReady}
-            actionsDisabledReason={!paymentReady ? paymentMessage : null}
-            detailsHref={`/vm?id=${encodeURIComponent(row.r.vm_id)}`}
-          />
-        );
-      })}
-    </div>
-  );
-
-  let active: Row[] = [];
-  let ended: Row[] = [];
-  if (rows && rows.length) {
-    active = rows.filter(row => !row.chain.halted && (Number(row.chain.stopTime || 0n) - nowSec) > 0);
-    ended = rows.filter(row => row.chain.halted || (Number(row.chain.stopTime || 0n) - nowSec) <= 0);
-  }
+  const hasConfiguredStreams = projectStreamRentals.length > 0;
+  const hasRows = !!rows && rows.length > 0;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between gap-3">
-        <h2>Streams</h2>
-        <button
-          className={showEnded ? 'btn btn-secondary' : 'btn btn-secondary'}
-          onClick={() => {
-            const next = !showEnded;
-            setShowEnded(next);
-            try { saveSettings({ show_ended_streams: next } as any); } catch {}
-          }}
-          aria-pressed={showEnded}
-        >
-          {showEnded ? 'Hide ended' : 'Show ended'}
-        </button>
+    <div className="streams-shell space-y-6">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+        <div>
+          <h1>Streams</h1>
+          <p className="mt-2 text-sm text-text-secondary">
+            Monitor and manage payment streams for your active VMs.
+          </p>
+        </div>
+        <StreamsToolbar
+          displayCurrency={displayCurrency}
+          onDisplayCurrencyChange={updateDisplayCurrency}
+          onRefresh={() => loadStreams({ background: true })}
+          refreshing={refreshing}
+        />
       </div>
-      {/* Aggregates */}
-      {rows === null ? (
-        <div className="grid gap-4 sm:grid-cols-3">
-          <div className="card"><div className="card-body"><Skeleton className="h-6 w-24" /><div className="mt-2"><Skeleton className="h-4 w-20" /></div></div></div>
-          <div className="card"><div className="card-body"><Skeleton className="h-6 w-28" /><div className="mt-2"><Skeleton className="h-4 w-28" /></div></div></div>
-          <div className="card"><div className="card-body"><Skeleton className="h-6 w-32" /><div className="mt-2"><Skeleton className="h-4 w-24" /></div></div></div>
+
+      {error ? (
+        <div className="rounded-lg border border-danger bg-danger-soft px-4 py-3 text-sm text-danger">
+          {error}
         </div>
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-3">
-          {/* Active / Ended count */}
-          <div className="card"><div className="card-body">
-            <div className="text-sm text-gray-600 inline-flex items-center gap-1.5"><RiCheckboxCircleFill className="h-4 w-4 text-gray-500" /> Active streams</div>
-            <div className="mt-1 text-2xl font-semibold text-gray-900">{active.length}</div>
-            {ended.length > 0 && (
-              <div className="mt-1 text-xs text-gray-600">Ended: {ended.length}</div>
-            )}
-          </div></div>
-          {/* Hourly burn */}
-          <div className="card"><div className="card-body">
-            <div className="text-sm text-gray-600 inline-flex items-center gap-1.5"><RiTimeFill className="h-4 w-4 text-gray-500" /> Hourly spend</div>
-            {(() => {
-              // Compute sums for active only
-              const unknown: string[] = [];
-              if (displayCurrency === 'fiat') {
-                let totalUsd = 0;
-                for (const row of active) {
-                  const dec = row.tokenDecimals || 18;
-                  const rpsTok = Number(row.chain.ratePerSecond) / 10 ** dec;
-                  if (row.usdPrice != null) totalUsd += rpsTok * 3600 * row.usdPrice;
-                  else unknown.push(String(row.r.stream_id));
-                }
-                return (
-                  <>
-                    <div className="mt-1 text-2xl font-semibold text-gray-900">${totalUsd.toFixed(6)}/h</div>
-                    {unknown.length > 0 && (
-                      <div className="mt-1 text-xs text-gray-600">+ ? from {unknown.length} stream{unknown.length===1?'':'s'}</div>
-                    )}
-                  </>
-                );
-              } else {
-                const perToken: Record<string, number> = {};
-                for (const row of active) {
-                  const dec = row.tokenDecimals || 18;
-                  const rpsTok = Number(row.chain.ratePerSecond) / 10 ** dec;
-                  const sym = row.tokenSymbol || 'TOKEN';
-                  perToken[sym] = (perToken[sym] || 0) + (rpsTok * 3600);
-                }
-                const entries = Object.entries(perToken);
-                return (
-                  <div className="mt-1 flex flex-wrap gap-2">
-                    {entries.length === 0 ? (
-                      <div className="text-2xl font-semibold text-gray-900">0</div>
-                    ) : entries.map(([sym, v]) => (
-                      <span key={sym} className="inline-flex items-center gap-1.5 rounded bg-gray-50 px-2.5 py-1 text-xs font-medium text-gray-700">
-                        <span className="text-gray-900 font-semibold">{v.toFixed(6)}</span>
-                        <span>{sym}/h</span>
-                      </span>
-                    ))}
-                  </div>
-                );
-              }
-            })()}
-          </div></div>
-          {/* Remaining balance */}
-          <div className="card"><div className="card-body">
-            <div className="text-sm text-gray-600 inline-flex items-center gap-1.5"><RiStackLine className="h-4 w-4 text-gray-500" /> Remaining balance</div>
-            {(() => {
-              const unknown: string[] = [];
-              if (displayCurrency === 'fiat') {
-                let totalUsd = 0;
-                for (const row of active) {
-                  const dec = row.tokenDecimals || 18;
-                  const rpsTok = Number(row.chain.ratePerSecond) / 10 ** dec;
-                  const remSec = Math.max(0, Number(row.chain.stopTime || 0n) - nowSec);
-                  const reqRemainingTok = Math.max(0, rpsTok * remSec);
-                  if (row.usdPrice != null) totalUsd += reqRemainingTok * row.usdPrice;
-                  else unknown.push(String(row.r.stream_id));
-                }
-                return (
-                  <>
-                    <div className="mt-1 text-2xl font-semibold text-gray-900">${totalUsd.toFixed(2)}</div>
-                    {unknown.length > 0 && (
-                      <div className="mt-1 text-xs text-gray-600">+ ? from {unknown.length} stream{unknown.length===1?'':'s'}</div>
-                    )}
-                  </>
-                );
-              } else {
-                const perToken: Record<string, number> = {};
-                for (const row of active) {
-                  const dec = row.tokenDecimals || 18;
-                  const rpsTok = Number(row.chain.ratePerSecond) / 10 ** dec;
-                  const remSec = Math.max(0, Number(row.chain.stopTime || 0n) - nowSec);
-                  const reqRemainingTok = Math.max(0, rpsTok * remSec);
-                  const sym = row.tokenSymbol || 'TOKEN';
-                  perToken[sym] = (perToken[sym] || 0) + reqRemainingTok;
-                }
-                const entries = Object.entries(perToken);
-                return (
-                  <div className="mt-1 flex flex-wrap gap-2">
-                    {entries.length === 0 ? (
-                      <div className="text-2xl font-semibold text-gray-900">0</div>
-                    ) : entries.map(([sym, v]) => (
-                      <span key={sym} className="inline-flex items-center gap-1.5 rounded bg-gray-50 px-2.5 py-1 text-xs font-medium text-gray-700">
-                        <span className="text-gray-900 font-semibold">{v.toFixed(6)}</span>
-                        <span>{sym}</span>
-                      </span>
-                    ))}
-                  </div>
-                );
-              }
-            })()}
-          </div></div>
-        </div>
-      )}
-      {rentals !== null && rentals.filter(r => r.stream_id && (r.project_id || 'default') === activeProjectId).length === 0 && (
-        <div className="text-gray-600">No streams yet. Create a VM to open a stream.</div>
-      )}
-      {error && <div className="text-sm text-red-600">{error}</div>}
-      {rows === null ? (
-        <div className="grid gap-6 sm:grid-cols-2">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="card">
-              <div className="card-body">
-                <Skeleton className="h-4 w-48" />
-                <div className="mt-4 grid grid-cols-2 gap-3">
-                  <Skeleton className="h-3 w-full" />
-                  <Skeleton className="h-3 w-full" />
-                  <Skeleton className="h-3 w-3/4" />
-                  <Skeleton className="h-3 w-2/3" />
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
+      ) : null}
+
+      {!mounted || rows === null ? (
+        <StreamsSkeleton />
       ) : (
         <>
-          {active.length ? (
-            <div>
-              <div className="mb-2 text-sm text-gray-700">Active</div>
-              {renderRows(active, true)}
-            </div>
+          <StreamsSummary
+            active={active}
+            ended={ended}
+            displayCurrency={displayCurrency}
+            nowSec={nowSec}
+            onShowEnded={() => updateShowEnded(true)}
+          />
+
+          {hasRows ? (
+            <StreamsTable
+              active={active}
+              ended={ended}
+              nowSec={nowSec}
+              showEnded={showEnded}
+              onShowEndedChange={updateShowEnded}
+              busy={busy}
+              actionsDisabled={!paymentReady}
+              actionsDisabledReason={!paymentReady ? paymentMessage : null}
+              onTopUp={topUp}
+            />
           ) : (
-            <div className="text-gray-600">No active streams.</div>
-          )}
-          {showEnded && ended.length > 0 && (
-            <div>
-              <div className="mt-4 mb-2 text-sm text-gray-700">Ended</div>
-              {renderRows(ended, false)}
-            </div>
+            <StreamsEmptyState
+              title={hasConfiguredStreams ? "No stream data available" : "No streams yet"}
+              description={
+                hasConfiguredStreams
+                  ? "The project has VMs with stream IDs, but their on-chain stream data could not be loaded."
+                  : "You don't have any payment streams in this project. Rent a VM to create your first payment stream."
+              }
+              showRentAction={!hasConfiguredStreams}
+            />
           )}
         </>
       )}
+
+      <StreamsInfoBanner />
     </div>
   );
 }

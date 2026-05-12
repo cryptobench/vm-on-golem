@@ -3,6 +3,7 @@
 # --- Dev convenience variables (override via env when calling make) ---
 # Ports
 PORT_CHECKER_PORT ?= 9000
+PROVIDER_API_PORT ?= 7466
 # Shared token between UI and proxy (public in UI; use dev-only value)
 PORT_CHECKER_TOKEN ?= dev-token
 # Arkiv RPC/WS for provider resolution (Kaolin Hoodi).
@@ -15,12 +16,12 @@ ARKIV_DEV_WS_URL ?=
 # any reachable central discovery instance. Default to public demo endpoint.
 CENTRAL_DISCOVERY_API_URL ?= http://195.201.39.101:9001/api/v1
 # Payments chain used by MetaMask/requestor-web.
-L2_RPC_URL ?= https://l2.hoodi.arkiv.network/rpc
-L2_EXPLORER_URL ?= https://explorer.l2.hoodi.arkiv.network
-L2_CHAIN_ID_HEX ?= 0x6013a
-L2_CHAIN_NAME ?= Arkiv L2 Hoodi
-STREAM_PAYMENT_ADDRESS ?= $(shell python3 -c "import json; print(json.load(open('contracts/deployments/l2.json'))['StreamPayment']['address'])")
-GLM_TOKEN_ADDRESS ?= $(shell python3 -c "import json; print(json.load(open('contracts/deployments/l2.json'))['StreamPayment'].get('glmToken') or '0x0000000000000000000000000000000000000000')")
+L2_RPC_URL ?= https://ethereum-hoodi-rpc.publicnode.com
+L2_EXPLORER_URL ?= https://hoodi.etherscan.io
+L2_CHAIN_ID_HEX ?= 0x88bb0
+L2_CHAIN_NAME ?= Ethereum Hoodi
+STREAM_PAYMENT_ADDRESS ?= $(shell python3 -c "import json; print(json.load(open('contracts/deployments/hoodi.json'))['StreamPayment']['address'])")
+GLM_TOKEN_ADDRESS ?= $(shell python3 -c "import json; print(json.load(open('contracts/deployments/hoodi.json'))['StreamPayment'].get('glmToken') or '0x55555555555556AcFf9C332Ed151758858bd7a26')")
 
 install: lock
 	poetry -C central-discovery-server install
@@ -88,6 +89,7 @@ start:
 	NEXT_PUBLIC_DISCOVERY_API_URL=$(CENTRAL_DISCOVERY_API_URL) \
 	NEXT_PUBLIC_PORT_CHECKER_URL=http://127.0.0.1:$(PORT_CHECKER_PORT) \
 	NEXT_PUBLIC_PORT_CHECKER_TOKEN=$(PORT_CHECKER_TOKEN) \
+	NEXT_PUBLIC_PROVIDER_API_PORT=$(PROVIDER_API_PORT) \
 	NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS=$(STREAM_PAYMENT_ADDRESS) \
 	NEXT_PUBLIC_GLM_TOKEN_ADDRESS=$(GLM_TOKEN_ADDRESS) \
 	NEXT_PUBLIC_EVM_CHAIN_ID=$(L2_CHAIN_ID_HEX) \
@@ -139,6 +141,7 @@ dev-web:
 	NEXT_PUBLIC_DISCOVERY_API_URL=$(CENTRAL_DISCOVERY_API_URL) \
 	NEXT_PUBLIC_PORT_CHECKER_URL=http://127.0.0.1:$(PORT_CHECKER_PORT) \
 	NEXT_PUBLIC_PORT_CHECKER_TOKEN=$(PORT_CHECKER_TOKEN) \
+	NEXT_PUBLIC_PROVIDER_API_PORT=$(PROVIDER_API_PORT) \
 	NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS=$(STREAM_PAYMENT_ADDRESS) \
 	NEXT_PUBLIC_GLM_TOKEN_ADDRESS=$(GLM_TOKEN_ADDRESS) \
 	NEXT_PUBLIC_EVM_CHAIN_ID=$(L2_CHAIN_ID_HEX) \
@@ -169,6 +172,7 @@ dev-proxy-web:
 	NEXT_PUBLIC_DISCOVERY_API_URL=$(CENTRAL_DISCOVERY_API_URL) \
 	NEXT_PUBLIC_PORT_CHECKER_URL=http://127.0.0.1:$(PORT_CHECKER_PORT) \
 	NEXT_PUBLIC_PORT_CHECKER_TOKEN=$(PORT_CHECKER_TOKEN) \
+	NEXT_PUBLIC_PROVIDER_API_PORT=$(PROVIDER_API_PORT) \
 	NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS=$(STREAM_PAYMENT_ADDRESS) \
 	NEXT_PUBLIC_GLM_TOKEN_ADDRESS=$(GLM_TOKEN_ADDRESS) \
 	NEXT_PUBLIC_EVM_CHAIN_ID=$(L2_CHAIN_ID_HEX) \
@@ -205,6 +209,7 @@ start-dev:
 	NEXT_PUBLIC_DISCOVERY_API_URL=$(CENTRAL_DISCOVERY_API_URL) \
 	NEXT_PUBLIC_PORT_CHECKER_URL=http://127.0.0.1:$(PORT_CHECKER_PORT) \
 	NEXT_PUBLIC_PORT_CHECKER_TOKEN=$(PORT_CHECKER_TOKEN) \
+	NEXT_PUBLIC_PROVIDER_API_PORT=$(PROVIDER_API_PORT) \
 	NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS=$(STREAM_PAYMENT_ADDRESS) \
 	NEXT_PUBLIC_GLM_TOKEN_ADDRESS=$(GLM_TOKEN_ADDRESS) \
 	NEXT_PUBLIC_EVM_CHAIN_ID=$(L2_CHAIN_ID_HEX) \

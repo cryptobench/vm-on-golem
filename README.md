@@ -104,16 +104,16 @@ golem vm providers --cpu 2 --memory 4 --storage 40
 
 Sample output (simplified):
 
-| Provider ID | Country | CPU | Mem | Disk | USD/core/mo | USD/GB RAM/mo | USD/GB Disk/mo | Est. \$/mo | Est. GLM/mo |
-| ----------- | ------- | --- | --- | ---- | ----------- | ------------- | -------------- | ---------- | ----------- |
-| 0xabc...123 | US      | 8   | 32  | 500  | 8.00        | 2.00          | 0.08           | 40.64      | 123.456789  |
-| 0xdef...456 | DE      | 16  | 64  | 1000 | 10.00       | 2.50          | 0.10           | 50.80      | 154.321000  |
+| Provider ID | Country | CPU | Mem | Disk | USD/core/mo | USD/GB RAM/mo | USD/GB Disk/mo | Est. \$/mo |
+| ----------- | ------- | --- | --- | ---- | ----------- | ------------- | -------------- | ---------- |
+| 0xabc...123 | US      | 8   | 32  | 500  | 8.00        | 2.00          | 0.08           | 40.64      |
+| 0xdef...456 | DE      | 16  | 64  | 1000 | 10.00       | 2.50          | 0.10           | 50.80      |
 
 Notes:
 
 * The CLI prints a formatted table with estimated costs.
 * With `--json`, providers include:
-  `estimate = { usd_per_month, usd_per_hour, glm_per_month }`.
+  `estimate = { usd_per_month, usd_per_hour }`.
 
 ---
 
@@ -126,7 +126,7 @@ pip install golem-vm-provider
 golem-provider start --network testnet
 ```
 
-Set prices in USD (auto-converted to GLM in the background):
+Set prices in USD:
 
 ```
 golem-provider pricing set \
@@ -174,11 +174,15 @@ It uses central discovery intentionally so local provider/requestor/web checks d
 not depend on Arkiv discovery RPC/WS availability. Arkiv remains the default
 product discovery backend outside this deterministic local workflow.
 
-Streaming payments still use the current Arkiv L2 Hoodi profile. `make local`
-loads `contracts/deployments/l2.json`, injects the StreamPayment address into
+Streaming payments use the Ethereum Hoodi profile by default. `make local`
+loads `contracts/deployments/hoodi.json`, injects the StreamPayment address into
 provider, requestor, and web processes, and verifies the contract has bytecode on
-`https://l2.hoodi.arkiv.network/rpc` before startup. For offline UI-only smoke
+`https://ethereum-hoodi-rpc.publicnode.com` before startup. For offline UI-only smoke
 checks, use `make local LOCAL_STACK_ARGS="--no-open --skip-chain-check"`.
+
+Requestor wallets need Hoodi ETH for gas and Hoodi tGLM for stream deposits.
+The GLM token is `0x55555555555556AcFf9C332Ed151758858bd7a26`; mint test tGLM
+through the Hoodi minter documented in `contracts/README.md`.
 
 Useful variant for smoke checks:
 

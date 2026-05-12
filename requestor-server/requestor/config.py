@@ -66,10 +66,9 @@ class RequestorConfig(BaseSettings):
     )
 
     # Payments chain selection (modular network profiles)
-    # Keep current standard as l2.hoodi
     payments_network: str = Field(
-        default="l2.hoodi",
-        description="Payments network profile (e.g., 'l2.hoodi', 'kaolin.hoodi', 'mainnet')",
+        default="hoodi",
+        description="Payments network profile (e.g., 'hoodi', 'sepolia', 'l2.hoodi', 'mainnet')",
     )
 
     # Development Settings
@@ -295,7 +294,7 @@ class RequestorConfig(BaseSettings):
     )
     glm_token_address: str = Field(
         default="",
-        description="Token address (0x0 means native ETH). Defaults from l2.json",
+        description="GLM ERC20 token address used by StreamPayment.",
     )
     # Stream monitor (auto top-up)
     stream_monitor_enabled: bool = Field(
@@ -341,7 +340,7 @@ class RequestorConfig(BaseSettings):
         if v:
             return v
         # Default from payments profile
-        pn = info.data.get("payments_network") or "l2.hoodi"
+        pn = info.data.get("payments_network") or "hoodi"
         return RequestorConfig._profile_defaults(pn)["rpc_url"]
 
     @field_validator("l2_faucet_url", mode="before")
@@ -355,7 +354,7 @@ class RequestorConfig(BaseSettings):
                 return os.environ[key]
         if v:
             return v
-        pn = info.data.get("payments_network") or "l2.hoodi"
+        pn = info.data.get("payments_network") or "hoodi"
         return RequestorConfig._profile_defaults(pn).get("faucet_url", "")
 
     @staticmethod
@@ -395,7 +394,7 @@ class RequestorConfig(BaseSettings):
                 data = _json.loads(path.read_text())
             sp = data.get("StreamPayment", {})
             addr = sp.get("address")
-            token = sp.get("glmToken")
+            token = sp.get("paymentToken") or sp.get("glmToken")
             if isinstance(addr, str) and addr:
                 return addr, token or "0x0000000000000000000000000000000000000000"
         except Exception:
@@ -414,13 +413,30 @@ class RequestorConfig(BaseSettings):
 
     @staticmethod
     def _profile_defaults(network: str) -> Dict[str, str]:
-        n = (network or "l2.hoodi").lower()
+        n = (network or "hoodi").lower()
         # Built-in profiles; extend easily in future
         profiles = {
             "l2.hoodi": {
                 "rpc_url": "https://l2.hoodi.arkiv.network/rpc",
                 "faucet_url": "https://l2.hoodi.arkiv.network/faucet",
                 "faucet_enabled": True,
+                "glm_token_address": "",
+                "token_symbol": "GLM",
+                "gas_symbol": "ETH",
+            },
+            "sepolia": {
+                "rpc_url": "https://rpc.sepolia.org",
+                "faucet_url": "",
+                "faucet_enabled": False,
+                "glm_token_address": "",
+                "token_symbol": "GLM",
+                "gas_symbol": "ETH",
+            },
+            "hoodi": {
+                "rpc_url": "https://ethereum-hoodi-rpc.publicnode.com",
+                "faucet_url": "",
+                "faucet_enabled": False,
+                "glm_token_address": "0x55555555555556AcFf9C332Ed151758858bd7a26",
                 "token_symbol": "GLM",
                 "gas_symbol": "ETH",
             },
@@ -429,18 +445,19 @@ class RequestorConfig(BaseSettings):
                 "rpc_url": "",
                 "faucet_url": "",
                 "faucet_enabled": False,
+                "glm_token_address": "",
                 "token_symbol": "GLM",
                 "gas_symbol": "ETH",
             },
         }
-        return profiles.get(n, profiles["l2.hoodi"])  # default to current standard
+        return profiles.get(n, profiles["hoodi"])
 
     @field_validator("stream_payment_address", mode="before")
     @classmethod
     def default_stream_addr(cls, v: str, info: ValidationInfo) -> str:
         if v:
             return v
-        network = info.data.get("payments_network") or "l2.hoodi"
+        network = info.data.get("payments_network") or "hoodi"
         addr, _ = RequestorConfig._load_deployment(network)
         return addr or "0x0000000000000000000000000000000000000000"
 
@@ -449,9 +466,12 @@ class RequestorConfig(BaseSettings):
     def default_token_addr(cls, v: str, info: ValidationInfo) -> str:
         if v:
             return v
-        network = info.data.get("payments_network") or "l2.hoodi"
+        network = info.data.get("payments_network") or "hoodi"
         _, token = RequestorConfig._load_deployment(network)
-        return token or "0x0000000000000000000000000000000000000000"
+        profile_token = str(
+            RequestorConfig._profile_defaults(network).get("glm_token_address", "")
+        )
+        return token or profile_token or "0x0000000000000000000000000000000000000000"
 
     # Optional convenience: expose token and gas symbols based on profile
     token_symbol: str = Field(
@@ -466,7 +486,7 @@ class RequestorConfig(BaseSettings):
     def default_token_symbol(cls, v: str, info: ValidationInfo) -> str:
         if v:
             return v
-        pn = info.data.get("payments_network") or "l2.hoodi"
+        pn = info.data.get("payments_network") or "hoodi"
         return RequestorConfig._profile_defaults(pn).get("token_symbol", "")
 
     @field_validator("gas_token_symbol", mode="before")
@@ -474,7 +494,7 @@ class RequestorConfig(BaseSettings):
     def default_gas_symbol(cls, v: str, info: ValidationInfo) -> str:
         if v:
             return v
-        pn = info.data.get("payments_network") or "l2.hoodi"
+        pn = info.data.get("payments_network") or "hoodi"
         return RequestorConfig._profile_defaults(pn).get("gas_symbol", "")
 
     # Base Directory

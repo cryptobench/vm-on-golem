@@ -1,0 +1,140 @@
+import type { VmMonitoringHistory } from "../../../lib/api";
+
+export type MetricRange = "1h" | "6h" | "24h" | "7d";
+
+export type MetricSeriesKey = "cpu" | "memory" | "disk" | "rx" | "tx";
+
+export type MetricChartRow = {
+  timestamp: string;
+  time: string;
+  CPU?: number;
+  Memory?: number;
+  Disk?: number;
+  "Network RX"?: number;
+  "Network TX"?: number;
+};
+
+type MetricValueKey = Exclude<keyof MetricChartRow, "timestamp" | "time">;
+
+export const metricRanges: Array<{ value: MetricRange; label: string }> = [
+  { value: "1h", label: "1H" },
+  { value: "6h", label: "6H" },
+  { value: "24h", label: "24H" },
+  { value: "7d", label: "7D" },
+];
+
+const percentMetricLabels: Record<string, MetricValueKey> = {
+  cpu_percent: "CPU",
+  memory_percent: "Memory",
+  disk_percent: "Disk",
+};
+
+const networkMetricLabels: Record<string, MetricValueKey> = {
+  network_rx_bytes: "Network RX",
+  network_tx_bytes: "Network TX",
+};
+
+export function buildMetricChartRows(
+  samples: VmMonitoringHistory["samples"] = [],
+) {
+  const rows = new Map<string, MetricChartRow>();
+  const previousCounters = new Map<
+    string,
+    { timestamp: number; value: number }
+  >();
+
+  sortedGuestSamples(samples).forEach((sample) => {
+    const row = rows.get(sample.timestamp) || {
+      timestamp: sample.timestamp,
+      time: formatChartTime(sample.timestamp),
+    };
+
+    if (sample.metric in percentMetricLabels) {
+      row[percentMetricLabels[sample.metric]] = clampPercent(sample.value);
+      rows.set(sample.timestamp, row);
+      return;
+    }
+
+    if (sample.metric in networkMetricLabels) {
+      const timestamp = Date.parse(sample.timestamp);
+      const previous = previousCounters.get(sample.metric);
+      previousCounters.set(sample.metric, { timestamp, value: sample.value });
+      if (!previous) return;
+
+      const seconds = Math.max(1, (timestamp - previous.timestamp) / 1000);
+      const delta = Math.max(0, sample.value - previous.value);
+      row[networkMetricLabels[sample.metric]] = bytesToMbps(delta / seconds);
+      rows.set(sample.timestamp, row);
+    }
+  });
+
+  return Array.from(rows.values()).sort(
+    (a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp),
+  );
+}
+
+export function buildSparklineValues(
+  rows: MetricChartRow[],
+  key: MetricValueKey,
+) {
+  return rows
+    .map((row) => row[key])
+    .filter(
+      (value): value is number =>
+        typeof value === "number" && Number.isFinite(value),
+    );
+}
+
+export function latestNetworkRates(rows: MetricChartRow[]) {
+  const latest = [...rows]
+    .reverse()
+    .find(
+      (row) =>
+        typeof row["Network RX"] === "number" ||
+        typeof row["Network TX"] === "number",
+    );
+
+  return {
+    rx:
+      typeof latest?.["Network RX"] === "number" ? latest["Network RX"] : null,
+    tx:
+      typeof latest?.["Network TX"] === "number" ? latest["Network TX"] : null,
+  };
+}
+
+export function formatPercent(value: number | null) {
+  return value == null ? "-" : `${value.toFixed(0)}%`;
+}
+
+export function formatMbps(value: number | null) {
+  return value == null ? "-" : `${value.toFixed(1)} Mbps`;
+}
+
+export function formatChartPercent(value: number) {
+  return `${value.toFixed(0)}%`;
+}
+
+export function formatChartMbps(value: number) {
+  return `${value.toFixed(1)} Mbps`;
+}
+
+export function clampPercent(value: number) {
+  return Math.max(0, Math.min(100, value));
+}
+
+function sortedGuestSamples(samples: VmMonitoringHistory["samples"]) {
+  return samples
+    .filter((sample) => sample.source === "guest_agent")
+    .sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp));
+}
+
+function bytesToMbps(bytesPerSecond: number) {
+  return (bytesPerSecond * 8) / 1_000_000;
+}
+
+function formatChartTime(timestamp: string) {
+  return new Date(timestamp).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}

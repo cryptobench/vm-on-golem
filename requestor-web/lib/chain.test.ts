@@ -9,20 +9,20 @@ import {
 
 describe("payments chain helpers", () => {
   it("normalizes decimal and hex chain ids to lowercase hex", () => {
-    assert.equal(normalizeChainId("393530"), "0x6013a");
-    assert.equal(normalizeChainId("0x06013A"), "0x6013a");
-    assert.equal(normalizeChainId(393530), "0x6013a");
+    assert.equal(normalizeChainId("560048"), "0x88bb0");
+    assert.equal(normalizeChainId("0x088BB0"), "0x88bb0");
+    assert.equal(normalizeChainId(560048), "0x88bb0");
   });
 
   it("prefers persisted settings over environment defaults", () => {
     const chain = getPaymentsChain({
-      evm_chain_id: "393530",
+      evm_chain_id: "560048",
       evm_chain_name: "Local Payments",
       evm_rpc_url: "https://payments.example/rpc",
       evm_explorer_url: "https://payments.example/explorer",
     });
 
-    assert.equal(chain.chainId, "0x6013a");
+    assert.equal(chain.chainId, "0x88bb0");
     assert.equal(chain.chainName, "Local Payments");
     assert.deepEqual(chain.rpcUrls, ["https://payments.example/rpc"]);
     assert.deepEqual(chain.blockExplorerUrls, ["https://payments.example/explorer"]);

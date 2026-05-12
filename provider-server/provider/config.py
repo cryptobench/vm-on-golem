@@ -75,10 +75,10 @@ class Settings(BaseSettings):
         default="", description="Logical Golem network: 'testnet' or 'mainnet'"
     )
 
-    # Payments chain selection (modular network profiles). Keep default on l2.hoodi
+    # Payments chain selection (modular network profiles).
     PAYMENTS_NETWORK: str = Field(
-        default="l2.hoodi",
-        description="Payments network profile (e.g., 'l2.hoodi', 'kaolin.hoodi', 'mainnet')",
+        default="hoodi",
+        description="Payments network profile (e.g., 'hoodi', 'sepolia', 'l2.hoodi', 'mainnet')",
     )
 
     @field_validator("PAYMENTS_NETWORK", mode="before")
@@ -232,7 +232,7 @@ class Settings(BaseSettings):
                 return dev_v
         return v
 
-    # Polygon / Payments
+    # EVM / Payments
     POLYGON_RPC_URL: str = Field(
         default="",
         description="EVM RPC URL for streaming payments; defaults from PAYMENTS_NETWORK profile",
@@ -243,7 +243,7 @@ class Settings(BaseSettings):
     )
     GLM_TOKEN_ADDRESS: str = Field(
         default="",
-        description="Token address (0x0 means native ETH). Defaults from l2.json",
+        description="GLM ERC20 token address used by StreamPayment.",
     )
     STREAM_MIN_REMAINING_SECONDS: int = Field(
         default=0, description="Minimum remaining seconds required to keep a VM running"
@@ -288,7 +288,7 @@ class Settings(BaseSettings):
     CAPTCHA_URL: str = "https://cap.gobas.me"
     CAPTCHA_API_KEY: str = "05381a2cef5e"
 
-    # L2 payments faucet (native ETH)
+    # L2 payments faucet (gas ETH)
     L2_FAUCET_URL: str = Field(
         default="",
         description="Faucet base URL (no trailing /api). Only used on testnets; defaults from PAYMENTS_NETWORK profile",
@@ -320,7 +320,7 @@ class Settings(BaseSettings):
         if v:
             return v
         # Default from profile
-        pn = values.data.get("PAYMENTS_NETWORK") or "l2.hoodi"
+        pn = values.data.get("PAYMENTS_NETWORK") or "hoodi"
         return Settings._profile_defaults(pn)["rpc_url"]
 
     @field_validator("L2_FAUCET_URL", mode="before")
@@ -331,14 +331,14 @@ class Settings(BaseSettings):
                 return os.environ[key]
         if v:
             return v
-        pn = values.data.get("PAYMENTS_NETWORK") or "l2.hoodi"
+        pn = values.data.get("PAYMENTS_NETWORK") or "hoodi"
         return Settings._profile_defaults(pn).get("faucet_url", "")
 
     @staticmethod
     def _load_deployment(network: str) -> tuple[str | None, str | None]:
-        """Try to load default StreamPayment + token from contracts/deployments/l2.json.
+        """Try to load default StreamPayment deployment metadata.
 
-        Returns (stream_payment_address, glm_token_address) or (None, None) if not found.
+        Returns (stream_payment_address, payment_token_address) or (None, None) if not found.
         """
         try:
             # Allow override via env
@@ -366,7 +366,7 @@ class Settings(BaseSettings):
                 data = json.loads(path.read_text())
             sp = data.get("StreamPayment", {})
             addr = sp.get("address")
-            token = sp.get("glmToken")
+            token = sp.get("paymentToken") or sp.get("glmToken")
             if isinstance(addr, str) and addr:
                 return addr, token or "0x0000000000000000000000000000000000000000"
         except Exception:
@@ -389,12 +389,29 @@ class Settings(BaseSettings):
 
     @staticmethod
     def _profile_defaults(network: str) -> dict[str, str | bool]:
-        n = (network or "l2.hoodi").lower()
+        n = (network or "hoodi").lower()
         profiles = {
             "l2.hoodi": {
                 "rpc_url": "https://l2.hoodi.arkiv.network/rpc",
                 "faucet_url": "https://l2.hoodi.arkiv.network/faucet",
                 "faucet_enabled": True,
+                "glm_token_address": "",
+                "token_symbol": "GLM",
+                "gas_symbol": "ETH",
+            },
+            "sepolia": {
+                "rpc_url": "https://rpc.sepolia.org",
+                "faucet_url": "",
+                "faucet_enabled": False,
+                "glm_token_address": "",
+                "token_symbol": "GLM",
+                "gas_symbol": "ETH",
+            },
+            "hoodi": {
+                "rpc_url": "https://ethereum-hoodi-rpc.publicnode.com",
+                "faucet_url": "",
+                "faucet_enabled": False,
+                "glm_token_address": "0x55555555555556AcFf9C332Ed151758858bd7a26",
                 "token_symbol": "GLM",
                 "gas_symbol": "ETH",
             },
@@ -402,11 +419,12 @@ class Settings(BaseSettings):
                 "rpc_url": "",
                 "faucet_url": "",
                 "faucet_enabled": False,
+                "glm_token_address": "",
                 "token_symbol": "GLM",
                 "gas_symbol": "ETH",
             },
         }
-        return profiles.get(n, profiles["l2.hoodi"])  # default to current standard
+        return profiles.get(n, profiles["hoodi"])
 
     @field_validator("STREAM_PAYMENT_ADDRESS", mode="before")
     @classmethod
@@ -416,7 +434,7 @@ class Settings(BaseSettings):
             return "0x0000000000000000000000000000000000000000"
         if v:
             return v
-        pn = values.data.get("PAYMENTS_NETWORK") or "l2.hoodi"
+        pn = values.data.get("PAYMENTS_NETWORK") or "hoodi"
         addr, _ = Settings._load_deployment(pn)
         return addr or "0x0000000000000000000000000000000000000000"
 
@@ -427,9 +445,10 @@ class Settings(BaseSettings):
             return "0x0000000000000000000000000000000000000000"
         if v:
             return v
-        pn = values.data.get("PAYMENTS_NETWORK") or "l2.hoodi"
+        pn = values.data.get("PAYMENTS_NETWORK") or "hoodi"
         _, token = Settings._load_deployment(pn)
-        return token or "0x0000000000000000000000000000000000000000"
+        profile_token = str(Settings._profile_defaults(pn).get("glm_token_address", ""))
+        return token or profile_token or "0x0000000000000000000000000000000000000000"
 
     # VM Settings
     MAX_VMS: int = 10
@@ -443,7 +462,7 @@ class Settings(BaseSettings):
     def default_token_symbol(cls, v: str, values: dict) -> str:
         if v:
             return v
-        pn = values.data.get("PAYMENTS_NETWORK") or "l2.hoodi"
+        pn = values.data.get("PAYMENTS_NETWORK") or "hoodi"
         return str(Settings._profile_defaults(pn).get("token_symbol", ""))
 
     @field_validator("GAS_TOKEN_SYMBOL", mode="before")
@@ -451,7 +470,7 @@ class Settings(BaseSettings):
     def default_gas_symbol(cls, v: str, values: dict) -> str:
         if v:
             return v
-        pn = values.data.get("PAYMENTS_NETWORK") or "l2.hoodi"
+        pn = values.data.get("PAYMENTS_NETWORK") or "hoodi"
         return str(Settings._profile_defaults(pn).get("gas_symbol", ""))
 
     @property
@@ -857,7 +876,7 @@ class Settings(BaseSettings):
 
         return v
 
-    # Pricing Settings (configured in USD; auto-converted to GLM)
+    # Pricing Settings (configured in USD)
     # Per-month prices per unit
     PRICE_USD_PER_CORE_MONTH: float = Field(default=5.0, ge=0)
     PRICE_USD_PER_GB_RAM_MONTH: float = Field(default=2.0, ge=0)

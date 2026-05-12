@@ -1,178 +1,261 @@
 "use client";
+
 import React from "react";
-import { loadRentals, saveRentals, vmAccess, vmDestroy, vmResume, vmStart, vmStop, type Rental, loadSettings, saveSettings } from "../../lib/api";
+import {
+  loadSettings,
+  saveRentals,
+  saveSettings,
+  type Rental,
+  vmDestroy,
+  vmResume,
+  vmStart,
+  vmStop,
+} from "../../lib/api";
 import { useCopySSH } from "../../hooks/useCopySSH";
-import { useToast } from "../../components/ui/Toast";
 import { useAds } from "../../context/AdsContext";
-import { Spinner } from "../../components/ui/Spinner";
-import { Skeleton } from "../../components/ui/Skeleton";
 import { useProjects } from "../../context/ProjectsContext";
 import { useProjectRentals } from "../../hooks/useProjectRentals";
-import { RentalRowWithData } from "../../components/rentals/RentalRowWithData";
-import { StatusBadge } from "../../components/ui/StatusBadge";
+import { RentalsEmptyState } from "../../components/rentals/RentalsEmptyState";
+import { RentalsToolbar } from "../../components/rentals/RentalsToolbar";
+import { RentalsTable } from "../../components/rentals/RentalsTable";
+import { RentalsTableSkeleton } from "../../components/rentals/RentalsTableSkeleton";
 
-// StatusBadge now imported from shared UI
+function isTerminalStatus(status?: string | null) {
+  const normalized = String(status || "").toLowerCase();
+  return normalized === "terminated" || normalized === "deleted";
+}
 
-function humanDuration(totalSec: number): string {
-  const s = Math.max(0, Math.floor(totalSec));
-  const d = Math.floor(s / 86400);
-  const h = Math.floor((s % 86400) / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const sec = s % 60;
-  const parts: string[] = [];
-  if (d) parts.push(`${d}d`);
-  if (h) parts.push(`${h}h`);
-  if (m) parts.push(`${m}m`);
-  if (sec && !parts.length) parts.push(`${sec}s`);
-  return parts.length ? parts.join(' ') : '0s';
+function matchesQuery(rental: Rental, query: string) {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) return true;
+  return [
+    rental.name,
+    rental.vm_id,
+    rental.provider_id,
+    rental.provider_ip,
+    rental.platform,
+    rental.stream_id == null ? "" : String(rental.stream_id),
+  ]
+    .filter(Boolean)
+    .some((value) => String(value).toLowerCase().includes(normalized));
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function isNotFoundError(error: unknown) {
+  return (error as { status?: number } | null)?.status === 404;
 }
 
 export default function RentalsPage() {
   const [mounted, setMounted] = React.useState(false);
-  React.useEffect(() => { setMounted(true); }, []);
-  const [showTerminated, setShowTerminated] = React.useState<boolean>(false);
-  // Initialize from saved settings on mount and react to changes
-  React.useEffect(() => {
-    if (!mounted) return;
-    try { setShowTerminated(!!(loadSettings().show_terminated)); } catch {}
-    const onSettings = (e: any) => { try { setShowTerminated(!!e?.detail?.show_terminated); } catch {} };
-    const onStorage = () => { try { setShowTerminated(!!loadSettings().show_terminated); } catch {} };
-    window.addEventListener('requestor_settings_changed', onSettings as any);
-    window.addEventListener('storage', onStorage);
-    return () => {
-      window.removeEventListener('requestor_settings_changed', onSettings as any);
-      window.removeEventListener('storage', onStorage);
-    };
-  }, [mounted]);
-  const [itemsRaw, setItemsRaw] = React.useState<ReturnType<typeof loadRentals> | null>(null);
+  const [showTerminated, setShowTerminated] = React.useState(false);
+  const [query, setQuery] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
   const [busyId, setBusyId] = React.useState<string | null>(null);
   const { ads } = useAds();
-  const { show } = useToast();
   const { activeId } = useProjects();
   const { items, setItems, refresh } = useProjectRentals(activeId);
-
-  React.useEffect(() => { const t = setTimeout(() => refresh(), 200); return () => clearTimeout(t); }, [refresh]);
-
-  // Remaining seconds handled per-card via SWR + 1s ticker
-
-  // Project-level reconcile handled by useProjectRentals
-
   const copySSHAction = useCopySSH();
-  const copySSH = async (r: any) => { setError(null); setBusyId(r.vm_id); try { await copySSHAction(r); } finally { setBusyId(null); } };
-  const updateRentalStatus = (r: Rental, status: string) => {
-    const cur = items || [];
-    const next = cur.map(i => i.vm_id === r.vm_id ? { ...i, status } : i);
+
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  React.useEffect(() => {
+    if (!mounted) return;
+    setShowTerminated(!!loadSettings().show_terminated);
+
+    const onSettings = (event: Event) => {
+      const settings = (event as CustomEvent).detail || loadSettings();
+      setShowTerminated(!!settings.show_terminated);
+    };
+    const onStorage = () => setShowTerminated(!!loadSettings().show_terminated);
+
+    window.addEventListener("requestor_settings_changed", onSettings);
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener("requestor_settings_changed", onSettings);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, [mounted]);
+
+  React.useEffect(() => {
+    if (!mounted) return;
+    const timer = window.setTimeout(() => refresh(), 200);
+    return () => window.clearTimeout(timer);
+  }, [mounted, refresh]);
+
+  const projectItems = React.useMemo(
+    () =>
+      (items || []).filter(
+        (item) => (item.project_id || "default") === activeId,
+      ) as Rental[],
+    [activeId, items],
+  );
+
+  const active = React.useMemo(
+    () =>
+      projectItems.filter(
+        (rental) =>
+          !isTerminalStatus(rental.status) && matchesQuery(rental, query),
+      ),
+    [projectItems, query],
+  );
+  const terminated = React.useMemo(
+    () =>
+      projectItems.filter(
+        (rental) =>
+          isTerminalStatus(rental.status) && matchesQuery(rental, query),
+      ),
+    [projectItems, query],
+  );
+
+  const copySSH = async (rental: Rental) => {
+    setError(null);
+    setBusyId(rental.vm_id);
+    try {
+      await copySSHAction(rental);
+    } catch (error) {
+      setError(errorMessage(error));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const updateRentalStatus = (rental: Rental, status: string) => {
+    const next = (items || []).map((item) =>
+      item.vm_id === rental.vm_id ? { ...item, status } : item,
+    );
     saveRentals(next);
     setItems(next);
   };
-  const start = async (r: Rental) => {
-    setError(null); setBusyId(r.vm_id);
+
+  const start = async (rental: Rental) => {
+    setError(null);
+    setBusyId(rental.vm_id);
     try {
-      if ((r.status || '').toLowerCase() === 'suspended') await vmResume(r.provider_id, r.vm_id, ads);
-      else await vmStart(r.provider_id, r.vm_id, ads);
-      updateRentalStatus(r, 'running');
-    } catch (e: any) { setError(e?.message || String(e)); } finally { setBusyId(null); }
-  };
-  const stop = async (r: Rental) => {
-    setError(null); setBusyId(r.vm_id);
-    try {
-      await vmStop(r.provider_id, r.vm_id, ads);
-      updateRentalStatus(r, 'stopped');
-    } catch (e: any) { setError(e?.message || String(e)); } finally { setBusyId(null); }
-  };
-  const destroy = async (r: any) => {
-    setError(null); setBusyId(r.vm_id);
-    try {
-      try { await vmDestroy(r.provider_id, r.vm_id, ads); } catch (e) { /* treat 404 as already deleted */ }
-      const cur = items || [];
-      const left = cur.filter(i => i.vm_id !== r.vm_id);
-      saveRentals(left);
-      setItems(left);
-    } catch (e: any) { setError(e?.message || String(e)); } finally { setBusyId(null); }
+      if (String(rental.status || "").toLowerCase() === "suspended") {
+        await vmResume(rental.provider_id, rental.vm_id, ads);
+      } else {
+        await vmStart(rental.provider_id, rental.vm_id, ads);
+      }
+      updateRentalStatus(rental, "running");
+    } catch (error) {
+      setError(errorMessage(error));
+    } finally {
+      setBusyId(null);
+    }
   };
 
-  const projectItems = (items || []).filter(i => (i.project_id || 'default') === activeId) as Rental[];
-  const active = projectItems.filter(r => !['terminated', 'deleted'].includes((r.status || '').toLowerCase()));
-  const terminated = projectItems.filter(r => ['terminated', 'deleted'].includes((r.status || '').toLowerCase()));
+  const stop = async (rental: Rental) => {
+    setError(null);
+    setBusyId(rental.vm_id);
+    try {
+      await vmStop(rental.provider_id, rental.vm_id, ads);
+      updateRentalStatus(rental, "stopped");
+    } catch (error) {
+      setError(errorMessage(error));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const destroy = async (rental: Rental) => {
+    setError(null);
+    setBusyId(rental.vm_id);
+    try {
+      try {
+        await vmDestroy(rental.provider_id, rental.vm_id, ads);
+      } catch (error) {
+        if (!isNotFoundError(error)) throw error;
+      }
+      const next = (items || []).filter((item) => item.vm_id !== rental.vm_id);
+      saveRentals(next);
+      setItems(next);
+    } catch (error) {
+      setError(errorMessage(error));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const toggleTerminated = (next: boolean) => {
+    setShowTerminated(next);
+    saveSettings({ show_terminated: next });
+  };
+
+  const hasAnyProjectVm = projectItems.length > 0;
+  const hasVisibleRows =
+    active.length > 0 || (showTerminated && terminated.length > 0);
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between gap-3">
-        <h2>My VMs</h2>
-        {mounted && (
-          <button
-            className={showTerminated ? 'btn btn-secondary' : 'btn btn-secondary'}
-            onClick={() => {
-              const next = !showTerminated;
-              setShowTerminated(next);
-              try { saveSettings({ show_terminated: next }); } catch {}
-            }}
-            aria-pressed={showTerminated}
-          >
-            {showTerminated ? 'Hide terminated' : 'Show terminated'}
-          </button>
-        )}
+    <div className="rentals-shell space-y-6">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+        <div>
+          <h1>My VMs</h1>
+          <p className="mt-2 text-sm text-text-secondary">
+            View and manage all virtual machines in your project.
+          </p>
+        </div>
+        <RentalsToolbar
+          query={query}
+          onQueryChange={setQuery}
+          showTerminated={showTerminated}
+          onShowTerminatedChange={toggleTerminated}
+          onRefresh={refresh}
+        />
       </div>
-      {error && <div className="text-sm text-red-600">{error}</div>}
-      {(!mounted) ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="card"><div className="card-body">
-              <div className="flex items-center justify-between"><Skeleton className="h-4 w-24" /><Skeleton className="h-4 w-16" /></div>
-              <div className="mt-2 grid grid-cols-2 gap-2">
-                <Skeleton className="h-4 w-28" />
-                <Skeleton className="h-4 w-36" />
-                <Skeleton className="h-4 w-24" />
-                <Skeleton className="h-4 w-20" />
-              </div>
-              <div className="mt-3 flex gap-2">
-                <Skeleton className="h-9 w-24" />
-                <Skeleton className="h-9 w-24" />
-                <Skeleton className="h-9 w-24" />
-              </div>
-            </div></div>
-          ))}
+
+      {error && (
+        <div className="rounded-lg border border-danger bg-danger-soft px-4 py-3 text-sm text-danger">
+          {error}
+        </div>
+      )}
+
+      {!mounted ? (
+        <RentalsTableSkeleton />
+      ) : hasVisibleRows ? (
+        <div className="space-y-4">
+          {active.length > 0 && (
+            <RentalsTable
+              title="Active VMs"
+              subtitle="Running, stopped, suspended, and provisioning machines."
+              count={active.length}
+              rentals={active}
+              busyId={busyId}
+              timeColumnLabel="Stream Time Left"
+              onCopySSH={copySSH}
+              onStart={start}
+              onStop={stop}
+              onDestroy={destroy}
+            />
+          )}
+          {showTerminated && terminated.length > 0 && (
+            <RentalsTable
+              title="Terminated VMs"
+              subtitle="These VMs can no longer be started."
+              count={terminated.length}
+              rentals={terminated}
+              busyId={busyId}
+              timeColumnLabel="Terminated At"
+              terminated
+              onDestroy={destroy}
+            />
+          )}
         </div>
       ) : (
-        <>
-          {active.length ? (
-            <div>
-              <div className="mb-2 text-sm text-gray-700">Active</div>
-              <div className="space-y-3">
-                {active.map((r: Rental) => (
-                  <RentalRowWithData
-                    key={r.vm_id}
-                    rental={r}
-                    busy={busyId === r.vm_id}
-                    onCopySSH={copySSH}
-                    onStart={start}
-                    onStop={stop}
-                    onDestroy={destroy}
-                  />
-                ))}
-              </div>
-            </div>
-          ) : (
-            <div className="text-gray-600">No active VMs. Rent one from the Providers tab.</div>
-          )}
-
-          {showTerminated && terminated.length > 0 && (
-            <div>
-              <div className="mt-4 mb-2 text-sm text-gray-700">Terminated</div>
-              <div className="space-y-3">
-                {terminated.map((r: Rental) => (
-                  <RentalRowWithData
-                    key={r.vm_id}
-                    rental={r}
-                    busy={busyId === r.vm_id}
-                    onDestroy={destroy}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-        </>
+        <RentalsEmptyState
+          title={hasAnyProjectVm ? "No matching VMs" : "No VMs yet"}
+          description={
+            hasAnyProjectVm
+              ? "Try a different search or include terminated VMs."
+              : "You don't have any virtual machines in this project."
+          }
+          showSecondaryAction={hasAnyProjectVm}
+          onClearSearch={() => setQuery("")}
+        />
       )}
     </div>
   );

@@ -12,7 +12,9 @@ export function useCopySSH() {
       let port = r.ssh_port || undefined;
       let host = r.provider_ip || undefined;
       if (!port) {
-        try { const acc = await vmAccess(r.provider_id, r.vm_id, ads); port = acc?.ssh_port || port; } catch {}
+        const acc = await vmAccess(r.provider_id, r.vm_id, ads);
+        port = acc?.ssh_port || port;
+        host = host || acc?.ssh_host || undefined;
       }
       if (!host) host = r.provider_ip || 'PROVIDER_IP';
       if (!port) { show('SSH port unavailable'); return false; }

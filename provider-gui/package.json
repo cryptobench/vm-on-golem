@@ -36,6 +36,13 @@
     ],
     "extraResources": [
       {
+        "from": "../design-system",
+        "to": "design-system",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
         "from": "resources/cli",
         "to": "cli",
         "filter": [

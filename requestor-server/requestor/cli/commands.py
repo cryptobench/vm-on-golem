@@ -3,11 +3,13 @@ import asyncio
 import json
 import os
 import subprocess
+from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from typing import Optional
 
 import aiohttp
 import click
+import requests
 import uvicorn
 from tabulate import tabulate
 
@@ -67,6 +69,54 @@ def async_command(f):
         return await f(*args, **kwargs)
 
     return lambda *args, **kwargs: asyncio.run(wrapper(*args, **kwargs))
+
+
+def _fetch_glm_usd_price() -> Decimal:
+    base_url = getattr(config, "coingecko_api_url", "https://api.coingecko.com/api/v3")
+    ids = getattr(config, "coingecko_ids", "golem,golem-network-tokens")
+    try:
+        response = requests.get(
+            f"{str(base_url).rstrip('/')}/simple/price",
+            params={"ids": ids, "vs_currencies": "usd"},
+            timeout=10,
+        )
+        response.raise_for_status()
+        data = response.json()
+        price = None
+        for coin_id in str(ids).split(","):
+            coin_id = coin_id.strip()
+            if coin_id and coin_id in data and "usd" in data[coin_id]:
+                price = Decimal(str(data[coin_id]["usd"]))
+                break
+        if price is None:
+            raise KeyError("GLM price missing")
+    except Exception as exc:
+        raise RequestorError(
+            "Could not fetch GLM/USD price to compute stream rate"
+        ) from exc
+    if price <= 0:
+        raise RequestorError(
+            "Invalid GLM/USD price returned while computing stream rate"
+        )
+    return price
+
+
+def _glm_stream_amounts_from_usd(
+    usd_per_month: float | int | Decimal,
+    hours: int,
+) -> tuple[int, int]:
+    glm_usd = _fetch_glm_usd_price()
+    usd_month = Decimal(str(usd_per_month))
+    glm_month = usd_month / glm_usd
+    base_units_per_glm = Decimal(10) ** 18
+    seconds_per_month = Decimal("730") * Decimal("3600")
+    rate_per_second_wei = (glm_month * base_units_per_glm / seconds_per_month).quantize(
+        Decimal("1"), rounding=ROUND_HALF_UP
+    )
+    if rate_per_second_wei <= 0:
+        raise RequestorError("Computed stream rate is zero; provider price is too low")
+    deposit_wei = int(rate_per_second_wei) * int(hours) * 3600
+    return int(rate_per_second_wei), deposit_wei
 
 
 async def _vm_service_for(name: str) -> tuple[dict, VMService]:
@@ -441,14 +491,13 @@ async def create_vm(
                         est = provider_service.compute_estimate(
                             provider, (cpu, memory, storage)
                         )
-                        if not est or est.get("glm_per_month") is None:
+                        if not est or est.get("usd_per_month") is None:
                             raise RequestorError(
-                                "Provider requires streaming but does not advertise GLM pricing; cannot compute ratePerSecond"
+                                "Provider requires streaming but does not advertise USD pricing; cannot compute GLM ratePerSecond"
                             )
-                        glm_month = est["glm_per_month"]
-                        glm_per_second = float(glm_month) / (730.0 * 3600.0)
-                        rate_per_second_wei = int(glm_per_second * (10**18))
-                        deposit_wei = rate_per_second_wei * int(hours) * 3600
+                        rate_per_second_wei, deposit_wei = _glm_stream_amounts_from_usd(
+                            est["usd_per_month"], int(hours)
+                        )
                         # Auto-fund via faucet if needed (testnets), then create stream
                         try:
                             from eth_account import Account
@@ -699,13 +748,13 @@ async def stream_open(
         async with provider_service:
             provider = await provider_service.verify_provider(provider_id)
             est = provider_service.compute_estimate(provider, (cpu, memory, storage))
-            if not est or est.get("glm_per_month") is None:
+            if not est or est.get("usd_per_month") is None:
                 raise RequestorError(
-                    "Provider does not advertise GLM pricing; cannot compute ratePerSecond"
+                    "Provider does not advertise USD pricing; cannot compute GLM ratePerSecond"
                 )
-            glm_month = est["glm_per_month"]
-            glm_per_second = float(glm_month) / (730.0 * 3600.0)
-            rate_per_second_wei = int(glm_per_second * (10**18))
+            rate_per_second_wei, deposit_wei = _glm_stream_amounts_from_usd(
+                est["usd_per_month"], int(hours)
+            )
 
             provider_ip = (
                 "localhost"
@@ -719,7 +768,6 @@ async def stream_open(
                 info = await client.get_provider_info()
                 recipient = info["provider_id"]
 
-            deposit_wei = rate_per_second_wei * int(hours) * 3600
             # Prefer provider-advertised contract addresses to avoid mismatches
             spc = StreamPaymentConfig(
                 rpc_url=config.polygon_rpc_url,
@@ -767,7 +815,7 @@ async def stream_topup(stream_id: int, glm: float | None, hours: int | None):
         sp = StreamPaymentClient(spc)
         add_wei: int
         if glm is not None:
-            add_wei = int(float(glm) * (10**18))
+            add_wei = int(Decimal(str(glm)) * (Decimal(10) ** 18))
         elif hours is not None:
             # naive: use last known rate by reading on-chain stream
             rate = sp.contract.functions.streams(int(stream_id)).call()[

@@ -25,10 +25,10 @@ export default function SettingsPage() {
   const [disc, setDisc] = React.useState<string>(ads.discovery_url);
   const [rpc, setRpc] = React.useState<string>(ads.arkiv_rpc_url);
   const [ws, setWs] = React.useState<string>(ads.arkiv_ws_url);
-  const [evmChainIdText, setEvmChainIdText] = React.useState<string>(process.env.NEXT_PUBLIC_EVM_CHAIN_ID || "0x6013a");
-  const [evmChainName, setEvmChainName] = React.useState<string>(process.env.NEXT_PUBLIC_EVM_CHAIN_NAME || "Arkiv L2 Hoodi");
-  const [evmRpcUrl, setEvmRpcUrl] = React.useState<string>(process.env.NEXT_PUBLIC_EVM_RPC_URL || "https://l2.hoodi.arkiv.network/rpc");
-  const [evmExplorerUrl, setEvmExplorerUrl] = React.useState<string>(process.env.NEXT_PUBLIC_EVM_EXPLORER_URL || "https://explorer.l2.hoodi.arkiv.network");
+  const [evmChainIdText, setEvmChainIdText] = React.useState<string>(process.env.NEXT_PUBLIC_EVM_CHAIN_ID || "0x88bb0");
+  const [evmChainName, setEvmChainName] = React.useState<string>(process.env.NEXT_PUBLIC_EVM_CHAIN_NAME || "Ethereum Hoodi");
+  const [evmRpcUrl, setEvmRpcUrl] = React.useState<string>(process.env.NEXT_PUBLIC_EVM_RPC_URL || "https://ethereum-hoodi-rpc.publicnode.com");
+  const [evmExplorerUrl, setEvmExplorerUrl] = React.useState<string>(process.env.NEXT_PUBLIC_EVM_EXPLORER_URL || "https://hoodi.etherscan.io");
   const [profileName, setProfileName] = React.useState<string>(profiles.find(p => p.id === activeId)?.name || "");
   const [pendingProvider, setPendingProvider] = React.useState<string | null>(null);
   // SSH key add handled by KeyPicker
@@ -51,10 +51,10 @@ export default function SettingsPage() {
     setSshKeys(keys);
     setDefaultKeyId(initial.default_ssh_key_id || (keys[0]?.id) || (initial.ssh_public_key ? 'default' : undefined));
     setDisplayCurrency(initial.display_currency === 'token' ? 'token' : 'fiat');
-    setEvmChainIdText(initial.evm_chain_id || (process.env.NEXT_PUBLIC_EVM_CHAIN_ID || "0x6013a"));
-    setEvmChainName(initial.evm_chain_name || (process.env.NEXT_PUBLIC_EVM_CHAIN_NAME || "Arkiv L2 Hoodi"));
-    setEvmRpcUrl(initial.evm_rpc_url || (process.env.NEXT_PUBLIC_EVM_RPC_URL || "https://l2.hoodi.arkiv.network/rpc"));
-    setEvmExplorerUrl(initial.evm_explorer_url || (process.env.NEXT_PUBLIC_EVM_EXPLORER_URL || "https://explorer.l2.hoodi.arkiv.network"));
+    setEvmChainIdText(initial.evm_chain_id || (process.env.NEXT_PUBLIC_EVM_CHAIN_ID || "0x88bb0"));
+    setEvmChainName(initial.evm_chain_name || (process.env.NEXT_PUBLIC_EVM_CHAIN_NAME || "Ethereum Hoodi"));
+    setEvmRpcUrl(initial.evm_rpc_url || (process.env.NEXT_PUBLIC_EVM_RPC_URL || "https://ethereum-hoodi-rpc.publicnode.com"));
+    setEvmExplorerUrl(initial.evm_explorer_url || (process.env.NEXT_PUBLIC_EVM_EXPLORER_URL || "https://hoodi.etherscan.io"));
     // Sync ads-derived fields (profiles/context already mounted)
     setMode(ads.mode);
     setDisc(ads.discovery_url);
@@ -204,7 +204,7 @@ export default function SettingsPage() {
                 <label className="label">Price unit</label>
                 <select className="input w-48" value={displayCurrency} onChange={(e) => { const v = (e.target.value as 'fiat'|'token'); setDisplayCurrency(v); saveSettings({ display_currency: v }); }}>
                   <option value="fiat">Fiat (USD)</option>
-                  <option value="token">Token (native / GLM)</option>
+                  <option value="token">Token (GLM)</option>
                 </select>
               </div>
               <div>
@@ -212,16 +212,16 @@ export default function SettingsPage() {
                 <input className="input" value={sp} onChange={e => setSp(e.target.value)} placeholder="0x..." />
               </div>
               <div>
-                <label className="label">GLM token address (set 0x0… to pay in native token)</label>
+                <label className="label">GLM token address</label>
                 <input className="input" value={glm} onChange={e => setGlm(e.target.value)} placeholder="0x..." />
               </div>
               <div>
                 <label className="label">Payments chain ID (hex or decimal)</label>
-                <input className="input" value={evmChainIdText} onChange={e => setEvmChainIdText(e.target.value)} placeholder="0x6013a" />
+                <input className="input" value={evmChainIdText} onChange={e => setEvmChainIdText(e.target.value)} placeholder="0x88bb0" />
               </div>
               <div>
                 <label className="label">Payments chain name</label>
-                <input className="input" value={evmChainName} onChange={e => setEvmChainName(e.target.value)} placeholder="Arkiv L2 Hoodi" />
+                <input className="input" value={evmChainName} onChange={e => setEvmChainName(e.target.value)} placeholder="Ethereum Hoodi" />
               </div>
               <div>
                 <label className="label">Payments RPC URL</label>

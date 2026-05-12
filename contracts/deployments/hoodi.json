@@ -1,0 +1,10 @@
+{
+  "network": "hoodi",
+  "timestamp": "2026-05-12T20:11:29.607Z",
+  "StreamPayment": {
+    "address": "0x3EaBfECFa1A2Acb99Af4520eB3fc963D2ED0ffE6",
+    "oracle": "0xd44e8a98f162C0c995cFF5Ddefb0Ed68713A3428",
+    "paymentToken": "0x55555555555556AcFf9C332Ed151758858bd7a26",
+    "glmToken": "0x55555555555556AcFf9C332Ed151758858bd7a26"
+  }
+}

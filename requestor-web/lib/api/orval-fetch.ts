@@ -1,13 +1,14 @@
 export type ApiRequestOptions = RequestInit & {
   baseUrl?: string;
+  queryParams?: Record<string, string | number | boolean | null | undefined>;
 };
 
 export async function orvalFetch<T>(
   path: string,
   options: ApiRequestOptions = {},
 ): Promise<T> {
-  const { baseUrl, ...init } = options;
-  const url = buildUrl(baseUrl, path);
+  const { baseUrl, queryParams, ...init } = options;
+  const url = buildUrl(baseUrl, path, queryParams);
   const response = await fetch(url, {
     ...init,
   });
@@ -23,10 +24,19 @@ export async function orvalFetch<T>(
   } as T;
 }
 
-function buildUrl(baseUrl: string | undefined, path: string): string {
+function buildUrl(
+  baseUrl: string | undefined,
+  path: string,
+  queryParams?: ApiRequestOptions["queryParams"],
+): string {
   const url = baseUrl
     ? new URL(`${baseUrl.replace(/\/$/, "")}/${path.replace(/^\//, "")}`)
     : new URL(path, window.location.origin);
+
+  Object.entries(queryParams || {}).forEach(([key, value]) => {
+    if (value == null || url.searchParams.has(key)) return;
+    url.searchParams.set(key, String(value));
+  });
 
   if (!baseUrl) {
     return `${url.pathname}${url.search}`;

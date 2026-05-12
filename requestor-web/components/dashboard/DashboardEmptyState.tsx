@@ -1,0 +1,45 @@
+"use client";
+
+import React from "react";
+import { RiAddLine, RiBroadcastLine, RiInboxArchiveLine } from "@remixicon/react";
+
+type EmptyIcon = "vms" | "streams";
+
+function EmptyVisual({ icon }: { icon: EmptyIcon }) {
+  const Icon = icon === "vms" ? RiInboxArchiveLine : RiBroadcastLine;
+  return (
+    <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-lg border border-dashed border-border-strong text-primary opacity-40">
+      <Icon className="h-8 w-8" aria-hidden />
+    </div>
+  );
+}
+
+export function DashboardEmptyState({
+  icon,
+  title,
+  description,
+  actionLabel,
+}: {
+  icon: EmptyIcon;
+  title: string;
+  description: string;
+  actionLabel?: string | null;
+}) {
+  const openCreateWizard = () => {
+    window.dispatchEvent(new CustomEvent("requestor-open-create-wizard"));
+  };
+
+  return (
+    <div className="flex min-h-48 flex-col items-center justify-center px-4 py-7 text-center">
+      <EmptyVisual icon={icon} />
+      <h3 className="mt-4 text-lg font-semibold text-text-primary">{title}</h3>
+      <p className="mt-2 max-w-sm text-sm leading-5 text-text-secondary">{description}</p>
+      {actionLabel && (
+        <button className="btn btn-secondary mt-5 px-5 text-primary ring-primary" onClick={openCreateWizard} type="button">
+          <RiAddLine className="h-5 w-5" aria-hidden />
+          {actionLabel}
+        </button>
+      )}
+    </div>
+  );
+}
