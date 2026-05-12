@@ -40,6 +40,49 @@ def test_guest_token_auth_and_sample_storage(tmp_path: Path):
     assert guest["disk_percent"]["value"] == 10.0
 
 
+def test_guest_samples_use_live_cache_and_downsample_history(tmp_path: Path):
+    repo = MonitoringRepository(str(tmp_path / "monitoring.sqlite"))
+    repo.init_schema()
+    token = repo.issue_guest_token("vm-a")
+    service = MonitoringService(
+        {
+            "MONITORING_LIVE_ACTIVE_INTERVAL_SECONDS": 1,
+            "MONITORING_LIVE_IDLE_INTERVAL_SECONDS": 30,
+            "MONITORING_HISTORY_DOWNSAMPLE_SECONDS": 10,
+        },
+        repo,
+        MagicMock(),
+        MagicMock(),
+    )
+
+    async def _record_live_samples():
+        async with service.watch_vm("vm-a"):
+            first_result = await service.record_guest_sample(
+                "vm-a",
+                GuestMetricPayload(token=token, cpu_percent=10),
+            )
+            second_result = await service.record_guest_sample(
+                "vm-a",
+                GuestMetricPayload(token=token, cpu_percent=20),
+            )
+            return first_result, second_result
+
+    first, second = asyncio_run(_record_live_samples())
+
+    latest = service.latest()
+    assert latest.vms["vm-a"]["guest_agent"]["cpu_percent"]["value"] == 20
+    assert first.next_interval_seconds == 1
+    assert second.live_mode is True
+    persisted_cpu = [
+        sample
+        for sample in repo.history(
+            MetricScope.VM, since=latest.generated_at.replace(year=2000)
+        )
+        if sample.metric == "cpu_percent"
+    ]
+    assert len(persisted_cpu) == 1
+
+
 def test_infrastructure_collection_uses_list_status_not_guest_exec(tmp_path: Path):
     repo = MonitoringRepository(str(tmp_path / "monitoring.sqlite"))
     repo.init_schema()

@@ -86,6 +86,11 @@ export type Rental = {
   created_at?: number;
   ended_at?: number;
   end_reason?: string;
+  terminated_at?: number;
+  settlement_tx_hash?: string | null;
+  termination_reason?: string;
+  create_failed_at?: number;
+  settlement_status?: "pending" | "settled" | "failed" | "not_required";
 };
 
 export type VmMonitoringLatest = {
@@ -113,6 +118,26 @@ export type VmMonitoringHistory = {
     timestamp: string;
     vm_id?: string | null;
   }>;
+};
+
+export type VmLiveSnapshot = {
+  provider_info?: Record<string, unknown> | null;
+  lifecycle?: Record<string, unknown> | null;
+  access?: Record<string, unknown> | null;
+  job?: Record<string, unknown> | null;
+  snapshots?: Array<Record<string, unknown>>;
+  stream?: Record<string, unknown> | null;
+  metrics_latest?: VmMonitoringLatest | null;
+  metrics_history?: VmMonitoringHistory | null;
+  errors?: Record<string, string>;
+};
+
+export type VmLiveEvent = {
+  type: "hello" | "snapshot" | "update" | "error" | "heartbeat";
+  generated_at: string;
+  scope?: string | null;
+  data?: unknown;
+  error?: string | null;
 };
 
 const SETTINGS_KEY = "requestor_settings_v1";
@@ -374,6 +399,33 @@ export async function vmMetricsHistory(
     `/api/v1/vms/${encodeURIComponent(vmId)}/metrics/history?range=${encodeURIComponent(range)}`,
     ads,
   );
+}
+
+export function vmLiveUrl(
+  providerId: string,
+  vmId: string,
+  ads: AdsConfig,
+  options: { jobId?: string | null; historyRange?: string } = {},
+) {
+  const url = new URL(
+    proxyProviderUrl(
+      providerId,
+      `/api/v1/vms/${encodeURIComponent(vmId)}/live`,
+    ),
+  );
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  url.searchParams.set("proxy_source", ads.mode || "arkiv");
+  url.searchParams.set(
+    "proxy_token",
+    process.env.NEXT_PUBLIC_PORT_CHECKER_TOKEN || "",
+  );
+  if (ads.arkiv_rpc_url) url.searchParams.set("arkiv_rpc_url", ads.arkiv_rpc_url);
+  if (ads.arkiv_ws_url) url.searchParams.set("arkiv_ws_url", ads.arkiv_ws_url);
+  if (options.jobId) url.searchParams.set("job_id", options.jobId);
+  if (options.historyRange) {
+    url.searchParams.set("history_range", options.historyRange);
+  }
+  return url.toString();
 }
 
 export const vmStart = (providerId: string, vmId: string, ads: AdsConfig) =>

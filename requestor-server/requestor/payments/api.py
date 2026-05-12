@@ -55,3 +55,16 @@ async def top_up_stream(
     ),
 ) -> StreamActionResult:
     return await payment_service.top_up_stream(stream_id, command.amount_wei)
+
+
+@router.post(
+    "/payments/streams/{stream_id}/terminate", response_model=StreamActionResult
+)
+@inject
+async def terminate_stream(
+    stream_id: int,
+    payment_service: RequestorPaymentService = Depends(
+        Provide[Container.payment_service]
+    ),
+) -> StreamActionResult:
+    return await payment_service.terminate_stream(stream_id)

@@ -134,7 +134,8 @@ Flow:
 4. Approve GLM and create a stream (`createStream(glm_token_address, provider_id, deposit, ratePerSecond)`), capture `stream_id`.
 5. Create VM: `POST /api/v1/vms` with `stream_id` included.
 6. Top‑up over time with `topUp(stream_id, amount)` to extend stopTime and keep the VM running indefinitely.
-7. On stop/destroy: the requestor will best‑effort `withdraw` / `terminate` to settle.
+7. `stop` only powers off the VM; the paid lease and stream remain active.
+8. `destroy`/`delete` terminates the stream first, settling vested provider payout and refunding unused deposit, then deletes the VM.
 
 CLI helpers
 
@@ -171,13 +172,13 @@ golem vm stream status my-vm
 golem vm stream inspect --stream-id 123
 ```
 
-- Stopping or destroying a VM ends the stream:
+- Stop powers off the VM but keeps the stream active; destroy ends the paid lease:
 
 ```bash
-# Stop VM and terminate payment stream (best-effort)
+# Stop VM; billing continues until top-up runs out or the stream is terminated
 golem vm stop my-vm
 
-# Destroy VM and terminate stream
+# Terminate stream and destroy VM
 golem vm destroy my-vm
 ```
 

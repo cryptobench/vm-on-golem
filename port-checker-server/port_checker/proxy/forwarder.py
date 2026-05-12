@@ -1,6 +1,7 @@
 import asyncio
 
 import aiohttp
+from fastapi import WebSocket
 
 from port_checker.config import Settings
 from port_checker.errors import BadGatewayError, GatewayTimeoutError
@@ -45,3 +46,73 @@ class HTTPForwarder:
                 raise GatewayTimeoutError("Upstream timeout") from exc
             except aiohttp.ClientError as exc:
                 raise BadGatewayError(f"Upstream error: {exc}") from exc
+
+
+class WebSocketForwarder:
+    def __init__(self, settings: Settings) -> None:
+        self.settings = settings
+
+    async def forward(
+        self,
+        *,
+        websocket: WebSocket,
+        url: str,
+        headers: dict[str, str],
+    ) -> None:
+        timeout = aiohttp.ClientTimeout(
+            total=None,
+            connect=self.settings.proxy_connect_timeout,
+            sock_read=None,
+        )
+        try:
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.ws_connect(url, headers=headers) as upstream:
+                    await websocket.accept()
+                    client_task = asyncio.create_task(
+                        self._client_to_upstream(websocket, upstream)
+                    )
+                    upstream_task = asyncio.create_task(
+                        self._upstream_to_client(websocket, upstream)
+                    )
+                    done, pending = await asyncio.wait(
+                        [client_task, upstream_task],
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+                    for task in pending:
+                        task.cancel()
+                    await asyncio.gather(*pending, return_exceptions=True)
+                    for task in done:
+                        task.result()
+        except aiohttp.ClientError as exc:
+            await websocket.close(code=1011, reason=f"Upstream error: {exc}")
+        except asyncio.TimeoutError:
+            await websocket.close(code=1011, reason="Upstream timeout")
+
+    async def _client_to_upstream(
+        self, websocket: WebSocket, upstream: aiohttp.ClientWebSocketResponse
+    ) -> None:
+        while True:
+            message = await websocket.receive()
+            if message["type"] == "websocket.disconnect":
+                await upstream.close()
+                return
+            if "text" in message and message["text"] is not None:
+                await upstream.send_str(message["text"])
+            elif "bytes" in message and message["bytes"] is not None:
+                await upstream.send_bytes(message["bytes"])
+
+    async def _upstream_to_client(
+        self, websocket: WebSocket, upstream: aiohttp.ClientWebSocketResponse
+    ) -> None:
+        async for message in upstream:
+            if message.type == aiohttp.WSMsgType.TEXT:
+                await websocket.send_text(message.data)
+            elif message.type == aiohttp.WSMsgType.BINARY:
+                await websocket.send_bytes(message.data)
+            elif message.type in {
+                aiohttp.WSMsgType.CLOSE,
+                aiohttp.WSMsgType.CLOSED,
+                aiohttp.WSMsgType.ERROR,
+            }:
+                break
+        await websocket.close()

@@ -11,7 +11,12 @@ import {
   vmStart,
   vmStop,
 } from "../../lib/api";
+import {
+  ensurePaidStreamCanStart,
+  terminatePaidRental,
+} from "../../lib/rentalLifecycle";
 import { useCopySSH } from "../../hooks/useCopySSH";
+import { useStreamActions } from "../../hooks/useStreamActions";
 import { useAds } from "../../context/AdsContext";
 import { useProjects } from "../../context/ProjectsContext";
 import { useProjectRentals } from "../../hooks/useProjectRentals";
@@ -44,10 +49,6 @@ function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
-function isNotFoundError(error: unknown) {
-  return (error as { status?: number } | null)?.status === 404;
-}
-
 export default function RentalsPage() {
   const [mounted, setMounted] = React.useState(false);
   const [showTerminated, setShowTerminated] = React.useState(false);
@@ -55,6 +56,12 @@ export default function RentalsPage() {
   const [error, setError] = React.useState<string | null>(null);
   const [busyId, setBusyId] = React.useState<string | null>(null);
   const { ads } = useAds();
+  const spAddr = (
+    loadSettings().stream_payment_address ||
+    process.env.NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS ||
+    ""
+  ).trim();
+  const { terminate } = useStreamActions(spAddr);
   const { activeId } = useProjects();
   const { items, setItems, refresh } = useProjectRentals(activeId);
   const copySSHAction = useCopySSH();
@@ -136,6 +143,10 @@ export default function RentalsPage() {
     setError(null);
     setBusyId(rental.vm_id);
     try {
+      await ensurePaidStreamCanStart({
+        rental,
+        streamPaymentAddress: spAddr,
+      });
       if (String(rental.status || "").toLowerCase() === "suspended") {
         await vmResume(rental.provider_id, rental.vm_id, ads);
       } else {
@@ -166,12 +177,15 @@ export default function RentalsPage() {
     setError(null);
     setBusyId(rental.vm_id);
     try {
-      try {
-        await vmDestroy(rental.provider_id, rental.vm_id, ads);
-      } catch (error) {
-        if (!isNotFoundError(error)) throw error;
-      }
-      const next = (items || []).filter((item) => item.vm_id !== rental.vm_id);
+      const terminatedRental = await terminatePaidRental({
+        rental,
+        ads,
+        terminateStream: terminate,
+        destroyVm: vmDestroy,
+      });
+      const next = (items || []).map((item) =>
+        item.vm_id === rental.vm_id ? terminatedRental : item,
+      );
       saveRentals(next);
       setItems(next);
     } catch (error) {

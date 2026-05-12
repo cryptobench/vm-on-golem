@@ -39,6 +39,12 @@ class GuestMetricPayload(BaseModel):
     timestamp: Optional[datetime] = None
 
 
+class GuestMetricAccepted(BaseModel):
+    status: str = "accepted"
+    next_interval_seconds: int
+    live_mode: bool
+
+
 class MetricsLatestResponse(BaseModel):
     host: dict[str, Any]
     vms: dict[str, dict[str, Any]]

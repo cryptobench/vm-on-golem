@@ -103,12 +103,61 @@ export function latestNetworkRates(rows: MetricChartRow[]) {
   };
 }
 
+export function networkTransferTotals(
+  samples: VmMonitoringHistory["samples"] = [],
+) {
+  const previousCounters = new Map<string, number>();
+  const totals = {
+    rx: 0,
+    tx: 0,
+  };
+  const hasDelta = {
+    rx: false,
+    tx: false,
+  };
+
+  sortedGuestSamples(samples).forEach((sample) => {
+    if (!(sample.metric in networkMetricLabels)) return;
+
+    const previous = previousCounters.get(sample.metric);
+    previousCounters.set(sample.metric, sample.value);
+    if (previous == null) return;
+
+    const delta = Math.max(0, sample.value - previous);
+    if (sample.metric === "network_rx_bytes") {
+      totals.rx += delta;
+      hasDelta.rx = true;
+    }
+    if (sample.metric === "network_tx_bytes") {
+      totals.tx += delta;
+      hasDelta.tx = true;
+    }
+  });
+
+  return {
+    rx: hasDelta.rx ? totals.rx : null,
+    tx: hasDelta.tx ? totals.tx : null,
+  };
+}
+
 export function formatPercent(value: number | null) {
   return value == null ? "-" : `${value.toFixed(0)}%`;
 }
 
 export function formatMbps(value: number | null) {
   return value == null ? "-" : `${value.toFixed(1)} Mbps`;
+}
+
+export function formatBytes(value: number | null) {
+  if (value == null) return "-";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let scaled = value;
+  let unitIndex = 0;
+  while (scaled >= 1000 && unitIndex < units.length - 1) {
+    scaled /= 1000;
+    unitIndex += 1;
+  }
+  return `${scaled.toFixed(unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
 }
 
 export function formatChartPercent(value: number) {

@@ -13,10 +13,11 @@ import { DetailPanel, PanelTitle } from "./VmDetailPrimitives";
 import {
   buildMetricChartRows,
   buildSparklineValues,
+  formatBytes,
   formatMbps,
   formatPercent,
   latestNetworkRates,
-  parseMetricTimestamp,
+  networkTransferTotals,
 } from "./metrics";
 
 type GuestMetrics = Record<
@@ -38,31 +39,26 @@ export function VmMetricsSummary({
     [history],
   );
   const network = latestNetworkRates(rows);
-  const heartbeatSeconds = heartbeatAgeSeconds(guestMetrics?.agent_heartbeat?.timestamp);
+  const networkTotals = React.useMemo(
+    () => networkTransferTotals(history?.samples || []),
+    [history],
+  );
 
   return (
     <DetailPanel className="vm-page-enter">
       <PanelTitle
         title="Latest guest metrics"
         hint="Metrics are reported by the guest agent inside the VM."
-        trailing={
-          <div className="text-xs text-text-secondary">
-            <span>
-              Agent heartbeat:{" "}
-              {heartbeatSeconds == null ? "waiting" : `${heartbeatSeconds}s ago`}
-            </span>
-          </div>
-        }
       />
 
       {loading ? (
-        <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, index) => (
+        <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+          {Array.from({ length: 5 }).map((_, index) => (
             <Skeleton key={index} className="h-24 w-full" />
           ))}
         </div>
       ) : guestMetrics ? (
-        <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
           <MetricTile
             label="CPU"
             value={formatPercent(metricPercent(guestMetrics, "cpu_percent"))}
@@ -82,6 +78,7 @@ export function VmMetricsSummary({
             color="emerald"
           />
           <NetworkTile rx={network.rx} tx={network.tx} />
+          <NetworkTotalsTile rx={networkTotals.rx} tx={networkTotals.tx} />
         </div>
       ) : (
         <div className="mt-4 rounded-md border border-warning bg-warning-soft p-4 text-sm text-text-primary">
@@ -118,7 +115,7 @@ function NetworkTile({ rx, tx }: { rx: number | null; tx: number | null }) {
     <div className="vm-metric-tile rounded-lg border border-border bg-surface p-4">
       <div className="flex items-center gap-2 text-xs font-medium text-text-muted">
         <RiPulseLine className="h-4 w-4" aria-hidden />
-        Network (1h)
+        Network live
       </div>
       <div className="mt-2 space-y-1 text-sm font-medium text-text-primary">
         <div className="flex items-center gap-1">
@@ -128,6 +125,27 @@ function NetworkTile({ rx, tx }: { rx: number | null; tx: number | null }) {
         <div className="flex items-center gap-1">
           <RiArrowUpLine className="h-4 w-4 text-text-secondary" aria-hidden />
           {formatMbps(tx)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function NetworkTotalsTile({ rx, tx }: { rx: number | null; tx: number | null }) {
+  return (
+    <div className="vm-metric-tile rounded-lg border border-border bg-surface p-4">
+      <div className="flex items-center gap-2 text-xs font-medium text-text-muted">
+        <RiPulseLine className="h-4 w-4" aria-hidden />
+        Network total (1h)
+      </div>
+      <div className="mt-2 space-y-1 text-sm font-medium text-text-primary">
+        <div className="flex items-center gap-1">
+          <RiArrowDownLine className="h-4 w-4 text-text-secondary" aria-hidden />
+          {formatBytes(rx)}
+        </div>
+        <div className="flex items-center gap-1">
+          <RiArrowUpLine className="h-4 w-4 text-text-secondary" aria-hidden />
+          {formatBytes(tx)}
         </div>
       </div>
     </div>
@@ -176,11 +194,4 @@ function metricPercent(guestMetrics: NonNullable<GuestMetrics>, name: string) {
   const value = Number(guestMetrics?.[name]?.value);
   if (!Number.isFinite(value)) return null;
   return Math.max(0, Math.min(100, value));
-}
-
-function heartbeatAgeSeconds(timestamp?: string) {
-  if (!timestamp) return null;
-  const age = Math.max(0, Date.now() - parseMetricTimestamp(timestamp));
-  if (!Number.isFinite(age)) return null;
-  return Math.floor(age / 1000);
 }

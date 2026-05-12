@@ -9,6 +9,7 @@ from .discovery.publishers import CentralDiscoveryPublisher
 from .discovery.publishing_service import DiscoveryPublishingService
 from .discovery.resource_tracker import ResourceTracker
 from .jobs.store import JobStore
+from .live.service import VMLiveService
 from .monitoring.repo import MonitoringRepository
 from .monitoring.services import MonitoringService
 from .payments.blockchain_service import StreamPaymentClient
@@ -181,6 +182,14 @@ class Container(containers.DeclarativeContainer):
     provider_info_service = providers.Factory(
         ProviderInfoService,
         settings=config,
+    )
+
+    vm_live_service = providers.Singleton(
+        VMLiveService,
+        monitoring_service=monitoring_service,
+        vm_application_service=vm_application_service,
+        provider_info_service=provider_info_service,
+        stream_status_service=stream_status_service,
     )
 
     summary_service = providers.Factory(

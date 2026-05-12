@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from . import (
     admin_routes,
+    live_routes,
     monitoring_routes,
     payments_routes,
     provider_routes,
@@ -16,3 +17,4 @@ router.include_router(payments_routes.router)
 router.include_router(summary_routes.router)
 router.include_router(monitoring_routes.router)
 router.include_router(admin_routes.router)
+router.include_router(live_routes.router)

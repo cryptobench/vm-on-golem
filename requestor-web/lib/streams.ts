@@ -62,3 +62,15 @@ export async function fetchStreamWithMeta(spAddr: string, streamId: bigint) {
     usdPrice: getPriceUSD(tokenSymbol),
   };
 }
+
+export async function terminateStreamWithWallet(spAddr: string, streamId: bigint) {
+  const { ethereum } = window as any;
+  if (!ethereum) throw new Error("wallet unavailable");
+  await requirePaymentsNetwork(ethereum);
+  const provider = new BrowserProvider(ethereum);
+  const signer = await provider.getSigner();
+  const contract = new Contract(spAddr, (streamPayment as any).abi, signer);
+  const tx = await contract.terminate(streamId, { gasLimit: 180000n });
+  await tx.wait();
+  return tx.hash as string;
+}

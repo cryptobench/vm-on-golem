@@ -157,7 +157,9 @@ import urllib.request
 
 VM_ID = {vm_id!r}
 TOKEN = {token!r}
-VERSION = "0.1.0"
+VERSION = "0.2.0"
+DEFAULT_INTERVAL_SECONDS = 30
+PUBLISH_FAILURE_PREFIX = "failed to publish sample"
 
 
 def _warn(message):
@@ -265,15 +267,22 @@ def post(payload):
         raise RuntimeError("provider metrics endpoint unavailable")
     body = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(url, data=body, headers={{"Content-Type": "application/json"}})
-    urllib.request.urlopen(req, timeout=5).read()
+    raw = urllib.request.urlopen(req, timeout=5).read()
+    try:
+        data = json.loads(raw.decode("utf-8"))
+    except Exception:
+        return DEFAULT_INTERVAL_SECONDS
+    interval = int(data.get("next_interval_seconds") or DEFAULT_INTERVAL_SECONDS)
+    return max(1, min(300, interval))
 
 
 while True:
+    interval = DEFAULT_INTERVAL_SECONDS
     try:
-        post(collect())
+        interval = post(collect())
     except Exception as exc:
-        _warn(f"failed to publish sample: {{exc}}")
-    time.sleep(30)
+        _warn(f"{{PUBLISH_FAILURE_PREFIX}}: {{exc}}")
+    time.sleep(interval)
 """
     service = """[Unit]
 Description=Golem VM metrics agent

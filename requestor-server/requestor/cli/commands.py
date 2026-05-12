@@ -1388,22 +1388,7 @@ async def stop_vm(name: str):
         # Initialize VM service
         provider_url = config.get_provider_url(vm["provider_ip"])
         async with ProviderClient(provider_url) as client:
-            # Initialize blockchain client for stream termination on stop
-            from ..payments.blockchain_service import (
-                StreamPaymentClient,
-                StreamPaymentConfig,
-            )
-
-            spc = StreamPaymentConfig(
-                rpc_url=config.polygon_rpc_url,
-                contract_address=config.stream_payment_address,
-                glm_token_address=config.glm_token_address,
-                private_key=config.ethereum_private_key,
-            )
-            sp_client = StreamPaymentClient(spc)
-            vm_service = VMService(
-                db_service, SSHService(config.ssh_key_dir), client, sp_client
-            )
+            vm_service = VMService(db_service, SSHService(config.ssh_key_dir), client)
             await vm_service.stop_vm(name)
 
         # Show fancy success message

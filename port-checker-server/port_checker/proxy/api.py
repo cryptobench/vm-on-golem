@@ -1,17 +1,19 @@
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Header, Query, Request, Response
+from fastapi import APIRouter, Depends, Header, Query, Request, Response, WebSocket
 
 from port_checker.config import Settings
+from port_checker.errors import DomainError
 
 from .direct_service import DirectProxyService
 from .domain import DirectProxyCommand, ProviderProxyCommand, ProxyResponse
+from .forwarder import WebSocketForwarder
 from .provider_service import ProviderProxyService
 
 router = APIRouter()
 
 
-def _client_host(request: Request) -> str:
+def _client_host(request: Request | WebSocket) -> str:
     return request.client.host if request.client else ""
 
 
@@ -31,6 +33,10 @@ def get_provider_proxy_service(
     settings: Settings = Depends(get_settings),
 ) -> ProviderProxyService:
     return ProviderProxyService(settings)
+
+
+def get_websocket_provider_proxy_service(websocket: WebSocket) -> ProviderProxyService:
+    return ProviderProxyService(websocket.app.state.settings)
 
 
 def get_direct_proxy_service(
@@ -95,6 +101,45 @@ async def http_proxy(
     return _to_response(result)
 
 
+async def websocket_proxy_provider(
+    websocket: WebSocket,
+    provider_id: str,
+    path: str,
+    port: int = Query(default=80),
+    proxy_source: Optional[str] = Query(default=None),
+    proxy_token: Optional[str] = Query(default=None),
+    arkiv_rpc_url: Optional[str] = Query(default=None),
+    arkiv_ws_url: Optional[str] = Query(default=None),
+    x_proxy_source: Optional[str] = Header(default=None),
+    x_proxy_token: Optional[str] = Header(default=None),
+    x_proxy_arkiv_rpc: Optional[str] = Header(default=None),
+    x_proxy_arkiv_ws: Optional[str] = Header(default=None),
+    service: ProviderProxyService = Depends(get_websocket_provider_proxy_service),
+) -> None:
+    try:
+        url, headers = await service.build_target(
+            provider_id=provider_id,
+            path=path,
+            query=websocket.url.query,
+            headers=dict(websocket.headers),
+            client_host=_client_host(websocket),
+            port=port,
+            source=proxy_source or x_proxy_source,
+            token=proxy_token or x_proxy_token,
+            arkiv_rpc_url=arkiv_rpc_url or x_proxy_arkiv_rpc,
+            arkiv_ws_url=arkiv_ws_url or x_proxy_arkiv_ws,
+            scheme="ws",
+        )
+    except DomainError as exc:
+        await websocket.close(code=1008, reason=str(exc)[:120])
+        return
+    await WebSocketForwarder(service.settings).forward(
+        websocket=websocket,
+        url=url,
+        headers=headers,
+    )
+
+
 for _method in ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]:
     router.add_api_route(
         "/proxy/provider/{provider_id}/{path:path}",
@@ -108,3 +153,8 @@ for _method in ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]:
         methods=[_method],
         operation_id=f"proxy_direct_{_method.lower()}",
     )
+
+router.add_api_websocket_route(
+    "/proxy/provider/{provider_id}/{path:path}",
+    websocket_proxy_provider,
+)

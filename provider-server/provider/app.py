@@ -58,6 +58,7 @@ def _wire_container(container: Container) -> None:
             ".api.provider_routes",
             ".api.summary_routes",
             ".api.monitoring_routes",
+            ".api.live_routes",
         ]
     )
 
