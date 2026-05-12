@@ -1,8 +1,8 @@
+import sys
 from pathlib import Path
 
 import pytest
 
-import sys
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from requestor.ssh.manager import SSHKeyManager

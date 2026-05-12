@@ -56,7 +56,7 @@ export function buildMetricChartRows(
     }
 
     if (sample.metric in networkMetricLabels) {
-      const timestamp = Date.parse(sample.timestamp);
+      const timestamp = parseMetricTimestamp(sample.timestamp);
       const previous = previousCounters.get(sample.metric);
       previousCounters.set(sample.metric, { timestamp, value: sample.value });
       if (!previous) return;
@@ -69,7 +69,8 @@ export function buildMetricChartRows(
   });
 
   return Array.from(rows.values()).sort(
-    (a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp),
+    (a, b) =>
+      parseMetricTimestamp(a.timestamp) - parseMetricTimestamp(b.timestamp),
   );
 }
 
@@ -125,7 +126,10 @@ export function clampPercent(value: number) {
 function sortedGuestSamples(samples: VmMonitoringHistory["samples"]) {
   return samples
     .filter((sample) => sample.source === "guest_agent")
-    .sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp));
+    .sort(
+      (a, b) =>
+        parseMetricTimestamp(a.timestamp) - parseMetricTimestamp(b.timestamp),
+    );
 }
 
 function bytesToMbps(bytesPerSecond: number) {
@@ -133,8 +137,17 @@ function bytesToMbps(bytesPerSecond: number) {
 }
 
 function formatChartTime(timestamp: string) {
-  return new Date(timestamp).toLocaleTimeString([], {
+  return new Date(parseMetricTimestamp(timestamp)).toLocaleTimeString([], {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+export function parseMetricTimestamp(timestamp: string) {
+  const normalized = hasTimezone(timestamp) ? timestamp : `${timestamp}Z`;
+  return Date.parse(normalized);
+}
+
+function hasTimezone(timestamp: string) {
+  return /(?:Z|[+-]\d{2}:?\d{2})$/i.test(timestamp);
 }

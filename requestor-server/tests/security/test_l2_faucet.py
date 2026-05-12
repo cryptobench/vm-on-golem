@@ -5,15 +5,20 @@ from requestor.security.faucet import L2FaucetService
 
 class DummyWeb3:
     HTTPProvider = staticmethod(lambda url: None)
+
     def __init__(self, bal_wei: int):
         self._bal = bal_wei
+
         class Eth:
             pass
+
         self.eth = Eth()
         self.eth.get_balance = lambda addr: bal_wei
+
     @staticmethod
     def to_checksum_address(a):
         return a
+
     @staticmethod
     def from_wei(v, unit):
         return v / 10**18
@@ -24,10 +29,13 @@ class DummyClient:
         self._chall = chall
         self._redeemed = redeemed
         self._tx = tx
+
     async def get_challenge(self):
         return self._chall
+
     async def redeem(self, token, sols):
         return self._redeemed
+
     async def request_funds(self, address, token):
         return self._tx
 
@@ -42,6 +50,7 @@ class DummyCfg:
 @pytest.mark.asyncio
 async def test_l2_faucet_skip_on_sufficient_balance(monkeypatch):
     from requestor.security import faucet as mod
+
     monkeypatch.setattr(mod, "Web3", DummyWeb3)
     svc = L2FaucetService(DummyCfg())
     tx = await svc.request_funds("0xaddr")
@@ -54,10 +63,13 @@ async def test_l2_faucet_skip_on_sufficient_balance(monkeypatch):
 @pytest.mark.asyncio
 async def test_l2_faucet_happy_path(monkeypatch):
     from requestor.security import faucet as mod
+
     class W:
         HTTPProvider = staticmethod(lambda url: None)
+
         def __call__(self, *_a, **_k):
             return DummyWeb3(0)
+
     monkeypatch.setattr(mod, "Web3", W())
     svc = L2FaucetService(DummyCfg())
     # Inject dummy client
@@ -73,10 +85,13 @@ async def test_l2_faucet_happy_path(monkeypatch):
 @pytest.mark.asyncio
 async def test_l2_faucet_challenge_failure(monkeypatch):
     from requestor.security import faucet as mod
+
     class W:
         HTTPProvider = staticmethod(lambda url: None)
+
         def __call__(self, *_a, **_k):
             return DummyWeb3(0)
+
     monkeypatch.setattr(mod, "Web3", W())
     svc = L2FaucetService(DummyCfg())
     svc.client = DummyClient(chall=None)
@@ -87,13 +102,18 @@ async def test_l2_faucet_challenge_failure(monkeypatch):
 @pytest.mark.asyncio
 async def test_l2_faucet_redeem_failure(monkeypatch):
     from requestor.security import faucet as mod
+
     class W:
         HTTPProvider = staticmethod(lambda url: None)
+
         def __call__(self, *_a, **_k):
             return DummyWeb3(0)
+
     monkeypatch.setattr(mod, "Web3", W())
     svc = L2FaucetService(DummyCfg())
-    svc.client = DummyClient(chall={"token": "t1", "challenge": [["salt", "00"]]}, redeemed=None)
+    svc.client = DummyClient(
+        chall={"token": "t1", "challenge": [["salt", "00"]]}, redeemed=None
+    )
     tx = await svc.request_funds("0xaddr")
     assert tx is None
 
@@ -101,10 +121,13 @@ async def test_l2_faucet_redeem_failure(monkeypatch):
 @pytest.mark.asyncio
 async def test_l2_faucet_faucet_failure(monkeypatch):
     from requestor.security import faucet as mod
+
     class W:
         HTTPProvider = staticmethod(lambda url: None)
+
         def __call__(self, *_a, **_k):
             return DummyWeb3(0)
+
     monkeypatch.setattr(mod, "Web3", W())
     svc = L2FaucetService(DummyCfg())
     svc.client = DummyClient(

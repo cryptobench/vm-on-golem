@@ -1,6 +1,7 @@
+import importlib
 import os
 import sqlite3
-import importlib
+
 import pytest
 
 
@@ -30,9 +31,10 @@ async def test_init_db_adds_missing_platform_column(tmp_path, monkeypatch):
     conn.close()
 
     # Patch session module to use an engine bound to this DB file
-    import discovery.db.session as sess
-    from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+    from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
     from sqlalchemy.orm import sessionmaker
+
+    import discovery.db.session as sess
 
     engine = create_async_engine(
         f"sqlite+aiosqlite:///{db_path}", connect_args={"check_same_thread": False}

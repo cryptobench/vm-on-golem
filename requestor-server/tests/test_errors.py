@@ -1,16 +1,16 @@
+import sys
 from pathlib import Path
 
-import sys
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from requestor.errors import (
-    VMError,
-    ProviderError,
-    DiscoveryError,
-    SSHError,
     ConfigError,
     DatabaseError,
+    DiscoveryError,
+    ProviderError,
     RequestorError,
+    SSHError,
+    VMError,
 )
 
 

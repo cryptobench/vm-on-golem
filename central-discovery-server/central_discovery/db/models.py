@@ -1,8 +1,9 @@
-from sqlalchemy import Column, String, Integer, DateTime, JSON, ForeignKey
+from datetime import datetime
+
+from sqlalchemy import JSON, Column, DateTime, ForeignKey, Integer, String
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-from datetime import datetime
 
 Base = declarative_base()
 

@@ -1,16 +1,18 @@
 import os
-import pytest
 from datetime import datetime, timedelta
+
+import pytest
 
 
 @pytest.mark.asyncio
 async def test_repository_filters_and_cleanup():
     os.environ["GOLEM_DISCOVERY_DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
 
-    from discovery.db.session import AsyncSessionLocal, init_db
-    from discovery.db.repository import AdvertisementRepository
+    from sqlalchemy import select, update
+
     from discovery.db.models import Advertisement
-    from sqlalchemy import update, select
+    from discovery.db.repository import AdvertisementRepository
+    from discovery.db.session import AsyncSessionLocal, init_db
 
     await init_db()
 

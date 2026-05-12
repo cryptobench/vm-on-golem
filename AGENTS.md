@@ -7,9 +7,9 @@ This document is the **architectural baseline** for the repo. Some sections desc
 ## Project Structure & Module Organization
 
 - `central-discovery-server/` (Python 3.9): centralized FastAPI discovery backend (`central_discovery`, entries: `golem-central-discovery`, legacy `golem-discovery`).
-- `provider-server/` (Python 3.11): Provider API/CLI (`provider`, entries: `golem-provider`, `dev`).
+- `provider-server/` (Python 3.11): Provider API/CLI (`provider`, entry: `golem-provider`).
 - `requestor-server/` (Python 3.11): Requestor API/CLI (`requestor`, entry: `golem`).
-- `port-checker-server/` (Python 3.9+): FastAPI utility (`port_checker`, entry: `port-checker`).
+- `port-checker-server/` (Python 3.10+): FastAPI utility (`port_checker`, entry: `port-checker`).
 - `requestor-web/`: Next.js + Tailwind + ethers.js web app for requestors.
 - `provider-gui/`, `requestor-gui/`: Electron desktop shells for provider/requestor.
 - `scripts/`: Utilities (e.g., `scripts/bump_versions.py`).
@@ -17,11 +17,11 @@ This document is the **architectural baseline** for the repo. Some sections desc
 
 ## Build, Test, and Development Commands
 
-- `make install` - Install Poetry dependencies for central discovery, provider, requestor, and shared packages.
-- `make test` - Run pytest for the three core Python services.
+- `make install` - Install Poetry dependencies for central discovery, port-checker, provider, requestor, and shared packages.
+- `make test` - Run pytest for the four core Python services.
 - `make local` - Preferred full-stack local workflow on ARM macOS: starts local central discovery, provider, port-checker proxy, requestor API, requestor web, and provider GUI with one supervisor process. This intentionally uses local central discovery for deterministic development; Arkiv remains the canonical product default outside this local workflow.
 - `make start` - Start provider CLI, port-checker proxy, and requestor web (development mode).
-- Per-service: `poetry -C <svc> run pytest`, `poetry -C provider-server run dev`, `poetry -C central-discovery-server run golem-central-discovery`, `poetry -C requestor-server run golem server api --reload`.
+- Per-service: `poetry -C <svc> run pytest`, `GOLEM_ENVIRONMENT=development poetry -C provider-server run golem-provider start`, `poetry -C central-discovery-server run golem-central-discovery`, `poetry -C requestor-server run golem server api --reload`.
 - GUIs: in `provider-gui/` or `requestor-gui/`: `npm install && npm start`.
 
 ## Discovery Naming & Backends

@@ -1,7 +1,8 @@
 import os
+
 import pytest
-from fastapi.testclient import TestClient
 from fastapi import Depends
+from fastapi.testclient import TestClient
 
 
 @pytest.fixture(scope="module")
@@ -106,8 +107,8 @@ def test_create_list_get_delete_flow_and_filters(app_client: TestClient):
 
 def test_create_route_handles_repo_exception(monkeypatch):
     os.environ["GOLEM_DISCOVERY_DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
-    from discovery.main import app
     from discovery.api import routes
+    from discovery.main import app
 
     class BoomRepo:
         async def upsert_advertisement(self, **kwargs):
@@ -134,8 +135,8 @@ def test_create_route_handles_repo_exception(monkeypatch):
 
 def test_list_route_handles_repo_exception(monkeypatch):
     os.environ["GOLEM_DISCOVERY_DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
-    from discovery.main import app
     from discovery.api import routes
+    from discovery.main import app
 
     class BoomRepo:
         async def find_by_requirements(self, **kwargs):

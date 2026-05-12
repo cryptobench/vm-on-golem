@@ -1,5 +1,5 @@
-from .main import app, start
 from .config import settings
+from .main import app, start
 
 __version__ = "0.1.0"
 

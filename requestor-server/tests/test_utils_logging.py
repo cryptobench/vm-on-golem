@@ -1,11 +1,10 @@
-import logging
-from pathlib import Path
 import io
 import logging
+import sys
+from pathlib import Path
 
 import pytest
 
-import sys
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from requestor.utils.logging import LogLevel, setup_logger
