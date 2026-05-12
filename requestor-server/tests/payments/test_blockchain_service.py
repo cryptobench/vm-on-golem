@@ -1,4 +1,5 @@
 import types
+
 import pytest
 
 from requestor.payments.blockchain_service import (

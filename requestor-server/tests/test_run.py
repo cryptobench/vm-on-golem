@@ -5,7 +5,7 @@ import pytest
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-from requestor.run import get_ssh_key_dir, secure_directory, check_requirements
+from requestor.run import check_requirements, get_ssh_key_dir, secure_directory
 
 
 def test_get_ssh_key_dir_env(monkeypatch, tmp_path):
@@ -39,10 +39,12 @@ def test_get_ssh_key_dir_default(monkeypatch, tmp_path):
 def test_secure_directory_failure(monkeypatch, tmp_path):
     target = tmp_path / "ssh"
     orig = Path.mkdir
+
     def bad_mkdir(self, parents=False, exist_ok=False):
         if self == target:
             raise OSError("fail")
         return orig(self, parents=parents, exist_ok=exist_ok)
+
     monkeypatch.setattr(Path, "mkdir", bad_mkdir)
     assert secure_directory(target) is False
 

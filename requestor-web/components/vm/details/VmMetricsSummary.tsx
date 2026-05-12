@@ -16,6 +16,7 @@ import {
   formatMbps,
   formatPercent,
   latestNetworkRates,
+  parseMetricTimestamp,
 } from "./metrics";
 
 type GuestMetrics = Record<
@@ -179,7 +180,7 @@ function metricPercent(guestMetrics: NonNullable<GuestMetrics>, name: string) {
 
 function heartbeatAgeSeconds(timestamp?: string) {
   if (!timestamp) return null;
-  const age = Math.max(0, Date.now() - Date.parse(timestamp));
+  const age = Math.max(0, Date.now() - parseMetricTimestamp(timestamp));
   if (!Number.isFinite(age)) return null;
   return Math.floor(age / 1000);
 }

@@ -1,11 +1,13 @@
 import os
 from datetime import datetime, timedelta
+
 from fastapi.testclient import TestClient
 
 
 def test_models_validation_errors():
-    from discovery.api.models import AdvertisementCreate
     import pytest
+
+    from discovery.api.models import AdvertisementCreate
 
     # Missing resource keys
     with pytest.raises(ValueError):
@@ -58,6 +60,7 @@ def test_db_model_is_expired_property():
 def test_rate_limit_middleware_allows_under_limit():
     # Build a minimal FastAPI app with the middleware directly
     from fastapi import FastAPI
+
     from discovery.main import RateLimitMiddleware
 
     app = FastAPI()
@@ -97,7 +100,8 @@ def test_start_invokes_uvicorn_run(monkeypatch):
         called["kwargs"] = kwargs
 
     # Inject fake uvicorn module so that import inside start() uses it
-    import types, sys
+    import sys
+    import types
 
     fake_uvicorn = types.SimpleNamespace(run=fake_run)
     monkeypatch.setitem(sys.modules, "uvicorn", fake_uvicorn)
@@ -108,6 +112,7 @@ def test_start_invokes_uvicorn_run(monkeypatch):
 
 def test_rate_limit_middleware_blocks_returns_serializable():
     from fastapi import FastAPI
+
     from discovery.main import RateLimitMiddleware
 
     app = FastAPI()

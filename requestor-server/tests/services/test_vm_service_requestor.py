@@ -1,11 +1,12 @@
-import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from requestor.services.vm_service import VMService
+import pytest
+
+from requestor.errors import VMError
+from requestor.provider.client import ProviderClient
 from requestor.services.database_service import DatabaseService
 from requestor.services.ssh_service import SSHService
-from requestor.provider.client import ProviderClient
-from requestor.errors import VMError
+from requestor.services.vm_service import VMService
 
 
 @pytest.mark.asyncio

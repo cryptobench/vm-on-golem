@@ -365,12 +365,13 @@ try {
     return check.returncode == 0
 
 
-def ensure_deps(skip_install: bool) -> None:
+def ensure_deps(skip_install: bool, include_gui: bool) -> None:
     if skip_install:
         return
     ensure_python_deps()
     ensure_node_deps("requestor-web")
-    ensure_node_deps("provider-gui")
+    if include_gui:
+        ensure_node_deps("provider-gui")
 
 
 def http_ok(url: str) -> bool:
@@ -680,7 +681,7 @@ def build_services(include_gui: bool, deployment: dict[str, str]) -> list[Servic
 
 
 def provider_gui_status(args: argparse.Namespace, services: list[Service]) -> str:
-    if args.no_gui:
+    if not args.gui:
         return "disabled"
 
     provider_gui = next(
@@ -703,9 +704,10 @@ def run_stack(args: argparse.Namespace) -> int:
         deployment = load_l2_deployment()
         if not args.skip_chain_check:
             check_l2_deployment(deployment)
-        ensure_deps(args.skip_install)
+        include_gui = args.gui
+        ensure_deps(args.skip_install, include_gui=include_gui)
 
-        services = build_services(include_gui=not args.no_gui, deployment=deployment)
+        services = build_services(include_gui=include_gui, deployment=deployment)
 
         def handle_signal(signum: int, _frame) -> None:
             raise KeyboardInterrupt
@@ -766,8 +768,18 @@ def run_stack(args: argparse.Namespace) -> int:
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--no-open", action="store_true", help="Do not open the web UI")
-    parser.add_argument(
-        "--no-gui", action="store_true", help="Do not launch provider GUI"
+    gui_group = parser.add_mutually_exclusive_group()
+    gui_group.add_argument(
+        "--gui",
+        action="store_true",
+        default=False,
+        help="Launch provider GUI",
+    )
+    gui_group.add_argument(
+        "--no-gui",
+        action="store_false",
+        dest="gui",
+        help="Do not launch provider GUI (default)",
     )
     parser.add_argument(
         "--skip-install",

@@ -52,6 +52,7 @@ import { VmResizePanel } from "../../components/vm/details/VmResizePanel";
 import { VmPaymentStreamPanel } from "../../components/vm/details/VmPaymentStreamPanel";
 import { VmDetailsSkeleton } from "../../components/vm/details/VmDetailsSkeleton";
 import { VmStopNotice } from "../../components/vm/details/VmStopNotice";
+import { parseMetricTimestamp } from "../../components/vm/details/metrics";
 import { deriveVmLifecycle } from "../../lib/vmLifecycle";
 
 export default function VmDetailsClient() {
@@ -179,6 +180,7 @@ export default function VmDetailsClient() {
     useVmMetricsHistory(vm?.provider_id, vm?.vm_id, metricsRange, {
       refreshInterval: 30000,
     });
+  const { topUp: topUpAction } = useStreamActions(spAddr);
 
   React.useEffect(() => {
     if (swrProvider)
@@ -659,7 +661,6 @@ export default function VmDetailsClient() {
     }
   };
 
-  const { topUp: topUpAction } = useStreamActions(spAddr);
   const topUp = async (seconds: number) => {
     if (!vm.stream_id || !stream || !spAddr) return;
     try {
@@ -689,7 +690,9 @@ export default function VmDetailsClient() {
     return byVm[vm.vm_id]?.guest_agent || null;
   })();
   const metricsUpdatedAt = guestMetrics?.agent_heartbeat?.timestamp
-    ? new Date(guestMetrics.agent_heartbeat.timestamp).toLocaleTimeString()
+    ? new Date(
+        parseMetricTimestamp(guestMetrics.agent_heartbeat.timestamp),
+      ).toLocaleTimeString()
     : null;
   const lastUpdated = metricsUpdatedAt || "just now";
   const explorerUrl = buildExplorerUrl(

@@ -13,12 +13,12 @@ Example:
     GOLEM_CENTRAL_DISCOVERY_DEBUG=true
 """
 
-from pydantic import BaseSettings, validator
-from typing import Optional
+import os
 import secrets
 from pathlib import Path
-import os
+from typing import Optional
 
+from pydantic import BaseSettings, validator
 
 _SETTING_NAMES = (
     "API_V1_PREFIX",

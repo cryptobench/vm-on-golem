@@ -130,6 +130,19 @@ async def _vm_service_for(name: str) -> tuple[dict, VMService]:
     return vm_record, service
 
 
+async def _vm_with_access_details(vm_record: dict) -> dict:
+    if vm_record.get("config", {}).get("ssh_user"):
+        return vm_record
+
+    provider_url = config.get_provider_url(vm_record["provider_ip"])
+    async with ProviderClient(provider_url) as client:
+        service = VMService(db_service, SSHService(config.ssh_key_dir), client)
+        refreshed = await service.get_vm(vm_record["name"])
+    if not refreshed:
+        raise click.BadParameter(f"VM '{vm_record['name']}' not found")
+    return refreshed
+
+
 async def _close_vm_service(service: VMService) -> None:
     if service.provider_client is not None:
         await service.provider_client.__aexit__(None, None, None)
@@ -1090,12 +1103,11 @@ async def info_vm(name: str, as_json: bool):
             os.environ["GOLEM_SILENCE_LOGS"] = "1"
         logger.command(f"ℹ️  Getting info for VM '{name}'")
 
-        # Initialize VM service
-        ssh_service = SSHService(config.ssh_key_dir)
-        vm_service = VMService(db_service, ssh_service)
-
         # Retrieve VM details
-        vm = await vm_service.get_vm(name)
+        vm_record = await db_service.get_vm(name)
+        if not vm_record:
+            raise click.BadParameter(f"VM '{name}' not found")
+        vm = await _vm_with_access_details(vm_record)
         if not vm:
             raise click.BadParameter(f"VM '{name}' not found")
 
@@ -1608,6 +1620,7 @@ async def list_vms(as_json: bool):
         else:
             # Format VM information using service
             headers = vm_service.vm_headers
+            vms = [await _vm_with_access_details(vm) for vm in vms]
             rows = [vm_service.format_vm_row(vm, colorize=True) for vm in vms]
 
             # Show fancy header
@@ -1667,12 +1680,10 @@ if __name__ == "__main__":
 @async_command
 async def vm_stats(name: str, source: str):
     """Display live resource usage statistics for a VM."""
+    vm_service = None
     try:
-        # Initialize services
-        ssh_service = SSHService(config.ssh_key_dir)
-        vm_service = VMService(db_service, ssh_service)
-
         # Get VM details
+        _, vm_service = await _vm_service_for(name)
         vm = await vm_service.get_vm(name)
         if not vm:
             raise click.BadParameter(f"VM '{name}' not found")
@@ -1717,6 +1728,9 @@ async def vm_stats(name: str, source: str):
     except Exception as e:
         logger.error(f"Failed to get VM stats: {str(e)}")
         raise click.Abort()
+    finally:
+        if vm_service is not None:
+            await _close_vm_service(vm_service)
 
 
 async def _get_provider_vm_stats(vm: dict) -> dict:

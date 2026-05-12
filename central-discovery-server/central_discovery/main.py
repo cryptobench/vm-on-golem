@@ -1,18 +1,18 @@
 import asyncio
 import logging
+import time
+from typing import Callable
+
 from fastapi import FastAPI, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from typing import Callable
-import time
 
-from .config import settings
-from .api.routes import router
 from .api.models import ErrorResponse, HealthResponse
-from .db.session import init_db, cleanup_db
+from .api.routes import router
+from .config import settings
 from .db.repository import AdvertisementRepository
-from .db.session import AsyncSessionLocal
+from .db.session import AsyncSessionLocal, cleanup_db, init_db
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

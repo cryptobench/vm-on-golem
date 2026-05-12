@@ -1,6 +1,7 @@
-from pydantic import BaseModel, Field, validator, constr
-from typing import Dict, Optional
 from datetime import datetime
+from typing import Dict, Optional
+
+from pydantic import BaseModel, Field, constr, validator
 
 
 class ResourceRequirements(BaseModel):
