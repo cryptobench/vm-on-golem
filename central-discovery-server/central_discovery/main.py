@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from typing import Callable
@@ -54,9 +55,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             if len(requests) >= self.requests_per_minute:
                 return JSONResponse(
                     status_code=429,
-                    content=ErrorResponse(
-                        code="RATE_001", message="Rate limit exceeded"
-                    ).dict(),
+                    content=jsonable_encoder(
+                        ErrorResponse(code="RATE_001", message="Rate limit exceeded")
+                    ),
                 )
             self.requests[client_ip] = requests + [current_time]
         else:

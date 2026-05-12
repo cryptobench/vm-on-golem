@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field, field_validator
 
 from ..utils.logging import setup_logger
-from ..vm.models import VMResources, VMSize, VMStatus
+from ..vm.models import MULTIPASS_SSH_USER, VMResources, VMSize, VMStatus
 
 logger = setup_logger(__name__)
 
@@ -167,6 +167,15 @@ class CreateVMJobResponse(BaseModel):
     job_id: str = Field(..., description="Server-side job identifier for creation task")
     vm_id: str = Field(..., description="Requestor VM identifier (name)")
     status: str = Field("creating", description="Initial status indicator")
+    lifecycle_stage: str = Field(
+        "queued", description="Detailed lifecycle stage for the creation job"
+    )
+    status_message: str = Field(
+        "Queued VM creation", description="Human-readable lifecycle status"
+    )
+    progress: int = Field(0, ge=0, le=100, description="Creation progress percent")
+    transitioning: bool = Field(True, description="True while creation is active")
+    next_poll_seconds: int = Field(2, ge=1, description="Suggested polling cadence")
 
 
 class CreateVMJobStatus(BaseModel):
@@ -175,6 +184,11 @@ class CreateVMJobStatus(BaseModel):
     job_id: str
     vm_id: str
     status: str
+    lifecycle_stage: str
+    status_message: str
+    progress: int = Field(..., ge=0, le=100)
+    transitioning: bool
+    next_poll_seconds: int = Field(2, ge=1)
     error: Optional[str] = None
     created_at: str
     updated_at: str
@@ -185,7 +199,16 @@ class VMAccessPendingResponse(BaseModel):
 
     vm_id: str
     multipass_name: str
+    ssh_user: str = Field(
+        ...,
+        description=f"SSH login user for this VM, currently {MULTIPASS_SSH_USER}",
+    )
     status: str = "creating"
+    lifecycle_stage: str = "configuring_access"
+    status_message: str = "Waiting for SSH access"
+    progress: int = Field(90, ge=0, le=100)
+    transitioning: bool = True
+    next_poll_seconds: int = Field(2, ge=1)
     ssh_port: None = None
 
 

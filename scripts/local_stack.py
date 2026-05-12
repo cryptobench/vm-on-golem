@@ -27,6 +27,7 @@ LOCAL_DIR = ROOT / ".local"
 
 CENTRAL_HOST = "127.0.0.1"
 CENTRAL_PORT = 9001
+PROVIDER_BIND_HOST = "0.0.0.0"
 PROVIDER_HOST = "127.0.0.1"
 PROVIDER_PORT = 7466
 PORT_CHECKER_HOST = "127.0.0.1"
@@ -557,7 +558,7 @@ def build_services(include_gui: bool, deployment: dict[str, str]) -> list[Servic
                 "GOLEM_PROVIDER_ARKIV_FAUCET_ENABLED": "false",
                 "GOLEM_PROVIDER_ARKIV_RPC_URL": ARKIV_RPC_URL,
                 "GOLEM_PROVIDER_ARKIV_WS_URL": ARKIV_WS_URL,
-                "GOLEM_PROVIDER_HOST": PROVIDER_HOST,
+                "GOLEM_PROVIDER_HOST": PROVIDER_BIND_HOST,
                 "GOLEM_PROVIDER_PORT": str(PROVIDER_PORT),
                 "GOLEM_PROVIDER_PUBLIC_IP": PROVIDER_HOST,
                 "GOLEM_PROVIDER_ETHEREUM_KEY_DIR": str(provider_dir / "keys"),

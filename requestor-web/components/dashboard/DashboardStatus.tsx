@@ -1,29 +1,32 @@
 "use client";
 
 import React from "react";
-
-const toneClass: Record<string, string> = {
-  running: "bg-success text-success",
-  active: "bg-success text-success",
-  starting: "bg-primary text-primary",
-  creating: "bg-primary text-primary",
-  stopped: "bg-text-muted text-text-secondary",
-  halted: "bg-warning text-warning",
-  terminated: "bg-danger text-danger",
-  deleted: "bg-danger text-danger",
-  error: "bg-danger text-danger",
-  failed: "bg-danger text-danger",
-};
+import { Spinner } from "../ui/Spinner";
+import { deriveVmLifecycle } from "../../lib/vmLifecycle";
 
 export function DashboardStatus({ status }: { status?: string | null }) {
-  const normalized = String(status || "unknown").toLowerCase();
-  const label = normalized.charAt(0).toUpperCase() + normalized.slice(1);
-  const classes = toneClass[normalized] || "bg-text-muted text-text-secondary";
+  const lifecycle = deriveVmLifecycle({ status });
+  const classes = {
+    success: "bg-success text-success",
+    warning: "bg-warning text-warning",
+    danger: "bg-danger text-danger",
+    neutral: "bg-text-muted text-text-secondary",
+    primary: "bg-primary text-primary",
+  }[lifecycle.tone];
 
   return (
-    <span className={`inline-flex items-center gap-2 text-sm ${classes.split(" ")[1]}`}>
-      <span className={`h-2 w-2 rounded-full ${classes.split(" ")[0]}`} aria-hidden />
-      {label}
+    <span
+      className={`inline-flex items-center gap-2 text-sm ${classes.split(" ")[1]}`}
+    >
+      {lifecycle.transitioning ? (
+        <Spinner className="h-3.5 w-3.5" />
+      ) : (
+        <span
+          className={`h-2 w-2 rounded-full ${classes.split(" ")[0]}`}
+          aria-hidden
+        />
+      )}
+      {lifecycle.label}
     </span>
   );
 }

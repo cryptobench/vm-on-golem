@@ -106,23 +106,9 @@ def test_start_invokes_uvicorn_run(monkeypatch):
     assert called["kwargs"]["port"] == main.settings.PORT
 
 
-def test_rate_limit_middleware_blocks_returns_serializable(monkeypatch):
-    # Trigger the 429 path while avoiding datetime serialization issues
+def test_rate_limit_middleware_blocks_returns_serializable():
     from fastapi import FastAPI
     from discovery.main import RateLimitMiddleware
-    import types
-
-    # Patch ErrorResponse used by middleware to avoid datetime
-    import discovery.main as m
-
-    class SimpleError:
-        def __init__(self, code, message):
-            self._d = {"code": code, "message": message}
-
-        def dict(self):
-            return self._d
-
-    monkeypatch.setattr(m, "ErrorResponse", SimpleError)
 
     app = FastAPI()
 
@@ -139,3 +125,4 @@ def test_rate_limit_middleware_blocks_returns_serializable(monkeypatch):
         r2 = client.get("/")
         assert r2.status_code == 429
         assert r2.json()["code"] == "RATE_001"
+        assert isinstance(r2.json()["timestamp"], str)

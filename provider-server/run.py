@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
+import asyncio
 import os
 import sys
-import asyncio
-import uvicorn
 from pathlib import Path
+
+import uvicorn
 from dotenv import load_dotenv
 
 from provider.main import cli

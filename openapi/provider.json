@@ -134,11 +134,44 @@
             "title": "Job Id",
             "type": "string"
           },
+          "lifecycle_stage": {
+            "default": "queued",
+            "description": "Detailed lifecycle stage for the creation job",
+            "title": "Lifecycle Stage",
+            "type": "string"
+          },
+          "next_poll_seconds": {
+            "default": 2,
+            "description": "Suggested polling cadence",
+            "minimum": 1.0,
+            "title": "Next Poll Seconds",
+            "type": "integer"
+          },
+          "progress": {
+            "default": 0,
+            "description": "Creation progress percent",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Progress",
+            "type": "integer"
+          },
           "status": {
             "default": "creating",
             "description": "Initial status indicator",
             "title": "Status",
             "type": "string"
+          },
+          "status_message": {
+            "default": "Queued VM creation",
+            "description": "Human-readable lifecycle status",
+            "title": "Status Message",
+            "type": "string"
+          },
+          "transitioning": {
+            "default": true,
+            "description": "True while creation is active",
+            "title": "Transitioning",
+            "type": "boolean"
           },
           "vm_id": {
             "description": "Requestor VM identifier (name)",
@@ -175,9 +208,33 @@
             "title": "Job Id",
             "type": "string"
           },
+          "lifecycle_stage": {
+            "title": "Lifecycle Stage",
+            "type": "string"
+          },
+          "next_poll_seconds": {
+            "default": 2,
+            "minimum": 1.0,
+            "title": "Next Poll Seconds",
+            "type": "integer"
+          },
+          "progress": {
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Progress",
+            "type": "integer"
+          },
           "status": {
             "title": "Status",
             "type": "string"
+          },
+          "status_message": {
+            "title": "Status Message",
+            "type": "string"
+          },
+          "transitioning": {
+            "title": "Transitioning",
+            "type": "boolean"
           },
           "updated_at": {
             "title": "Updated At",
@@ -192,6 +249,10 @@
           "job_id",
           "vm_id",
           "status",
+          "lifecycle_stage",
+          "status_message",
+          "progress",
+          "transitioning",
           "created_at",
           "updated_at"
         ],
@@ -794,6 +855,11 @@
             "title": "Ssh Port",
             "type": "integer"
           },
+          "ssh_user": {
+            "description": "SSH login user for this VM",
+            "title": "Ssh User",
+            "type": "string"
+          },
           "vm_id": {
             "description": "Requestor's VM name",
             "title": "Vm Id",
@@ -803,6 +869,7 @@
         "required": [
           "ssh_host",
           "ssh_port",
+          "ssh_user",
           "vm_id",
           "multipass_name"
         ],
@@ -812,18 +879,51 @@
       "VMAccessPendingResponse": {
         "description": "Response returned while VM access details are not ready yet.",
         "properties": {
+          "lifecycle_stage": {
+            "default": "configuring_access",
+            "title": "Lifecycle Stage",
+            "type": "string"
+          },
           "multipass_name": {
             "title": "Multipass Name",
             "type": "string"
+          },
+          "next_poll_seconds": {
+            "default": 2,
+            "minimum": 1.0,
+            "title": "Next Poll Seconds",
+            "type": "integer"
+          },
+          "progress": {
+            "default": 90,
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Progress",
+            "type": "integer"
           },
           "ssh_port": {
             "title": "Ssh Port",
             "type": "null"
           },
+          "ssh_user": {
+            "description": "SSH login user for this VM, currently ubuntu",
+            "title": "Ssh User",
+            "type": "string"
+          },
           "status": {
             "default": "creating",
             "title": "Status",
             "type": "string"
+          },
+          "status_message": {
+            "default": "Waiting for SSH access",
+            "title": "Status Message",
+            "type": "string"
+          },
+          "transitioning": {
+            "default": true,
+            "title": "Transitioning",
+            "type": "boolean"
           },
           "vm_id": {
             "title": "Vm Id",
@@ -832,7 +932,8 @@
         },
         "required": [
           "vm_id",
-          "multipass_name"
+          "multipass_name",
+          "ssh_user"
         ],
         "title": "VMAccessPendingResponse",
         "type": "object"
@@ -907,9 +1008,30 @@
             ],
             "title": "Ip Address"
           },
+          "lifecycle_stage": {
+            "default": "unknown",
+            "description": "Provider lifecycle stage for transitional or terminal states",
+            "title": "Lifecycle Stage",
+            "type": "string"
+          },
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "next_poll_seconds": {
+            "default": 8,
+            "description": "Suggested client polling cadence for this state",
+            "minimum": 1.0,
+            "title": "Next Poll Seconds",
+            "type": "integer"
+          },
+          "progress": {
+            "default": 0,
+            "description": "Best-effort lifecycle progress percentage",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Progress",
+            "type": "integer"
           },
           "resources": {
             "$ref": "#/components/schemas/VMResources"
@@ -927,6 +1049,18 @@
           },
           "status": {
             "$ref": "#/components/schemas/VMStatus"
+          },
+          "status_message": {
+            "default": "Provider status is temporarily unavailable",
+            "description": "Human-readable lifecycle status suitable for UI display",
+            "title": "Status Message",
+            "type": "string"
+          },
+          "transitioning": {
+            "default": false,
+            "description": "True while the VM is actively changing lifecycle state",
+            "title": "Transitioning",
+            "type": "boolean"
           },
           "updated_at": {
             "format": "date-time",

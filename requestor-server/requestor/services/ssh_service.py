@@ -28,7 +28,7 @@ class SSHService:
             raise SSHError(f"Failed to get SSH key pair: {str(e)}")
 
     def connect_to_vm(
-        self, host: str, port: int, private_key_path: Path, username: str = "ubuntu"
+        self, host: str, port: int, private_key_path: Path, username: str
     ) -> None:
         """Connect to VM via SSH."""
         try:
@@ -53,7 +53,7 @@ class SSHService:
         host: str,
         port: int,
         private_key_path: Path,
-        username: str = "ubuntu",
+        username: str,
         colorize: bool = False,
     ) -> str:
         """Format SSH command for display."""
@@ -70,7 +70,7 @@ class SSHService:
         return command
 
     def get_vm_stats(
-        self, host: str, port: int, private_key_path: Path, username: str = "ubuntu"
+        self, host: str, port: int, private_key_path: Path, username: str
     ) -> Dict:
         """Get VM stats via SSH."""
         try:

@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Dict, List
 
+from .lifecycle import ProgressCallback
 from .models import VMConfig, VMImage, VMInfo, VMResources, VMSnapshot
 
 
@@ -13,7 +14,9 @@ class VMProvider(ABC):
         pass
 
     @abstractmethod
-    async def create_vm(self, config: VMConfig) -> VMInfo:
+    async def create_vm(
+        self, config: VMConfig, progress_callback: ProgressCallback | None = None
+    ) -> VMInfo:
         """Create a new VM."""
         pass
 

@@ -64,15 +64,8 @@ def generate_cloud_init(
         # Start with required #cloud-config header
         yaml_content = "#cloud-config\n"
 
-        write_files = [
-            {
-                "path": "/etc/ssh/sshd_config.d/allow_root.conf",
-                "content": "PermitRootLogin prohibit-password\n",
-                "owner": "root:root",
-                "permissions": "0644",
-            }
-        ]
-        run_commands = ["systemctl restart ssh"]
+        write_files = []
+        run_commands = []
 
         if (
             monitoring_vm_id
@@ -96,16 +89,20 @@ def generate_cloud_init(
             "package_upgrade": True,
             "preserve_hostname": False,
             "ssh_authorized_keys": [ssh_key],
-            "users": [{"name": "root", "ssh_authorized_keys": [ssh_key]}],
-            "write_files": write_files,
-            "runcmd": run_commands,
+            "users": ["default"],
         }
+
+        if write_files:
+            config["write_files"] = write_files
+
+        if run_commands:
+            config["runcmd"] = run_commands
 
         if packages:
             config["packages"] = packages
 
         if runcmd:
-            config["runcmd"].extend(runcmd)
+            config.setdefault("runcmd", []).extend(runcmd)
 
         # Add config to YAML content with document markers
         yaml_content += "---\n"
@@ -151,6 +148,7 @@ def _monitoring_agent_files(vm_id: str, token: str) -> list[dict[str, str]]:
     agent = f"""#!/usr/bin/env python3
 import json
 import os
+import sys
 import shutil
 import socket
 import subprocess
@@ -162,21 +160,26 @@ TOKEN = {token!r}
 VERSION = "0.1.0"
 
 
+def _warn(message):
+    print(f"golem-metrics-agent: {{message}}", file=sys.stderr, flush=True)
+
+
 def _default_gateway():
     try:
         out = subprocess.check_output(["ip", "route", "show", "default"], text=True)
         parts = out.strip().split()
         if "via" in parts:
             return parts[parts.index("via") + 1]
-    except Exception:
-        return None
+    except Exception as exc:
+        _warn(f"failed to read default gateway: {{exc}}")
+    return None
 
 
 def _endpoint():
     override = os.environ.get("GOLEM_PROVIDER_METRICS_URL", "").strip()
     if override:
         return override.rstrip("/")
-    host = _default_gateway() or os.environ.get("GOLEM_PROVIDER_HOST", "").strip()
+    host = os.environ.get("GOLEM_PROVIDER_HOST", "").strip() or _default_gateway()
     if not host:
         return ""
     return f"http://{{host}}:{port}/api/v1/monitoring/guest/{{VM_ID}}/samples"
@@ -233,7 +236,8 @@ def _net():
 def _load():
     try:
         return os.getloadavg()[0]
-    except Exception:
+    except Exception as exc:
+        _warn(f"failed to read load average: {{exc}}")
         return None
 
 
@@ -258,7 +262,7 @@ def collect():
 def post(payload):
     url = _endpoint()
     if not url:
-        return
+        raise RuntimeError("provider metrics endpoint unavailable")
     body = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(url, data=body, headers={{"Content-Type": "application/json"}})
     urllib.request.urlopen(req, timeout=5).read()
@@ -267,8 +271,8 @@ def post(payload):
 while True:
     try:
         post(collect())
-    except Exception:
-        pass
+    except Exception as exc:
+        _warn(f"failed to publish sample: {{exc}}")
     time.sleep(30)
 """
     service = """[Unit]

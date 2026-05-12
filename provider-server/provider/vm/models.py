@@ -46,6 +46,60 @@ class VMStatus(str, Enum):
         return mapping.get(normalized, cls.UNKNOWN)
 
 
+STATUS_MESSAGES = {
+    VMStatus.CREATING: "Provisioning VM",
+    VMStatus.STARTING: "Starting VM",
+    VMStatus.RESTARTING: "Restarting VM",
+    VMStatus.RUNNING: "VM is online",
+    VMStatus.DELAYED_SHUTDOWN: "Shutdown is scheduled",
+    VMStatus.SUSPENDING: "Suspending VM",
+    VMStatus.SUSPENDED: "VM is suspended",
+    VMStatus.STOPPING: "Stopping VM",
+    VMStatus.STOPPED: "VM is stopped",
+    VMStatus.ERROR: "VM requires attention",
+    VMStatus.DELETED: "VM has been deleted",
+    VMStatus.UNKNOWN: "Provider status is temporarily unavailable",
+}
+
+TRANSITIONAL_STATUSES = {
+    VMStatus.CREATING,
+    VMStatus.STARTING,
+    VMStatus.RESTARTING,
+    VMStatus.DELAYED_SHUTDOWN,
+    VMStatus.SUSPENDING,
+    VMStatus.STOPPING,
+}
+
+DEFAULT_STATUS_PROGRESS = {
+    VMStatus.CREATING: 15,
+    VMStatus.STARTING: 60,
+    VMStatus.RESTARTING: 60,
+    VMStatus.RUNNING: 100,
+    VMStatus.DELAYED_SHUTDOWN: 70,
+    VMStatus.SUSPENDING: 70,
+    VMStatus.SUSPENDED: 100,
+    VMStatus.STOPPING: 70,
+    VMStatus.STOPPED: 100,
+    VMStatus.ERROR: 100,
+    VMStatus.DELETED: 100,
+    VMStatus.UNKNOWN: 0,
+}
+
+MULTIPASS_SSH_USER = "ubuntu"
+
+
+def status_message(status: VMStatus) -> str:
+    return STATUS_MESSAGES.get(status, STATUS_MESSAGES[VMStatus.UNKNOWN])
+
+
+def is_transitioning(status: VMStatus) -> bool:
+    return status in TRANSITIONAL_STATUSES
+
+
+def status_progress(status: VMStatus) -> int:
+    return DEFAULT_STATUS_PROGRESS.get(status, 0)
+
+
 class VMSize(str, Enum):
     """Predefined VM sizes."""
 
@@ -162,12 +216,47 @@ class VMInfo(BaseModel):
     resources: VMResources
     ip_address: Optional[str] = None
     ssh_port: Optional[int] = None
+    lifecycle_stage: str = Field(
+        default="unknown",
+        description="Provider lifecycle stage for transitional or terminal states",
+    )
+    status_message: str = Field(
+        default="Provider status is temporarily unavailable",
+        description="Human-readable lifecycle status suitable for UI display",
+    )
+    progress: int = Field(
+        default=0,
+        ge=0,
+        le=100,
+        description="Best-effort lifecycle progress percentage",
+    )
+    transitioning: bool = Field(
+        default=False,
+        description="True while the VM is actively changing lifecycle state",
+    )
+    next_poll_seconds: int = Field(
+        default=8,
+        ge=1,
+        description="Suggested client polling cadence for this state",
+    )
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     error_message: Optional[str] = None
 
     class Config:
         json_encoders = {datetime: lambda v: v.isoformat()}
+
+    def model_post_init(self, __context) -> None:
+        if self.lifecycle_stage == "unknown" and self.status != VMStatus.UNKNOWN:
+            self.lifecycle_stage = self.status.value
+        if self.status_message == STATUS_MESSAGES[VMStatus.UNKNOWN]:
+            self.status_message = status_message(self.status)
+        if self.progress == 0:
+            self.progress = status_progress(self.status)
+        if not self.transitioning:
+            self.transitioning = is_transitioning(self.status)
+        if self.next_poll_seconds == 8 and self.transitioning:
+            self.next_poll_seconds = 2
 
 
 class VMImage(BaseModel):
@@ -226,6 +315,7 @@ class VMAccessInfo(BaseModel):
 
     ssh_host: str
     ssh_port: int
+    ssh_user: str = Field(..., description="SSH login user for this VM")
     vm_id: str = Field(..., description="Requestor's VM name")
     multipass_name: str = Field(
         ..., description="Full multipass VM name with timestamp"
@@ -243,7 +333,7 @@ class VMProvider:
         """Cleanup provider resources."""
         raise NotImplementedError()
 
-    async def create_vm(self, config: VMConfig) -> VMInfo:
+    async def create_vm(self, config: VMConfig, progress_callback=None) -> VMInfo:
         """Create a new VM."""
         raise NotImplementedError()
 

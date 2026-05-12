@@ -43,6 +43,7 @@ class VMAccess(BaseModel):
     vm_id: str
     ssh_port: int | None = None
     ssh_host: str | None = None
+    ssh_user: str | None = None
 
 
 class VMCreateResult(BaseModel):

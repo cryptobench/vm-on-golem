@@ -53,6 +53,56 @@ async def test_verify_installation_success(multipass_adapter):
 
 
 @pytest.mark.asyncio
+async def test_initialize_restores_missing_proxy_for_running_vm(multipass_adapter):
+    mock_process = MagicMock()
+    mock_process.stdout = "multipass 1.16.1+mac"
+    multipass_adapter._run_multipass.return_value = mock_process
+    multipass_adapter.proxy_manager.get_port = MagicMock(return_value=None)
+    multipass_adapter.proxy_manager.add_vm = AsyncMock(return_value=True)
+    multipass_adapter._get_vm_info = AsyncMock(
+        return_value={
+            "state": "RUNNING",
+            "ipv4": ["192.168.2.4"],
+            "cpu_count": "1",
+            "memory": {"total": 2147483648},
+            "disks": {"sda1": {"total": 21474836480}},
+        }
+    )
+
+    with patch.object(multipass_adapter, "_check_host_virtualization_compatibility"):
+        await multipass_adapter.initialize()
+
+    multipass_adapter.proxy_manager.add_vm.assert_awaited_once_with(
+        "multipass-vm-name", "192.168.2.4"
+    )
+
+
+@pytest.mark.asyncio
+async def test_initialize_does_not_report_or_create_proxy_for_stopped_vm(
+    multipass_adapter,
+):
+    mock_process = MagicMock()
+    mock_process.stdout = "multipass 1.16.1+mac"
+    multipass_adapter._run_multipass.return_value = mock_process
+    multipass_adapter.proxy_manager.get_port = MagicMock(return_value=None)
+    multipass_adapter.proxy_manager.add_vm = AsyncMock(return_value=True)
+    multipass_adapter._get_vm_info = AsyncMock(
+        return_value={
+            "state": "Stopped",
+            "ipv4": [],
+            "cpu_count": "1",
+            "memory": {"total": 2147483648},
+            "disks": {"sda1": {"total": 21474836480}},
+        }
+    )
+
+    with patch.object(multipass_adapter, "_check_host_virtualization_compatibility"):
+        await multipass_adapter.initialize()
+
+    multipass_adapter.proxy_manager.add_vm.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_verify_installation_failure(multipass_adapter):
     # Arrange
     multipass_adapter._run_multipass.side_effect = MultipassError("Command failed")

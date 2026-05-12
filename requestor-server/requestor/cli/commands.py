@@ -3,7 +3,7 @@ import asyncio
 import json
 import os
 import subprocess
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 from typing import Optional
 
@@ -551,6 +551,7 @@ async def create_vm(
 
                     # Get access info from config
                     ssh_port = vm["config"]["ssh_port"]
+                    ssh_user = vm["config"]["ssh_user"]
 
         # Create a visually appealing success message
         click.echo("\n" + "─" * 60)
@@ -579,6 +580,7 @@ async def create_vm(
             host=provider_ip,
             port=ssh_port,
             private_key_path=key_pair.private_key.absolute(),
+            username=ssh_user,
             colorize=True,
         )
         click.echo(f"  🔑 SSH Command : {ssh_command}")
@@ -1047,6 +1049,7 @@ async def ssh_vm(name: str):
             vm_service = VMService(db_service, ssh_service, client)
             vm = await vm_service.get_vm(name)  # Get fresh VM info
             ssh_port = vm["config"]["ssh_port"]
+            ssh_user = vm["config"]["ssh_user"]
 
         # Execute SSH command
         logger.success(f"Connecting to {vm['provider_ip']}:{ssh_port}")
@@ -1054,6 +1057,7 @@ async def ssh_vm(name: str):
             host=vm["provider_ip"],
             port=ssh_port,
             private_key_path=key_pair.private_key.absolute(),
+            username=ssh_user,
         )
 
     except Exception as e:

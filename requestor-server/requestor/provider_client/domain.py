@@ -16,4 +16,9 @@ class ProviderVMJob(BaseModel):
     job_id: str
     vm_id: str
     status: str
+    lifecycle_stage: str | None = None
+    status_message: str | None = None
+    progress: int | None = None
+    transitioning: bool | None = None
+    next_poll_seconds: int | None = None
     raw: dict[str, Any] | None = None

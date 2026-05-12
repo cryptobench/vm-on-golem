@@ -1,7 +1,11 @@
 "use client";
 
-export function buildSshCommand(host: string, port: number | string) {
-  return `ssh root@${host} -p ${port}`;
+export function buildSshCommand(
+  host: string,
+  port: number | string,
+  username: string,
+) {
+  return `ssh ${username}@${host} -p ${port}`;
 }
 
 export async function copyText(text: string) {

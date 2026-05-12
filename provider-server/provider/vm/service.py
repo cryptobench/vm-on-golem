@@ -6,6 +6,7 @@ from provider.errors import ConflictError, ValidationError
 from ..discovery.resource_tracker import ResourceTracker
 from ..utils.logging import setup_logger
 from .cloud_init import cleanup_cloud_init, generate_cloud_init
+from .lifecycle import ProgressCallback, creation_lifecycle
 from .models import (
     VMConfig,
     VMImage,
@@ -40,6 +41,20 @@ class VMService:
 
     async def create_vm(self, config: VMConfig) -> VMInfo:
         """Create a new VM."""
+        return await self.create_vm_with_progress(config)
+
+    async def create_vm_with_progress(
+        self,
+        config: VMConfig,
+        progress_callback: ProgressCallback | None = None,
+    ) -> VMInfo:
+        """Create a new VM and optionally report lifecycle progress."""
+        await self._report_progress(
+            progress_callback,
+            "allocating_resources",
+            "Reserving provider resources",
+            10,
+        )
         if not await self.resource_tracker.allocate(config.resources, config.name):
             raise ValueError("Insufficient resources available on provider")
 
@@ -50,6 +65,12 @@ class VMService:
         multipass_name = f"golem-{uuid4()}"
         config.multipass_name = multipass_name
         await self.name_mapper.add_mapping(config.name, multipass_name)
+        await self._report_progress(
+            progress_callback,
+            "preparing_guest",
+            "Preparing guest configuration",
+            20,
+        )
 
         monitoring_token = None
         if self.monitoring_repo is not None:
@@ -65,7 +86,7 @@ class VMService:
         config.cloud_init_path = cloud_init_path
 
         try:
-            vm_info = await self.provider.create_vm(config)
+            vm_info = await self.provider.create_vm(config, progress_callback)
             return vm_info
         except Exception as e:
             logger.error(f"Failed to create VM, deallocating resources", exc_info=True)
@@ -75,6 +96,17 @@ class VMService:
             raise
         finally:
             cleanup_cloud_init(cloud_init_path, config_id)
+
+    @staticmethod
+    async def _report_progress(
+        progress_callback: ProgressCallback | None,
+        stage: str,
+        message: str,
+        progress: int,
+    ) -> None:
+        if progress_callback is None:
+            return
+        await progress_callback(creation_lifecycle(stage, message, progress))
 
     async def delete_vm(self, vm_id: str) -> None:
         """Delete a VM."""

@@ -192,6 +192,10 @@ class PythonProxyManager:
         self._active_ports: Dict[str, int] = {}  # multipass_name -> port
         self._traffic_counters: Dict[str, dict] = {}
 
+    async def initialize(self) -> None:
+        """Restore persisted proxy listeners."""
+        await self._load_state()
+
     def get_active_ports(self) -> Set[int]:
         """Get set of ports that should be considered in use.
 
@@ -205,10 +209,17 @@ class PythonProxyManager:
         try:
             state_path = Path(self.state_file)
             if not state_path.exists():
+                logger.info(f"No persisted proxy state found at {state_path}")
                 return
 
             with open(state_path, "r") as f:
                 state = json.load(f)
+
+            persisted_proxies = state.get("proxies", {})
+            logger.info(
+                f"Loaded {len(persisted_proxies)} persisted proxy definitions "
+                f"from {state_path}"
+            )
 
             # Check state version for future migrations
             if state.get("version", 1) != self._state_version:
@@ -217,7 +228,7 @@ class PythonProxyManager:
                 )
 
             # First load all port allocations
-            for requestor_name, proxy_info in state.get("proxies", {}).items():
+            for requestor_name, proxy_info in persisted_proxies.items():
                 multipass_name = await self.name_mapper.get_multipass_name(
                     requestor_name
                 )
@@ -226,11 +237,18 @@ class PythonProxyManager:
 
             # Then attempt to restore proxies with retries
             restore_tasks = []
-            for requestor_name, proxy_info in state.get("proxies", {}).items():
+            for requestor_name, proxy_info in persisted_proxies.items():
                 multipass_name = await self.name_mapper.get_multipass_name(
                     requestor_name
                 )
                 if multipass_name:
+                    logger.info(
+                        "Restoring persisted SSH proxy "
+                        f"requestor_vm={requestor_name} "
+                        f"multipass={multipass_name} "
+                        f"listen_port={proxy_info['port']} "
+                        f"target={proxy_info['target']}:22"
+                    )
                     task = self._restore_proxy_with_retry(
                         multipass_name=multipass_name,
                         vm_ip=proxy_info["target"],
@@ -247,7 +265,7 @@ class PythonProxyManager:
                 results = await asyncio.gather(*restore_tasks, return_exceptions=True)
                 successful = sum(1 for r in results if r is True)
                 logger.info(
-                    f"Restored {successful}/{len(state.get('proxies', {}))} proxy configurations"
+                    f"Restored {successful}/{len(persisted_proxies)} proxy configurations"
                 )
 
         except Exception as e:
@@ -303,6 +321,7 @@ class PythonProxyManager:
                 await proxy.start()
 
                 self._proxies[multipass_name] = proxy
+                self._active_ports[multipass_name] = port
                 logger.info(
                     f"Successfully restored proxy for {multipass_name} on port {port}"
                 )
@@ -376,6 +395,7 @@ class PythonProxyManager:
             await proxy.start()
 
             self._proxies[vm_id] = proxy
+            self._active_ports[vm_id] = port
             await self._save_state()
 
             logger.info(f"Started proxy for VM {vm_id} on port {port}")
@@ -395,19 +415,25 @@ class PythonProxyManager:
             vm_id: Unique identifier for the VM (multipass name)
         """
         try:
-            if vm_id in self._proxies:
-                proxy = self._proxies.pop(vm_id)
+            proxy = self._proxies.pop(vm_id, None)
+            if proxy is not None:
                 await proxy.stop()
-                self._traffic_counters.pop(vm_id, None)
+            if vm_id in self._active_ports:
+                self._active_ports.pop(vm_id, None)
+            if self.port_manager:
                 self.port_manager.deallocate_port(vm_id)
-                await self._save_state()
-                logger.info(f"Removed proxy for VM {vm_id}")
+            self._traffic_counters.pop(vm_id, None)
+            await self._save_state()
+            logger.info(f"Removed proxy for VM {vm_id}")
         except Exception as e:
             logger.error(f"Failed to remove proxy for VM {vm_id}: {e}")
 
     def get_port(self, vm_id: str) -> Optional[int]:
-        """Get allocated port for a VM."""
-        return self.port_manager.get_port(vm_id)
+        """Get the listening proxy port for a VM."""
+        proxy = self._proxies.get(vm_id)
+        if proxy is None or proxy.server is None:
+            return None
+        return proxy.listen_port
 
     def get_traffic_counters(self) -> Dict[str, dict]:
         """Return proxy byte counters keyed by both multipass and requestor VM names."""
