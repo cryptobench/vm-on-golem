@@ -44,18 +44,19 @@ class Container(containers.DeclarativeContainer):
         ProviderClientFactory,
         settings=settings,
     )
+    payment_service = providers.Factory(
+        RequestorPaymentService,
+        settings=settings,
+        vm_repo=vm_repo,
+        provider_client_factory=provider_client_factory,
+    )
     vm_application_service = providers.Factory(
         VMApplicationService,
         settings=settings,
         vm_repo=vm_repo,
         discovery_service=discovery_service,
         provider_client_factory=provider_client_factory,
-    )
-    payment_service = providers.Factory(
-        RequestorPaymentService,
-        settings=settings,
-        vm_repo=vm_repo,
-        provider_client_factory=provider_client_factory,
+        payment_service=payment_service,
     )
     wallet_service = providers.Factory(WalletService, settings=settings)
 

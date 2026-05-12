@@ -4,9 +4,11 @@ import types
 from typing import Any
 
 from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 
 from port_checker.app import create_app
 from port_checker.config import Settings
+from port_checker.proxy import api as proxy_api
 from port_checker.proxy import arkiv_resolver, central_resolver, forwarder
 
 
@@ -140,6 +142,47 @@ def test_provider_proxy_central_success(monkeypatch):
     assert "X-Proxy-Token" not in sent_headers
     assert "X-Proxy-Source" not in sent_headers
     assert "X-Real-IP" in sent_headers
+
+
+def test_provider_websocket_proxy_central_success(monkeypatch):
+    advertisement_url = "http://localhost:9001/api/v1/advertisements/prov123"
+    session = _StubSession(
+        {("GET", advertisement_url): _StubResp(200, json_obj={"ip_address": "1.1.1.1"})}
+    )
+    _patch_aiohttp(monkeypatch, session)
+    captured = {}
+
+    class _Forwarder:
+        def __init__(self, settings):
+            self.settings = settings
+
+        async def forward(self, *, websocket, url, headers):
+            captured.update({"url": url, "headers": headers})
+            await websocket.accept()
+            await websocket.send_json({"ok": True})
+            await websocket.close()
+
+    monkeypatch.setattr(proxy_api, "WebSocketForwarder", _Forwarder)
+    client = _client(Settings(PORT_CHECKER_PROXY_TOKEN="secret"))
+
+    with client.websocket_connect(
+        "/proxy/provider/prov123/api/v1/vms/vm-a/live"
+        "?port=8080&proxy_token=secret&proxy_source=central&history_range=1h"
+    ) as websocket:
+        assert websocket.receive_json() == {"ok": True}
+
+    assert captured["url"] == "ws://1.1.1.1:8080/api/v1/vms/vm-a/live?history_range=1h"
+    assert "sec-websocket-key" not in {key.lower() for key in captured["headers"]}
+
+
+def test_provider_websocket_proxy_missing_token_rejected():
+    client = _client(Settings(PORT_CHECKER_PROXY_TOKEN="secret"))
+
+    try:
+        with client.websocket_connect("/proxy/provider/prov/status?port=80"):
+            raise AssertionError("websocket unexpectedly connected")
+    except WebSocketDisconnect as exc:
+        assert exc.code == 1008
 
 
 def test_provider_proxy_arkiv_success(monkeypatch):

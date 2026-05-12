@@ -129,23 +129,23 @@ class VMService:
             if not vm:
                 raise VMError(f"VM '{name}' not found")
 
+            # Terminate stream before deleting provider resources. This is the
+            # billing end-of-lease operation: it pays vested funds and refunds
+            # unused deposit.
+            stream_id = vm.get("config", {}).get("stream_id")
+            if stream_id is not None and self.blockchain_client:
+                try:
+                    self.blockchain_client.terminate(stream_id)
+                except Exception as e:
+                    if "no-stream" not in str(e).lower():
+                        raise
+
             try:
                 # Destroy VM on provider
                 await self.provider_client.destroy_vm(vm["vm_id"])
             except Exception as e:
                 if "Not Found" not in str(e):
                     raise
-
-            # Attempt to terminate stream if present
-            try:
-                stream_id = vm.get("config", {}).get("stream_id")
-                if stream_id is not None and self.blockchain_client:
-                    self.blockchain_client.terminate(stream_id)
-            except Exception:
-                logger.exception(
-                    "failed to terminate stream while destroying VM",
-                    extra={"vm_name": name, "stream_id": stream_id},
-                )
 
             # Remove from database
             await self.db.delete_vm(name)
@@ -183,17 +183,6 @@ class VMService:
 
             # Update status in database
             await self.db.update_vm_status(name, "stopped")
-
-            # Best-effort terminate stream on stop (treat stop as end of agreement)
-            try:
-                stream_id = vm.get("config", {}).get("stream_id")
-                if stream_id is not None and self.blockchain_client:
-                    self.blockchain_client.terminate(stream_id)
-            except Exception:
-                logger.exception(
-                    "failed to terminate stream while stopping VM",
-                    extra={"vm_name": name, "stream_id": stream_id},
-                )
 
         except Exception as e:
             raise VMError(f"Failed to stop VM: {str(e)}")

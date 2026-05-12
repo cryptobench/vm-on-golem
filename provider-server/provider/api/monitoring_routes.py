@@ -7,6 +7,7 @@ from fastapi.responses import PlainTextResponse
 from provider.container import Container
 from provider.monitoring.domain import (
     AlertRule,
+    GuestMetricAccepted,
     GuestMetricPayload,
     MetricScope,
     MetricsHistoryResponse,
@@ -65,7 +66,7 @@ async def record_guest_sample(
     monitoring_service: MonitoringService = Depends(
         Provide[Container.monitoring_service]
     ),
-) -> dict[str, str]:
+) -> GuestMetricAccepted:
     try:
         return await monitoring_service.record_guest_sample(vm_id, payload)
     except ValueError as exc:

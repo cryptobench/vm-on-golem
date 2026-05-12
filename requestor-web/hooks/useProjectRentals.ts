@@ -34,7 +34,14 @@ export function useProjectRentals(projectId: string) {
             const isCreating = status === "creating";
             const withinGrace = isCreating && createdAt && nowSec - createdAt < 180; // 3 minutes
             if (!withinGrace && r.status !== "terminated") {
-              next[i] = { ...r, status: "terminated", ssh_port: null, ended_at: nowSec };
+              next[i] = {
+                ...r,
+                status: "terminated",
+                ssh_port: null,
+                ended_at: nowSec,
+                terminated_at: nowSec,
+                termination_reason: "provider_missing",
+              };
               changed = true;
             }
           }

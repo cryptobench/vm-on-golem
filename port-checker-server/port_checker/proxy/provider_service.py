@@ -38,30 +38,18 @@ class ProviderProxyService:
 
     async def proxy(self, command: ProviderProxyCommand) -> ProxyResponse:
         self._validate_common(command.token, command.body)
-        if not is_allowed_port(command.port, self.allowed_port_ranges):
-            raise ForbiddenError("Target port not allowed")
-
-        source = normalize_proxy_source(command.source)
-        if source == "central":
-            ip = await self.central_resolver.resolve_ip(command.provider_id)
-        else:
-            ip = await self.arkiv_resolver.resolve_ip(
-                command.provider_id,
-                command.arkiv_rpc_url,
-                command.arkiv_ws_url,
-            )
-
-        if not ip or (
-            not is_public_ip(ip) and not self.settings.effective_allow_local_ips
-        ):
-            raise ValidationError("Resolved IP invalid or not public")
-
-        query = forwarded_query(command.query, {"port"})
-        url = append_query(f"http://{ip}:{command.port}/{command.path}", query)
-        headers = forwarded_headers(
-            command.headers,
-            PROVIDER_CONTROL_HEADERS,
-            command.client_host,
+        url, headers = await self.build_target(
+            provider_id=command.provider_id,
+            path=command.path,
+            query=command.query,
+            headers=command.headers,
+            client_host=command.client_host,
+            port=command.port,
+            source=command.source,
+            token=command.token,
+            arkiv_rpc_url=command.arkiv_rpc_url,
+            arkiv_ws_url=command.arkiv_ws_url,
+            scheme="http",
         )
         response = await self.forwarder.forward(
             method=command.method,
@@ -71,6 +59,52 @@ class ProviderProxyService:
         )
         response.headers["X-Proxy-Provider-Id"] = command.provider_id
         return response
+
+    async def build_target(
+        self,
+        *,
+        provider_id: str,
+        path: str,
+        query: str,
+        headers: dict[str, str],
+        client_host: str,
+        port: int,
+        source: str | None,
+        token: str | None,
+        arkiv_rpc_url: str | None,
+        arkiv_ws_url: str | None,
+        scheme: str,
+    ) -> tuple[str, dict[str, str]]:
+        self._validate_common(token, b"")
+        if not is_allowed_port(port, self.allowed_port_ranges):
+            raise ForbiddenError("Target port not allowed")
+
+        source = normalize_proxy_source(source)
+        if source == "central":
+            ip = await self.central_resolver.resolve_ip(provider_id)
+        else:
+            ip = await self.arkiv_resolver.resolve_ip(
+                provider_id,
+                arkiv_rpc_url,
+                arkiv_ws_url,
+            )
+
+        if not ip or (
+            not is_public_ip(ip) and not self.settings.effective_allow_local_ips
+        ):
+            raise ValidationError("Resolved IP invalid or not public")
+
+        query = forwarded_query(
+            query,
+            {"port", "proxy_token", "proxy_source", "arkiv_rpc_url", "arkiv_ws_url"},
+        )
+        url = append_query(f"{scheme}://{ip}:{port}/{path}", query)
+        headers = forwarded_headers(
+            headers,
+            PROVIDER_CONTROL_HEADERS,
+            client_host,
+        )
+        return url, headers
 
     def _validate_common(self, token: str | None, body: bytes) -> None:
         if not self.settings.proxy_enabled:

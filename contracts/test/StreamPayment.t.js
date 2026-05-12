@@ -90,4 +90,39 @@ describe("StreamPayment", function () {
       sp.connect(sender).topUp(streamId, deposit)
     ).to.be.revertedWith("halted");
   });
+
+  it("terminate settles vested payout, refunds unvested deposit, and closes stream", async () => {
+    const { sender, recipient, glm, sp } = await fixture();
+    const { streamId, deposit } = await createGlmStream(
+      sender,
+      recipient,
+      glm,
+      sp,
+      100n
+    );
+
+    await ethers.provider.send("evm_increaseTime", [10]);
+    await ethers.provider.send("evm_mine");
+
+    const senderBefore = await glm.balanceOf(sender.address);
+    const recipientBefore = await glm.balanceOf(recipient.address);
+
+    await sp.connect(sender).terminate(streamId);
+
+    const senderRefund = (await glm.balanceOf(sender.address)) - senderBefore;
+    const recipientPayout =
+      (await glm.balanceOf(recipient.address)) - recipientBefore;
+
+    expect(recipientPayout).to.be.greaterThanOrEqual(ethers.parseEther("9"));
+    expect(recipientPayout).to.be.lessThanOrEqual(ethers.parseEther("12"));
+    expect(senderRefund + recipientPayout).to.equal(deposit);
+
+    await expect(sp.connect(recipient).withdraw(streamId)).to.be.revertedWith(
+      "no-stream"
+    );
+    await glm.connect(sender).approve(await sp.getAddress(), deposit);
+    await expect(sp.connect(sender).topUp(streamId, deposit)).to.be.revertedWith(
+      "no-stream"
+    );
+  });
 });

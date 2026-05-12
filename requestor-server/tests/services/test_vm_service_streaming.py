@@ -72,7 +72,9 @@ class DummyChain:
 
 
 @pytest.mark.asyncio
-async def test_create_vm_preserves_passed_stream_id_and_withdraws(monkeypatch):
+async def test_create_vm_preserves_stream_id_stop_keeps_stream_destroy_terminates(
+    monkeypatch,
+):
     db = DummyDB()
     chain = DummyChain()
     svc = VMService(db, DummySSH(), DummyProvider(), blockchain_client=chain)
@@ -82,10 +84,10 @@ async def test_create_vm_preserves_passed_stream_id_and_withdraws(monkeypatch):
     assert vm["config"]["stream_id"] == 42
     assert chain.created == []
 
-    # stop should terminate stream now (agreement end on stop)
+    # stop is a power-state action; paid lease and stream stay active
     await svc.stop_vm("n")
-    assert chain.terminated == [42]
+    assert chain.terminated == []
 
-    # destroy should terminate again (best-effort, may repeat)
+    # destroy ends the paid lease and settles the stream before deletion
     await svc.destroy_vm("n")
-    assert chain.terminated == [42, 42]
+    assert chain.terminated == [42]

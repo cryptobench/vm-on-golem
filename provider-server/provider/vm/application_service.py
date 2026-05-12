@@ -368,6 +368,7 @@ class VMApplicationService:
             await self.vm_service.delete_vm(vm_id)
             await self.stream_status_service.remove_vm_stream(vm_id)
         except VMNotFoundError:
+            await self.stream_status_service.remove_vm_stream(vm_id)
             raise
         except Exception as exc:
             raise ExternalServiceError(f"failed to delete VM {vm_id}: {exc}") from exc

@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from typing import Any, Optional
 
@@ -8,6 +9,7 @@ import psutil
 
 from .domain import (
     AlertRule,
+    GuestMetricAccepted,
     GuestMetricPayload,
     MetricSample,
     MetricScope,
@@ -39,6 +41,11 @@ class MonitoringService:
         self.proxy_manager = proxy_manager
         self._task: Optional[asyncio.Task] = None
         self._stop_event = asyncio.Event()
+        self._live_latest: dict[tuple[str, str, str, str], MetricSample] = {}
+        self._live_subscribers: dict[str, set[asyncio.Queue[dict[str, Any]]]] = {}
+        self._active_watchers: dict[str, int] = {}
+        self._last_disconnect: dict[str, datetime] = {}
+        self._last_persisted_guest_sample: dict[str, datetime] = {}
 
     async def start(self) -> None:
         if not self._setting("MONITORING_ENABLED", True):
@@ -68,7 +75,7 @@ class MonitoringService:
 
     async def record_guest_sample(
         self, vm_id: str, payload: GuestMetricPayload
-    ) -> dict[str, str]:
+    ) -> GuestMetricAccepted:
         self.repo.init_schema()
         if not self.repo.validate_guest_token(vm_id, payload.token):
             raise ValueError("invalid guest metrics token")
@@ -135,9 +142,17 @@ class MonitoringService:
                 )
             )
 
-        self.repo.add_samples(samples)
-        await self._evaluate_alerts()
-        return {"status": "accepted"}
+        self._cache_live_samples(samples)
+        should_persist = self._should_persist_guest_samples(vm_id, timestamp)
+        if should_persist:
+            self.repo.add_samples(samples)
+            self._last_persisted_guest_sample[vm_id] = timestamp
+            await self._evaluate_alerts()
+        await self._publish_vm_metrics(vm_id, samples)
+        return GuestMetricAccepted(
+            next_interval_seconds=self.guest_sample_interval(vm_id),
+            live_mode=self.is_vm_live(vm_id),
+        )
 
     async def overview(self) -> MonitoringOverview:
         latest = self._latest_by_scope()
@@ -160,6 +175,11 @@ class MonitoringService:
             generated_at=datetime.utcnow(),
         )
 
+    def latest_for_vm(self, vm_id: str) -> MetricsLatestResponse:
+        latest = self.latest()
+        latest.vms = {vm_id: latest.vms.get(vm_id, {})}
+        return latest
+
     def history(
         self,
         scope: MetricScope,
@@ -173,6 +193,50 @@ class MonitoringService:
                 scope=scope, since=since, vm_id=vm_id, source=source
             )
         )
+
+    def is_vm_live(self, vm_id: str) -> bool:
+        if self._active_watchers.get(vm_id, 0) > 0:
+            return True
+        disconnected_at = self._last_disconnect.get(vm_id)
+        if disconnected_at is None:
+            return False
+        grace = int(self._setting("MONITORING_LIVE_DISCONNECT_GRACE_SECONDS", 60))
+        return datetime.utcnow() - disconnected_at <= timedelta(seconds=grace)
+
+    def guest_sample_interval(self, vm_id: str) -> int:
+        if self.is_vm_live(vm_id):
+            return int(self._setting("MONITORING_LIVE_ACTIVE_INTERVAL_SECONDS", 1))
+        return int(
+            self._setting(
+                "MONITORING_LIVE_IDLE_INTERVAL_SECONDS",
+                self._setting("MONITORING_SAMPLE_INTERVAL_SECONDS", 30),
+            )
+        )
+
+    @asynccontextmanager
+    async def watch_vm(self, vm_id: str):
+        self._active_watchers[vm_id] = self._active_watchers.get(vm_id, 0) + 1
+        try:
+            yield
+        finally:
+            current = self._active_watchers.get(vm_id, 0) - 1
+            if current > 0:
+                self._active_watchers[vm_id] = current
+            else:
+                self._active_watchers.pop(vm_id, None)
+                self._last_disconnect[vm_id] = datetime.utcnow()
+
+    @asynccontextmanager
+    async def subscribe_vm_metrics(self, vm_id: str):
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=16)
+        subscribers = self._live_subscribers.setdefault(vm_id, set())
+        subscribers.add(queue)
+        try:
+            yield queue
+        finally:
+            subscribers.discard(queue)
+            if not subscribers:
+                self._live_subscribers.pop(vm_id, None)
 
     def list_alert_rules(self) -> list[AlertRule]:
         return self.repo.list_alert_rules()
@@ -420,18 +484,9 @@ class MonitoringService:
     def _latest_by_scope(self) -> dict[str, Any]:
         result: dict[str, Any] = {"host": {}, "vms": {}}
         for sample in self.repo.latest_samples():
-            value = {
-                "value": sample.value,
-                "unit": sample.unit,
-                "timestamp": sample.timestamp,
-                "source": sample.source.value,
-            }
-            if sample.scope == MetricScope.HOST:
-                result["host"][sample.metric] = value
-            else:
-                vm = result["vms"].setdefault(sample.vm_id or "unknown", {})
-                source_bucket = vm.setdefault(sample.source.value, {})
-                source_bucket[sample.metric] = value
+            self._merge_latest_sample(result, sample)
+        for sample in self._live_latest.values():
+            self._merge_latest_sample(result, sample)
         return result
 
     async def _vm_overview(self, latest: dict[str, Any]) -> list[dict[str, Any]]:
@@ -455,10 +510,73 @@ class MonitoringService:
         return rows
 
     def _latest_timestamp(self) -> Optional[datetime]:
-        samples = self.repo.latest_samples()
+        samples = [*self.repo.latest_samples(), *self._live_latest.values()]
         if not samples:
             return None
         return max(sample.timestamp for sample in samples)
+
+    def _cache_live_samples(self, samples: list[MetricSample]) -> None:
+        for sample in samples:
+            if sample.vm_id is None:
+                continue
+            key = (
+                sample.scope.value,
+                sample.source.value,
+                sample.vm_id,
+                sample.metric,
+            )
+            self._live_latest[key] = sample
+
+    def _should_persist_guest_samples(self, vm_id: str, timestamp: datetime) -> bool:
+        interval = int(self._setting("MONITORING_HISTORY_DOWNSAMPLE_SECONDS", 10))
+        previous = self._last_persisted_guest_sample.get(vm_id)
+        if previous is None:
+            return True
+        return timestamp - previous >= timedelta(seconds=interval)
+
+    async def _publish_vm_metrics(
+        self, vm_id: str, samples: list[MetricSample]
+    ) -> None:
+        subscribers = list(self._live_subscribers.get(vm_id, set()))
+        if not subscribers:
+            return
+        payload = {
+            "latest": self.latest_for_vm(vm_id).model_dump(mode="json"),
+            "samples": [
+                sample.model_dump(mode="json")
+                for sample in samples
+                if sample.scope == MetricScope.VM and sample.vm_id == vm_id
+            ],
+            "guest_interval_seconds": self.guest_sample_interval(vm_id),
+            "live_mode": self.is_vm_live(vm_id),
+        }
+        for queue in subscribers:
+            if queue.full():
+                try:
+                    queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    pass
+            queue.put_nowait(payload)
+
+    @staticmethod
+    def _merge_latest_sample(result: dict[str, Any], sample: MetricSample) -> None:
+        value = {
+            "value": sample.value,
+            "unit": sample.unit,
+            "timestamp": sample.timestamp,
+            "source": sample.source.value,
+        }
+        if sample.scope == MetricScope.HOST:
+            current = result["host"].get(sample.metric)
+            if not current or current["timestamp"] <= sample.timestamp:
+                result["host"][sample.metric] = value
+            return
+
+        vm = result["vms"].setdefault(sample.vm_id or "unknown", {})
+        source_bucket = vm.setdefault(sample.source.value, {})
+        current = source_bucket.get(sample.metric)
+        if not current or current["timestamp"] <= sample.timestamp:
+            source_bucket[sample.metric] = value
 
     @staticmethod
     def _violates(value: float, operator: str, threshold: float) -> bool:

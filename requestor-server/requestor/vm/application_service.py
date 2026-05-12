@@ -30,11 +30,13 @@ class VMApplicationService:
         vm_repo: VMRepository,
         discovery_service: ProviderDiscoveryService,
         provider_client_factory: ProviderClientFactory,
+        payment_service=None,
     ):
         self.settings = settings
         self.vm_repo = vm_repo
         self.discovery_service = discovery_service
         self.provider_client_factory = provider_client_factory
+        self.payment_service = payment_service
 
     def init_storage(self) -> None:
         self.vm_repo.init_schema()
@@ -318,11 +320,27 @@ class VMApplicationService:
 
     async def delete_vm(self, name: str) -> None:
         vm = self.vm_repo.require(name)
+        await self._terminate_stream_for_delete(vm)
         async with self.provider_client_factory.for_provider_ip(
             vm.provider_ip
         ) as client:
             await client.destroy_vm(vm.vm_id)
         self.vm_repo.delete(name)
+
+    async def _terminate_stream_for_delete(self, vm: VMRecord) -> None:
+        stream_id = vm.config.get("stream_id")
+        if stream_id is None:
+            return
+        if self.payment_service is None:
+            raise ExternalServiceError(
+                "payment service unavailable for stream termination"
+            )
+        try:
+            await self.payment_service.terminate_stream(int(stream_id))
+        except ExternalServiceError as exc:
+            if "no-stream" in str(exc).lower():
+                return
+            raise
 
     def _sync_record(
         self, name: str, result: dict, fallback_status: str | None = None

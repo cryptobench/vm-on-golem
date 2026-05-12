@@ -11,6 +11,7 @@ export function useStreamActions(spAddr: string | null | undefined) {
     if (!spAddr) throw new Error('StreamPayment address missing');
     const sid = typeof streamId === 'bigint' ? streamId : BigInt(streamId);
     const { ethereum } = window as any;
+    if (!ethereum) throw new Error('MetaMask not detected');
     await ensurePaymentsNetwork();
     const provider = new BrowserProvider(ethereum);
     const signer = await provider.getSigner();
@@ -27,5 +28,19 @@ export function useStreamActions(spAddr: string | null | undefined) {
     await tx.wait();
     return tx.hash as string;
   }
-  return { topUp };
+
+  async function terminate(streamId: string | number | bigint) {
+    if (!spAddr) throw new Error('StreamPayment address missing');
+    const sid = typeof streamId === 'bigint' ? streamId : BigInt(streamId);
+    const { ethereum } = window as any;
+    await ensurePaymentsNetwork();
+    const provider = new BrowserProvider(ethereum);
+    const signer = await provider.getSigner();
+    const contract = new Contract(spAddr, (streamPayment as any).abi, signer);
+    const tx = await contract.terminate(sid, { gasLimit: 180000n });
+    await tx.wait();
+    return tx.hash as string;
+  }
+
+  return { topUp, terminate };
 }

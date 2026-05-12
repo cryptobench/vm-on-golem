@@ -17,6 +17,11 @@ HOP_BY_HOP_HEADERS = {
     "host",
     "content-length",
     "accept-encoding",
+    "sec-websocket-accept",
+    "sec-websocket-extensions",
+    "sec-websocket-key",
+    "sec-websocket-protocol",
+    "sec-websocket-version",
 }
 
 PROVIDER_CONTROL_HEADERS = {

@@ -16,10 +16,13 @@ import {
   vmJobStatus,
   type AdsConfig,
   type CreateVMRequest,
+  type Rental,
   type ProviderAd,
   type SSHKey,
 } from "../../lib/api";
 import { getPaymentNetworkErrorMessage } from "../../lib/chain";
+import { markCreateFailedSettled } from "../../lib/rentalLifecycle";
+import { terminateStreamWithWallet } from "../../lib/streams";
 import { parseHumanDuration } from "../../lib/time";
 import { useSettings } from "../../hooks/useSettings";
 import { useWallet } from "../../context/WalletContext";
@@ -94,6 +97,8 @@ export function RentDialog({
   const [creating, setCreating] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [streamId, setStreamId] = React.useState<string | null>(null);
+  const [openedStreamPaymentAddress, setOpenedStreamPaymentAddress] =
+    React.useState<string>("");
   const [connecting, setConnecting] = React.useState(false);
   const [preset, setPreset] = React.useState<DurationPreset>("30d");
   const [customInput, setCustomInput] = React.useState("");
@@ -102,6 +107,7 @@ export function RentDialog({
     setSpec(clampSpec(defaultSpec, provider));
     setName(`vm-${provider.provider_id.slice(-4).toLowerCase()}`);
     setStreamId(null);
+    setOpenedStreamPaymentAddress("");
     setError(null);
   }, [defaultSpec.cpu, defaultSpec.memory, defaultSpec.storage, provider]);
 
@@ -145,7 +151,7 @@ export function RentDialog({
   });
   const submitDisabled = Boolean(disabledReason);
 
-  const openStream = async (): Promise<string> => {
+  const openStream = async (): Promise<{ id: string; contractAddress: string }> => {
     setError(null);
     await ensurePaymentsNetwork();
     const { ethereum } = window as any;
@@ -236,20 +242,57 @@ export function RentDialog({
     if (!sid) throw new Error("Stream id not found");
     const newId = String(sid);
     setStreamId(newId);
-    return newId;
+    setOpenedStreamPaymentAddress(spAddr);
+    return { id: newId, contractAddress: spAddr };
   };
 
   const create = async () => {
+    let pendingEntry: Rental | null = null;
+    let activeStreamPaymentAddress = "";
     try {
       setCreating(true);
       setError(null);
-      const sid = streamId || (await openStream());
+      const opened = streamId
+        ? {
+            id: String(streamId),
+            contractAddress: (
+              openedStreamPaymentAddress ||
+              loadSettings().stream_payment_address ||
+              process.env.NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS ||
+              ""
+            ).trim(),
+          }
+        : await openStream();
+      const activeStreamId = opened.id;
+      activeStreamPaymentAddress = opened.contractAddress;
       const payload: CreateVMRequest = {
         name: name.trim(),
         resources: spec,
         ssh_key: sshKey,
-        stream_id: Number(sid),
+        stream_id: Number(activeStreamId),
       };
+      pendingEntry = {
+        name: payload.name,
+        provider_id: provider.provider_id,
+        provider_ip: provider.ip_address || null,
+        platform: provider.platform || null,
+        resources: spec,
+        vm_id: payload.name,
+        creation_job_id: null,
+        ssh_port: null,
+        ssh_user: null,
+        stream_id: String(activeStreamId),
+        project_id: activeProjectId || "default",
+        status: "creating",
+        lifecycle_stage: "queued",
+        status_message: "Queued VM creation",
+        progress: 0,
+        transitioning: true,
+        next_poll_seconds: 2,
+        created_at: Math.floor(Date.now() / 1000),
+        settlement_status: "pending",
+      };
+      upsertRental(pendingEntry);
       const vm = await createVm(provider.provider_id, payload, adsMode);
       const jobId = (vm as any)?.job_id || null;
       let vmId = (vm as any)?.vm_id || (vm as any)?.id || null;
@@ -281,7 +324,7 @@ export function RentDialog({
         creation_job_id: jobId,
         ssh_port: null,
         ssh_user: null,
-        stream_id: String(sid),
+        stream_id: String(activeStreamId),
         project_id: activeProjectId || "default",
         status: String((vm as any)?.status || "creating"),
         lifecycle_stage: (vm as any)?.lifecycle_stage || "queued",
@@ -290,8 +333,9 @@ export function RentDialog({
         transitioning: Boolean((vm as any)?.transitioning ?? true),
         next_poll_seconds: Number((vm as any)?.next_poll_seconds ?? 2),
         created_at: Math.floor(Date.now() / 1000),
+        settlement_status: undefined,
       };
-      saveRentals([entry as any, ...loadRentals()]);
+      upsertRental(entry as Rental);
       try {
         const access = await vmAccess(provider.provider_id, vmId, adsMode);
         if (access?.ssh_port) {
@@ -320,10 +364,64 @@ export function RentDialog({
       onClose();
       router.push(`/vm?id=${encodeURIComponent(vmId)}`);
     } catch (createError: any) {
+      if (pendingEntry && activeStreamPaymentAddress) {
+        try {
+          await settleFailedCreate(pendingEntry, activeStreamPaymentAddress);
+        } catch (settlementError) {
+          upsertRental({
+            ...pendingEntry,
+            status: "terminated",
+            create_failed_at: Math.floor(Date.now() / 1000),
+            settlement_status: "failed",
+            status_message: getPaymentNetworkErrorMessage(settlementError),
+          });
+          setError(getPaymentNetworkErrorMessage(settlementError, expectedChain));
+          return;
+        }
+      } else if (pendingEntry) {
+        upsertRental({
+          ...pendingEntry,
+          status: "terminated",
+          create_failed_at: Math.floor(Date.now() / 1000),
+          settlement_status: "failed",
+          status_message: "VM creation failed; stream settlement address missing",
+        });
+      }
       setError(getPaymentNetworkErrorMessage(createError, expectedChain));
     } finally {
       setCreating(false);
     }
+  };
+
+  const upsertRental = (entry: Rental) => {
+    const current = loadRentals();
+    const index = current.findIndex(
+      (rental) =>
+        (entry.stream_id != null &&
+          String(rental.stream_id || "") === String(entry.stream_id)) ||
+        (rental.name === entry.name &&
+          rental.provider_id === entry.provider_id &&
+          rental.project_id === entry.project_id),
+    );
+    if (index >= 0) {
+      const next = [...current];
+      next[index] = { ...next[index], ...entry };
+      saveRentals(next);
+      return;
+    }
+    saveRentals([entry, ...current]);
+  };
+
+  const settleFailedCreate = async (
+    pending: Rental,
+    streamPaymentAddress: string,
+  ) => {
+    if (!pending.stream_id) return;
+    const txHash = await terminateStreamWithWallet(
+      streamPaymentAddress,
+      BigInt(pending.stream_id),
+    );
+    upsertRental(markCreateFailedSettled(pending, { txHash }));
   };
 
   const paymentAction = async () => {

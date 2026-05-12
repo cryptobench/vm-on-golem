@@ -832,6 +832,45 @@
         "summary": "Create Stream"
       }
     },
+    "/api/v1/payments/streams/{stream_id}/terminate": {
+      "post": {
+        "operationId": "terminate_stream_api_v1_payments_streams__stream_id__terminate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "stream_id",
+            "required": true,
+            "schema": {
+              "title": "Stream Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StreamActionResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Terminate Stream"
+      }
+    },
     "/api/v1/payments/streams/{stream_id}/topups": {
       "post": {
         "operationId": "top_up_stream_api_v1_payments_streams__stream_id__topups_post",

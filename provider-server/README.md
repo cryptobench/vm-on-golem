@@ -312,7 +312,8 @@ Implementation notes:
 
 - The provider exposes `GET /api/v1/provider/info` returning `provider_id`, `stream_payment_address`, and `glm_token_address`.
 - On successful VM creation with a valid `stream_id`, the provider persists a VM→stream mapping in `streams.json`. This enables the background monitor to stop VMs with low remaining runway and to withdraw vested funds according to configured intervals.
-- When a VM is deleted, the VM→stream mapping is cleaned up.
+- Stopping a VM only changes power state; the stream mapping stays active and billing continues.
+- When a VM is deleted or already gone, the VM→stream mapping is cleaned up after provider-side teardown. Requestor-initiated paid termination should settle the stream before delete.
 
 When enabled, the provider verifies each VM creation request’s `stream_id` and refuses to start the VM if:
 

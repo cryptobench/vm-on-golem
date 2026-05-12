@@ -663,6 +663,10 @@ class Settings(BaseSettings):
     # Monitoring settings
     MONITORING_ENABLED: bool = True
     MONITORING_SAMPLE_INTERVAL_SECONDS: int = Field(default=30, ge=5)
+    MONITORING_LIVE_ACTIVE_INTERVAL_SECONDS: int = Field(default=1, ge=1)
+    MONITORING_LIVE_IDLE_INTERVAL_SECONDS: int = Field(default=30, ge=5)
+    MONITORING_LIVE_DISCONNECT_GRACE_SECONDS: int = Field(default=60, ge=0)
+    MONITORING_HISTORY_DOWNSAMPLE_SECONDS: int = Field(default=10, ge=1)
     MONITORING_RETENTION_DAYS: int = Field(default=30, ge=1)
     MONITORING_GUEST_AGENT_DEFAULT: bool = True
     MONITORING_PROMETHEUS_ENABLED: bool = True

@@ -29,7 +29,9 @@ Recommended flow
 2. Requestor approves and deposits initial GLM coverage, for example `rate * 3600` for one hour.
 3. Requestor calls provider `POST /api/v1/vms` with `stream_id`.
 4. Requestor can call `topUp` periodically to keep the rental running.
-5. Provider withdraws vested GLM and stops VMs when stream runway is too low.
+5. Stopping a VM does not settle payment; billing continues while the stream remains active.
+6. Terminating a rental calls `terminate(streamId)`, paying vested GLM to the provider and refunding unvested deposit to the requestor.
+7. Provider can withdraw vested GLM during active rentals and deletes VMs when streams run out or halt.
 
 Deployment
 
