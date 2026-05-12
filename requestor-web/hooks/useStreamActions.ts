@@ -1,6 +1,7 @@
 "use client";
 import { BrowserProvider, Contract } from "ethers";
 import streamPayment from "../public/abi/StreamPayment.json";
+import erc20 from "../public/abi/ERC20.json";
 import { useWallet } from "../context/WalletContext";
 
 export function useStreamActions(spAddr: string | null | undefined) {
@@ -15,9 +16,14 @@ export function useStreamActions(spAddr: string | null | undefined) {
     const signer = await provider.getSigner();
     const contract = new Contract(spAddr, (streamPayment as any).abi, signer);
     const addWei = ratePerSecond * BigInt(seconds);
-    const zero = '0x0000000000000000000000000000000000000000';
-    const native = (tokenAddress || '').toLowerCase() === zero;
-    const tx = await contract.topUp(sid, addWei, { value: native ? addWei : 0n, gasLimit: 150000n });
+    const token = new Contract(tokenAddress, (erc20 as any).abi, signer);
+    const owner = await signer.getAddress();
+    const allowance = await token.allowance(owner, spAddr);
+    if (allowance < addWei) {
+      const approveTx = await token.approve(spAddr, addWei);
+      await approveTx.wait();
+    }
+    const tx = await contract.topUp(sid, addWei, { gasLimit: 150000n });
     await tx.wait();
     return tx.hash as string;
   }

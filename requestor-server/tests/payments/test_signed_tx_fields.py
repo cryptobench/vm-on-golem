@@ -2,7 +2,10 @@ import types
 
 import pytest
 
-from requestor.payments.blockchain_service import StreamPaymentClient, StreamPaymentConfig
+from requestor.payments.blockchain_service import (
+    StreamPaymentClient,
+    StreamPaymentConfig,
+)
 
 
 class DummyContract:
@@ -24,10 +27,22 @@ class DummyContract:
                 self.outer = outer
 
             def createStream(self, *args):
-                return types.SimpleNamespace(build_transaction=lambda kwargs: {"to": "create", **kwargs})
+                return types.SimpleNamespace(
+                    build_transaction=lambda kwargs: {"to": "create", **kwargs}
+                )
 
             def topUp(self, *args):
-                return types.SimpleNamespace(build_transaction=lambda kwargs: {"to": "topUp", **kwargs})
+                return types.SimpleNamespace(
+                    build_transaction=lambda kwargs: {"to": "topUp", **kwargs}
+                )
+
+            def allowance(self, *args):
+                return types.SimpleNamespace(call=lambda: 0)
+
+            def approve(self, *args):
+                return types.SimpleNamespace(
+                    build_transaction=lambda kwargs: {"to": "approve", **kwargs}
+                )
 
         self.functions = Funcs(self)
 
@@ -40,7 +55,9 @@ class DummyWeb3:
             default_account=None,
             get_transaction_count=lambda addr: 0,
             send_raw_transaction=lambda raw: types.SimpleNamespace(hex=lambda: "0xabc"),
-            wait_for_transaction_receipt=lambda h: types.SimpleNamespace(status=1, logs=[{"data": "ok"}]),
+            wait_for_transaction_receipt=lambda h: types.SimpleNamespace(
+                status=1, logs=[{"data": "ok"}]
+            ),
             contract=lambda address=None, abi=None: DummyContract(),
             gas_price=1,
             chain_id=31337,
@@ -66,16 +83,20 @@ def _patch_env(monkeypatch, raw_field: str):
             return Signed()
 
     monkeypatch.setattr(bs, "Web3", DummyWeb3)
-    monkeypatch.setattr(bs, "Account", types.SimpleNamespace(from_key=lambda k: Signer()))
+    monkeypatch.setattr(
+        bs, "Account", types.SimpleNamespace(from_key=lambda k: Signer())
+    )
 
 
-@pytest.mark.parametrize("field", ["rawTransaction", "raw_transaction"])  # support both web3 variants
-def test_native_create_stream_supports_raw_fields(monkeypatch, field):
+@pytest.mark.parametrize(
+    "field", ["rawTransaction", "raw_transaction"]
+)  # support both web3 variants
+def test_glm_create_stream_supports_raw_fields(monkeypatch, field):
     _patch_env(monkeypatch, field)
     cfg = StreamPaymentConfig(
         rpc_url="http://localhost",
         contract_address="0xcontract",
-        glm_token_address="0x0000000000000000000000000000000000000000",  # native ETH
+        glm_token_address="0x1111111111111111111111111111111111111111",
         private_key="0x01",
     )
     client = StreamPaymentClient(cfg)
@@ -83,16 +104,17 @@ def test_native_create_stream_supports_raw_fields(monkeypatch, field):
     assert sid == 123
 
 
-@pytest.mark.parametrize("field", ["rawTransaction", "raw_transaction"])  # support both web3 variants
-def test_native_topup_supports_raw_fields(monkeypatch, field):
+@pytest.mark.parametrize(
+    "field", ["rawTransaction", "raw_transaction"]
+)  # support both web3 variants
+def test_glm_topup_supports_raw_fields(monkeypatch, field):
     _patch_env(monkeypatch, field)
     cfg = StreamPaymentConfig(
         rpc_url="http://localhost",
         contract_address="0xcontract",
-        glm_token_address="0x0000000000000000000000000000000000000000",  # native ETH
+        glm_token_address="0x1111111111111111111111111111111111111111",
         private_key="0x01",
     )
     client = StreamPaymentClient(cfg)
     tx = client.top_up(42, 123)
     assert tx == "0xabc"
-

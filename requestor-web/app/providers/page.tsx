@@ -1,332 +1,327 @@
 "use client";
+
 import React from "react";
-import { fetchProviders, computeEstimate } from "../../lib/api";
+import { RiFilter3Line } from "@remixicon/react";
+import { fetchProviders, computeEstimate, type ProviderAd } from "../../lib/api";
 import { useAds } from "../../context/AdsContext";
+import { useSettings } from "../../hooks/useSettings";
 import { Spinner } from "../../components/ui/Spinner";
 import { TableSkeleton } from "../../components/ui/Skeleton";
-import { ProviderRow } from "../../components/providers/ProviderRow";
-import { RentDialog as RentDialogExt } from "../../components/providers/RentDialog";
-import { countryFlagEmoji, countryFullName } from "../../lib/intl";
-import { useSettings } from "../../hooks/useSettings";
+import { RentDialog } from "../../components/providers/RentDialog";
+import {
+  ProviderFiltersPanel,
+  type ProviderFilters,
+} from "../../components/providers/ProviderFiltersPanel";
+import { ProvidersTable } from "../../components/providers/ProvidersTable";
+import {
+  estimateSpec,
+  providerMatchesSearch,
+  providerPlatform,
+} from "../../components/providers/providerDisplay";
+
+const PAGE_SIZE = 10;
+const EMPTY_FILTERS: ProviderFilters = {
+  search: "",
+  country: "",
+  platform: "",
+};
+
+function providerCountLabel(count: number) {
+  return `${count} provider${count === 1 ? "" : "s"}`;
+}
+
+function parseNumber(value: string | null) {
+  if (value == null || value === "") return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function readFiltersFromUrl(): ProviderFilters {
+  if (typeof window === "undefined") return EMPTY_FILTERS;
+  const params = new URLSearchParams(window.location.search);
+  return {
+    search: params.get("q") || "",
+    country: params.get("country") || "",
+    platform: params.get("platform") || "",
+    cpu: parseNumber(params.get("cpu")),
+    memory: parseNumber(params.get("memory")),
+    storage: parseNumber(params.get("storage")),
+    maxUsd: parseNumber(params.get("max_usd")),
+  };
+}
+
+function writeFiltersToUrl(filters: ProviderFilters) {
+  const params = new URLSearchParams();
+  const set = (key: string, value?: string | number) => {
+    if (value != null && String(value) !== "") params.set(key, String(value));
+  };
+  set("q", filters.search);
+  set("country", filters.country);
+  set("platform", filters.platform);
+  set("cpu", filters.cpu);
+  set("memory", filters.memory);
+  set("storage", filters.storage);
+  set("max_usd", filters.maxUsd);
+  const query = params.toString();
+  window.history.replaceState(null, "", query ? `/providers?${query}` : "/providers");
+}
+
+function applyClientFilters(
+  providers: ProviderAd[],
+  filters: ProviderFilters,
+  spec: ReturnType<typeof estimateSpec>,
+) {
+  return providers.filter((provider) => {
+    if (!providerMatchesSearch(provider, filters.search)) return false;
+    if (filters.platform && providerPlatform(provider).toLowerCase() !== filters.platform) return false;
+    if (filters.maxUsd != null) {
+      const estimate = computeEstimate(provider, spec.cpu, spec.memory, spec.storage);
+      if (estimate.usd_per_month > filters.maxUsd) return false;
+    }
+    return true;
+  });
+}
 
 export default function ProvidersPage() {
-  const { displayCurrency } = useSettings();
-  const [cpu, setCpu] = React.useState<number | undefined>();
-  const [memory, setMemory] = React.useState<number | undefined>();
-  const [storage, setStorage] = React.useState<number | undefined>();
-  const [country, setCountry] = React.useState<string>("");
-  const [platform, setPlatform] = React.useState<string>("");
-  const [countries, setCountries] = React.useState<string[] | undefined>(undefined);
-  const [countryOptions, setCountryOptions] = React.useState<string[]>([]);
-  const [loadingCountries, setLoadingCountries] = React.useState<boolean>(false);
-  const [maxUsd, setMaxUsd] = React.useState<number | undefined>(undefined);
+  const { ads } = useAds();
+  const { displayCurrency, setDisplayCurrency } = useSettings();
+  const [filters, setFilters] = React.useState<ProviderFilters>(readFiltersFromUrl);
+  const [countries, setCountries] = React.useState<string[]>([]);
+  const [loadingCountries, setLoadingCountries] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
-  const [rows, setRows] = React.useState<any[]>([]);
-  const [selectedProviderId, setSelectedProviderId] = React.useState<string | null>(null);
-  const [rentOpen, setRentOpen] = React.useState(false);
+  const [rows, setRows] = React.useState<ProviderAd[]>([]);
+  const [page, setPage] = React.useState(1);
+  const [filtersOpen, setFiltersOpen] = React.useState(false);
+  const [filtersMounted, setFiltersMounted] = React.useState(false);
+  const [selectedProvider, setSelectedProvider] = React.useState<ProviderAd | null>(null);
+  const closeTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Refs to enable focusing first missing input
-  const cpuRef = React.useRef<HTMLInputElement | null>(null);
-  const memRef = React.useRef<HTMLInputElement | null>(null);
-  const stoRef = React.useRef<HTMLInputElement | null>(null);
+  const spec = estimateSpec(filters);
+  const showTokenPrices = displayCurrency === "token";
+  const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const visibleRows = rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-  const { ads } = useAds();
-
-  const isSpecValid = (cpu ?? 0) > 0 && (memory ?? 0) > 0 && (storage ?? 0) >= 10;
-  const missing: string[] = [
-    ...((cpu ?? 0) > 0 ? [] : ["vCPU"]),
-    ...((memory ?? 0) > 0 ? [] : ["RAM"]),
-    ...((storage ?? 0) >= 10 ? [] : ["Storage ≥ 10 GB"]),
-  ];
-
-  const focusFirstMissing = React.useCallback(() => {
-    if ((cpu ?? 0) <= 0) { cpuRef.current?.focus(); return; }
-    if ((memory ?? 0) <= 0) { memRef.current?.focus(); return; }
-    if ((storage ?? 0) <= 0) { stoRef.current?.focus(); return; }
-  }, [cpu, memory, storage]);
-
-  const search = async () => {
-    setLoading(true); setError(null);
-    try {
-      let data = await fetchProviders({ cpu, memory, storage, country: (countries && countries.length && !country) ? undefined : (country || undefined), platform: platform || undefined }, ads);
-      // Apply multi-country filter client-side if provided
-      if (countries && countries.length) {
-        const setC = new Set(countries.map(c => c.trim().toUpperCase()));
-        data = data.filter(p => (p.country ? setC.has(p.country.toUpperCase()) : false));
+  const loadProviders = React.useCallback(
+    async (nextFilters = filters) => {
+      setLoading(true);
+      setError(null);
+      try {
+        const query = {
+          cpu: nextFilters.cpu,
+          memory: nextFilters.memory,
+          storage: nextFilters.storage,
+          country: nextFilters.country || undefined,
+        };
+        const data = await fetchProviders(query, ads);
+        const nextSpec = estimateSpec(nextFilters);
+        setRows(applyClientFilters(data, nextFilters, nextSpec));
+        setPage(1);
+        writeFiltersToUrl(nextFilters);
+      } catch (event) {
+        setError(event instanceof Error ? event.message : String(event));
+      } finally {
+        setLoading(false);
       }
-      // Apply price cap if specified and we have full spec
-      if (maxUsd != null && cpu != null && memory != null && storage != null) {
-        data = data.filter(p => {
-          const est = computeEstimate(p, cpu, memory, storage);
-          return est && est.usd_per_month <= maxUsd;
-        });
-      }
-      setRows(data);
-    } catch (e: any) {
-      setError(e?.message || String(e));
-    } finally { setLoading(false); }
-  };
+    },
+    [ads, filters],
+  );
 
   React.useEffect(() => {
-    // Load country options from advertisements for the select
     let cancelled = false;
-    (async () => {
+    async function loadCountries() {
       setLoadingCountries(true);
       try {
-        const { listCountries } = await import('../../lib/providers');
+        const { listCountries } = await import("../../lib/providers");
         const list = await listCountries(ads);
-        if (cancelled) return;
-        setCountryOptions(list);
+        if (!cancelled) setCountries(list);
       } catch {
-        setCountryOptions([]);
-      } finally { setLoadingCountries(false); }
-    })();
-    return () => { cancelled = true; };
+        if (!cancelled) setCountries([]);
+      } finally {
+        if (!cancelled) setLoadingCountries(false);
+      }
+    }
+    loadCountries();
+    return () => {
+      cancelled = true;
+    };
   }, [ads]);
 
   React.useEffect(() => {
-    // Initialize from URL first, then pending create, then run initial search
-    let hasUrlCpu = false, hasUrlMem = false, hasUrlSto = false, hasUrlCountry = false, hasUrlPlatform = false, hasUrlMax = false;
     try {
-      const sp = new URL(window.location.href).searchParams;
-      const urlCpu = sp.get('cpu'); hasUrlCpu = urlCpu != null;
-      const urlMem = sp.get('memory'); hasUrlMem = urlMem != null;
-      const urlSto = sp.get('storage'); hasUrlSto = urlSto != null;
-      const urlCountry = sp.get('country'); hasUrlCountry = urlCountry != null;
-      const urlPlatform = sp.get('platform'); hasUrlPlatform = urlPlatform != null;
-      const urlMax = sp.get('max_usd'); hasUrlMax = urlMax != null;
-      if (urlCpu != null) setCpu(Number(urlCpu));
-      if (urlMem != null) setMemory(Number(urlMem));
-      if (urlSto != null) setStorage(Number(urlSto));
-      if (urlCountry != null) setCountry(urlCountry);
-      if (urlPlatform != null) setPlatform(urlPlatform);
-      if (urlMax != null) setMaxUsd(Number(urlMax));
-    } catch {}
-
-    // Fallback to pre-fill from quick create wizard if present
-    try {
-      const raw = localStorage.getItem('requestor_pending_create');
-      if (raw) {
-        const data = JSON.parse(raw);
-        if (data.cpu != null && !hasUrlCpu) setCpu(Number(data.cpu));
-        if (data.memory != null && !hasUrlMem) setMemory(Number(data.memory));
-        if (data.storage != null && !hasUrlSto) setStorage(Number(data.storage));
-        if (Array.isArray(data.countries) && data.countries.length) { setCountries(data.countries); setCountry(""); }
-        else if (data.country && !hasUrlCountry) setCountry(String(data.country));
-        if (data.platform && !hasUrlPlatform) setPlatform(String(data.platform));
-        if (data.max_usd_per_month != null && !hasUrlMax) setMaxUsd(Number(data.max_usd_per_month));
-        localStorage.removeItem('requestor_pending_create');
+      const raw = localStorage.getItem("requestor_pending_create");
+      if (!raw) {
+        loadProviders(filters);
+        return;
       }
-    } catch {}
-    // Initial search
-    search();
+      const pending = JSON.parse(raw);
+      const next = {
+        ...filters,
+        cpu: pending.cpu != null ? Number(pending.cpu) : filters.cpu,
+        memory: pending.memory != null ? Number(pending.memory) : filters.memory,
+        storage: pending.storage != null ? Number(pending.storage) : filters.storage,
+        country: Array.isArray(pending.countries) ? "" : pending.country || filters.country,
+        maxUsd: pending.max_usd_per_month != null ? Number(pending.max_usd_per_month) : filters.maxUsd,
+      };
+      localStorage.removeItem("requestor_pending_create");
+      setFilters(next);
+      loadProviders(next);
+    } catch {
+      loadProviders(filters);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Keep URL in sync with current spec/filters
-  React.useEffect(() => {
-    try {
-      const params = new URLSearchParams(window.location.search);
-      const setOrDel = (key: string, val?: string | number) => {
-        if (val == null || String(val) === '' || (typeof val === 'number' && !Number.isFinite(val))) params.delete(key);
-        else params.set(key, String(val));
-      };
-      setOrDel('cpu', cpu);
-      setOrDel('memory', memory);
-      setOrDel('storage', storage);
-      setOrDel('country', country || undefined);
-      setOrDel('platform', platform || undefined);
-      setOrDel('max_usd', maxUsd);
-      const next = `${window.location.pathname}?${params.toString()}`;
-      window.history.replaceState(null, '', next);
-    } catch {}
-  }, [cpu, memory, storage, country, platform, maxUsd]);
-
-
-  // Debounced search on filter/spec changes for a seamless feel
-  React.useEffect(() => {
-    const t = setTimeout(() => { search(); }, 350);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cpu, memory, storage, country, platform, maxUsd]);
-
   React.useEffect(() => {
     if (!rows.length) return;
-    try {
-      const pending = localStorage.getItem('requestor_pending_rent');
-      if (!pending) return;
-      if (!rows.some((row) => row.provider_id === pending)) return;
-      localStorage.removeItem('requestor_pending_rent');
-      setSelectedProviderId(pending);
-      setRentOpen(true);
-    } catch {}
-  }, [rows]);
+    const pageMax = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+    if (page > pageMax) setPage(pageMax);
+  }, [page, rows.length]);
+
+  React.useEffect(() => {
+    return () => {
+      if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    };
+  }, []);
+
+  const openFilters = () => {
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    setFiltersMounted(true);
+    requestAnimationFrame(() => setFiltersOpen(true));
+  };
+
+  const closeFilters = () => {
+    setFiltersOpen(false);
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    closeTimerRef.current = setTimeout(() => {
+      setFiltersMounted(false);
+    }, 220);
+  };
+
+  const resetFilters = () => {
+    setFilters(EMPTY_FILTERS);
+    loadProviders(EMPTY_FILTERS);
+  };
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2>Providers</h2>
-      </div>
-      <div className="card">
-        <div className="card-body">
-          <div className="mb-2 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="text-base font-medium">VM requirements</div>
-              <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-600">Required</span>
-            </div>
-            <div className="text-sm text-gray-600">
-              {isSpecValid ? `${rows.length} matching provider${rows.length === 1 ? '' : 's'}` : 'Enter vCPU, RAM, and Storage to see matches'}
-            </div>
+    <div
+      className={`providers-page grid ${filtersMounted ? "providers-page--filters-mounted" : ""} ${
+        filtersOpen ? "providers-page--filters-open" : ""
+      }`}
+    >
+      <div className="min-w-0 space-y-5">
+        <div className="flex flex-col gap-4 border-b border-border pb-6 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight text-text-primary">Providers</h1>
+            <p className="mt-1 text-sm text-text-secondary">Browse available providers on the Golem Network.</p>
           </div>
-          {/* Specs row */}
-          <div className="flex flex-wrap items-end gap-3">
-            <div>
-              <label className="label">vCPU</label>
-              <input ref={cpuRef} className="input w-24" type="number" min={1} value={cpu ?? ''} onChange={e => setCpu(e.target.value ? Number(e.target.value) : undefined)} />
-            </div>
-            <div>
-              <label className="label">RAM (GB)</label>
-              <input ref={memRef} className="input w-24" type="number" min={1} value={memory ?? ''} onChange={e => setMemory(e.target.value ? Number(e.target.value) : undefined)} />
-            </div>
-            <div>
-              <label className="label">Storage (GB)</label>
-              <input ref={stoRef} className="input w-24" type="number" min={10} value={storage ?? ''} onChange={e => setStorage(e.target.value ? Number(e.target.value) : undefined)} />
-            </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <button className="btn btn-secondary h-11 px-5" onClick={openFilters} type="button">
+              <RiFilter3Line className="h-5 w-5" aria-hidden />
+              Filter
+            </button>
           </div>
-          {/* Inline checklist for required specs */}
-          <div className="mt-2 flex items-center gap-3 text-xs text-gray-600">
-            <span className={"inline-flex items-center gap-1 " + ((cpu ?? 0) > 0 ? 'text-emerald-700' : 'text-gray-500')}>
-              <span className={`h-2 w-2 rounded-full ${((cpu ?? 0) > 0) ? 'bg-emerald-500' : 'bg-gray-300'}`} aria-hidden /> vCPU
-            </span>
-            <span className={"inline-flex items-center gap-1 " + ((memory ?? 0) > 0 ? 'text-emerald-700' : 'text-gray-500')}>
-              <span className={`h-2 w-2 rounded-full ${((memory ?? 0) > 0) ? 'bg-emerald-500' : 'bg-gray-300'}`} aria-hidden /> RAM
-            </span>
-            <span className={"inline-flex items-center gap-1 " + ((storage ?? 0) > 0 ? 'text-emerald-700' : 'text-gray-500')}>
-              <span className={`h-2 w-2 rounded-full ${((storage ?? 0) >= 10) ? 'bg-emerald-500' : 'bg-gray-300'}`} aria-hidden /> Storage ≥ 10 GB
-            </span>
-            {!isSpecValid && (
-              <span className="ml-2 text-gray-500">Add {missing.join(', ')} to continue</span>
-            )}
-          </div>
-          {/* Secondary filters row */}
-          <div className="mt-3 flex flex-wrap items-end gap-3">
-            <div>
-              <label className="label">Country</label>
-              <select
-                className="input"
-                value={country}
-                onChange={e => setCountry(e.target.value)}
-                disabled={loadingCountries}
-              >
-                <option value="">Any</option>
-                {countryOptions.map(code => (
-                  <option key={code} value={code}>{countryFlagEmoji(code)} {countryFullName(code)} ({code})</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="label">Platform</label>
-              <select className="input" value={platform} onChange={e => setPlatform(e.target.value)}>
-                <option value="">Any</option>
-                <option value="x86_64">x86_64</option>
-                <option value="arm64">arm64</option>
-              </select>
-            </div>
-            <div>
-              <label className="label">Max $/mo</label>
-              <input className="input w-28" type="number" min={0} value={maxUsd ?? ''} onChange={e => setMaxUsd(e.target.value ? Number(e.target.value) : undefined)} placeholder="cap" />
-            </div>
-            <div className="ml-auto flex items-center gap-3">
-              {loading && <Spinner />}
-            </div>
-          </div>
-          {countries && countries.length > 0 && (
-            <div className="mt-2 text-xs text-gray-500">Countries: {countries.join(', ')}</div>
-          )}
-          {error && <div className="mt-3 text-sm text-red-600">{error}</div>}
         </div>
-      </div>
-      <div>
+
+        <div className="flex flex-col gap-4 border-b border-border pb-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-lg font-semibold text-text-primary">
+            {providerCountLabel(rows.length)} <span className="text-sm font-normal text-text-secondary">available</span>
+          </div>
+          <div className="flex flex-wrap items-center gap-3 text-sm text-text-secondary">
+            <span>Prices in USD</span>
+            <button
+              className={`relative h-6 w-11 rounded-full transition ${showTokenPrices ? "bg-primary" : "bg-border-strong"}`}
+              onClick={() => setDisplayCurrency(showTokenPrices ? "fiat" : "token")}
+              type="button"
+              aria-label="Toggle GLM prices"
+            >
+              <span className={`absolute top-1 h-4 w-4 rounded-full bg-white transition ${showTokenPrices ? "left-6" : "left-1"}`} />
+            </button>
+            <span>Show price in GLM</span>
+          </div>
+        </div>
+
+        {error && <div className="rounded-md border border-danger bg-danger-soft p-3 text-sm text-danger">{error}</div>}
+
         {loading ? (
-          <TableSkeleton rows={6} cols={5} />
+          <TableSkeleton rows={PAGE_SIZE} cols={7} />
         ) : (
-          <div className="space-y-3">
-            {rows.map((p) => {
-              const estRaw = (cpu && memory && storage) ? computeEstimate(p, cpu, memory, storage) : null;
-              const est = estRaw ? { usd_per_month: estRaw.usd_per_month, usd_per_hour: estRaw.usd_per_hour, glm_per_month: (estRaw.glm_per_month ?? undefined) } : null;
+          <>
+            <ProvidersTable
+              providers={visibleRows}
+              spec={spec}
+              showTokenPrices={showTokenPrices}
+              onSelect={(provider) => setSelectedProvider(provider)}
+            />
+            {!visibleRows.length && (
+              <div className="rounded-lg border border-border bg-surface p-10 text-center text-sm text-text-secondary">
+                No providers match these filters.
+              </div>
+            )}
+          </>
+        )}
+
+        <div className="grid gap-4 pt-2 text-sm text-text-secondary sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] sm:items-center">
+          <span className="sm:justify-self-start">
+            Showing {rows.length ? (page - 1) * PAGE_SIZE + 1 : 0} to {Math.min(page * PAGE_SIZE, rows.length)} of {providerCountLabel(rows.length)}
+          </span>
+          <div className="flex items-center justify-center gap-2 sm:justify-self-center">
+            <button className="btn btn-secondary h-9 w-9 px-0" onClick={() => setPage((value) => Math.max(1, value - 1))} disabled={page === 1} type="button">‹</button>
+            {Array.from({ length: Math.min(3, pageCount) }).map((_, index) => {
+              const pageNumber = index + 1;
               return (
-                <ProviderRow
-                  key={p.provider_id}
-                  provider={p}
-                  estimate={est}
-                  displayCurrency={displayCurrency as any}
-                  selected={selectedProviderId === p.provider_id}
-                  onToggle={() => {
-                    setSelectedProviderId(prev => prev === p.provider_id ? null : p.provider_id);
-                    if (!isSpecValid) {
-                      // Nudge user to fill required specs
-                      setTimeout(() => focusFirstMissing(), 0);
-                    }
-                  }}
-                />
+                <button
+                  className={page === pageNumber ? "btn btn-primary h-9 w-9 px-0" : "btn btn-secondary h-9 w-9 px-0"}
+                  key={pageNumber}
+                  onClick={() => setPage(pageNumber)}
+                  type="button"
+                >
+                  {pageNumber}
+                </button>
               );
             })}
+            {pageCount > 4 && <span className="px-2">...</span>}
+            {pageCount > 3 && (
+              <button className={page === pageCount ? "btn btn-primary h-9 w-9 px-0" : "btn btn-secondary h-9 w-9 px-0"} onClick={() => setPage(pageCount)} type="button">
+                {pageCount}
+              </button>
+            )}
+            <button className="btn btn-secondary h-9 w-9 px-0" onClick={() => setPage((value) => Math.min(pageCount, value + 1))} disabled={page === pageCount} type="button">›</button>
           </div>
-        )}
+        </div>
       </div>
-      {/* Bottom checkout banner */}
-      {selectedProviderId && (() => {
-        const sel = rows.find(r => r.provider_id === selectedProviderId);
-        if (!sel) return null;
-        const est = (cpu && memory && storage) ? computeEstimate(sel, cpu, memory, storage) : null;
-        const priceStr = est ? (
-          displayCurrency === 'token' && est.glm_per_month != null ? `~${est.glm_per_month} GLM/mo (~${(est.glm_per_month/730).toFixed(8)} GLM/hr)` : `~$${est.usd_per_month} / mo (~${est.usd_per_hour}/hr)`
-        ) : '—';
-        return (
-          <div className="fixed bottom-0 left-0 right-0 z-40 border-t bg-white">
-            <div className="mx-auto max-w-6xl px-4 py-3">
-              <div className="flex items-center justify-between gap-4">
-                <div className="min-w-0">
-                  <div className="text-sm text-gray-700">Selected provider</div>
-                  <div className="text-sm font-medium text-gray-900 truncate">{sel.provider_name || sel.provider_id}</div>
-                </div>
-                <div className="ml-auto flex items-center gap-6">
-                  <div className="text-right">
-                    <div className="text-xs text-gray-600">Estimated price</div>
-                    <div className="text-base text-gray-900">{priceStr}</div>
-                  </div>
-                  {!isSpecValid && (
-                    <div className="text-sm text-gray-600">Add {missing.join(', ')} to proceed</div>
-                  )}
-                  <button
-                    className="btn btn-primary"
-                    onClick={() => setRentOpen(true)}
-                    disabled={loading || !isSpecValid}
-                    aria-disabled={loading || !isSpecValid}
-                    aria-label={isSpecValid ? 'Rent VM' : `Disabled. Missing: ${missing.join(', ')}`}
-                  >
-                    Rent VM
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
-      {/* Rent dialog from banner */}
-      {rentOpen && selectedProviderId && (() => {
-        const sel = rows.find(r => r.provider_id === selectedProviderId);
-        if (!sel) return null;
-        return (
-          <RentDialogExt
-            provider={sel}
-            defaultSpec={{ cpu: cpu || 1, memory: memory || 2, storage: storage || 20 }}
-            onClose={() => setRentOpen(false)}
-            adsMode={ads}
-          />
-        );
-      })()}
+
+      {filtersMounted && (
+        <ProviderFiltersPanel
+          filters={filters}
+          open={filtersOpen}
+          countries={countries}
+          loadingCountries={loadingCountries}
+          resultLabel={providerCountLabel(rows.length)}
+          showTokenPrices={showTokenPrices}
+          onChange={setFilters}
+          onApply={() => loadProviders(filters)}
+          onReset={resetFilters}
+          onClose={closeFilters}
+          onToggleCurrency={() => setDisplayCurrency(showTokenPrices ? "fiat" : "token")}
+        />
+      )}
+
+      {selectedProvider && (
+        <RentDialog
+          provider={selectedProvider}
+          defaultSpec={spec}
+          onClose={() => setSelectedProvider(null)}
+          adsMode={ads}
+        />
+      )}
+
+      {loading && (
+        <div className="fixed bottom-4 right-4 hidden items-center gap-2 rounded-md border border-border bg-surface px-3 py-2 text-sm text-text-secondary shadow-soft lg:flex">
+          <Spinner className="h-4 w-4" />
+          Updating providers
+        </div>
+      )}
     </div>
   );
 }

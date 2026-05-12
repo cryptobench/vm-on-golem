@@ -37,6 +37,7 @@ import {
   type ProviderInfo,
 } from "./generated/api/provider";
 import type { AdsConfig } from "../context/AdsContext";
+import type { ApiRequestOptions } from "./api/orval-fetch";
 
 export type { AdsConfig } from "../context/AdsContext";
 export type ProviderAd = AdvertisementResponse;
@@ -452,13 +453,10 @@ function centralDiscoveryOrigin(ads: AdsConfig): string {
 }
 
 function providerOptions(providerId: string, ads: AdsConfig): RequestInit {
-  const headers = new Headers();
-  headers.set("X-Proxy-Source", ads.mode || "arkiv");
-  headers.set("X-Proxy-Token", process.env.NEXT_PUBLIC_PORT_CHECKER_TOKEN || "");
-  if (ads.arkiv_rpc_url) headers.set("X-Proxy-Arkiv-Rpc", ads.arkiv_rpc_url);
-  if (ads.arkiv_ws_url) headers.set("X-Proxy-Arkiv-Ws", ads.arkiv_ws_url);
-
-  return withBaseUrl(proxyProviderOrigin(providerId), { headers });
+  return withBaseUrl(proxyProviderOrigin(providerId), {
+    headers: providerProxyHeaders(ads),
+    queryParams: { port: providerApiPort() },
+  });
 }
 
 function proxyProviderOrigin(providerId: string): string {
@@ -467,18 +465,28 @@ function proxyProviderOrigin(providerId: string): string {
   return `${base}/proxy/provider/${encodeURIComponent(providerId)}`;
 }
 
+function providerApiPort(): number {
+  const configured = process.env.NEXT_PUBLIC_PROVIDER_API_PORT || "7466";
+  const port = Number(configured);
+  if (Number.isInteger(port) && port >= 1 && port <= 65535) return port;
+  return 7466;
+}
+
+function proxyProviderUrl(providerId: string, path: string): string {
+  const url = new URL(`${proxyProviderOrigin(providerId)}${path}`);
+  if (!url.searchParams.has("port")) {
+    url.searchParams.set("port", String(providerApiPort()));
+  }
+  return url.toString();
+}
+
 async function providerFetch<TData>(
   providerId: string,
   path: string,
   ads: AdsConfig,
 ): Promise<TData> {
-  const headers = new Headers();
-  headers.set("X-Proxy-Source", ads.mode || "arkiv");
-  headers.set("X-Proxy-Token", process.env.NEXT_PUBLIC_PORT_CHECKER_TOKEN || "");
-  if (ads.arkiv_rpc_url) headers.set("X-Proxy-Arkiv-Rpc", ads.arkiv_rpc_url);
-  if (ads.arkiv_ws_url) headers.set("X-Proxy-Arkiv-Ws", ads.arkiv_ws_url);
-  const response = await fetch(`${proxyProviderOrigin(providerId)}${path}`, {
-    headers,
+  const response = await fetch(proxyProviderUrl(providerId, path), {
+    headers: providerProxyHeaders(ads),
     cache: "no-store",
   });
   const data = await response.json().catch(() => null);
@@ -488,6 +496,16 @@ async function providerFetch<TData>(
   return data as TData;
 }
 
-function withBaseUrl(baseUrl: string, init: RequestInit = {}): RequestInit {
+function providerProxyHeaders(ads: AdsConfig): Record<string, string> {
+  const headers: Record<string, string> = {
+    "X-Proxy-Source": ads.mode || "arkiv",
+    "X-Proxy-Token": process.env.NEXT_PUBLIC_PORT_CHECKER_TOKEN || "",
+  };
+  if (ads.arkiv_rpc_url) headers["X-Proxy-Arkiv-Rpc"] = ads.arkiv_rpc_url;
+  if (ads.arkiv_ws_url) headers["X-Proxy-Arkiv-Ws"] = ads.arkiv_ws_url;
+  return headers;
+}
+
+function withBaseUrl(baseUrl: string, init: ApiRequestOptions = {}): RequestInit {
   return { ...init, baseUrl } as RequestInit;
 }

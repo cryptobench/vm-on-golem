@@ -4,16 +4,13 @@ pragma solidity ^0.8.20;
 interface IERC20 {
     function transfer(address to, uint256 amount) external returns (bool);
     function transferFrom(address from, address to, uint256 amount) external returns (bool);
-    function balanceOf(address account) external view returns (uint256);
-    function allowance(address owner, address spender) external view returns (uint256);
-    function approve(address spender, uint256 amount) external returns (bool);
 }
 
 /**
  * @title StreamPayment
  * @notice Minimal EIP-1620-inspired streaming payments for GLM.
  *         Sender deposits GLM up-front; recipient withdraws vested amount over time.
- *         Oracle can halt a stream (emergency stop). Sender/recipient can terminate.
+ *         Oracle can halt a stream. Sender/recipient can terminate.
  */
 contract StreamPayment {
     struct Stream {
@@ -22,13 +19,14 @@ contract StreamPayment {
         address recipient;       // Provider receiving
         uint128 startTime;       // Stream start
         uint128 stopTime;        // Stream end (derived from deposit/rate)
-        uint128 ratePerSecond;   // GLM per second (18 decimals)
+        uint128 ratePerSecond;   // GLM base units per second
         uint256 deposit;         // Total deposited (<= (stop-start)*rate)
         uint256 withdrawn;       // Amount already withdrawn by recipient
         bool halted;             // True if oracle halted the stream
     }
 
     address public immutable oracle;
+    address public immutable glmToken;
     uint256 public nextStreamId;
     mapping(uint256 => Stream) public streams;
 
@@ -43,20 +41,22 @@ contract StreamPayment {
         _;
     }
 
-    constructor(address _oracle) {
+    constructor(address _oracle, address _glmToken) {
         require(_oracle != address(0), "oracle=0");
+        require(_glmToken != address(0), "glm=0");
         oracle = _oracle;
+        glmToken = _glmToken;
     }
 
     /**
-     * @notice Create a stream. In ERC20 mode, caller must approve `deposit` tokens beforehand.
-     *         In native ETH mode (token=address(0)), send `deposit` as msg.value.
-     * @param token ERC20 token address or address(0) for native ETH
+     * @notice Create a GLM stream. Caller must approve `deposit` GLM beforehand.
+     * @param token Must match the configured GLM token address
      * @param recipient Provider address that will receive the stream
-     * @param deposit Total amount to be streamed (18 decimals)
-     * @param ratePerSecond Tokens per second (18 decimals)
+     * @param deposit Total GLM base units to be streamed
+     * @param ratePerSecond GLM base units per second
      */
-    function createStream(address token, address recipient, uint256 deposit, uint128 ratePerSecond) external payable returns (uint256 streamId) {
+    function createStream(address token, address recipient, uint256 deposit, uint128 ratePerSecond) external returns (uint256 streamId) {
+        require(token == glmToken, "token != GLM");
         require(recipient != address(0), "recipient=0");
         require(deposit > 0, "deposit=0");
         require(ratePerSecond > 0, "rate=0");
@@ -67,13 +67,7 @@ contract StreamPayment {
         require(duration > 0, "duration=0");
         uint128 stop = start + uint128(duration);
 
-        if (token == address(0)) {
-            // Native ETH mode: deposit must be sent as value
-            require(msg.value == deposit, "value != deposit");
-        } else {
-            // ERC20 mode: pull funds
-            require(IERC20(token).transferFrom(msg.sender, address(this), deposit), "transferFrom failed");
-        }
+        require(IERC20(token).transferFrom(msg.sender, address(this), deposit), "transferFrom failed");
 
         streamId = ++nextStreamId;
         streams[streamId] = Stream({
@@ -125,12 +119,7 @@ contract StreamPayment {
         uint256 amount = vested - s.withdrawn;
         require(amount > 0, "nothing to withdraw");
         s.withdrawn += amount;
-        if (s.token == address(0)) {
-            (bool ok, ) = payable(s.recipient).call{value: amount}("");
-            require(ok, "eth transfer failed");
-        } else {
-            require(IERC20(s.token).transfer(s.recipient, amount), "transfer failed");
-        }
+        require(IERC20(s.token).transfer(s.recipient, amount), "transfer failed");
         emit Withdraw(streamId, s.recipient, amount);
     }
 
@@ -149,22 +138,11 @@ contract StreamPayment {
         address sender = s.sender;
         s.recipient = address(0);
 
-        if (token == address(0)) {
-            if (owedToRecipient > 0) {
-                (bool ok1, ) = payable(recipient).call{value: owedToRecipient}("");
-                require(ok1, "eth payout failed");
-            }
-            if (refundToSender > 0) {
-                (bool ok2, ) = payable(sender).call{value: refundToSender}("");
-                require(ok2, "eth refund failed");
-            }
-        } else {
-            if (owedToRecipient > 0) {
-                require(IERC20(token).transfer(recipient, owedToRecipient), "transfer payout failed");
-            }
-            if (refundToSender > 0) {
-                require(IERC20(token).transfer(sender, refundToSender), "transfer refund failed");
-            }
+        if (owedToRecipient > 0) {
+            require(IERC20(token).transfer(recipient, owedToRecipient), "transfer payout failed");
+        }
+        if (refundToSender > 0) {
+            require(IERC20(token).transfer(sender, refundToSender), "transfer refund failed");
         }
         emit Terminated(streamId, refundToSender, owedToRecipient);
     }
@@ -185,19 +163,16 @@ contract StreamPayment {
 
     /**
      * @notice Top up an existing stream by increasing the deposit and extending stopTime accordingly.
-     *         Caller must be the original sender and must have approved `amount` GLM.
+     *         Caller must be the original sender and must approve `amount` GLM.
      */
-    function topUp(uint256 streamId, uint256 amount) external payable {
+    function topUp(uint256 streamId, uint256 amount) external {
         Stream storage s = streams[streamId];
         require(s.recipient != address(0), "no-stream");
         require(!s.halted, "halted");
         require(msg.sender == s.sender, "not sender");
         require(amount > 0, "amount=0");
-        if (s.token == address(0)) {
-            require(msg.value == amount, "value != amount");
-        } else {
-            require(IERC20(s.token).transferFrom(msg.sender, address(this), amount), "transferFrom failed");
-        }
+        require(s.token == glmToken, "token != GLM");
+        require(IERC20(s.token).transferFrom(msg.sender, address(this), amount), "transferFrom failed");
         s.deposit += amount;
         // Extend stopTime by amount / rate
         uint128 delta = uint128(amount / uint256(s.ratePerSecond));

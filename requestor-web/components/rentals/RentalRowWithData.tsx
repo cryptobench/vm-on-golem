@@ -1,130 +1,201 @@
 "use client";
+
 import React from "react";
 import { useRouter } from "next/navigation";
-import { RiCpuLine, RiHardDrive2Line, RiStackLine } from "@remixicon/react";
-import { useProviderInfo, useVmAccess, useVmStatus, useVmStreamStatus } from "../../hooks/useApiSWR";
-import type { Rental } from "../../lib/api";
-import { StatusBadge } from "../ui/StatusBadge";
-import { Spinner } from "../ui/Spinner";
+import {
+  useProviderInfo,
+  useVmAccess,
+  useVmStatus,
+  useVmStreamStatus,
+} from "../../hooks/useApiSWR";
+import type { Rental, VMResources } from "../../lib/api";
 import { humanDuration } from "../../lib/streams";
 import { countryFlagEmoji } from "../../lib/intl";
-import { ConfirmDialog } from "../ui/ConfirmDialog";
+import { CopyValue } from "./CopyValue";
+import { RentalActionsMenu } from "./RentalActionsMenu";
+import { RentalStatusPill } from "./RentalStatusPill";
+import { VmPlatform } from "./VmPlatform";
+
+type RentalRowWithDataProps = {
+  rental: Rental;
+  busy?: boolean;
+  terminated?: boolean;
+  onCopySSH?: (rental: Rental) => void;
+  onStart?: (rental: Rental) => void;
+  onStop?: (rental: Rental) => void;
+  onDestroy?: (rental: Rental) => void;
+};
+
+function terminalStatus(status: string) {
+  return status === "terminated" || status === "deleted";
+}
+
+function deriveStatus(
+  rental: Rental,
+  statusData: unknown,
+  accessData: unknown,
+) {
+  const liveStatus = String(
+    (statusData as { status?: string } | null)?.status || "",
+  ).toLowerCase();
+  const storedStatus = String(rental.status || "").toLowerCase();
+  const sshPort =
+    (accessData as { ssh_port?: number | null } | null)?.ssh_port ??
+    (statusData as { ssh_port?: number | null } | null)?.ssh_port ??
+    rental.ssh_port;
+
+  if (liveStatus) return liveStatus;
+  if (storedStatus) return storedStatus;
+  return sshPort ? "running" : "creating";
+}
+
+function resourceValue(
+  resources: VMResources | undefined,
+  key: keyof VMResources,
+) {
+  const value = resources?.[key];
+  return value == null ? "-" : String(value);
+}
+
+function resourceWithUnit(
+  resources: VMResources | undefined,
+  key: keyof VMResources,
+  unit: string,
+) {
+  const value = resourceValue(resources, key);
+  return value === "-" ? value : `${value} ${unit}`;
+}
+
+function formatEndedAt(value?: number) {
+  if (!value) return "-";
+  return new Intl.DateTimeFormat("en", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZoneName: "short",
+  }).format(new Date(value * 1000));
+}
 
 export function RentalRowWithData({
   rental,
   busy,
+  terminated,
   onCopySSH,
   onStart,
   onStop,
   onDestroy,
-}: {
-  rental: Rental;
-  busy?: boolean;
-  onCopySSH?: (r: Rental) => void;
-  onStart?: (r: Rental) => void;
-  onStop?: (r: Rental) => void;
-  onDestroy?: (r: Rental) => void;
-}) {
+}: RentalRowWithDataProps) {
   const router = useRouter();
-  const [confirmOpen, setConfirmOpen] = React.useState(false);
-  const { data: provider } = useProviderInfo(rental.provider_id, { refreshInterval: 30000 });
-  const { data: access } = useVmAccess(rental.provider_id, rental.vm_id, { refreshInterval: 8000 });
-  const { data: status } = useVmStatus(rental.provider_id, rental.vm_id, { refreshInterval: 8000 });
-  const { data: stream } = useVmStreamStatus(rental.provider_id, rental.vm_id, { refreshInterval: 15000 });
+  const storedStatus = String(rental.status || "").toLowerCase();
+  const storedTerminal = terminalStatus(storedStatus) || !!terminated;
+  const { data: provider } = useProviderInfo(rental.provider_id, {
+    refreshInterval: 30000,
+  });
+  const { data: access } = useVmAccess(
+    storedTerminal ? null : rental.provider_id,
+    storedTerminal ? null : rental.vm_id,
+    { refreshInterval: 8000 },
+  );
+  const { data: status } = useVmStatus(
+    storedTerminal ? null : rental.provider_id,
+    storedTerminal ? null : rental.vm_id,
+    { refreshInterval: 8000 },
+  );
+  const { data: stream } = useVmStreamStatus(
+    storedTerminal || !rental.stream_id ? null : rental.provider_id,
+    storedTerminal || !rental.stream_id ? null : rental.vm_id,
+    { refreshInterval: 15000 },
+  );
 
-  // Derive status carefully to preserve terminal states
-  let st: string = String((status as any)?.status || rental.status || '').toLowerCase();
-  const sshPort = (access as any)?.ssh_port ?? (status as any)?.ssh_port ?? rental.ssh_port;
-  if (!st) st = sshPort ? 'running' : 'creating';
-  const isTerminated = st === 'terminated' || st === 'deleted';
-  const remaining = (stream as any)?.computed?.remaining_seconds != null ? Number((stream as any).computed.remaining_seconds) : null;
-  const spec = rental.resources;
+  const liveStatus = storedTerminal
+    ? storedStatus || "terminated"
+    : deriveStatus(rental, status, access);
+  const isTerminated = terminalStatus(liveStatus);
+  const country = (provider as { country?: string } | null)?.country || "";
+  const flag = countryFlagEmoji(country);
+  const resources = ((status as { resources?: VMResources } | null)
+    ?.resources || rental.resources) as VMResources | undefined;
+  const platform =
+    (provider as { platform?: string | null } | null)?.platform ||
+    (status as { platform?: string | null } | null)?.platform ||
+    rental.platform ||
+    "Linux";
+  const providerIp =
+    (provider as { ip_address?: string | null } | null)?.ip_address ||
+    rental.provider_ip ||
+    (access as { host?: string | null } | null)?.host ||
+    "";
+  const remainingSeconds = (
+    stream as { computed?: { remaining_seconds?: number | null } } | null
+  )?.computed?.remaining_seconds;
+  const timeValue = isTerminated
+    ? formatEndedAt(rental.ended_at)
+    : rental.stream_id
+      ? remainingSeconds == null
+        ? "Fetching"
+        : humanDuration(remainingSeconds)
+      : "-";
+
+  const openDetails = () =>
+    router.push(`/vm?id=${encodeURIComponent(rental.vm_id)}`);
 
   return (
-    <div
-      className="box-border flex flex-col border bg-white px-6 py-6 cursor-pointer select-none hover:border-gray-300"
-      onClick={() => router.push(`/vm?id=${encodeURIComponent(rental.vm_id)}`)}
-      role="button"
+    <tr
+      className="vm-table-row group cursor-pointer border-t border-border bg-surface"
+      onClick={openDetails}
       tabIndex={0}
-      onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); router.push(`/vm?id=${encodeURIComponent(rental.vm_id)}`); } }}
+      onKeyDown={(event) => {
+        if (event.key === " " || event.key === "Enter") {
+          event.preventDefault();
+          openDetails();
+        }
+      }}
     >
-      <div className="flex flex-row items-center gap-4">
-        {/* Main info (mirrors ProviderRow layout) */}
-        <div className="flex w-full min-w-0 flex-[2] flex-row items-start gap-4">
-          <div className="flex min-w-0 flex-1 flex-col justify-center gap-2">
-            <div className="flex items-center gap-2 min-w-0">
-              <StatusBadge status={st} />
-              {(() => { const flag = countryFlagEmoji((provider as any)?.country || ''); return flag ? <span className="text-base leading-none" title={(provider as any)?.country || ''}>{flag}</span> : null; })()}
-              <div className="truncate text-base font-medium text-gray-900" title={rental.name}>{rental.name}</div>
-            </div>
-            <div className="flex items-center gap-3 text-xs text-gray-500">
-              <span className="font-mono break-all" title={rental.vm_id}>VM: {rental.vm_id}</span>
-              <span className="font-mono break-all" title={rental.provider_id}>Provider: {rental.provider_id}</span>
-              {((provider as any)?.platform || rental.platform) && (
-                <span className="rounded border px-1.5 py-0.5 text-[11px] text-gray-700">{(provider as any)?.platform || rental.platform}</span>
-              )}
-              {((provider as any)?.ip_address || rental.provider_ip) && (
-                <span className="text-gray-600">{(provider as any)?.ip_address || rental.provider_ip}</span>
-              )}
-            </div>
-            {(spec) && (
-              <div className="mt-2 flex flex-row flex-wrap items-center gap-4 text-[12px] text-gray-700">
-                <span className="inline-flex items-center gap-1.5">
-                  <RiCpuLine className="h-4 w-4 text-gray-500" /> vCPU: <span className="font-mono">{spec.cpu}</span>
-                </span>
-                <span className="inline-flex items-center gap-1.5">
-                  <RiStackLine className="h-4 w-4 text-gray-500" /> RAM: <span className="font-mono">{spec.memory} GB</span>
-                </span>
-                <span className="inline-flex items-center gap-1.5">
-                  <RiHardDrive2Line className="h-4 w-4 text-gray-500" /> Storage: <span className="font-mono">{spec.storage} GB</span>
-                </span>
-              </div>
-            )}
-            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 text-[12px] text-gray-700">
-              <div>
-                <div className="text-gray-500">Stream</div>
-                <div className="truncate">{rental.stream_id ? `#${rental.stream_id}` : '—'}</div>
-              </div>
-              <div>
-                <div className="text-gray-500">Remaining</div>
-                <div>{rental.stream_id ? (remaining != null ? humanDuration(remaining) : <span className="text-gray-400">fetching…</span>) : '—'}</div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Actions */}
-        <div className="flex w-full max-w-[260px] flex-col items-stretch gap-2 sm:w-auto sm:items-end">
-          {!isTerminated && (
-            <button className="btn btn-secondary w-full sm:w-auto" onClick={(e) => { e.stopPropagation(); onCopySSH?.(rental); }} disabled={!!busy}>
-              {busy ? <><Spinner className="h-4 w-4" /> Copy SSH</> : 'Copy SSH'}
-            </button>
-          )}
-          {!isTerminated && st === 'running' && (
-            <button className="btn btn-secondary w-full sm:w-auto" onClick={(e) => { e.stopPropagation(); onStop?.(rental); }} disabled={!!busy}>
-              {busy ? <><Spinner className="h-4 w-4" /> Stop</> : 'Stop'}
-            </button>
-          )}
-          {!isTerminated && (st === 'stopped' || st === 'suspended') && (
-            <button className="btn btn-secondary w-full sm:w-auto" onClick={(e) => { e.stopPropagation(); onStart?.(rental); }} disabled={!!busy}>
-              {busy ? <><Spinner className="h-4 w-4" /> {st === 'suspended' ? 'Resume' : 'Start'}</> : (st === 'suspended' ? 'Resume' : 'Start')}
-            </button>
-          )}
-          <button className="btn btn-danger w-full sm:w-auto" onClick={(e) => { e.stopPropagation(); setConfirmOpen(true); }} disabled={!!busy}>
-            {busy ? <><Spinner className="h-4 w-4" /> Terminate</> : 'Terminate'}
-          </button>
-      </div>
-      </div>
-      <ConfirmDialog
-        open={confirmOpen}
-        onCancel={() => setConfirmOpen(false)}
-        onConfirm={() => { setConfirmOpen(false); onDestroy?.(rental); }}
-        title="Terminate VM"
-        description="Are you sure you want to permanently terminate this VM? This action cannot be undone."
-        confirmLabel="Terminate"
-        danger
-        busy={!!busy}
-      />
-    </div>
+      <td className="td min-w-36 py-4 font-medium">{rental.name}</td>
+      <td className="td py-4">
+        <RentalStatusPill status={liveStatus} />
+      </td>
+      <td className="td py-4">
+        <CopyValue value={rental.vm_id} />
+      </td>
+      <td className="td py-4">
+        <CopyValue value={rental.provider_id} />
+      </td>
+      <td className="td py-4">
+        <span className="inline-flex items-center gap-2">
+          {flag && <span className="text-base leading-none">{flag}</span>}
+          <span>{country || "-"}</span>
+        </span>
+      </td>
+      <td className="td py-4">
+        <CopyValue value={providerIp} />
+      </td>
+      <td className="td py-4">
+        <VmPlatform platform={platform} />
+      </td>
+      <td className="td py-4">{resourceValue(resources, "cpu")}</td>
+      <td className="td py-4">{resourceWithUnit(resources, "memory", "GB")}</td>
+      <td className="td py-4">
+        {resourceWithUnit(resources, "storage", "GB")}
+      </td>
+      <td className="td py-4">
+        <CopyValue value={rental.stream_id} />
+      </td>
+      <td className="td min-w-32 py-4 text-text-secondary">{timeValue}</td>
+      <td className="td py-4">
+        <RentalActionsMenu
+          rental={rental}
+          status={liveStatus}
+          busy={busy}
+          onView={openDetails}
+          onCopySSH={onCopySSH}
+          onStart={onStart}
+          onStop={onStop}
+          onDestroy={onDestroy}
+        />
+      </td>
+    </tr>
   );
 }

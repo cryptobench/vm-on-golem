@@ -79,17 +79,21 @@ Notes
 - The concept of "free" in JSON is replaced by `usable_free` (free + externally reachable) to avoid misleading counts when ports are blocked.
 - When the external checker is unavailable, per‑port `status` is `"unknown"` and `listening` still reflects local state.
 
-3) Set pricing in USD (GLM rates auto‑compute):
+3) Set pricing in USD:
 
 ```bash
 golem-provider pricing set --usd-per-core 12 --usd-per-mem 4 --usd-per-disk 0.1
 ```
 
-4) On testnets, optionally fund gas for withdrawals:
+4) On L2 testnet profiles, optionally fund gas for withdrawals:
 
 ```bash
 golem-provider wallet faucet-l2
 ```
+
+For the default Ethereum Hoodi profile, fund the provider wallet with Hoodi ETH
+from a Hoodi faucet for withdrawal gas. Hoodi faucet links and tGLM details are
+documented in `../contracts/README.md`.
 
 You are now discoverable to requestors and will earn as your VMs run.
 
@@ -282,14 +286,18 @@ GOLEM_PROVIDER_PUBLIC_IP="auto"
 GOLEM_PROVIDER_NETWORK="testnet"  # or "mainnet"
 ```
 
-### Streaming Payments (Native ETH on L2)
+### Streaming Payments (GLM)
 
-Enable on‑chain stream‑gated rentals funded in native ETH. By default, the provider auto‑loads the StreamPayment contract from `contracts/deployments/l2.json` and enables payments out of the box. Configure/override (env prefix `GOLEM_PROVIDER_`):
+Enable on-chain stream-gated rentals funded in GLM. By default, the provider
+uses the `hoodi` payments profile and auto-loads the StreamPayment contract from
+`contracts/deployments/hoodi.json`. Configure/override with env prefix
+`GOLEM_PROVIDER_`:
 
-- `POLYGON_RPC_URL` — EVM RPC URL (default L2 RPC)
-- `STREAM_PAYMENT_ADDRESS` — StreamPayment address (defaults from `contracts/deployments/l2.json`)
-- `GLM_TOKEN_ADDRESS` — Token address (defaults from `contracts/deployments/l2.json`; `0x0` means native ETH)
-  - Optional override of deployments directory: set `GOLEM_DEPLOYMENTS_DIR` to a folder containing `l2.json`.
+- `PAYMENTS_NETWORK` - payments network profile, for example `hoodi`, `l2.hoodi`, or `sepolia`
+- `POLYGON_RPC_URL` - EVM RPC URL, defaulted from the selected profile
+- `STREAM_PAYMENT_ADDRESS` - StreamPayment address, defaulted from `contracts/deployments/<profile>.json`
+- `GLM_TOKEN_ADDRESS` - GLM ERC20 token address used by StreamPayment
+  - Optional override of deployments directory: set `GOLEM_DEPLOYMENTS_DIR` to a folder containing the deployment JSON.
 
 Optional background automation (all disabled by default):
 
@@ -302,7 +310,7 @@ Optional background automation (all disabled by default):
 
 Implementation notes:
 
-- The provider exposes `GET /api/v1/provider/info` returning `provider_id`, `stream_payment_address`, and `glm_token_address`. Requestors should prefer these values when opening streams.
+- The provider exposes `GET /api/v1/provider/info` returning `provider_id`, `stream_payment_address`, and `glm_token_address`.
 - On successful VM creation with a valid `stream_id`, the provider persists a VM→stream mapping in `streams.json`. This enables the background monitor to stop VMs with low remaining runway and to withdraw vested funds according to configured intervals.
 - When a VM is deleted, the VM→stream mapping is cleaned up.
 
@@ -369,12 +377,12 @@ Response:
 {
   "provider_id": "0xProviderEthereumAddress",
   "stream_payment_address": "0xStreamPayment",
-  "glm_token_address": "0x0000000000000000000000000000000000000000"  
+  "glm_token_address": "0xGlmToken"
   
 }
 ```
 
-Use this endpoint to discover the correct recipient for creating a GLM stream.
+Use this endpoint to discover the correct recipient, contract, and GLM token for creating a stream.
 
 ### Payment Streams
 
@@ -390,7 +398,7 @@ Response (per stream):
   "verified": true,
   "reason": "ok",
   "chain": {
-    "token": "0x0000000000000000000000000000000000000000",
+    "token": "0x55555555555556AcFf9C332Ed151758858bd7a26",
     "sender": "0x...",
     "recipient": "0xProviderEthereumAddress",
     "startTime": 1700000000,
@@ -452,7 +460,7 @@ golem-provider status [--json]
   - Does not change dev ergonomics (logging, reload, or port verification behavior).
 
 - Payments Network (`GOLEM_PROVIDER_PAYMENTS_NETWORK`)
-  - Selects the payments chain profile (e.g., `l2.hoodi`, `mainnet`). Determines default payments RPC, faucet enablement, and symbols.
+  - Selects the payments chain profile (e.g., `hoodi`, `l2.hoodi`, `mainnet`). Determines default payments RPC, faucet enablement, and symbols.
 
 Common setups:
 - Local dev (separate network): `GOLEM_ENVIRONMENT=development` (defaults to `network=development`).
@@ -471,16 +479,20 @@ The provider will:
 5. Listen for VM requests
 
 Notes:
-- Advertisements include both `golem_network` (testnet/mainnet) and `golem_payments_network` (e.g., `l2.hoodi`). Requestors default to matching both; they can list all payments networks with a CLI flag.
+- Advertisements include both `golem_network` (testnet/mainnet) and `golem_payments_network` (e.g., `hoodi`). Requestors default to matching both; they can list all payments networks with a CLI flag.
 
 ### Faucet
 
 - Arkiv adverts: provider auto-requests funds on startup from `FAUCET_URL` (defaults to Kaolin Hoodi) protected by CAPTCHA at `CAPTCHA_URL/05381a2cef5e`.
-- L2 (payments): Use the CLI to request native ETH (enabled only on testnet profiles):
+- L2 (payments gas): Use the CLI to request native ETH for gas (enabled only on L2 testnet profiles):
 
 ```bash
 golem-provider wallet faucet-l2
 ```
+
+- Ethereum Hoodi (default payments profile): use Hoodi faucet links from
+  `https://www.hoodi.dev/` for gas ETH. This CLI faucet does not mint Hoodi
+  tGLM; see `../contracts/README.md` for the tGLM minter.
 
 Defaults:
 - Faucet URL and enablement come from the active payments profile. On `mainnet` (or other profiles without faucet) the command is disabled.

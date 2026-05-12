@@ -4,11 +4,14 @@ const path = require("path");
 async function main() {
   const hre = require("hardhat");
   const { ethers, network } = hre;
-  const glm = process.env.GLM_TOKEN_ADDRESS || "0x0000000000000000000000000000000000000000";
+  const glm = process.env.GLM_TOKEN_ADDRESS;
+  if (!glm) {
+    throw new Error("GLM_TOKEN_ADDRESS is required for GLM-only StreamPayment deployment");
+  }
   const oracle = process.env.ORACLE_ADDRESS || (await (await ethers.getSigners())[0].getAddress());
 
   const StreamPayment = await ethers.getContractFactory("StreamPayment");
-  const contract = await StreamPayment.deploy(oracle);
+  const contract = await StreamPayment.deploy(oracle, glm);
   await contract.waitForDeployment();
   const address = await contract.getAddress();
   console.log("StreamPayment deployed to:", address);
@@ -23,6 +26,7 @@ async function main() {
     StreamPayment: {
       address,
       oracle,
+      paymentToken: glm,
       glmToken: glm
     }
   };

@@ -2,10 +2,10 @@
 
 import { loadSettings, type Settings } from "./api";
 
-const DEFAULT_CHAIN_ID = "0x6013a";
-const DEFAULT_CHAIN_NAME = "Arkiv L2 Hoodi";
-const DEFAULT_RPC_URL = "https://l2.hoodi.arkiv.network/rpc";
-const DEFAULT_EXPLORER_URL = "https://explorer.l2.hoodi.arkiv.network";
+const DEFAULT_CHAIN_ID = "0x88bb0";
+const DEFAULT_CHAIN_NAME = "Ethereum Hoodi";
+const DEFAULT_RPC_URL = "https://ethereum-hoodi-rpc.publicnode.com";
+const DEFAULT_EXPLORER_URL = "https://hoodi.etherscan.io";
 
 export type PaymentsChain = {
   chainId: string;

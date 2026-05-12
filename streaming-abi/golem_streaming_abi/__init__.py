@@ -1,6 +1,14 @@
 STREAM_PAYMENT_ABI = [
     {
         "inputs": [
+            {"internalType": "address", "name": "_oracle", "type": "address"},
+            {"internalType": "address", "name": "_glmToken", "type": "address"},
+        ],
+        "stateMutability": "nonpayable",
+        "type": "constructor",
+    },
+    {
+        "inputs": [
             {"internalType": "address", "name": "token", "type": "address"},
             {"internalType": "address", "name": "recipient", "type": "address"},
             {"internalType": "uint256", "name": "deposit", "type": "uint256"},
@@ -8,7 +16,14 @@ STREAM_PAYMENT_ABI = [
         ],
         "name": "createStream",
         "outputs": [{"internalType": "uint256", "name": "streamId", "type": "uint256"}],
-        "stateMutability": "payable",
+        "stateMutability": "nonpayable",
+        "type": "function",
+    },
+    {
+        "inputs": [],
+        "name": "glmToken",
+        "outputs": [{"internalType": "address", "name": "", "type": "address"}],
+        "stateMutability": "view",
         "type": "function",
     },
     {
@@ -25,7 +40,7 @@ STREAM_PAYMENT_ABI = [
         ],
         "name": "topUp",
         "outputs": [],
-        "stateMutability": "payable",
+        "stateMutability": "nonpayable",
         "type": "function",
     },
     {
@@ -71,25 +86,25 @@ STREAM_PAYMENT_ABI = [
 
 ERC20_ABI = [
     {
-        "name": "approve",
-        "type": "function",
-        "stateMutability": "nonpayable",
         "inputs": [
-            {"name": "spender", "type": "address"},
-            {"name": "amount", "type": "uint256"},
+            {"internalType": "address", "name": "owner", "type": "address"},
+            {"internalType": "address", "name": "spender", "type": "address"},
         ],
-        "outputs": [{"name": "", "type": "bool"}],
+        "name": "allowance",
+        "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+        "stateMutability": "view",
+        "type": "function",
     },
     {
-        "name": "allowance",
-        "type": "function",
-        "stateMutability": "view",
         "inputs": [
-            {"name": "owner", "type": "address"},
-            {"name": "spender", "type": "address"},
+            {"internalType": "address", "name": "spender", "type": "address"},
+            {"internalType": "uint256", "name": "amount", "type": "uint256"},
         ],
-        "outputs": [{"name": "", "type": "uint256"}],
+        "name": "approve",
+        "outputs": [{"internalType": "bool", "name": "", "type": "bool"}],
+        "stateMutability": "nonpayable",
+        "type": "function",
     },
 ]
 
-__all__ = ["STREAM_PAYMENT_ABI", "ERC20_ABI"]
+__all__ = ["ERC20_ABI", "STREAM_PAYMENT_ABI"]

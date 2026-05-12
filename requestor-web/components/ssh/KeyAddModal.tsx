@@ -27,7 +27,10 @@ export function KeyAddModal({ open, onClose, onAdded }: { open: boolean; onClose
       });
       onAdded?.(key);
       onClose();
-    } catch {}
+    } catch (error) {
+      console.error("Failed to save SSH key", error);
+      setError("Could not save this SSH key.");
+    }
   };
 
   return (
@@ -42,7 +45,7 @@ export function KeyAddModal({ open, onClose, onAdded }: { open: boolean; onClose
           <label className="label">Public key</label>
           <textarea className="input" rows={3} value={value} onChange={(e) => setValue(e.target.value)} placeholder="ssh-ed25519 AAAA... user@host" />
         </div>
-        {error && <div className="mt-2 text-sm text-red-600">{error}</div>}
+        {error && <div className="mt-2 text-sm text-danger">{error}</div>}
         <div className="mt-4 flex justify-end gap-2">
           <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
           <button className="btn btn-primary" onClick={add}>Add</button>
@@ -51,4 +54,3 @@ export function KeyAddModal({ open, onClose, onAdded }: { open: boolean; onClose
     </Modal>
   );
 }
-

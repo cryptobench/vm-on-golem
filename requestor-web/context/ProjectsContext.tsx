@@ -5,22 +5,26 @@ export type Project = { id: string; name: string };
 
 const PROJECTS_KEY = 'requestor_projects_v1';
 const ACTIVE_PROJECT_KEY = 'requestor_active_project_v1';
+const DEFAULT_PROJECTS: Project[] = [{ id: 'default', name: 'Default Project' }];
+const DEFAULT_PROJECT_STATE = { projects: DEFAULT_PROJECTS, activeId: 'default' };
 
 function uuid() { return Math.random().toString(36).slice(2, 10); }
 
 function loadProjects(): { projects: Project[]; activeId: string } {
-  if (typeof window === 'undefined') return { projects: [{ id: 'default', name: 'Default Project' }], activeId: 'default' };
+  if (typeof window === 'undefined') return DEFAULT_PROJECT_STATE;
   try {
     const stored = JSON.parse(localStorage.getItem(PROJECTS_KEY) || '[]');
-    let projects: Project[] = Array.isArray(stored) && stored.length ? stored : [{ id: 'default', name: 'Default Project' }];
+    let projects: Project[] = Array.isArray(stored) && stored.length ? stored : DEFAULT_PROJECTS;
     // Deduplicate by id
     const byId = new Map<string, Project>();
     projects.forEach(p => { if (!byId.has(p.id)) byId.set(p.id, p); });
     projects = Array.from(byId.values());
-    const activeId = String(localStorage.getItem(ACTIVE_PROJECT_KEY) || projects[0].id);
+    const storedActiveId = String(localStorage.getItem(ACTIVE_PROJECT_KEY) || projects[0].id);
+    const activeId = projects.some(p => p.id === storedActiveId) ? storedActiveId : projects[0].id;
     return { projects, activeId };
-  } catch {
-    return { projects: [{ id: 'default', name: 'Default Project' }], activeId: 'default' };
+  } catch (error) {
+    console.error("Failed to load projects from local storage", error);
+    return DEFAULT_PROJECT_STATE;
   }
 }
 
@@ -37,10 +41,14 @@ export const ProjectsContext = React.createContext<{
   addProject: (name: string) => string; // returns created id
   removeProject: (id: string) => void;
   renameProject: (id: string, name: string) => void;
-}>({ projects: [{ id: 'default', name: 'Default Project' }], activeId: 'default', setActive: () => {}, addProject: () => 'default', removeProject: () => {}, renameProject: () => {} });
+}>({ ...DEFAULT_PROJECT_STATE, setActive: () => {}, addProject: () => 'default', removeProject: () => {}, renameProject: () => {} });
 
 export function ProjectsProvider({ children }: { children: React.ReactNode }) {
-  const [{ projects, activeId }, setState] = React.useState(loadProjects());
+  const [{ projects, activeId }, setState] = React.useState(DEFAULT_PROJECT_STATE);
+
+  React.useEffect(() => {
+    setState(loadProjects());
+  }, []);
 
   const persist = (nextProjects: Project[], nextActiveId: string) => {
     setState({ projects: nextProjects, activeId: nextActiveId });

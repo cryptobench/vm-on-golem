@@ -810,7 +810,7 @@ def status(
 
 @wallet_app.command("faucet-l2")
 def wallet_faucet_l2():
-    """Request L2 faucet funds for the provider's payment address (native ETH)."""
+    """Request L2 faucet funds for the provider's payment address (gas ETH)."""
     from .config import settings
     from .security.l2_faucet import L2FaucetService
 

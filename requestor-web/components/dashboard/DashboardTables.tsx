@@ -1,0 +1,149 @@
+"use client";
+
+import React from "react";
+import Link from "next/link";
+import { RiAddLine, RiMoreFill, RiUbuntuLine, RiWindowsLine } from "@remixicon/react";
+import type { Rental, VMResources } from "../../lib/api";
+import { humanDuration } from "../../lib/streams";
+import { DashboardStatus } from "./DashboardStatus";
+
+export type DashboardStreamRow = {
+  rental: Rental;
+  remainingSeconds: number | null;
+  remainingBalance: string | null;
+  hourlyRate: string | null;
+  tokenSymbol: string;
+  status: "Active" | "Halted" | "Unavailable";
+};
+
+function shortId(value?: string | number | null) {
+  if (value == null || value === "") return "-";
+  const text = String(value);
+  return text.length > 13 ? `${text.slice(0, 6)}...${text.slice(-4)}` : text;
+}
+
+function resourceValue(resources: VMResources | undefined, key: keyof VMResources) {
+  const value = resources?.[key];
+  return value == null ? "-" : String(value);
+}
+
+function platformLabel(platform?: string | null) {
+  const value = platform || "Linux";
+  const lower = value.toLowerCase();
+  if (lower.includes("windows")) return { Icon: RiWindowsLine, label: "Windows" };
+  return { Icon: RiUbuntuLine, label: value };
+}
+
+export function ActiveVmsTable({ rentals }: { rentals: Rental[] }) {
+  const openCreateWizard = () => {
+    window.dispatchEvent(new CustomEvent("requestor-open-create-wizard"));
+  };
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-max border-collapse text-sm">
+        <thead>
+          <tr className="border-b border-border text-left text-xs font-medium text-text-secondary">
+            <th className="py-4 pr-4">VM Name</th>
+            <th className="px-4 py-4">Status</th>
+            <th className="px-4 py-4">Provider ID</th>
+            <th className="px-4 py-4">VM ID</th>
+            <th className="px-4 py-4">Platform</th>
+            <th className="px-4 py-4">vCPU</th>
+            <th className="px-4 py-4">RAM</th>
+            <th className="px-4 py-4">Storage</th>
+            <th className="px-4 py-4">Provider IP</th>
+            <th className="py-4 pl-4 text-right">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rentals.map((rental) => {
+            const platform = platformLabel(rental.platform);
+            const PlatformIcon = platform.Icon;
+            return (
+              <tr key={rental.vm_id} className="border-b border-border last:border-b-0">
+                <td className="py-4 pr-4 font-medium text-text-primary">
+                  <Link className="hover:text-primary" href={`/vm?id=${encodeURIComponent(rental.vm_id)}`}>
+                    {rental.name}
+                  </Link>
+                </td>
+                <td className="px-4 py-4"><DashboardStatus status={rental.status} /></td>
+                <td className="px-4 py-4 font-mono text-text-primary">{shortId(rental.provider_id)}</td>
+                <td className="px-4 py-4 font-mono text-text-primary">{shortId(rental.vm_id)}</td>
+                <td className="px-4 py-4">
+                  <span className="inline-flex items-center gap-2">
+                    <PlatformIcon className="h-4 w-4 text-primary" aria-hidden />
+                    {platform.label}
+                  </span>
+                </td>
+                <td className="px-4 py-4">{resourceValue(rental.resources, "cpu")}</td>
+                <td className="px-4 py-4">{resourceValue(rental.resources, "memory")} GB</td>
+                <td className="px-4 py-4">{resourceValue(rental.resources, "storage")} GB</td>
+                <td className="px-4 py-4">{rental.provider_ip || "-"}</td>
+                <td className="py-4 pl-4 text-right">
+                  <button className="rounded-md p-1 text-text-primary hover:bg-surface-muted" type="button" aria-label={`Actions for ${rental.name}`}>
+                    <RiMoreFill className="h-5 w-5" aria-hidden />
+                  </button>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      <button className="btn btn-secondary mt-4 h-10 px-4 text-primary" onClick={openCreateWizard} type="button">
+        Rent a new VM
+        <RiAddLine className="h-5 w-5" aria-hidden />
+      </button>
+    </div>
+  );
+}
+
+export function ActiveStreamsTable({ rows }: { rows: DashboardStreamRow[] }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-max border-collapse text-sm">
+        <thead>
+          <tr className="border-b border-border text-left text-xs font-medium text-text-secondary">
+            <th className="py-4 pr-4">Stream ID</th>
+            <th className="px-4 py-4">VM Name</th>
+            <th className="px-4 py-4">Recipient / Provider ID</th>
+            <th className="px-4 py-4">Remaining Time</th>
+            <th className="px-4 py-4">Remaining Balance</th>
+            <th className="px-4 py-4">Hourly Rate</th>
+            <th className="px-4 py-4">Token</th>
+            <th className="px-4 py-4">Status</th>
+            <th className="py-4 pl-4 text-right">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={`${row.rental.vm_id}-${row.rental.stream_id}`} className="border-b border-border last:border-b-0">
+              <td className="py-4 pr-4 font-mono text-text-primary">{shortId(row.rental.stream_id)}</td>
+              <td className="px-4 py-4 font-medium text-text-primary">{row.rental.name}</td>
+              <td className="px-4 py-4 font-mono">{shortId(row.rental.provider_id)}</td>
+              <td className="px-4 py-4">{row.remainingSeconds == null ? "-" : humanDuration(row.remainingSeconds)}</td>
+              <td className="px-4 py-4">{row.remainingBalance || "-"}</td>
+              <td className="px-4 py-4">{row.hourlyRate || "-"}</td>
+              <td className="px-4 py-4">{row.tokenSymbol}</td>
+              <td className="px-4 py-4"><DashboardStatus status={row.status} /></td>
+              <td className="py-4 pl-4 text-right">
+                <div className="inline-flex items-center gap-3">
+                  <button className="btn btn-secondary h-8 px-3 text-primary" type="button">Top up</button>
+                  <button className="rounded-md p-1 text-text-primary hover:bg-surface-muted" type="button" aria-label={`Actions for stream ${row.rental.stream_id}`}>
+                    <RiMoreFill className="h-5 w-5" aria-hidden />
+                  </button>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div className="mt-4 flex flex-col gap-3 text-sm text-text-secondary sm:flex-row sm:items-center sm:justify-between">
+        <span>Add funds to streams to keep your VMs running without interruption.</span>
+        <Link className="inline-flex items-center gap-2 font-medium text-primary" href="/streams">
+          Add funds to project
+        </Link>
+      </div>
+    </div>
+  );
+}

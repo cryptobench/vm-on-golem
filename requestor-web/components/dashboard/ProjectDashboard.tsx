@@ -1,78 +1,96 @@
 "use client";
-import React from "react";
-import { loadRentals, saveRentals, vmAccess, vmStatusSafe, type Rental, loadSettings } from "../../lib/api";
-import { fetchStreamWithMeta } from "../../lib/streams";
-import { useProjects } from "../../context/ProjectsContext";
-import { useAds } from "../../context/AdsContext";
-import { useToast } from "../ui/Toast";
-import { StreamsMini } from "./StreamsMini";
-import { useCopySSH } from "../../hooks/useCopySSH";
-import { VmCardWithData } from "../vm/VmCardWithData";
-import { useProjectRentals } from "../../hooks/useProjectRentals";
 
-// Using shared VmCard component for consistency
+import React from "react";
+import type { Rental } from "../../lib/api";
+import { useProjects } from "../../context/ProjectsContext";
+import { useProjectRentals } from "../../hooks/useProjectRentals";
+import { DashboardSkeleton } from "./DashboardSkeleton";
+import { DashboardEmptyState } from "./DashboardEmptyState";
+import { DashboardSection } from "./DashboardSection";
+import { DashboardSummaryCard } from "./DashboardSummaryCard";
+import { ActiveStreamsTable, ActiveVmsTable } from "./DashboardTables";
+import { ProjectStartCard } from "./ProjectStartCard";
+import { useDashboardStreams } from "./useDashboardStreams";
+
+function formatToken(value: number, token: string, digits = 2) {
+  return `${value.toLocaleString(undefined, { maximumFractionDigits: digits, minimumFractionDigits: value > 0 ? Math.min(2, digits) : 0 })} ${token}`;
+}
+
+function isLiveVm(rental: Rental) {
+  const status = String(rental.status || "").toLowerCase();
+  return status !== "terminated" && status !== "deleted";
+}
 
 export function ProjectDashboard() {
   const { activeId, projects } = useProjects();
-  const { ads } = useAds();
-  const { show } = useToast();
-  const { items, setItems } = useProjectRentals(activeId);
+  const { items } = useProjectRentals(activeId);
   const [mounted, setMounted] = React.useState(false);
-  React.useEffect(() => { setMounted(true); }, []);
-  const [busyId, setBusyId] = React.useState<string | null>(null);
+  React.useEffect(() => setMounted(true), []);
 
-  // Reconcile handled by hook; keep additional enrichers below as needed
+  const activeProject = projects.find((project) => project.id === activeId);
+  const hasSelectedProject = !!activeProject && !(activeProject.id === "default" && activeProject.name === "Default Project");
+  const activeRentals = items.filter((rental) => (rental.project_id || "default") === activeId && isLiveVm(rental));
+  const activeStreamRentals = activeRentals.filter((rental) => rental.stream_id);
+  const runningCount = activeRentals.filter((rental) => String(rental.status).toLowerCase() === "running").length;
+  const { rows: streamRows, totalSpent } = useDashboardStreams(activeStreamRentals);
 
-  const copySSHAction = useCopySSH();
-  const copySSH = async (r: Rental) => { setBusyId(r.vm_id); try { await copySSHAction(r); } finally { setBusyId(null); } };
-
-  const visible = items.filter(r => (r.project_id || 'default') === activeId && !['terminated', 'deleted'].includes((r.status || '').toLowerCase()));
-  if (!mounted) {
-    return (
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h2>{projects.find(p => p.id === activeId)?.name || activeId} — Machines</h2>
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2">
-          {Array.from({ length: 2 }).map((_, i) => (
-            <div key={i} className="card"><div className="card-body">
-              <div className="flex items-center justify-between"><div className="h-4 w-28 bg-gray-200 animate-pulse rounded" /><div className="h-4 w-10 bg-gray-200 animate-pulse rounded" /></div>
-              <div className="mt-2 grid grid-cols-2 gap-2">
-                <div className="h-4 w-20 bg-gray-200 animate-pulse rounded" />
-                <div className="h-4 w-24 bg-gray-200 animate-pulse rounded" />
-              </div>
-            </div></div>
-          ))}
-        </div>
-      </div>
-    );
-  }
-  if (!visible.length) return null;
-
-  const projectName = projects.find(p => p.id === activeId)?.name || activeId;
+  if (!mounted) return <DashboardSkeleton />;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2>{projectName} — Machines</h2>
-        <div className="text-sm text-gray-600">{visible.length} total</div>
+    <div className="space-y-4">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight text-text-primary">Dashboard</h1>
+        <p className="mt-1 text-sm text-text-secondary">Overview of your resources and spending.</p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        {visible.map(r => (
-          <VmCardWithData
-            key={r.vm_id}
-            rental={r}
-            busy={busyId === r.vm_id}
-            onCopySSH={(vm) => { copySSH(vm); }}
-            showStreamMeta={false}
-            showStop={false}
-            showDestroy={false}
+      <div className="grid gap-3 lg:grid-cols-3">
+        <DashboardSummaryCard
+          title="Active VMs"
+          value={String(activeRentals.length)}
+          visual="vms"
+          meta={activeRentals.length ? <span><span className="mr-2 inline-block h-2 w-2 rounded-full bg-success" />{runningCount} Running</span> : "No active VMs"}
+        />
+        <DashboardSummaryCard
+          title="Active Streams"
+          value={String(activeStreamRentals.length)}
+          visual="streams"
+          meta={activeStreamRentals.length ? <>Total monthly burn<br />{formatToken(totalSpent.monthlyBurn, totalSpent.token)}</> : "No active streams"}
+        />
+        <DashboardSummaryCard
+          title="Total Spend (This Month)"
+          value={formatToken(totalSpent.tokenValue, totalSpent.token)}
+          visual="spend"
+          chartData={totalSpent.spendSeries}
+          meta={`~ $${totalSpent.usdValue.toFixed(2)} USD`}
+        />
+      </div>
+
+      <DashboardSection title="Active VMs" href="/rentals" linkLabel="View all VMs">
+        {activeRentals.length ? (
+          <ActiveVmsTable rentals={activeRentals} />
+        ) : (
+          <DashboardEmptyState
+            icon="vms"
+            title="No active VMs"
+            description="You don't have any active VMs yet. Rent your first VM to get started."
+            actionLabel="Rent a VM"
           />
-        ))}
-      </div>
+        )}
+      </DashboardSection>
 
-      <StreamsMini projectId={activeId} />
+      <DashboardSection title="Active Streams" href="/streams" linkLabel="View all streams">
+        {streamRows.length ? (
+          <ActiveStreamsTable rows={streamRows} />
+        ) : (
+          <DashboardEmptyState
+            icon="streams"
+            title="No active streams"
+            description="You don't have any active payment streams yet. Streams provide continuous payment for your running VMs."
+          />
+        )}
+      </DashboardSection>
+
+      <ProjectStartCard hasSelectedProject={hasSelectedProject} />
     </div>
   );
 }

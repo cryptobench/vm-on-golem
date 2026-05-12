@@ -1,27 +1,63 @@
 "use client";
+
 import React from "react";
 import { useRouter } from "next/navigation";
-import { BrowserProvider, Contract, parseEther } from "ethers";
+import { BrowserProvider, Contract, parseUnits } from "ethers";
+import { RiCloseLine } from "@remixicon/react";
 import streamPayment from "../../public/abi/StreamPayment.json";
 import erc20 from "../../public/abi/ERC20.json";
-import { createVm, loadSettings, saveRentals, loadRentals, vmAccess, vmJobStatus, type AdsConfig, type CreateVMRequest, type ProviderAd, type SSHKey } from "../../lib/api";
-import { Modal } from "../ui/Modal";
+import {
+  computeEstimate,
+  createVm,
+  loadRentals,
+  loadSettings,
+  saveRentals,
+  vmAccess,
+  vmJobStatus,
+  type AdsConfig,
+  type CreateVMRequest,
+  type ProviderAd,
+  type SSHKey,
+} from "../../lib/api";
+import { getPaymentNetworkErrorMessage } from "../../lib/chain";
+import { parseHumanDuration } from "../../lib/time";
+import { useSettings } from "../../hooks/useSettings";
 import { useWallet } from "../../context/WalletContext";
 import { useProjects } from "../../context/ProjectsContext";
-import { getPaymentNetworkErrorMessage } from "../../lib/chain";
-import { Spinner } from "../ui/Spinner";
-import { computeEstimate } from "../../lib/api";
-import { parseHumanDuration } from "../../lib/time";
-import { humanDuration } from "../../lib/streams";
-import { useSettings } from "../../hooks/useSettings";
-import { KeyPicker } from "../ssh/KeyPicker";
 import { PAYMENT_PRICE_MAX_AGE_MS, usdToTokenAsync } from "../../lib/prices";
+import { Modal } from "../ui/Modal";
+import { DurationSelector, DURATION_OPTIONS } from "./rent-dialog/DurationSelector";
+import { PaymentSettingsPanel } from "./rent-dialog/PaymentSettingsPanel";
+import { PricingEstimatePanel } from "./rent-dialog/PricingEstimatePanel";
+import { ProviderSummaryCard } from "./rent-dialog/ProviderSummaryCard";
+import { RentDialogFooter } from "./rent-dialog/RentDialogFooter";
+import { SectionCard } from "./rent-dialog/SectionCard";
+import { VmConfigPanel } from "./rent-dialog/VmConfigPanel";
+import { VmDetailsPanel } from "./rent-dialog/VmDetailsPanel";
+import {
+  clampSpec,
+  durationTotal,
+  hourlyGlm,
+  priceLine,
+} from "./rent-dialog/formatting";
+import type { DurationPreset, RentSpec } from "./rent-dialog/types";
 
-export function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provider: ProviderAd; defaultSpec: { cpu?: number; memory?: number; storage?: number }; onClose: () => void; adsMode: AdsConfig; }) {
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+
+export function RentDialog({
+  provider,
+  defaultSpec,
+  onClose,
+  adsMode,
+}: {
+  provider: ProviderAd;
+  defaultSpec: { cpu?: number; memory?: number; storage?: number };
+  onClose: () => void;
+  adsMode: AdsConfig;
+}) {
   const router = useRouter();
   const { displayCurrency } = useSettings();
   const {
-    isInstalled,
     isConnected,
     account,
     expectedChain,
@@ -33,139 +69,130 @@ export function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provid
     ensurePaymentsNetwork,
   } = useWallet();
   const { activeId: activeProjectId } = useProjects();
-  const [name, setName] = React.useState("");
-  // Use spec provided from the Providers page; not editable here
-  const [cpu] = React.useState<number>(defaultSpec.cpu || 1);
-  const [memory] = React.useState<number>(defaultSpec.memory || 2);
-  const [storage] = React.useState<number>(defaultSpec.storage || 20);
-  const settings = loadSettings();
-  const initialKeys: SSHKey[] = settings.ssh_keys || (settings.ssh_public_key ? [{ id: 'default', name: 'Default', value: settings.ssh_public_key }] : []);
-  const defaultKeyId = settings.default_ssh_key_id || initialKeys[0]?.id || '';
-  const [sshKey, setSshKey] = React.useState<string>(() => {
-    const found = initialKeys.find(k => k.id === defaultKeyId);
-    return found?.value || settings.ssh_public_key || "";
-  });
-  const [selectedKeyId, setSelectedKeyId] = React.useState<string>(defaultKeyId);
+  const settings = React.useMemo(() => loadSettings(), []);
+  const initialKeys: SSHKey[] =
+    settings.ssh_keys ||
+    (settings.ssh_public_key
+      ? [{ id: "default", name: "Default", value: settings.ssh_public_key }]
+      : []);
+  const defaultKeyId = settings.default_ssh_key_id || initialKeys[0]?.id || "";
+  const defaultKey = initialKeys.find((key) => key.id === defaultKeyId);
+
+  const [spec, setSpec] = React.useState<RentSpec>(() => clampSpec(defaultSpec, provider));
+  const [name, setName] = React.useState(() => `vm-${provider.provider_id.slice(-4).toLowerCase()}`);
+  const [sshKey, setSshKey] = React.useState(defaultKey?.value || settings.ssh_public_key || "");
+  const [selectedKeyId, setSelectedKeyId] = React.useState(defaultKeyId);
   const [creating, setCreating] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [streamId, setStreamId] = React.useState<string | null>(null);
-  const [connecting, setConnecting] = React.useState<boolean>(false);
+  const [connecting, setConnecting] = React.useState(false);
+  const [preset, setPreset] = React.useState<DurationPreset>("30d");
+  const [customInput, setCustomInput] = React.useState("");
 
-  const est = computeEstimate(provider, cpu, memory, storage);
+  React.useEffect(() => {
+    setSpec(clampSpec(defaultSpec, provider));
+    setName(`vm-${provider.provider_id.slice(-4).toLowerCase()}`);
+    setStreamId(null);
+    setError(null);
+  }, [defaultSpec.cpu, defaultSpec.memory, defaultSpec.storage, provider]);
 
-  // Deposit duration selection (presets + human input like "30d", "1h30m")
-  type Preset = '1w' | '2w' | '30d' | 'custom';
-  const [preset, setPreset] = React.useState<Preset>('1w');
-  const [customInput, setCustomInput] = React.useState<string>('');
+  const customSeconds = React.useMemo(() => {
+    const seconds = parseHumanDuration(customInput || "");
+    return seconds && seconds > 0 ? seconds : 0;
+  }, [customInput]);
+
   const durationSeconds = React.useMemo(() => {
-    if (preset === '1w') return 7 * 24 * 3600;
-    if (preset === '2w') return 14 * 24 * 3600;
-    if (preset === '30d') return 30 * 24 * 3600;
-    const secs = parseHumanDuration(customInput || '');
-    return secs && secs > 0 ? secs : 0;
-  }, [preset, customInput]);
-  const hourlyRate = React.useMemo(() => {
-    if (!est) return null;
-    if (displayCurrency === 'token' && (est as any).glm_per_month != null) return (est as any).glm_per_month / 730.0;
-    if (est.usd_per_hour != null) return est.usd_per_hour;
-    return null;
-  }, [est, displayCurrency]);
+    if (preset === "custom") return customSeconds;
+    return DURATION_OPTIONS.find((option) => option.preset === preset)?.seconds || 0;
+  }, [customSeconds, preset]);
 
-  const totalForDuration = React.useMemo(() => {
-    if (!hourlyRate || !durationSeconds) return null;
-    return hourlyRate * (durationSeconds / 3600);
-  }, [hourlyRate, durationSeconds]);
+  const estimate = React.useMemo(
+    () => computeEstimate(provider, spec.cpu, spec.memory, spec.storage),
+    [provider, spec.cpu, spec.memory, spec.storage],
+  );
+  const preferToken = displayCurrency === "token";
+  const hourlyLine = priceLine(estimate.usd_per_hour, hourlyGlm(estimate.glm_per_month), preferToken);
+  const monthlyLine = priceLine(estimate.usd_per_month, estimate.glm_per_month, preferToken);
+  const depositLine = priceLine(
+    durationTotal(estimate.usd_per_month, durationSeconds),
+    durationTotal(estimate.glm_per_month, durationSeconds),
+    preferToken,
+  );
+  const disabledReason = getDisabledReason({
+    name,
+    sshKey,
+    durationSeconds,
+    paymentReady,
+  });
+  const submitDisabled = Boolean(disabledReason);
 
   const openStream = async (): Promise<string> => {
     setError(null);
     await ensurePaymentsNetwork();
     const { ethereum } = window as any;
     if (!ethereum) throw new Error("MetaMask not detected");
-    const providerInfoJson = await (await import("../../lib/api")).providerInfo(provider.provider_id, adsMode).catch(() => null);
+
+    let providerInfoJson = null;
+    try {
+      providerInfoJson = await (await import("../../lib/api")).providerInfo(provider.provider_id, adsMode);
+    } catch (providerInfoError) {
+      console.warn("Provider payment metadata unavailable, using local payment settings", providerInfoError);
+    }
+
     const cfg = loadSettings();
-    const spAddr = (providerInfoJson?.stream_payment_address || cfg.stream_payment_address || process.env.NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS || '').trim();
-    const glmAddr = (providerInfoJson?.glm_token_address || cfg.glm_token_address || process.env.NEXT_PUBLIC_GLM_TOKEN_ADDRESS || '').trim();
+    const spAddr = (
+      providerInfoJson?.stream_payment_address ||
+      cfg.stream_payment_address ||
+      process.env.NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS ||
+      ""
+    ).trim();
     if (!spAddr) throw new Error("StreamPayment address missing (set in Settings or provided by provider)");
-    if (!est) throw new Error("Cannot compute streaming rate: pricing unavailable");
-    const ZERO = '0x0000000000000000000000000000000000000000';
-    const token = glmAddr;
-    const isNative = token === ZERO;
+    const token = [
+      providerInfoJson?.glm_token_address,
+      cfg.glm_token_address,
+      process.env.NEXT_PUBLIC_GLM_TOKEN_ADDRESS,
+    ]
+      .map((value) => String(value || "").trim())
+      .find((value) => value && value.toLowerCase() !== ZERO_ADDRESS);
+    if (!token) {
+      throw new Error("GLM token address missing (set in Settings or provided by provider)");
+    }
 
-    let ratePerSecondWei: bigint;
-    let depositWei: bigint;
-    if (isNative) {
-      let ethPerMonth: number | null = (est as any).eth_per_month ?? null;
-      if (ethPerMonth == null) {
-        const usdPerMonth = est.usd_per_month;
-        ethPerMonth = await usdToTokenAsync("ETH", usdPerMonth, {
-          maxAgeMs: PAYMENT_PRICE_MAX_AGE_MS,
-        });
-        if (ethPerMonth == null) {
-          throw new Error("ETH/USD price unavailable to compute rate");
-        }
-      }
-      const ethPerSecond = (ethPerMonth as number) / (30.4167 * 24 * 3600);
-      ratePerSecondWei = parseEther(ethPerSecond.toFixed(18));
-      const seconds = BigInt(Math.max(1, durationSeconds));
-      // approximate by converting to wei/sec and multiply
-      depositWei = BigInt(Math.floor(ethPerSecond * 1e18)) * seconds;
-    } else {
-      let glmPerMonth: number | null = (est as any).glm_per_month ?? null;
+    const browserProvider = new BrowserProvider(ethereum);
+    const signer = await browserProvider.getSigner(account ?? undefined);
+    const glm = new Contract(token, (erc20 as any).abi, signer);
+    const decimals = Number(await glm.decimals().catch(() => 18));
+
+    let glmPerMonth: number | null = estimate.glm_per_month ?? null;
+    if (glmPerMonth == null) {
+      glmPerMonth = await usdToTokenAsync("GLM", estimate.usd_per_month, {
+        maxAgeMs: PAYMENT_PRICE_MAX_AGE_MS,
+      });
       if (glmPerMonth == null) {
-        const usdPerMonth = est.usd_per_month;
-        glmPerMonth = await usdToTokenAsync("GLM", usdPerMonth, {
-          maxAgeMs: PAYMENT_PRICE_MAX_AGE_MS,
-        });
-        if (glmPerMonth == null) {
-          throw new Error("GLM/USD price unavailable to compute rate");
-        }
+        throw new Error("GLM/USD price unavailable to compute rate");
       }
-      const glmPerSecond = (glmPerMonth as number) / (30.4167 * 24 * 3600);
-      const provider = new BrowserProvider(ethereum);
-      const erc = new Contract(glmAddr, (erc20 as any).abi, provider);
-      const dec = Number(await erc.decimals().catch(() => 18));
-      const scale = 10 ** dec;
-      ratePerSecondWei = BigInt(Math.floor(glmPerSecond * scale));
-      const seconds = Math.max(1, durationSeconds);
-      depositWei = BigInt(Math.floor(glmPerSecond * seconds * scale));
-      // Ask wallet to watch GLM so prompts display a familiar asset
-      try {
-        await (ethereum as any).request?.({
-          method: 'wallet_watchAsset',
-          params: {
-            type: 'ERC20',
-            options: { address: glmAddr, symbol: 'GLM', decimals: dec },
-          },
-        });
-      } catch {}
+    }
+    const glmPerSecond = glmPerMonth / (30.4167 * 24 * 3600);
+    const ratePerSecondWei = parseUnits(glmPerSecond.toFixed(decimals), decimals);
+    if (ratePerSecondWei <= 0n) throw new Error("Computed GLM rate is too small");
+    const depositWei = ratePerSecondWei * BigInt(Math.max(1, durationSeconds));
+
+    const owner = await signer.getAddress();
+    const allowance = await glm.allowance(owner, spAddr);
+    if (allowance < depositWei) {
+      const approveTx = await glm.approve(spAddr, depositWei);
+      await approveTx.wait();
     }
 
-    const providerE = new BrowserProvider(ethereum);
-    const signer = await providerE.getSigner(account ?? undefined);
     const contract = new Contract(spAddr, (streamPayment as any).abi, signer);
-    const sender = await signer.getAddress();
     const recipient = provider.provider_id;
-    // If using ERC20, ensure allowance covers the intended deposit
-    if (!isNative) {
-      const erc = new Contract(token, (erc20 as any).abi, signer);
-      const allowance: bigint = await erc.allowance(sender, spAddr);
-      if (allowance < depositWei) {
-        const txApprove = await erc.approve(spAddr, depositWei);
-        await txApprove.wait();
-      }
-    }
-    // createStream signature: (token, recipient, deposit, rate)
-    const tx = await contract.createStream(
-      token,
-      recipient,
-      depositWei,
-      ratePerSecondWei,
-      { value: isNative ? depositWei : 0n, gasLimit: 350000n }
-    );
+    const tx = await contract.createStream(token, recipient, depositWei, ratePerSecondWei, {
+      gasLimit: 350000n,
+    });
     const receipt = await tx.wait();
-    const ev = receipt?.logs?.find?.((l: any) => String(l?.fragment?.name) === 'StreamCreated');
-    const sid = ev?.args?.[0] ?? null;
-    if (!sid) throw new Error('Stream id not found');
+    const event = receipt?.logs?.find?.((log: any) => String(log?.fragment?.name) === "StreamCreated");
+    const sid = event?.args?.[0] ?? null;
+    if (!sid) throw new Error("Stream id not found");
     const newId = String(sid);
     setStreamId(newId);
     return newId;
@@ -173,11 +200,12 @@ export function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provid
 
   const create = async () => {
     try {
-      setCreating(true); setError(null);
-      const sid = streamId || await openStream();
+      setCreating(true);
+      setError(null);
+      const sid = streamId || (await openStream());
       const payload: CreateVMRequest = {
-        name: name.trim() || provider.provider_id,
-        resources: { cpu, memory, storage },
+        name: name.trim(),
+        resources: spec,
         ssh_key: sshKey,
         stream_id: Number(sid),
       };
@@ -185,44 +213,52 @@ export function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provid
       const jobId = (vm as any)?.job_id || null;
       let vmId = (vm as any)?.vm_id || (vm as any)?.id || null;
       if (!vmId && jobId) {
-        // Poll async job for vm id
-        for (let i = 0; i < 40; i++) {
-          await new Promise(res => setTimeout(res, 2000));
-          const st = await vmJobStatus(provider.provider_id, jobId, adsMode).catch(() => null);
-          vmId = st?.vm_id || null;
-          if (vmId) break;
+        for (let attempt = 0; attempt < 40; attempt += 1) {
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+          try {
+            const status = await vmJobStatus(provider.provider_id, jobId, adsMode);
+            vmId = status?.vm_id || null;
+            if (vmId) break;
+          } catch (pollError) {
+            console.warn("VM creation status poll failed", pollError);
+          }
         }
       }
-      if (!vmId) throw new Error('VM id not available');
-      // Persist rental
+      if (!vmId) throw new Error("VM id not available");
+
       const entry = {
         name: payload.name,
         provider_id: provider.provider_id,
         provider_ip: provider.ip_address || null,
         platform: provider.platform || null,
-        // Persist the exact spec we requested, not provider total capacity
-        resources: { cpu, memory, storage },
+        resources: spec,
         vm_id: vmId,
         ssh_port: null,
         stream_id: String(sid),
-        project_id: activeProjectId || 'default',
-        status: 'creating' as const,
-        created_at: Math.floor(Date.now()/1000),
+        project_id: activeProjectId || "default",
+        status: "creating" as const,
+        created_at: Math.floor(Date.now() / 1000),
       };
-      const list = loadRentals();
-      saveRentals([entry as any, ...list]);
+      saveRentals([entry as any, ...loadRentals()]);
       try {
-        const acc = await vmAccess(provider.provider_id, vmId, adsMode);
-        if (acc?.ssh_port) {
-          const cur = loadRentals();
-          const idx = cur.findIndex(x => x.vm_id === vmId && x.provider_id === provider.provider_id);
-          if (idx >= 0) { cur[idx] = { ...cur[idx], ssh_port: acc.ssh_port, status: 'running' }; saveRentals(cur); }
+        const access = await vmAccess(provider.provider_id, vmId, adsMode);
+        if (access?.ssh_port) {
+          const current = loadRentals();
+          const index = current.findIndex(
+            (rental) => rental.vm_id === vmId && rental.provider_id === provider.provider_id,
+          );
+          if (index >= 0) {
+            current[index] = { ...current[index], ssh_port: access.ssh_port, status: "running" };
+            saveRentals(current);
+          }
         }
-      } catch {}
+      } catch (accessError) {
+        console.warn("VM access details unavailable after creation", accessError);
+      }
       onClose();
       router.push(`/vm?id=${encodeURIComponent(vmId)}`);
-    } catch (e: any) {
-      setError(getPaymentNetworkErrorMessage(e, expectedChain));
+    } catch (createError: any) {
+      setError(getPaymentNetworkErrorMessage(createError, expectedChain));
     } finally {
       setCreating(false);
     }
@@ -234,97 +270,113 @@ export function RentDialog({ provider, defaultSpec, onClose, adsMode }: { provid
     try {
       if (!isConnected) await connect();
       else await switchToPaymentsNetwork();
-    } catch (e) {
-      setError(getPaymentNetworkErrorMessage(e, expectedChain));
+    } catch (paymentError) {
+      setError(getPaymentNetworkErrorMessage(paymentError, expectedChain));
     } finally {
       setConnecting(false);
     }
   };
 
   return (
-    <Modal open onClose={onClose} size="2xl">
-      <div className="px-5 py-4">
-        <div className="text-lg font-semibold">Rent {provider.provider_id}</div>
-
-        {/* Name */}
-        <div className="mt-4">
-          <label className="label">Name</label>
-          <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="My VM" />
-          <div className="mt-1 text-xs text-gray-600">Spec: {cpu} vCPU • {memory} GB RAM • {storage} GB Storage</div>
-        </div>
-
-        {/* SSH Key */}
-        <div className="mt-4">
-          <div className="text-sm font-medium">SSH Keys</div>
-          <div className="mt-2">
-            <KeyPicker layout="carousel" value={selectedKeyId} onChange={(id, key) => { setSelectedKeyId(id); setSshKey(key.value); }} />
+    <Modal open onClose={onClose} size="6xl" className="flex max-h-[90vh] flex-col overflow-hidden">
+      <div className="min-h-0 flex-1 overflow-y-auto px-6 pt-5">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-2xl font-semibold text-text-primary">Rent a VM</h2>
+            <p className="mt-1 text-sm text-text-secondary">
+              Configure your virtual machine and open a payment stream.
+            </p>
           </div>
+          <button
+            type="button"
+            className="flex h-10 w-10 items-center justify-center rounded-md text-text-secondary hover:bg-surface-muted hover:text-text-primary"
+            aria-label="Close rent VM dialog"
+            onClick={onClose}
+            disabled={creating}
+          >
+            <RiCloseLine className="h-5 w-5" aria-hidden />
+          </button>
         </div>
 
-        {/* Initial deposit */}
-        <div className="mt-4">
-          <div className="text-sm font-medium">Initial deposit</div>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            {(['1w','2w','30d'] as Preset[]).map((p) => (
-              <button key={p} type="button" onClick={() => setPreset(p)} className={(preset === p ? 'btn btn-primary' : 'btn btn-secondary') + ' h-10 px-3'}>
-                {p === '1w' ? '1 week' : p === '2w' ? '2 weeks' : '30 days'}
-              </button>
-            ))}
-            <button type="button" onClick={() => setPreset('custom')} className={(preset === 'custom' ? 'btn btn-primary' : 'btn btn-secondary') + ' h-10 px-3'}>Custom</button>
-            {preset === 'custom' && (
-              <input
-                className="input w-52 h-10"
-                placeholder="Custom: 30d, 45m, 1h30m"
-                value={customInput}
-                onChange={(e) => setCustomInput(e.target.value)}
+        <div className="mt-6 grid gap-5 lg:grid-cols-12">
+          <div className="space-y-4 lg:col-span-5">
+            <ProviderSummaryCard provider={provider} />
+            <VmConfigPanel provider={provider} spec={spec} onSpecChange={setSpec} />
+            <VmDetailsPanel
+              name={name}
+              selectedKeyId={selectedKeyId}
+              onNameChange={setName}
+              onSshKeyChange={(id, key) => {
+                setSelectedKeyId(id);
+                setSshKey(key.value || key.public_key || "");
+              }}
+            />
+          </div>
+
+          <div className="space-y-4 lg:col-span-4">
+            <SectionCard title="4. Initial deposit duration">
+              <DurationSelector
+                preset={preset}
+                customInput={customInput}
+                customSeconds={customSeconds}
+                onPresetChange={setPreset}
+                onCustomInputChange={setCustomInput}
               />
-            )}
-          </div>
-          {/* Removed mid-section deposit summary to avoid redundancy with final summary */}
-        </div>
-
-        {/* Pricing summary for selected duration */}
-        <div className="mt-4">
-          <div className="text-sm font-medium">Total for selected deposit</div>
-          <div className="mt-2 rounded-lg border bg-gray-50 p-3">
-            {est && totalForDuration != null && durationSeconds > 0 ? (
-              <div className="flex items-end justify-between">
-                <div className="text-sm text-gray-600">Covers {humanDuration(durationSeconds)}</div>
-                <div className="text-xl font-semibold text-gray-900">
-                  {displayCurrency === 'token' && (est as any).glm_per_month != null
-                    ? `${totalForDuration.toFixed(6)} GLM`
-                    : `$${totalForDuration.toFixed(2)}`}
-                </div>
+              <div className="mt-5 rounded-md bg-primary-soft px-4 py-3 text-center text-sm text-text-secondary">
+                The payment stream will be created for the selected duration.
               </div>
-            ) : (
-              <div className="text-sm text-gray-600">Select a duration to see total deposit.</div>
-            )}
+            </SectionCard>
+            <PaymentSettingsPanel
+              walletConnected={isConnected}
+              paymentReady={paymentReady}
+              paymentMessage={paymentMessage}
+              connecting={connecting}
+              networkStatus={networkStatus}
+              chainName={expectedChain.chainName}
+              error={error}
+              onPaymentAction={paymentAction}
+            />
+          </div>
+
+          <div className="lg:col-span-3">
+            <PricingEstimatePanel
+              hourly={hourlyLine}
+              monthly={monthlyLine}
+              deposit={depositLine}
+              durationSeconds={durationSeconds}
+            />
           </div>
         </div>
-        {!paymentReady && (
-          <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3">
-            <div className="text-sm text-amber-900">{paymentMessage}</div>
-            {isInstalled && (
-              <button
-                type="button"
-                className="btn btn-secondary mt-3"
-                onClick={paymentAction}
-                disabled={connecting || networkStatus === "switching"}
-              >
-                {(connecting || networkStatus === "switching") && <Spinner className="h-4 w-4" />}
-                {!isConnected ? "Connect Wallet" : "Switch Network"}
-              </button>
-            )}
-          </div>
-        )}
-        {error && <div className="mt-3 text-sm text-red-600">{error}</div>}
       </div>
-      <div className="flex items-center justify-end gap-2 border-t px-5 py-4">
-        <button className="btn btn-secondary" onClick={onClose} disabled={creating}>Cancel</button>
-        <button className="btn btn-primary disabled:opacity-60 disabled:cursor-not-allowed" onClick={create} disabled={!paymentReady || creating || !sshKey.trim() || !name.trim() || !durationSeconds}>
-          {creating ? (<span className="inline-flex items-center gap-2"><Spinner className="h-4 w-4 text-white" /> Creating…</span>) : (streamId ? 'Create VM' : 'Open Stream & Create VM')}
-        </button>
+
+      <div className="shrink-0">
+        <RentDialogFooter
+          disabled={submitDisabled}
+          creating={creating}
+          streamReady={Boolean(streamId)}
+          disabledReason={disabledReason || ""}
+          onCancel={onClose}
+          onCreate={create}
+        />
       </div>
     </Modal>
   );
+}
+
+function getDisabledReason({
+  name,
+  sshKey,
+  durationSeconds,
+  paymentReady,
+}: {
+  name: string;
+  sshKey: string;
+  durationSeconds: number;
+  paymentReady: boolean;
+}) {
+  if (!name.trim()) return "Enter a VM name to continue.";
+  if (!sshKey.trim()) return "Select or add an SSH key to continue.";
+  if (!durationSeconds) return "Select a valid deposit duration to continue.";
+  if (!paymentReady) return "Complete all required fields to continue.";
+  return "";
 }
