@@ -97,7 +97,7 @@ export function RentalRowWithData({
   const lifecycleSource = statusPayload?.status
     ? statusPayload
     : (access as { status?: string } | null)?.status
-      ? (access as Record<string, unknown>)
+      ? (access as unknown as Record<string, unknown>)
       : null;
   const lifecycle = storedTerminal
     ? deriveVmDisplayLifecycle({ lifecycle: { status: storedStatus || "terminated" } })

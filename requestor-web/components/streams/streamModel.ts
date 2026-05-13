@@ -122,3 +122,27 @@ export function fiatTotal(
     return sum + valueForRow(row) * row.usdPrice;
   }, 0);
 }
+
+export function sortRowsByImportance(rows: StreamRow[], nowSec: number) {
+  const statusRank: Record<StreamStatusKind, number> = {
+    "needs-top-up": 0,
+    "out-of-funds": 1,
+    halted: 2,
+    active: 3,
+  };
+
+  return [...rows].sort((left, right) => {
+    const leftStatus = streamStatus(left, nowSec);
+    const rightStatus = streamStatus(right, nowSec);
+    const statusDelta = statusRank[leftStatus] - statusRank[rightStatus];
+    if (statusDelta !== 0) return statusDelta;
+
+    const remainingDelta =
+      remainingSeconds(left, nowSec) - remainingSeconds(right, nowSec);
+    if (remainingDelta !== 0) return remainingDelta;
+
+    return (left.r.name || left.r.vm_id).localeCompare(
+      right.r.name || right.r.vm_id,
+    );
+  });
+}
