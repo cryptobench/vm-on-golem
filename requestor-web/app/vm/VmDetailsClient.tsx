@@ -2,6 +2,14 @@
 import React from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import {
+  RiDeleteBinLine,
+  RiExpandDiagonalLine,
+  RiPauseLine,
+  RiPlayLine,
+  RiRestartLine,
+  RiStopLine,
+} from "@remixicon/react";
+import {
   loadRentals,
   saveRentals,
   createSnapshot,
@@ -16,6 +24,7 @@ import {
   vmStop,
   vmSuspend,
   loadSettings,
+  type ProviderAd,
   type Rental,
 } from "../../lib/api";
 import { useAds } from "../../context/AdsContext";
@@ -33,10 +42,14 @@ import {
   humanDuration,
   type ChainStream,
   fetchStreamWithMeta,
+  terminateStreamWithWallet,
 } from "../../lib/streams";
 import { getPriceUSD, onPricesUpdated } from "../../lib/prices";
+import { openPaymentStream } from "../../lib/paymentStreams";
+import { clampResizeResources, computeResizeLimits } from "../../lib/vmResize";
 import {
   useProviderInfo,
+  useProviderSummary,
   useVmAccess,
   useVmCreateJobStatus,
   useVmStatusSafe,
@@ -53,11 +66,9 @@ import {
 import { VmOverviewPanel } from "../../components/vm/details/VmOverviewPanel";
 import { VmMetricsSummary } from "../../components/vm/details/VmMetricsSummary";
 import { VmSnapshotsPanel } from "../../components/vm/details/VmSnapshotsPanel";
-import { VmResizePanel } from "../../components/vm/details/VmResizePanel";
+import { VmResizeModal } from "../../components/vm/details/VmResizeModal";
 import { VmPaymentStreamPanel } from "../../components/vm/details/VmPaymentStreamPanel";
 import { VmDetailsSkeleton } from "../../components/vm/details/VmDetailsSkeleton";
-import { VmStopNotice } from "../../components/vm/details/VmStopNotice";
-import { parseMetricTimestamp } from "../../components/vm/details/metrics";
 import { deriveVmLifecycle } from "../../lib/vmLifecycle";
 
 export default function VmDetailsClient() {
@@ -78,7 +89,8 @@ export default function VmDetailsClient() {
   } | null>(null);
   const [remaining, setRemaining] = React.useState<number>(0);
   const [err, setErr] = React.useState<string | null>(null);
-  const { paymentReady, paymentMessage } = useWallet();
+  const { account, ensurePaymentsNetwork, paymentReady, paymentMessage } =
+    useWallet();
   const [provider, setProvider] = React.useState<{
     country?: string | null;
     platform?: string | null;
@@ -105,6 +117,9 @@ export default function VmDetailsClient() {
   >("1h");
 
   const vmId = search.get("id") || "";
+  const [vmLookupReady, setVmLookupReady] = React.useState(false);
+  const [authoritativeStatusReadyKey, setAuthoritativeStatusReadyKey] =
+    React.useState<string | null>(null);
   const [vm, setVm] = React.useState<
     ReturnType<typeof loadRentals>[number] | null
   >(null);
@@ -126,6 +141,8 @@ export default function VmDetailsClient() {
   const [confirmDestroyOpen, setConfirmDestroyOpen] = React.useState(false);
   const openDestroy = () => setConfirmDestroyOpen(true);
   const closeDestroy = () => setConfirmDestroyOpen(false);
+  const [resizeOpen, setResizeOpen] = React.useState(false);
+  const [resizePhase, setResizePhase] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     setMounted(true);
@@ -156,18 +173,24 @@ export default function VmDetailsClient() {
 
   // Resolve VM from local storage after mount to avoid SSR hydration mismatches
   React.useEffect(() => {
+    setVmLookupReady(false);
     try {
       const list = loadRentals();
       const rec = list.find((r) => r.vm_id === vmId) || null;
       setVm(rec as any);
     } catch {
       setVm(null);
+    } finally {
+      setVmLookupReady(true);
     }
   }, [vmId]);
 
   // SWR-backed provider info, access, and VM existence polling
   const { data: swrProvider } = useProviderInfo(vm?.provider_id, {
     refreshInterval: liveConnected ? 0 : 30000,
+  });
+  const { data: swrProviderSummary } = useProviderSummary(vm?.provider_id, {
+    refreshInterval: liveConnected ? 0 : 10000,
   });
   const { data: swrAccess } = useVmAccess(vm?.provider_id, vm?.vm_id, {
     refreshInterval: liveConnected ? 0 : 2000,
@@ -177,12 +200,15 @@ export default function VmDetailsClient() {
     vm?.creation_job_id,
     { refreshInterval: liveConnected ? 0 : 2000 },
   );
-  const { data: swrStatus } = useVmStatusSafe(vm?.provider_id, vm?.vm_id, {
-    refreshInterval: liveConnected ? 0 : 2000,
-  });
-  const { data: swrVm } = useVmStatus(vm?.provider_id, vm?.vm_id, {
-    refreshInterval: liveConnected ? 0 : 2000,
-  });
+  const { data: swrStatus, isValidating: swrStatusValidating } =
+    useVmStatusSafe(vm?.provider_id, vm?.vm_id, {
+      refreshInterval: liveConnected ? 0 : 2000,
+    });
+  const { data: swrVm, isValidating: swrVmValidating } = useVmStatus(
+    vm?.provider_id,
+    vm?.vm_id,
+    { refreshInterval: liveConnected ? 0 : 2000 },
+  );
   const { data: swrMetrics, isLoading: metricsLoading } = useVmMetricsLatest(
     vm?.provider_id,
     vm?.vm_id,
@@ -200,6 +226,35 @@ export default function VmDetailsClient() {
   const vmData = live.state.lifecycle || swrVm;
   const metricsData = live.state.metricsLatest || swrMetrics;
   const metricsHistoryData = live.state.metricsHistory || swrMetricsHistory;
+  const authoritativeStatusKey = vm
+    ? [
+        vm.provider_id,
+        vm.vm_id,
+        ads?.mode || "",
+        ads?.arkiv_rpc_url || "",
+        ads?.arkiv_ws_url || "",
+        ads?.chain_id || "",
+      ].join(":")
+    : null;
+  const hasAuthoritativeStatus =
+    authoritativeStatusKey != null &&
+    authoritativeStatusReadyKey === authoritativeStatusKey;
+
+  React.useEffect(() => {
+    if (!authoritativeStatusKey) return;
+    const swrSettledWithData =
+      Boolean(swrVm || swrStatus) && !swrStatusValidating && !swrVmValidating;
+    if (live.state.lifecycle || swrSettledWithData) {
+      setAuthoritativeStatusReadyKey(authoritativeStatusKey);
+    }
+  }, [
+    authoritativeStatusKey,
+    live.state.lifecycle,
+    swrStatus,
+    swrStatusValidating,
+    swrVm,
+    swrVmValidating,
+  ]);
 
   React.useEffect(() => {
     if (providerData)
@@ -413,13 +468,23 @@ export default function VmDetailsClient() {
     if (!vm || !resources) return;
     const key = `${vm.provider_id}:${vm.vm_id}:${resources.cpu}:${resources.memory}:${resources.storage}`;
     if (resizeInitializedKey === key) return;
-    setResizeCpu(resources.cpu);
-    setResizeMemory(resources.memory);
-    setResizeStorage(resources.storage);
+    const next = clampResizeResources(
+      resources,
+      resources,
+      computeResizeLimits(resources, swrProviderSummary),
+    );
+    setResizeCpu(next.cpu);
+    setResizeMemory(next.memory);
+    setResizeStorage(next.storage);
     setResizeInitializedKey(key);
-  }, [vmData, vm, resizeInitializedKey]);
+  }, [vmData, vm, resizeInitializedKey, swrProviderSummary]);
 
-  if (!mounted) {
+  if (
+    !mounted ||
+    !vmLookupReady ||
+    (vm && vm.vm_id !== vmId) ||
+    (vm && vm.vm_id === vmId && !hasAuthoritativeStatus)
+  ) {
     return <VmDetailsSkeleton />;
   }
 
@@ -444,7 +509,8 @@ export default function VmDetailsClient() {
     sshHost && sshPort && sshUser
       ? buildSshCommand(sshHost, Number(sshPort), sshUser)
       : null;
-  const rawProviderLifecycle = (vmData as any) || (statusData as any)?.data || null;
+  const rawProviderLifecycle =
+    (vmData as any) || (statusData as any)?.data || null;
   const accessLifecycle = (accessData as any)?.status
     ? (accessData as any)
     : null;
@@ -658,22 +724,85 @@ export default function VmDetailsClient() {
       setSnapshotBusy(null);
     }
   };
+  const markCurrentRental = (patch: Partial<Rental>) => {
+    const list = loadRentals();
+    const idx = list.findIndex(
+      (x) => x.vm_id === vm.vm_id && x.provider_id === vm.provider_id,
+    );
+    const next = { ...(idx >= 0 ? list[idx] : vm), ...patch } as Rental;
+    if (idx >= 0) {
+      const out = [...list];
+      out[idx] = next;
+      saveRentals(out);
+    }
+    setVm(next as any);
+  };
+  const getResizeStreamDurationSeconds = async () => {
+    if (!vm.stream_id) return 0;
+    if (remaining > 0) return remaining;
+    if (!spAddr) {
+      throw new Error(
+        "StreamPayment address missing. Configure Settings before resizing.",
+      );
+    }
+    const currentStream = await fetchStreamWithMeta(
+      spAddr,
+      BigInt(vm.stream_id),
+    );
+    setStream({
+      chain: currentStream.chain as any,
+      remaining: BigInt(currentStream.remaining),
+    });
+    setRemaining(Number(currentStream.remaining));
+    const seconds = Number(currentStream.remaining);
+    if (!Number.isFinite(seconds) || seconds <= 0) {
+      throw new Error(
+        "Payment stream has no remaining runway. Top up before resizing.",
+      );
+    }
+    return seconds;
+  };
   const resizeVm = async () => {
+    const targetResources = clampResizeResources(
+      { cpu: resizeCpu, memory: resizeMemory, storage: resizeStorage },
+      currentResources,
+      resizeLimits,
+    );
+    let replacementStream: { id: string; contractAddress: string } | null =
+      null;
+    const previousStreamId = vm.stream_id;
     try {
       setBusy(true);
-      await vmResize(
-        vm.provider_id,
-        vm.vm_id,
-        { cpu: resizeCpu, memory: resizeMemory, storage: resizeStorage },
-        ads,
+      setResizePhase(
+        previousStreamId
+          ? "Preparing replacement payment stream"
+          : "Preparing resize",
       );
+      if (previousStreamId != null && previousStreamId !== "") {
+        const durationSeconds = await getResizeStreamDurationSeconds();
+        replacementStream = await openPaymentStream({
+          provider: buildResizePaymentProvider(vm, swrProviderSummary),
+          resources: targetResources,
+          durationSeconds,
+          ads,
+          account,
+          ensurePaymentsNetwork,
+          onPhase: setResizePhase,
+        });
+      }
+
+      setResizePhase(
+        isRunning
+          ? "Stopping, resizing, and restarting VM"
+          : "Applying resource changes",
+      );
+      await vmResize(vm.provider_id, vm.vm_id, targetResources, ads);
+      setResizeOpen(false);
       const next = {
         ...vm,
-        resources: {
-          cpu: resizeCpu,
-          memory: resizeMemory,
-          storage: resizeStorage,
-        },
+        resources: targetResources,
+        stream_id: replacementStream?.id ?? vm.stream_id,
+        settlement_status: undefined,
       } as Rental;
       const list = loadRentals();
       const idx = list.findIndex(
@@ -686,10 +815,42 @@ export default function VmDetailsClient() {
       }
       setVm(next as any);
       live.refresh(["lifecycle", "metrics"]);
+
+      if (
+        previousStreamId != null &&
+        previousStreamId !== "" &&
+        replacementStream
+      ) {
+        try {
+          await terminate(previousStreamId, setResizePhase);
+        } catch (terminationError) {
+          const message =
+            "Resize applied, but old payment stream termination failed.";
+          markCurrentRental({
+            settlement_status: "failed",
+            status_message: message,
+          });
+          show(message);
+          return;
+        }
+      }
+
+      live.refresh(["lifecycle", "metrics", "stream"]);
       show("Resize applied");
-    } catch {
-      show("Resize failed. Stop the VM first and check capacity.");
+    } catch (resizeError) {
+      if (replacementStream) {
+        try {
+          await terminateStreamWithWallet(
+            replacementStream.contractAddress,
+            BigInt(replacementStream.id),
+          );
+        } catch (settlementError) {
+          console.warn("Failed to settle replacement stream", settlementError);
+        }
+      }
+      show(getPaymentNetworkErrorMessage(resizeError));
     } finally {
+      setResizePhase(null);
       setBusy(false);
     }
   };
@@ -748,17 +909,47 @@ export default function VmDetailsClient() {
 
   // Pick VM spec from provider status if exposed, else from saved rental (no hook to avoid order issues)
   const effectiveResources = getEffectiveResources(vmData, vm);
+  const currentResources = effectiveResources || {
+    cpu: vm.resources?.cpu || 1,
+    memory: vm.resources?.memory || 1,
+    storage: vm.resources?.storage || 10,
+  };
+  const resizeLimits = computeResizeLimits(
+    currentResources,
+    swrProviderSummary,
+  );
+  const resizeNext = {
+    cpu: resizeCpu,
+    memory: resizeMemory,
+    storage: resizeStorage,
+  };
+  const updateResizeResources = (patch: Partial<typeof resizeNext>) => {
+    const next = clampResizeResources(
+      { ...resizeNext, ...patch },
+      currentResources,
+      resizeLimits,
+    );
+    setResizeCpu(next.cpu);
+    setResizeMemory(next.memory);
+    setResizeStorage(next.storage);
+  };
+  const openResize = () => {
+    const next = clampResizeResources(
+      currentResources,
+      currentResources,
+      resizeLimits,
+    );
+    setResizeCpu(next.cpu);
+    setResizeMemory(next.memory);
+    setResizeStorage(next.storage);
+    setResizePhase(null);
+    setResizeOpen(true);
+  };
 
   const guestMetrics = (() => {
     const byVm = (metricsData as any)?.vms || {};
     return byVm[vm.vm_id]?.guest_agent || null;
   })();
-  const metricsUpdatedAt = guestMetrics?.agent_heartbeat?.timestamp
-    ? new Date(
-        parseMetricTimestamp(guestMetrics.agent_heartbeat.timestamp),
-      ).toLocaleTimeString()
-    : null;
-  const lastUpdated = metricsUpdatedAt || "just now";
   const explorerUrl = buildExplorerUrl(
     loadSettings().evm_explorer_url ||
       process.env.NEXT_PUBLIC_EVM_EXPLORER_URL ||
@@ -766,32 +957,52 @@ export default function VmDetailsClient() {
     spAddr,
   );
   const actionItems: VmAction[] = [
+    ...(isRunning
+      ? [
+          {
+            label: "Restart VM",
+            onClick: restartVm,
+            disabled: busy || isTransitioning || isTerminated,
+            icon: RiRestartLine,
+          },
+          {
+            label: "Stop VM",
+            onClick: stopVm,
+            disabled: busy || isTransitioning || isTerminated,
+            icon: RiStopLine,
+          },
+          {
+            label: "Suspend VM",
+            onClick: suspendVm,
+            disabled: busy || isTransitioning || isTerminated,
+            icon: RiPauseLine,
+          },
+        ]
+      : [
+          {
+            label: isSuspended ? "Resume VM" : "Start VM",
+            onClick: isSuspended ? resumeVm : startVm,
+            disabled:
+              busy ||
+              isTransitioning ||
+              isTerminated ||
+              (!isStopped && !isSuspended),
+            icon: RiPlayLine,
+          },
+        ]),
     {
-      label: isSuspended ? "Resume VM" : "Start VM",
-      onClick: isSuspended ? resumeVm : startVm,
+      label: "Resize VM",
+      onClick: openResize,
       disabled:
-        busy || isTransitioning || isTerminated || (!isStopped && !isSuspended),
+        busy || isTransitioning || isTerminated || (!isRunning && !isStopped),
+      icon: RiExpandDiagonalLine,
     },
     {
-      label: "Stop VM",
-      onClick: stopVm,
-      disabled: busy || isTransitioning || isTerminated || !isRunning,
-    },
-    {
-      label: "Restart VM",
-      onClick: restartVm,
-      disabled: busy || isTransitioning || isTerminated || !isRunning,
-    },
-    {
-      label: "Suspend VM",
-      onClick: suspendVm,
-      disabled: busy || isTransitioning || isTerminated || !isRunning,
-    },
-    {
-      label: "Terminate VM",
+      label: "Delete VM",
       onClick: openDestroy,
       disabled: busy,
       danger: true,
+      icon: RiDeleteBinLine,
     },
   ];
 
@@ -804,7 +1015,6 @@ export default function VmDetailsClient() {
         lifecycleStage={lifecycle.stage}
         progress={lifecycle.progress}
         transitioning={lifecycle.transitioning}
-        lastUpdated={lastUpdated}
         copySshDisabled={!sshCmd || isTerminated}
         busy={busy}
         actions={actionItems}
@@ -842,7 +1052,6 @@ export default function VmDetailsClient() {
             onCreate={createVmSnapshot}
             onRestore={restoreVmSnapshot}
             onDelete={deleteVmSnapshot}
-            onRefresh={refreshSnapshots}
           />
         </div>
 
@@ -875,22 +1084,28 @@ export default function VmDetailsClient() {
               </div>
             </div>
           )}
-          <VmResizePanel
-            cpu={resizeCpu}
-            memory={resizeMemory}
-            storage={resizeStorage}
-            minStorage={effectiveResources?.storage || 10}
-            stopped={isStopped}
-            busy={busy}
-            onCpuChange={setResizeCpu}
-            onMemoryChange={setResizeMemory}
-            onStorageChange={setResizeStorage}
-            onResize={resizeVm}
-          />
         </aside>
       </div>
 
-      <VmStopNotice running={isRunning} busy={busy} onStop={stopVm} />
+      <VmResizeModal
+        open={resizeOpen}
+        current={currentResources}
+        next={{
+          cpu: resizeCpu,
+          memory: resizeMemory,
+          storage: resizeStorage,
+        }}
+        transitioning={isTransitioning}
+        busy={busy}
+        limits={resizeLimits}
+        phase={resizePhase}
+        onClose={() => setResizeOpen(false)}
+        onCpuChange={(cpu) => updateResizeResources({ cpu })}
+        onMemoryChange={(memory) => updateResizeResources({ memory })}
+        onStorageChange={(storage) => updateResizeResources({ storage })}
+        onResize={resizeVm}
+      />
+
       {/* Terminate confirmation modal */}
       <ConfirmDialog
         open={confirmDestroyOpen}
@@ -965,6 +1180,34 @@ function mergeVmStatus(vm: Rental, payload: unknown): Rental | null {
   }
 
   return next;
+}
+
+function buildResizePaymentProvider(
+  vm: Rental,
+  summary: unknown,
+): Pick<ProviderAd, "provider_id" | "pricing"> {
+  const pricing = ((summary as any)?.pricing || {}) as ProviderAd["pricing"];
+  const hasUsdPricing = [
+    pricing?.usd_per_core_month,
+    pricing?.usd_per_gb_ram_month,
+    pricing?.usd_per_gb_storage_month,
+  ].every((value) => Number.isFinite(Number(value)) && Number(value) > 0);
+  const hasGlmPricing = [
+    pricing?.glm_per_core_month,
+    pricing?.glm_per_gb_ram_month,
+    pricing?.glm_per_gb_storage_month,
+  ].every((value) => Number.isFinite(Number(value)) && Number(value) > 0);
+
+  if (!hasUsdPricing && !hasGlmPricing) {
+    throw new Error(
+      "Provider pricing unavailable. Refresh provider status before resizing.",
+    );
+  }
+
+  return {
+    provider_id: vm.provider_id,
+    pricing,
+  };
 }
 
 function buildExplorerUrl(baseUrl: string | null | undefined, address: string) {

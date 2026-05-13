@@ -13,6 +13,7 @@ import {
   formatTokenAmount,
   hourlyTokenRate,
   remainingTokenBalance,
+  spentTokenBalance,
   tokenTotals,
   type DisplayCurrency,
   type StreamRow,
@@ -34,12 +35,14 @@ export function StreamsSummary({
   onShowEnded,
 }: StreamsSummaryProps) {
   const hourlyTokens = tokenTotals(active, hourlyTokenRate);
+  const spentTokens = tokenTotals(active, (row) => spentTokenBalance(row, nowSec));
   const remainingTokens = tokenTotals(active, (row) => remainingTokenBalance(row, nowSec));
   const hourlyUsd = fiatTotal(active, hourlyTokenRate);
+  const spentUsd = fiatTotal(active, (row) => spentTokenBalance(row, nowSec));
   const remainingUsd = fiatTotal(active, (row) => remainingTokenBalance(row, nowSec));
 
   return (
-    <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+    <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
       <SummaryCard
         label="Active streams"
         value={String(active.length)}
@@ -77,6 +80,20 @@ export function StreamsSummary({
             : formatFiat(hourlyUsd, 2) + " / hour"
         }
         visual={<Sparkline />}
+      />
+      <SummaryCard
+        label="Spent so far (live)"
+        value={
+          displayCurrency === "fiat"
+            ? formatFiat(spentUsd, 2)
+            : formatTokenList(spentTokens)
+        }
+        detail={
+          displayCurrency === "fiat"
+            ? approxTokenList(spentTokens)
+            : formatFiat(spentUsd, 2)
+        }
+        visual={<RiWallet3Line className="h-12 w-12 text-brand-400" aria-hidden />}
       />
       <SummaryCard
         label="Remaining balance (total)"

@@ -63,7 +63,12 @@ export default function RentalsPage() {
   ).trim();
   const { terminate } = useStreamActions(spAddr);
   const { activeId } = useProjects();
-  const { items, setItems, refresh } = useProjectRentals(activeId);
+  const {
+    items,
+    isInitialLoading: rentalsLoading,
+    setItems,
+    refresh,
+  } = useProjectRentals(activeId);
   const copySSHAction = useCopySSH();
 
   React.useEffect(() => {
@@ -228,7 +233,7 @@ export default function RentalsPage() {
         </div>
       )}
 
-      {!mounted ? (
+      {!mounted || rentalsLoading ? (
         <RentalsTableSkeleton />
       ) : hasVisibleRows ? (
         <div className="space-y-4">

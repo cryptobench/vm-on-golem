@@ -40,7 +40,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                     <div className="relative">
                       <AppTopBar />
                       <main className="px-4 pb-8 sm:px-6 lg:px-8">
-                        <div className="mx-auto w-full max-w-screen-2xl">{children}</div>
+                        <div className="w-full">{children}</div>
                       </main>
                       {/* Mount the create wizard in the main content column */}
                       <CreateWizardHost />

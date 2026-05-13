@@ -11,6 +11,7 @@ function tokenAmount(value: bigint, decimals: number) {
 
 export function useDashboardStreams(rentals: Rental[]) {
   const [rows, setRows] = React.useState<DashboardStreamRow[]>([]);
+  const [loadedStreamKey, setLoadedStreamKey] = React.useState("");
   const [totalSpent, setTotalSpent] = React.useState({
     token: "GLM",
     tokenValue: 0,
@@ -38,6 +39,7 @@ export function useDashboardStreams(rentals: Rental[]) {
         monthlyBurn: 0,
         spendSeries: zeroSpendSeries(),
       });
+      setLoadedStreamKey(streamKey);
       return;
     }
 
@@ -56,6 +58,7 @@ export function useDashboardStreams(rentals: Rental[]) {
         monthlyBurn: loaded.reduce((sum, item) => sum + item.monthlyBurn, 0),
         spendSeries: buildSpendSeries(loaded),
       });
+      setLoadedStreamKey(streamKey);
     }
 
     loadRows();
@@ -64,7 +67,11 @@ export function useDashboardStreams(rentals: Rental[]) {
     };
   }, [streamKey]);
 
-  return { rows, totalSpent };
+  return {
+    rows,
+    totalSpent,
+    isInitialLoading: streamKey !== "" && loadedStreamKey !== streamKey,
+  };
 }
 
 async function loadStreamRow(rental: Rental, spAddr: string) {
@@ -82,6 +89,7 @@ async function loadStreamRow(rental: Rental, spAddr: string) {
       row: {
         rental,
         remainingSeconds,
+        spentSoFar: spent.toFixed(2),
         remainingBalance: remainingTokens.toFixed(2),
         hourlyRate: hourlyTokens.toFixed(2),
         tokenSymbol: data.tokenSymbol,
@@ -102,6 +110,7 @@ function unavailableStreamRow(rental: Rental) {
     row: {
       rental,
       remainingSeconds: null,
+      spentSoFar: null,
       remainingBalance: null,
       hourlyRate: null,
       tokenSymbol: "GLM",

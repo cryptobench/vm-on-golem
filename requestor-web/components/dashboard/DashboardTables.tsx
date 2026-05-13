@@ -2,7 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
-import { RiAddLine, RiMoreFill, RiUbuntuLine, RiWindowsLine } from "@remixicon/react";
+import { RiMoreFill, RiUbuntuLine, RiWindowsLine } from "@remixicon/react";
 import type { Rental, VMResources } from "../../lib/api";
 import { humanDuration } from "../../lib/streams";
 import { DashboardStatus } from "./DashboardStatus";
@@ -10,6 +10,7 @@ import { DashboardStatus } from "./DashboardStatus";
 export type DashboardStreamRow = {
   rental: Rental;
   remainingSeconds: number | null;
+  spentSoFar: string | null;
   remainingBalance: string | null;
   hourlyRate: string | null;
   tokenSymbol: string;
@@ -35,10 +36,6 @@ function platformLabel(platform?: string | null) {
 }
 
 export function ActiveVmsTable({ rentals }: { rentals: Rental[] }) {
-  const openCreateWizard = () => {
-    window.dispatchEvent(new CustomEvent("requestor-open-create-wizard"));
-  };
-
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-max border-collapse text-sm">
@@ -90,10 +87,6 @@ export function ActiveVmsTable({ rentals }: { rentals: Rental[] }) {
           })}
         </tbody>
       </table>
-      <button className="btn btn-secondary mt-4 h-10 px-4 text-primary" onClick={openCreateWizard} type="button">
-        Rent a new VM
-        <RiAddLine className="h-5 w-5" aria-hidden />
-      </button>
     </div>
   );
 }
@@ -108,6 +101,7 @@ export function ActiveStreamsTable({ rows }: { rows: DashboardStreamRow[] }) {
             <th className="px-4 py-4">VM Name</th>
             <th className="px-4 py-4">Recipient / Provider ID</th>
             <th className="px-4 py-4">Remaining Time</th>
+            <th className="px-4 py-4">Spent So Far</th>
             <th className="px-4 py-4">Remaining Balance</th>
             <th className="px-4 py-4">Hourly Rate</th>
             <th className="px-4 py-4">Token</th>
@@ -122,28 +116,20 @@ export function ActiveStreamsTable({ rows }: { rows: DashboardStreamRow[] }) {
               <td className="px-4 py-4 font-medium text-text-primary">{row.rental.name}</td>
               <td className="px-4 py-4 font-mono">{shortId(row.rental.provider_id)}</td>
               <td className="px-4 py-4">{row.remainingSeconds == null ? "-" : humanDuration(row.remainingSeconds)}</td>
+              <td className="px-4 py-4">{row.spentSoFar || "-"}</td>
               <td className="px-4 py-4">{row.remainingBalance || "-"}</td>
               <td className="px-4 py-4">{row.hourlyRate || "-"}</td>
               <td className="px-4 py-4">{row.tokenSymbol}</td>
               <td className="px-4 py-4"><DashboardStatus status={row.status} /></td>
               <td className="py-4 pl-4 text-right">
-                <div className="inline-flex items-center gap-3">
-                  <button className="btn btn-secondary h-8 px-3 text-primary" type="button">Top up</button>
-                  <button className="rounded-md p-1 text-text-primary hover:bg-surface-muted" type="button" aria-label={`Actions for stream ${row.rental.stream_id}`}>
-                    <RiMoreFill className="h-5 w-5" aria-hidden />
-                  </button>
-                </div>
+                <button className="rounded-md p-1 text-text-primary hover:bg-surface-muted" type="button" aria-label={`Actions for stream ${row.rental.stream_id}`}>
+                  <RiMoreFill className="h-5 w-5" aria-hidden />
+                </button>
               </td>
             </tr>
           ))}
         </tbody>
       </table>
-      <div className="mt-4 flex flex-col gap-3 text-sm text-text-secondary sm:flex-row sm:items-center sm:justify-between">
-        <span>Add funds to streams to keep your VMs running without interruption.</span>
-        <Link className="inline-flex items-center gap-2 font-medium text-primary" href="/streams">
-          Add funds to project
-        </Link>
-      </div>
     </div>
   );
 }

@@ -1,7 +1,6 @@
 "use client";
 
 import React from "react";
-import { LineChart } from "@tremor/react";
 import { Skeleton } from "../ui/Skeleton";
 import type { VmMonitoringHistory } from "../../lib/api";
 import { DetailPanel, PanelTitle } from "./details/VmDetailPrimitives";
@@ -12,6 +11,7 @@ import {
   type MetricRange,
 } from "./details/metrics";
 import { cn } from "../ui/cn";
+import { SlidingMetricLineChart } from "./details/SlidingMetricCharts";
 
 type VmMetricsChartsProps = {
   history?: VmMonitoringHistory;
@@ -66,18 +66,13 @@ export function VmMetricsCharts({
         <Skeleton className="mt-5 h-80 w-full" />
       ) : hasData ? (
         <div className="mt-5 h-80">
-          <LineChart
+          <SlidingMetricLineChart
             className="h-80"
             data={chartRows}
-            index="time"
             categories={["CPU", "Memory", "Disk", "Network RX", "Network TX"]}
-            colors={["blue", "violet", "emerald", "cyan", "orange"]}
             valueFormatter={formatChartPercent}
             yAxisWidth={56}
             minValue={0}
-            showAnimation
-            showLegend
-            showGridLines
           />
         </div>
       ) : (

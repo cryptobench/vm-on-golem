@@ -35,8 +35,24 @@ export function hourlyTokenRate(row: StreamRow) {
   return (Number(row.chain.ratePerSecond) / tokenScale(row)) * 3600;
 }
 
+export function depositedTokenBalance(row: StreamRow) {
+  return Number(row.chain.deposit) / tokenScale(row);
+}
+
 export function remainingTokenBalance(row: StreamRow, nowSec: number) {
   return (Number(row.chain.ratePerSecond) / tokenScale(row)) * remainingSeconds(row, nowSec);
+}
+
+export function spentTokenBalance(row: StreamRow, nowSec: number) {
+  const ratePerSecond = Number(row.chain.ratePerSecond) / tokenScale(row);
+  const startTime = Number(row.chain.startTime || 0n);
+  const stopTime = Number(row.chain.stopTime || 0n);
+  const deposit = depositedTokenBalance(row);
+  const effectiveTime = row.chain.halted
+    ? stopTime
+    : Math.min(nowSec, stopTime);
+  const elapsedSeconds = Math.max(0, effectiveTime - startTime);
+  return Math.max(0, Math.min(deposit, elapsedSeconds * ratePerSecond));
 }
 
 export function streamRunwayPercent(row: StreamRow, nowSec: number) {

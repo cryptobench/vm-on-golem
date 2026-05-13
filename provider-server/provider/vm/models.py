@@ -114,21 +114,7 @@ class VMResources(BaseModel):
 
     cpu: int = Field(..., ge=1, description="Number of CPU cores")
     memory: int = Field(..., ge=1, description="Memory in GB")
-    storage: int = Field(..., ge=10, description="Storage in GB")
-
-    @field_validator("cpu")
-    def validate_cpu(cls, v: int) -> int:
-        """Validate CPU cores."""
-        if v not in [1, 2, 4, 8, 16]:
-            raise ValueError("CPU cores must be 1, 2, 4, 8, or 16")
-        return v
-
-    @field_validator("memory")
-    def validate_memory(cls, v: int) -> int:
-        """Validate memory."""
-        if v not in [1, 2, 4, 8, 16, 32, 64]:
-            raise ValueError("Memory must be 1, 2, 4, 8, 16, 32, or 64 GB")
-        return v
+    storage: int = Field(..., ge=1, description="Storage in GB")
 
     @classmethod
     def from_size(cls, size: VMSize) -> "VMResources":

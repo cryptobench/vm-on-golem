@@ -90,7 +90,6 @@ export function VmOverviewPanel({
               <RiServerLine className="h-4 w-4 text-text-muted" aria-hidden />
             )}
             <span>{sshPort || "-"}</span>
-            {sshPort && <span className="text-xs text-success">(Available)</span>}
           </span>
         </InfoField>
       </div>

@@ -46,7 +46,7 @@ export function StreamsInfoBanner() {
     <aside className="flex flex-col gap-3 rounded-lg bg-primary-soft px-5 py-4 text-sm text-text-secondary sm:flex-row sm:items-center sm:justify-between">
       <div className="flex items-center gap-3">
         <RiInformationLine className="h-5 w-5 shrink-0 text-primary" aria-hidden />
-        <span>Stream data is updated automatically every 15 seconds. Totals and remaining time are live.</span>
+        <span>Stream data is updated automatically every 15 seconds. Spend, totals, and remaining time are live.</span>
       </div>
       <a
         className="inline-flex items-center gap-2 font-medium text-primary transition hover:text-primary-hover"

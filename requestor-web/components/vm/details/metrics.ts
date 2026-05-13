@@ -16,6 +16,12 @@ export type MetricChartRow = {
 
 type MetricValueKey = Exclude<keyof MetricChartRow, "timestamp" | "time">;
 
+export type MetricSparklineRow = {
+  timestamp: string;
+  point: string;
+  value: number;
+};
+
 export const metricRanges: Array<{ value: MetricRange; label: string }> = [
   { value: "1h", label: "1H" },
   { value: "6h", label: "6H" },
@@ -84,6 +90,59 @@ export function buildSparklineValues(
       (value): value is number =>
         typeof value === "number" && Number.isFinite(value),
     );
+}
+
+export function buildSparklineRows(
+  rows: MetricChartRow[],
+  key: MetricValueKey,
+): MetricSparklineRow[] {
+  return rows
+    .filter(
+      (row) =>
+        typeof row[key] === "number" && Number.isFinite(row[key] as number),
+    )
+    .slice(-24)
+    .map((row, index) => ({
+      timestamp: row.timestamp,
+      point: String(index + 1),
+      value: row[key] as number,
+    }));
+}
+
+export function getAppendOnlySlideChange(
+  previousKeys: string[],
+  nextKeys: string[],
+): { appendedCount: number; droppedCount: number } | null {
+  if (previousKeys.length === 0 || nextKeys.length === 0) return null;
+  if (hasDuplicateKeys(previousKeys) || hasDuplicateKeys(nextKeys)) return null;
+
+  const maxOverlap = Math.min(previousKeys.length, nextKeys.length);
+  for (let overlap = maxOverlap; overlap >= 1; overlap -= 1) {
+    const previousStart = previousKeys.length - overlap;
+    let matches = true;
+    for (let index = 0; index < overlap; index += 1) {
+      if (previousKeys[previousStart + index] !== nextKeys[index]) {
+        matches = false;
+        break;
+      }
+    }
+
+    if (!matches) continue;
+
+    const appendedCount = nextKeys.length - overlap;
+    if (appendedCount <= 0) return null;
+
+    const minRequiredOverlap =
+      previousKeys.length >= 3 && nextKeys.length >= 3 ? 3 : 1;
+    if (overlap < minRequiredOverlap) return null;
+
+    return {
+      appendedCount,
+      droppedCount: previousKeys.length - overlap,
+    };
+  }
+
+  return null;
 }
 
 export function latestNetworkRates(rows: MetricChartRow[]) {
@@ -199,4 +258,8 @@ export function parseMetricTimestamp(timestamp: string) {
 
 function hasTimezone(timestamp: string) {
   return /(?:Z|[+-]\d{2}:?\d{2})$/i.test(timestamp);
+}
+
+function hasDuplicateKeys(keys: string[]) {
+  return new Set(keys).size !== keys.length;
 }

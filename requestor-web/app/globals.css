@@ -30,7 +30,7 @@
   }
   /* Standardize button height across the app for consistent horizontal/vertical alignment */
   .btn {
-    @apply inline-flex h-10 items-center justify-center rounded-md px-3 text-sm font-medium ring-1 ring-inset transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2;
+    @apply inline-flex h-10 items-center justify-center rounded-md px-3 text-sm font-medium ring-1 ring-inset transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-55 disabled:shadow-none;
   }
   .btn-primary {
     @apply bg-primary text-white shadow-soft ring-primary hover:bg-primary-hover;
@@ -266,6 +266,21 @@
     background: var(--surface-muted);
   }
 
+  .vm-sliding-chart .recharts-line-curve {
+    transform: translateX(var(--vm-chart-slide-x, 0));
+    transition: none;
+  }
+
+  .vm-sliding-chart[data-slide-active="true"] .recharts-line-curve {
+    transition: transform 360ms ease-out;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .vm-sliding-chart[data-draw-active="true"] .recharts-line-curve {
+      animation: vm-line-draw 560ms cubic-bezier(0.22, 1, 0.36, 1) both;
+      stroke-dasharray: 12000;
+    }
+  }
 }
 
 @keyframes providers-content-enter {
@@ -370,7 +385,8 @@
     box-shadow: 0 0 0 0 color-mix(in srgb, var(--success) 35%, transparent);
   }
   70% {
-    box-shadow: 0 0 0 0.375rem color-mix(in srgb, var(--success) 0%, transparent);
+    box-shadow: 0 0 0 0.375rem
+      color-mix(in srgb, var(--success) 0%, transparent);
   }
   100% {
     box-shadow: 0 0 0 0 color-mix(in srgb, var(--success) 0%, transparent);
@@ -395,5 +411,14 @@
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes vm-line-draw {
+  from {
+    stroke-dashoffset: 12000;
+  }
+  to {
+    stroke-dashoffset: 0;
   }
 }

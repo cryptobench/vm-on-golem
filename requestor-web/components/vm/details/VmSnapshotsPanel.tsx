@@ -5,7 +5,6 @@ import {
   RiCameraLine,
   RiDeleteBinLine,
   RiExternalLinkLine,
-  RiRefreshLine,
   RiRestartLine,
 } from "@remixicon/react";
 import { Spinner } from "../../ui/Spinner";
@@ -24,7 +23,6 @@ export function VmSnapshotsPanel({
   onCreate,
   onRestore,
   onDelete,
-  onRefresh,
 }: {
   snapshots: VmSnapshotRow[];
   stopped: boolean;
@@ -32,8 +30,23 @@ export function VmSnapshotsPanel({
   onCreate: () => void;
   onRestore: (name: string) => void;
   onDelete: (name: string) => void;
-  onRefresh: () => void;
 }) {
+  const createButton = (
+    <button
+      type="button"
+      className="btn btn-secondary gap-2"
+      onClick={onCreate}
+      disabled={!!busy || !stopped}
+    >
+      {busy === "create" ? (
+        <Spinner className="h-4 w-4" />
+      ) : (
+        <RiCameraLine className="h-4 w-4" aria-hidden />
+      )}
+      Create snapshot
+    </button>
+  );
+
   return (
     <DetailPanel className="vm-page-enter">
       <PanelTitle
@@ -41,39 +54,21 @@ export function VmSnapshotsPanel({
         hint="Snapshots can be created and restored only when the VM is stopped."
         trailing={
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              className="btn btn-secondary gap-2"
-              onClick={onCreate}
-              disabled={!!busy || !stopped}
-            >
-              {busy === "create" ? (
-                <Spinner className="h-4 w-4" />
-              ) : (
-                <RiCameraLine className="h-4 w-4" aria-hidden />
-              )}
-              Create snapshot
-            </button>
-            <IconButton label="Refresh snapshots" onClick={onRefresh} disabled={!!busy}>
-              <RiRefreshLine className="h-5 w-5" aria-hidden />
-            </IconButton>
+            {snapshots.length ? createButton : null}
           </div>
         }
       />
-      <p className="mt-1 text-sm text-text-secondary">
-        Snapshots are only available when the VM is stopped.
-      </p>
 
-      <div className="mt-4 overflow-hidden rounded-lg border border-border">
-        <div className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(10rem,0.9fr)_5rem] bg-surface-muted px-3 py-2 text-xs font-medium text-text-muted">
-          <div>Snapshot name</div>
-          <div>Comment</div>
-          <div>Created at</div>
-          <div className="text-right">Actions</div>
-        </div>
-        <div className="divide-y divide-border">
-          {snapshots.length ? (
-            snapshots.map((snapshot) => (
+      {snapshots.length ? (
+        <div className="mt-4 overflow-hidden rounded-lg border border-border">
+          <div className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(10rem,0.9fr)_5rem] bg-surface-muted px-3 py-2 text-xs font-medium text-text-muted">
+            <div>Snapshot name</div>
+            <div>Comment</div>
+            <div>Created at</div>
+            <div className="text-right">Actions</div>
+          </div>
+          <div className="divide-y divide-border">
+            {snapshots.map((snapshot) => (
               <div
                 key={snapshot.name}
                 className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(10rem,0.9fr)_5rem] items-center gap-3 px-3 py-3 text-sm"
@@ -114,12 +109,23 @@ export function VmSnapshotsPanel({
                   </IconButton>
                 </div>
               </div>
-            ))
-          ) : (
-            <div className="px-3 py-4 text-sm text-text-secondary">No snapshots.</div>
-          )}
+            ))}
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="mt-5 flex min-h-56 flex-col items-center justify-center rounded-lg border border-dashed border-border bg-surface px-4 py-8 text-center">
+          <div className="flex h-20 w-20 items-center justify-center rounded-full bg-primary-soft text-primary">
+            <RiCameraLine className="h-9 w-9" aria-hidden />
+          </div>
+          <h4 className="mt-4 text-base font-semibold text-text-primary">
+            No snapshots yet
+          </h4>
+          <p className="mt-2 max-w-xs text-sm leading-5 text-text-secondary">
+            Create a snapshot to save the current state of this VM.
+          </p>
+          <div className="mt-5">{createButton}</div>
+        </div>
+      )}
 
       <div className="mt-4 flex justify-end">
         <a

@@ -2,10 +2,7 @@
 
 import React from "react";
 import { useRouter } from "next/navigation";
-import { BrowserProvider, Contract, parseUnits } from "ethers";
 import { RiCloseLine } from "@remixicon/react";
-import streamPayment from "../../public/abi/StreamPayment.json";
-import erc20 from "../../public/abi/ERC20.json";
 import {
   computeEstimate,
   createVm,
@@ -22,12 +19,12 @@ import {
 } from "../../lib/api";
 import { getPaymentNetworkErrorMessage } from "../../lib/chain";
 import { markCreateFailedSettled } from "../../lib/rentalLifecycle";
+import { openPaymentStream } from "../../lib/paymentStreams";
 import { terminateStreamWithWallet } from "../../lib/streams";
 import { parseHumanDuration } from "../../lib/time";
 import { useSettings } from "../../hooks/useSettings";
 import { useWallet } from "../../context/WalletContext";
 import { useProjects } from "../../context/ProjectsContext";
-import { PAYMENT_PRICE_MAX_AGE_MS, usdToTokenAsync } from "../../lib/prices";
 import { Modal } from "../ui/Modal";
 import {
   DurationSelector,
@@ -47,8 +44,6 @@ import {
   priceLine,
 } from "./rent-dialog/formatting";
 import type { DurationPreset, RentSpec } from "./rent-dialog/types";
-
-const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
 export function RentDialog({
   provider,
@@ -151,99 +146,22 @@ export function RentDialog({
   });
   const submitDisabled = Boolean(disabledReason);
 
-  const openStream = async (): Promise<{ id: string; contractAddress: string }> => {
+  const openStream = async (): Promise<{
+    id: string;
+    contractAddress: string;
+  }> => {
     setError(null);
-    await ensurePaymentsNetwork();
-    const { ethereum } = window as any;
-    if (!ethereum) throw new Error("MetaMask not detected");
-
-    let providerInfoJson = null;
-    try {
-      providerInfoJson = await (
-        await import("../../lib/api")
-      ).providerInfo(provider.provider_id, adsMode);
-    } catch (providerInfoError) {
-      console.warn(
-        "Provider payment metadata unavailable, using local payment settings",
-        providerInfoError,
-      );
-    }
-
-    const cfg = loadSettings();
-    const spAddr = (
-      providerInfoJson?.stream_payment_address ||
-      cfg.stream_payment_address ||
-      process.env.NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS ||
-      ""
-    ).trim();
-    if (!spAddr)
-      throw new Error(
-        "StreamPayment address missing (set in Settings or provided by provider)",
-      );
-    const token = [
-      providerInfoJson?.glm_token_address,
-      cfg.glm_token_address,
-      process.env.NEXT_PUBLIC_GLM_TOKEN_ADDRESS,
-    ]
-      .map((value) => String(value || "").trim())
-      .find((value) => value && value.toLowerCase() !== ZERO_ADDRESS);
-    if (!token) {
-      throw new Error(
-        "GLM token address missing (set in Settings or provided by provider)",
-      );
-    }
-
-    const browserProvider = new BrowserProvider(ethereum);
-    const signer = await browserProvider.getSigner(account ?? undefined);
-    const glm = new Contract(token, (erc20 as any).abi, signer);
-    const decimals = Number(await glm.decimals().catch(() => 18));
-
-    let glmPerMonth: number | null = estimate.glm_per_month ?? null;
-    if (glmPerMonth == null) {
-      glmPerMonth = await usdToTokenAsync("GLM", estimate.usd_per_month, {
-        maxAgeMs: PAYMENT_PRICE_MAX_AGE_MS,
-      });
-      if (glmPerMonth == null) {
-        throw new Error("GLM/USD price unavailable to compute rate");
-      }
-    }
-    const glmPerSecond = glmPerMonth / (30.4167 * 24 * 3600);
-    const ratePerSecondWei = parseUnits(
-      glmPerSecond.toFixed(decimals),
-      decimals,
-    );
-    if (ratePerSecondWei <= 0n)
-      throw new Error("Computed GLM rate is too small");
-    const depositWei = ratePerSecondWei * BigInt(Math.max(1, durationSeconds));
-
-    const owner = await signer.getAddress();
-    const allowance = await glm.allowance(owner, spAddr);
-    if (allowance < depositWei) {
-      const approveTx = await glm.approve(spAddr, depositWei);
-      await approveTx.wait();
-    }
-
-    const contract = new Contract(spAddr, (streamPayment as any).abi, signer);
-    const recipient = provider.provider_id;
-    const tx = await contract.createStream(
-      token,
-      recipient,
-      depositWei,
-      ratePerSecondWei,
-      {
-        gasLimit: 350000n,
-      },
-    );
-    const receipt = await tx.wait();
-    const event = receipt?.logs?.find?.(
-      (log: any) => String(log?.fragment?.name) === "StreamCreated",
-    );
-    const sid = event?.args?.[0] ?? null;
-    if (!sid) throw new Error("Stream id not found");
-    const newId = String(sid);
-    setStreamId(newId);
-    setOpenedStreamPaymentAddress(spAddr);
-    return { id: newId, contractAddress: spAddr };
+    const opened = await openPaymentStream({
+      provider,
+      resources: spec,
+      durationSeconds,
+      ads: adsMode,
+      account,
+      ensurePaymentsNetwork,
+    });
+    setStreamId(opened.id);
+    setOpenedStreamPaymentAddress(opened.contractAddress);
+    return opened;
   };
 
   const create = async () => {
@@ -375,7 +293,9 @@ export function RentDialog({
             settlement_status: "failed",
             status_message: getPaymentNetworkErrorMessage(settlementError),
           });
-          setError(getPaymentNetworkErrorMessage(settlementError, expectedChain));
+          setError(
+            getPaymentNetworkErrorMessage(settlementError, expectedChain),
+          );
           return;
         }
       } else if (pendingEntry) {
@@ -384,7 +304,8 @@ export function RentDialog({
           status: "terminated",
           create_failed_at: Math.floor(Date.now() / 1000),
           settlement_status: "failed",
-          status_message: "VM creation failed; stream settlement address missing",
+          status_message:
+            "VM creation failed; stream settlement address missing",
         });
       }
       setError(getPaymentNetworkErrorMessage(createError, expectedChain));

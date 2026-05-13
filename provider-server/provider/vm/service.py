@@ -173,18 +173,55 @@ class VMService:
         return await self.provider.suspend_vm(multipass_name)
 
     async def resize_vm(self, vm_id: str, resources: VMResources) -> VMInfo:
-        """Resize a stopped VM and update reserved capacity."""
+        """Resize a VM and update reserved capacity."""
         multipass_name = await self._require_multipass_name(vm_id)
         current = await self.provider.get_vm_status(multipass_name)
-        self._require_stopped(current, "resize")
+        restart_after_resize = current.status == VMStatus.RUNNING
+        if current.status not in {VMStatus.RUNNING, VMStatus.STOPPED}:
+            raise ConflictError("VM must be running or stopped before resize")
         if resources.storage < current.resources.storage:
             raise ValidationError("storage can only be increased")
+
+        if restart_after_resize:
+            await self.provider.stop_vm(multipass_name)
+
         if not await self.resource_tracker.resize(vm_id, resources):
+            if restart_after_resize:
+                await self._restart_after_failed_resize(vm_id, multipass_name)
             raise ValueError("Insufficient resources available on provider")
+
         try:
-            return await self.provider.resize_vm(multipass_name, resources)
+            resized = await self.provider.resize_vm(multipass_name, resources)
         except Exception:
             await self.resource_tracker.resize(vm_id, current.resources)
+            if restart_after_resize:
+                await self._restart_after_failed_resize(vm_id, multipass_name)
+            raise
+
+        if not restart_after_resize:
+            return resized
+
+        try:
+            return await self.provider.start_vm(multipass_name)
+        except Exception:
+            logger.error(
+                "VM resize succeeded but restart failed",
+                extra={"vm_id": vm_id, "multipass_name": multipass_name},
+                exc_info=True,
+            )
+            raise
+
+    async def _restart_after_failed_resize(
+        self, vm_id: str, multipass_name: str
+    ) -> None:
+        try:
+            await self.provider.start_vm(multipass_name)
+        except Exception:
+            logger.error(
+                "Failed to restart VM after resize did not complete",
+                extra={"vm_id": vm_id, "multipass_name": multipass_name},
+                exc_info=True,
+            )
             raise
 
     async def list_images(self) -> list[VMImage]:
