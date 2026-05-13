@@ -89,7 +89,7 @@ def is_public_ip(ip_str: str) -> bool:
 
 
 def normalize_proxy_source(source: str | None) -> str:
-    value = (source or "arkiv").strip().lower()
+    value = (source or "central").strip().lower()
     if value not in {"arkiv", "central"}:
         raise ValidationError("Invalid source; use 'central' or 'arkiv'")
     return value

@@ -12,9 +12,9 @@ from .domain import ProviderSearchQuery
 
 def normalize_discovery_backend(value: Optional[str]) -> str:
     raw = (value or "").strip().lower().replace("_", "-")
-    if raw in {"", "arkiv", "golem-base", "golembase"}:
+    if raw in {"arkiv", "golem-base", "golembase"}:
         return "arkiv"
-    if raw in {"central", "discovery-server", "discovery"}:
+    if raw in {"", "central", "discovery-server", "discovery"}:
         return "central"
     raise DiscoveryError("Discovery backend must be 'arkiv' or 'central'")
 

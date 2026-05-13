@@ -277,8 +277,9 @@ GOLEM_PROVIDER_PORT_RANGE_START={start_port}  # Default: 50800
 GOLEM_PROVIDER_PORT_RANGE_END={end_port}      # Default: 50900
 GOLEM_PROVIDER_PUBLIC_IP="auto"
 
-# Legacy discovery (optional; not required in normal operation)
+# Central discovery (default)
 # GOLEM_PROVIDER_DISCOVERY_URL="http://discovery.golem.network:9001"
+# GOLEM_PROVIDER_DISCOVERY_BACKEND="central"  # central|arkiv|both
 # GOLEM_PROVIDER_ADVERTISEMENT_INTERVAL=240
 
 # Network Selection
@@ -456,8 +457,8 @@ golem-provider status [--json]
 
 - Network Selection (`--network` or `GOLEM_PROVIDER_NETWORK`)
   - Chooses the discovery/advertisement scope: providers advertise `golem_network=development|testnet|mainnet` and requestors filter accordingly.
-  - Pair with appropriate Arkiv RPC envs (`GOLEM_PROVIDER_ARKIV_RPC_URL`, `GOLEM_PROVIDER_ARKIV_WS_URL`).
-  - In development, you can supply separate dev endpoints via `GOLEM_PROVIDER_ARKIV_DEV_RPC_URL` / `GOLEM_PROVIDER_ARKIV_DEV_WS_URL`.
+  - If using Arkiv, pair with appropriate Arkiv RPC envs (`GOLEM_PROVIDER_ARKIV_RPC_URL`, `GOLEM_PROVIDER_ARKIV_WS_URL`).
+  - If using Arkiv in development, you can supply separate dev endpoints via `GOLEM_PROVIDER_ARKIV_DEV_RPC_URL` / `GOLEM_PROVIDER_ARKIV_DEV_WS_URL`.
   - Does not change dev ergonomics (logging, reload, or port verification behavior).
 
 - Payments Network (`GOLEM_PROVIDER_PAYMENTS_NETWORK`)

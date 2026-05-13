@@ -5,7 +5,7 @@ import pytest
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-from requestor.config import RequestorConfig
+from requestor.config import RequestorConfig, normalize_discovery_backend
 
 
 def test_default_paths(monkeypatch, tmp_path):
@@ -43,6 +43,20 @@ def test_custom_base_dir(tmp_path):
 def test_force_localhost_default_false():
     cfg = RequestorConfig()
     assert cfg.force_localhost is False
+
+
+def test_discovery_backend_defaults_to_central(monkeypatch):
+    monkeypatch.delenv("GOLEM_REQUESTOR_DISCOVERY_BACKEND", raising=False)
+    monkeypatch.delenv("GOLEM_REQUESTOR_DISCOVERY_DRIVER", raising=False)
+
+    cfg = RequestorConfig()
+
+    assert cfg.discovery_backend == "central"
+    assert cfg.discovery_driver == "central"
+
+
+def test_empty_discovery_backend_normalizes_to_central():
+    assert normalize_discovery_backend("") == "central"
 
 
 def test_force_localhost_true():

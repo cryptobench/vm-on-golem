@@ -67,7 +67,7 @@ graph TB
 
 ## How It Works
 
-Provider discovery supports two backends. Arkiv is the default decentralized backend; central discovery is the legacy/self-hosted HTTP backend. Configure with `GOLEM_REQUESTOR_DISCOVERY_BACKEND=arkiv|central`. The older `GOLEM_REQUESTOR_DISCOVERY_DRIVER=golem-base|central` name still works.
+Provider discovery supports two backends. Central discovery is the default HTTP backend; Arkiv remains available as an optional decentralized backend. Configure with `GOLEM_REQUESTOR_DISCOVERY_BACKEND=central|arkiv`. The older `GOLEM_REQUESTOR_DISCOVERY_DRIVER=golem-base|central` name still works.
 
 ### 1. VM Creation Flow
 
@@ -274,7 +274,7 @@ GOLEM_ENVIRONMENT="development" GOLEM_REQUESTOR_FORCE_LOCALHOST="true" poetry ru
 - Development Mode (`GOLEM_ENVIRONMENT=development`)
   - Improves local workflows: prefixes central discovery URL with `DEVMODE-` and, when using the central driver, maps provider IPs to `localhost` for easier testing.
   - Uses the separate `development` network label for provider discovery/filters and local IPs.
-  - If `NEXT_PUBLIC_ARKIV_DEV_RPC_URL`/`WS` (web) or `GOLEM_REQUESTOR_ARKIV_DEV_RPC_URL`/`WS` (CLI) are set, switches Arkiv RPC/WS to those dev endpoints. The older `*_GOLEM_BASE_*` names remain compatibility aliases.
+  - If Arkiv is selected and `NEXT_PUBLIC_ARKIV_DEV_RPC_URL`/`WS` (web) or `GOLEM_REQUESTOR_ARKIV_DEV_RPC_URL`/`WS` (CLI) are set, switches Arkiv RPC/WS to those dev endpoints. The older `*_GOLEM_BASE_*` names remain compatibility aliases.
 
 - Network Selection (`--network` or `GOLEM_REQUESTOR_NETWORK`)
   - Filters results by `development|testnet|mainnet`.
