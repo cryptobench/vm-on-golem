@@ -6,7 +6,7 @@ import {
   ensurePricesUSD,
   getPriceUSD,
   usdToTokenAsync,
-} from "./prices";
+} from "./index";
 
 const KEY_V2 = "requestor_prices_v2";
 

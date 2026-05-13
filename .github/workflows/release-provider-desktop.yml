@@ -37,12 +37,20 @@ jobs:
         include:
           - os: ubuntu-latest
             target: linux
+            multipass-platform: linux
+            multipass-arch: x86_64
           - os: macos-13
             target: mac-x64
+            multipass-platform: darwin
+            multipass-arch: x86_64
           - os: macos-14
             target: mac-arm64
+            multipass-platform: darwin
+            multipass-arch: aarch64
           - os: windows-latest
             target: win
+            multipass-platform: windows
+            multipass-arch: x86_64
 
     steps:
       - name: Check out code
@@ -81,6 +89,9 @@ jobs:
       - name: Build and stage provider sidecar
         run: poetry -C provider-server run python ../scripts/build_provider_cli.py --onefile
 
+      - name: Vendor Multipass installer
+        run: python scripts/vendor_multipass.py --platform "${{ matrix.multipass-platform }}" --arch "${{ matrix.multipass-arch }}"
+
       - name: Install npm dependencies
         run: npm install --no-audit --no-fund
 
@@ -94,6 +105,12 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+
+      - name: Build macOS pkg with Multipass
+        if: ${{ runner.os == 'macOS' }}
+        run: python scripts/package_provider_desktop_macos.py
+        env:
+          APPLE_INSTALLER_SIGNING_IDENTITY: ${{ secrets.APPLE_INSTALLER_SIGNING_IDENTITY }}
 
       - name: Upload provider desktop artifacts
         uses: actions/upload-artifact@v4

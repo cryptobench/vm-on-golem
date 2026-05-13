@@ -1,8 +1,13 @@
-const fs = require("fs");
-const path = require("path");
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { network } from "hardhat";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 async function main() {
-  const { ethers, network } = require("hardhat");
+  const { ethers } = await network.create();
   const [deployer] = await ethers.getSigners();
 
   console.log("Deploying MockGLM with deployer:", await deployer.getAddress());
@@ -19,7 +24,7 @@ async function main() {
 
   const outDir = path.join(__dirname, "..", "deployments");
   fs.mkdirSync(outDir, { recursive: true });
-  const netName = (network && network.name) ? network.name.toLowerCase() : (process.env.HARDHAT_NETWORK || "unknown");
+  const netName = process.env.HARDHAT_NETWORK || "unknown";
   const outFile = path.join(outDir, `${netName}-mockglm.json`);
   const payload = {
     network: netName,

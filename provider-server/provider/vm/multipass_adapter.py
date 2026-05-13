@@ -1,14 +1,17 @@
 import asyncio
 import json
-import platform
 import subprocess
 import uuid
-from pathlib import Path
 from typing import Dict, List, Optional
 
 from ..config import settings
 from ..utils.logging import setup_logger
 from ..utils.retry import NonRetryableError, async_retry_unless_not_found
+from .multipass_requirements import (
+    MultipassCompatibilityError,
+    check_host_virtualization_compatibility,
+    detect_multipass_binary,
+)
 from .lifecycle import ProgressCallback, creation_lifecycle, lifecycle_for_status
 from .models import (
     VMConfig,
@@ -41,7 +44,11 @@ class MultipassAdapter(VMProvider):
     """Manages VMs using Multipass."""
 
     def __init__(self, proxy_manager, name_mapper):
-        self.multipass_path = settings.MULTIPASS_BINARY_PATH
+        self.multipass_path = (
+            settings.MULTIPASS_BINARY_PATH
+            or detect_multipass_binary()
+            or "multipass"
+        )
         self.proxy_manager = proxy_manager
         self.name_mapper = name_mapper
 
@@ -625,65 +632,7 @@ class MultipassAdapter(VMProvider):
 
     def _check_host_virtualization_compatibility(self) -> None:
         """Fail early for known host/driver combinations that cannot launch VMs."""
-        if (
-            platform.system().lower() != "darwin"
-            or platform.machine().lower() != "arm64"
-        ):
-            return
-        darwin_major = self._safe_int(platform.release().split(".")[0], 0)
-        if darwin_major < 24:
-            return
-
         try:
-            driver = subprocess.run(
-                [self.multipass_path, "get", "local.driver"],
-                capture_output=True,
-                text=True,
-                check=True,
-            ).stdout.strip()
-        except Exception:
-            driver = "qemu"
-        if driver != "qemu":
-            return
-
-        try:
-            multipass_version = subprocess.run(
-                [self.multipass_path, "version"],
-                capture_output=True,
-                text=True,
-                check=True,
-            ).stdout
-        except Exception:
-            return
-        first_multipass_line = (
-            multipass_version.splitlines()[0] if multipass_version.splitlines() else ""
-        )
-        if "1.16.2+mac" not in first_multipass_line:
-            return
-
-        bundled_qemu = (
-            Path(self.multipass_path).resolve().parent / "qemu-system-aarch64"
-        )
-        if not bundled_qemu.exists():
-            return
-        try:
-            qemu_version = subprocess.run(
-                [str(bundled_qemu), "--version"],
-                capture_output=True,
-                text=True,
-                check=True,
-            ).stdout
-        except Exception:
-            return
-        major = self._safe_int(qemu_version.split("version", 1)[-1].split(".")[0], 0)
-        if major and major < 10:
-            raise MultipassError(
-                "This Multipass installation uses "
-                f"{first_multipass_line} with the qemu driver and bundled "
-                f"QEMU {qemu_version.splitlines()[0]} on Apple Silicon/macOS. "
-                "This combination is known to fail before cloud-init with "
-                "\"qemu-system-aarch64: Property 'host-arm-cpu.sme' not found\". "
-                "Downgrade to Multipass 1.16.1+mac, upgrade to a build with a "
-                "fix, use a supported non-QEMU driver, or run the provider on a "
-                "Linux host."
-            )
+            check_host_virtualization_compatibility(self.multipass_path)
+        except MultipassCompatibilityError as exc:
+            raise MultipassError(str(exc)) from exc

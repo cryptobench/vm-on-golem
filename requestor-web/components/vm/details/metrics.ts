@@ -1,4 +1,5 @@
 import type { VmMonitoringHistory } from "../../../lib/api";
+export { getAppendOnlySlideChange } from "@golem/ui";
 
 export type MetricRange = "1h" | "6h" | "24h" | "7d";
 
@@ -107,42 +108,6 @@ export function buildSparklineRows(
       point: String(index + 1),
       value: row[key] as number,
     }));
-}
-
-export function getAppendOnlySlideChange(
-  previousKeys: string[],
-  nextKeys: string[],
-): { appendedCount: number; droppedCount: number } | null {
-  if (previousKeys.length === 0 || nextKeys.length === 0) return null;
-  if (hasDuplicateKeys(previousKeys) || hasDuplicateKeys(nextKeys)) return null;
-
-  const maxOverlap = Math.min(previousKeys.length, nextKeys.length);
-  for (let overlap = maxOverlap; overlap >= 1; overlap -= 1) {
-    const previousStart = previousKeys.length - overlap;
-    let matches = true;
-    for (let index = 0; index < overlap; index += 1) {
-      if (previousKeys[previousStart + index] !== nextKeys[index]) {
-        matches = false;
-        break;
-      }
-    }
-
-    if (!matches) continue;
-
-    const appendedCount = nextKeys.length - overlap;
-    if (appendedCount <= 0) return null;
-
-    const minRequiredOverlap =
-      previousKeys.length >= 3 && nextKeys.length >= 3 ? 3 : 1;
-    if (overlap < minRequiredOverlap) return null;
-
-    return {
-      appendedCount,
-      droppedCount: previousKeys.length - overlap,
-    };
-  }
-
-  return null;
 }
 
 export function latestNetworkRates(rows: MetricChartRow[]) {
@@ -258,8 +223,4 @@ export function parseMetricTimestamp(timestamp: string) {
 
 function hasTimezone(timestamp: string) {
   return /(?:Z|[+-]\d{2}:?\d{2})$/i.test(timestamp);
-}
-
-function hasDuplicateKeys(keys: string[]) {
-  return new Set(keys).size !== keys.length;
 }

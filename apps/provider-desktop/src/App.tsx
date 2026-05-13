@@ -1,102 +1,113 @@
 import React from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { Button, Callout, PageHeader, Skeleton, StatusBadge } from "@golem/ui";
+import { Card, CardBody, PageHeader } from "@golem/ui";
+import { startPricePolling } from "@golem/prices";
+import { AppShell } from "./components/AppShell";
+import { ServiceStopped } from "./components/StateViews";
+import type { NavigateTarget, PageId } from "./components/types";
+import { AlertsPage } from "./features/alerts/AlertsPage";
+import { MonitoringPage } from "./features/monitoring/MonitoringPage";
+import { OverviewPage } from "./features/overview/OverviewPage";
+import { StreamsPage } from "./features/streams/StreamsPage";
+import { VirtualMachinesPage } from "./features/vms/VirtualMachinesPage";
+import { VmDetailsPage } from "./features/vm-detail/VmDetailsPage";
+import { WebhooksPage } from "./features/webhooks/WebhooksPage";
+import { useDashboardData, useProviderServiceStatus } from "./lib/useProviderData";
 
-type ProviderStatus = {
-  running: boolean;
-  apiBaseUrl: string;
-};
-
-async function getProviderStatus() {
-  return invoke<ProviderStatus>("provider_status");
-}
+type AppRoute = { page: PageId } | { page: "vm-detail"; vmId: string };
 
 export function App() {
-  const [status, setStatus] = React.useState<ProviderStatus | null>(null);
-  const [error, setError] = React.useState<string | null>(null);
-  const [busyAction, setBusyAction] = React.useState<"start" | "stop" | null>(null);
+  const [route, setRoute] = React.useState<AppRoute>({ page: "overview" });
+  const service = useProviderServiceStatus();
+  const dashboard = useDashboardData(service.status?.running);
 
-  const refresh = React.useCallback(async () => {
-    try {
-      setError(null);
-      setStatus(await getProviderStatus());
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    }
+  React.useEffect(() => startPricePolling(), []);
+
+  const navigate = React.useCallback((target: NavigateTarget) => {
+    setRoute(target);
   }, []);
 
-  React.useEffect(() => {
-    void refresh();
-    const id = window.setInterval(() => void refresh(), 5000);
-    return () => window.clearInterval(id);
-  }, [refresh]);
-
-  const runAction = async (action: "start" | "stop") => {
-    setBusyAction(action);
-    setError(null);
-    try {
-      await invoke(action === "start" ? "start_provider" : "stop_provider");
-      await refresh();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusyAction(null);
-    }
-  };
+  if (service.status && !service.status.running) {
+    return (
+      <ServiceStopped
+        error={service.error}
+        busy={service.busyAction === "start"}
+        onStart={() => void service.runAction("start")}
+      />
+    );
+  }
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-6 px-6 py-8">
+    <AppShell
+      activePage={route.page}
+      data={dashboard.data}
+      serviceStatus={service.status}
+      busyAction={service.busyAction}
+      onNavigate={navigate}
+      onStopProvider={() => void service.runAction("stop")}
+    >
+      {route.page === "overview" ? (
+        <OverviewPage
+          data={dashboard.data}
+          loading={dashboard.loading}
+          onNavigate={navigate}
+        />
+      ) : null}
+      {route.page === "vms" ? (
+        <VirtualMachinesPage
+          data={dashboard.data}
+          loading={dashboard.loading}
+          onNavigate={navigate}
+        />
+      ) : null}
+      {route.page === "streams" ? (
+        <StreamsPage
+          data={dashboard.data}
+          loading={dashboard.loading}
+          onNavigate={navigate}
+        />
+      ) : null}
+      {route.page === "monitoring" ? (
+        <MonitoringPage data={dashboard.data} loading={dashboard.loading} />
+      ) : null}
+      {route.page === "alerts" ? (
+        <AlertsPage
+          data={dashboard.data}
+          loading={dashboard.loading}
+          onRefresh={dashboard.refresh}
+        />
+      ) : null}
+      {route.page === "webhooks" ? (
+        <WebhooksPage
+          data={dashboard.data}
+          loading={dashboard.loading}
+          onRefresh={dashboard.refresh}
+        />
+      ) : null}
+      {route.page === "vm-detail" ? (
+        <VmDetailsPage vmId={route.vmId} onNavigate={navigate} />
+      ) : null}
+      {route.page === "settings" || route.page === "health" ? (
+        <PlaceholderPage page={route.page} />
+      ) : null}
+    </AppShell>
+  );
+}
+
+function PlaceholderPage({ page }: { page: "settings" | "health" }) {
+  return (
+    <div className="space-y-6">
       <PageHeader
-        title="Golem Provider"
-        description="Start the local provider service and monitor whether the bundled provider API is reachable."
+        title={page === "settings" ? "Settings" : "Health"}
+        description="This provider endpoint is not exposed to the desktop app yet."
       />
-
-      <section className="card">
-        <div className="card-body flex flex-col gap-5">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h2 className="text-lg font-semibold text-text-primary">
-                Provider service
-              </h2>
-              <p className="mt-1 text-sm text-text-secondary">
-                {status ? status.apiBaseUrl : "Checking provider API"}
-              </p>
-            </div>
-            {status ? (
-              <StatusBadge
-                label={status.running ? "Running" : "Stopped"}
-                tone={status.running ? "success" : "neutral"}
-              />
-            ) : (
-              <Skeleton className="h-6 w-24 rounded-full" />
-            )}
-          </div>
-
-          {error ? (
-            <Callout tone="danger">
-              Provider command failed: {error}
-            </Callout>
-          ) : null}
-
-          <div className="flex flex-wrap gap-3">
-            <Button
-              onClick={() => runAction("start")}
-              busy={busyAction === "start"}
-              disabled={busyAction !== null || status?.running}
-            >
-              Start Provider
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={() => runAction("stop")}
-              busy={busyAction === "stop"}
-              disabled={busyAction !== null || !status?.running}
-            >
-              Stop Provider
-            </Button>
-          </div>
-        </div>
-      </section>
-    </main>
+      <Card>
+        <CardBody>
+          <p className="text-sm text-text-secondary">
+            The sidebar entry is present for the provider workflow, but this screen
+            needs a backend contract before it can be data-driven.
+          </p>
+        </CardBody>
+      </Card>
+    </div>
   );
 }

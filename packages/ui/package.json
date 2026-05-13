@@ -12,7 +12,8 @@
   },
   "dependencies": {
     "@remixicon/react": "^4.6.0",
-    "@tremor/react": "^3.18.7"
+    "@tremor/react": "^3.18.7",
+    "recharts": "^2.15.4"
   },
   "peerDependencies": {
     "react": "^18.3.1",

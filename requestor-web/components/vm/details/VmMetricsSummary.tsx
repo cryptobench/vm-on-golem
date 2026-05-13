@@ -2,7 +2,7 @@
 
 import React from "react";
 import { RiArrowDownLine, RiArrowUpLine } from "@remixicon/react";
-import { Skeleton } from "@golem/ui";
+import { Skeleton, SlidingSparkline } from "@golem/ui";
 import type { VmMonitoringHistory } from "../../../lib/api";
 import { DetailPanel, PanelTitle } from "./VmDetailPrimitives";
 import {
@@ -12,12 +12,19 @@ import {
   formatPercent,
   latestNetworkRates,
 } from "./metrics";
-import { SlidingSparkline } from "./SlidingMetricCharts";
 
 type GuestMetrics = Record<
   string,
   { value: number; unit: string; timestamp: string; source: string }
 > | null;
+
+const sparklineColors = {
+  blue: "text-blue-500",
+  violet: "text-violet-500",
+  emerald: "text-emerald-500",
+  cyan: "text-cyan-500",
+  orange: "text-orange-500",
+} as const;
 
 export function VmMetricsSummary({
   guestMetrics,
@@ -99,7 +106,7 @@ function MetricTile({
   label: string;
   value: string;
   values: ReturnType<typeof buildSparklineRows>;
-  color: "blue" | "violet" | "emerald" | "cyan" | "orange";
+  color: keyof typeof sparklineColors;
 }) {
   return (
     <div className="vm-metric-tile rounded-lg border border-border bg-surface p-4">
@@ -147,13 +154,22 @@ function MiniMetricChart({
   color,
 }: {
   values: ReturnType<typeof buildSparklineRows>;
-  color: "blue" | "violet" | "emerald" | "cyan" | "orange";
+  color: keyof typeof sparklineColors;
 }) {
   if (values.length < 2) {
     return <div className="mt-2 h-9 rounded bg-surface-muted" />;
   }
 
-  return <SlidingSparkline className="mt-2 h-9" data={values} color={color} />;
+  return (
+    <SlidingSparkline
+      className="mt-2 h-9"
+      data={values}
+      colorClassName={sparklineColors[color]}
+      xKey="point"
+      dataKey="value"
+      animationKey={(row) => row.timestamp}
+    />
+  );
 }
 
 function metricPercent(guestMetrics: NonNullable<GuestMetrics>, name: string) {

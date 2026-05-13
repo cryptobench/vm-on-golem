@@ -12,5 +12,9 @@
     "dev:provider-desktop": "npm --workspace @golem/provider-desktop run dev",
     "tauri:build:provider-desktop": "npm --workspace @golem/provider-desktop run tauri:build",
     "typecheck": "npm --workspaces --if-present run typecheck"
+  },
+  "overrides": {
+    "lodash": "^4.18.1",
+    "postcss": "^8.5.10"
   }
 }

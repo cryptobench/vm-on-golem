@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Skeleton } from "@golem/ui";
+import { Skeleton, SlidingLineChart, cn, type ChartSeries } from "@golem/ui";
 import type { VmMonitoringHistory } from "../../lib/api";
 import { DetailPanel, PanelTitle } from "./details/VmDetailPrimitives";
 import {
@@ -10,8 +10,6 @@ import {
   metricRanges,
   type MetricRange,
 } from "./details/metrics";
-import { cn } from "@golem/ui";
-import { SlidingMetricLineChart } from "./details/SlidingMetricCharts";
 
 type VmMetricsChartsProps = {
   history?: VmMonitoringHistory;
@@ -19,6 +17,39 @@ type VmMetricsChartsProps = {
   range: MetricRange;
   onRangeChange: (range: MetricRange) => void;
 };
+
+const metricSeries: ChartSeries[] = [
+  {
+    key: "CPU",
+    label: "CPU",
+    colorClassName: "text-blue-500",
+    dotClassName: "bg-blue-500",
+  },
+  {
+    key: "Memory",
+    label: "Memory",
+    colorClassName: "text-violet-500",
+    dotClassName: "bg-violet-500",
+  },
+  {
+    key: "Disk",
+    label: "Disk",
+    colorClassName: "text-emerald-500",
+    dotClassName: "bg-emerald-500",
+  },
+  {
+    key: "Network RX",
+    label: "Network RX",
+    colorClassName: "text-cyan-500",
+    dotClassName: "bg-cyan-500",
+  },
+  {
+    key: "Network TX",
+    label: "Network TX",
+    colorClassName: "text-orange-500",
+    dotClassName: "bg-orange-500",
+  },
+];
 
 export function VmMetricsCharts({
   history,
@@ -66,10 +97,12 @@ export function VmMetricsCharts({
         <Skeleton className="mt-5 h-80 w-full" />
       ) : hasData ? (
         <div className="mt-5 h-80">
-          <SlidingMetricLineChart
+          <SlidingLineChart
             className="h-80"
             data={chartRows}
-            categories={["CPU", "Memory", "Disk", "Network RX", "Network TX"]}
+            series={metricSeries}
+            xKey="time"
+            animationKey={(row) => row.timestamp}
             valueFormatter={formatChartPercent}
             yAxisWidth={56}
             minValue={0}

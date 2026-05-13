@@ -167,6 +167,8 @@ cython_debug/
 node_modules/
 apps/provider-desktop/dist/
 apps/provider-desktop/src-tauri/binaries/
+apps/provider-desktop/src-tauri/vendor/multipass/*
+!apps/provider-desktop/src-tauri/vendor/multipass/.gitkeep
 requestor-gui/node_modules/
 python-sdk/
 typescript-sdk/

@@ -3,15 +3,17 @@ import { VmDetailsSkeleton } from "../../../components/vm/details/VmDetailsSkele
 import VmDetailsClient from "../VmDetailsClient";
 
 type PageProps = {
-  params: {
+  params: Promise<{
     id: string;
-  };
+  }>;
 };
 
-export default function Page({ params }: PageProps) {
+export default async function Page({ params }: PageProps) {
+  const { id } = await params;
+
   return (
     <Suspense fallback={<VmDetailsSkeleton />}>
-      <VmDetailsClient vmId={params.id} />
+      <VmDetailsClient vmId={id} />
     </Suspense>
   );
 }

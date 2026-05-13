@@ -36,6 +36,8 @@ REQUESTOR_HOST = "127.0.0.1"
 REQUESTOR_PORT = 8000
 WEB_HOST = "127.0.0.1"
 WEB_PORT = 3000
+PROVIDER_DESKTOP_HOST = "127.0.0.1"
+PROVIDER_DESKTOP_PORT = 1420
 WEB_WATCH_ENV_DEFAULTS = {
     "WATCHPACK_POLLING": "true",
     "WATCHPACK_POLLING_INTERVAL": "1000",
@@ -49,6 +51,7 @@ PROVIDER_API_URL = f"http://{PROVIDER_HOST}:{PROVIDER_PORT}/api/v1"
 PORT_CHECKER_URL = f"http://{PORT_CHECKER_HOST}:{PORT_CHECKER_PORT}"
 REQUESTOR_API_URL = f"http://{REQUESTOR_HOST}:{REQUESTOR_PORT}/api/v1"
 WEB_URL = f"http://{WEB_HOST}:{WEB_PORT}"
+PROVIDER_DESKTOP_URL = f"http://{PROVIDER_DESKTOP_HOST}:{PROVIDER_DESKTOP_PORT}"
 PORT_CHECKER_TOKEN = "dev-token"
 ARKIV_RPC_URL = "https://kaolin.hoodi.arkiv.network/rpc"
 ARKIV_WS_URL = "wss://kaolin.hoodi.arkiv.network/rpc/ws"
@@ -139,9 +142,11 @@ def ensure_port_free(host: str, port: int) -> None:
             raise LocalStackError(f"Port {host}:{port} is already in use") from exc
 
 
-def preflight() -> None:
+def preflight(start_provider_desktop: bool) -> None:
     for command in ("poetry", "node", "npm", "multipass"):
         ensure_command(command)
+    if start_provider_desktop:
+        ensure_command("cargo")
 
     multipass = run_quiet(["multipass", "version"])
     if multipass.returncode != 0:
@@ -158,6 +163,8 @@ def preflight() -> None:
         (WEB_HOST, WEB_PORT),
     ):
         ensure_port_free(host, port)
+    if start_provider_desktop:
+        ensure_port_free(PROVIDER_DESKTOP_HOST, PROVIDER_DESKTOP_PORT)
 
 
 def rpc_call(rpc_url: str, method: str, params: list[object]) -> object:
@@ -321,11 +328,26 @@ def node_deps_satisfied(package_dir: str) -> bool:
     return check.returncode == 0
 
 
-def ensure_deps(skip_install: bool) -> None:
+def ensure_workspace_node_deps(workspace: str) -> None:
+    if (ROOT / "node_modules").exists() and workspace_node_deps_satisfied(workspace):
+        return
+    command = ["npm", "ci"] if (ROOT / "package-lock.json").exists() else ["npm", "install"]
+    log(f"[setup] {' '.join(command)}")
+    run_checked(command)
+
+
+def workspace_node_deps_satisfied(workspace: str) -> bool:
+    check = run_quiet(["npm", "--workspace", workspace, "ls", "--depth=0"])
+    return check.returncode == 0
+
+
+def ensure_deps(skip_install: bool, start_provider_desktop: bool) -> None:
     if skip_install:
         return
     ensure_python_deps()
     ensure_node_deps("requestor-web")
+    if start_provider_desktop:
+        ensure_workspace_node_deps("@golem/provider-desktop")
 
 
 def http_ok(url: str) -> bool:
@@ -458,7 +480,9 @@ def local_dirs() -> dict[str, Path]:
     return dirs
 
 
-def build_services(deployment: dict[str, str]) -> list[Service]:
+def build_services(
+    deployment: dict[str, str], start_provider_desktop: bool
+) -> list[Service]:
     dirs = local_dirs()
     provider_dir = dirs["provider"]
     requestor_dir = dirs["requestor"]
@@ -617,6 +641,25 @@ def build_services(deployment: dict[str, str]) -> list[Service]:
         ),
     ]
 
+    if start_provider_desktop:
+        services.append(
+            Service(
+                name="provider-desktop",
+                command=[
+                    "npm",
+                    "--workspace",
+                    "@golem/provider-desktop",
+                    "run",
+                    "dev",
+                ],
+                env={
+                    "GOLEM_ENVIRONMENT": "development",
+                    "TAURI_PROVIDER_API_URL": PROVIDER_API_URL,
+                },
+                ready=lambda: http_ok(PROVIDER_DESKTOP_URL),
+            )
+        )
+
     return services
 
 
@@ -625,13 +668,16 @@ def run_stack(args: argparse.Namespace) -> int:
     checkpoint: Service | None = None
 
     try:
-        preflight()
+        start_provider_desktop = not args.no_provider_desktop
+        preflight(start_provider_desktop)
         deployment = load_l2_deployment()
         if not args.skip_chain_check:
             check_l2_deployment(deployment)
-        ensure_deps(args.skip_install)
+        ensure_deps(args.skip_install, start_provider_desktop)
 
-        services = build_services(deployment=deployment)
+        services = build_services(
+            deployment=deployment, start_provider_desktop=start_provider_desktop
+        )
 
         def handle_signal(signum: int, _frame) -> None:
             raise KeyboardInterrupt
@@ -653,6 +699,8 @@ def run_stack(args: argparse.Namespace) -> int:
         log(f"  Requestor web:      {WEB_URL}")
         log(f"  Central discovery:  {CENTRAL_API_URL}")
         log(f"  Provider API:       {PROVIDER_API_URL}")
+        if start_provider_desktop:
+            log("  Provider desktop:   native Tauri app")
         log(f"  Port checker:       {PORT_CHECKER_URL}")
         log(f"  Requestor API:      {REQUESTOR_API_URL}")
         log(f"  Payments network:   {PAYMENTS_NETWORK} ({L2_CHAIN_ID_HEX})")
@@ -706,6 +754,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--skip-chain-check",
         action="store_true",
         help="Skip Arkiv L2 chain and StreamPayment deployment validation",
+    )
+    parser.add_argument(
+        "--no-provider-desktop",
+        action="store_true",
+        help="Do not start the provider desktop Tauri app",
     )
     return parser.parse_args(argv)
 

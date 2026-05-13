@@ -41,3 +41,28 @@
 .td {
   @apply px-3 py-2 text-[13px] text-text-primary;
 }
+
+.golem-sliding-chart .recharts-line-curve {
+  transform: translateX(var(--golem-chart-slide-x, 0));
+  transition: none;
+}
+
+.golem-sliding-chart[data-slide-active="true"] .recharts-line-curve {
+  transition: transform 360ms ease-out;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .golem-sliding-chart[data-draw-active="true"] .recharts-line-curve {
+    animation: golem-line-draw 560ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    stroke-dasharray: 12000;
+  }
+}
+
+@keyframes golem-line-draw {
+  from {
+    stroke-dashoffset: 12000;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
