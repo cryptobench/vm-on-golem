@@ -10,7 +10,7 @@ import {
 } from "@remixicon/react";
 import { Button } from "../../ui/Button";
 import { Modal } from "../../ui/Modal";
-import { NumberStepper } from "./VmDetailPrimitives";
+import { NumberStepper } from "../../ui/NumberStepper";
 
 type ResizeResources = {
   cpu: number;
