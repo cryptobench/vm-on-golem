@@ -29,6 +29,10 @@ function isTerminated(status: string) {
   return status === "terminated" || status === "deleted";
 }
 
+function isProviderOffline(status: string) {
+  return status === "offline";
+}
+
 export function RentalActionsMenu({
   rental,
   status,
@@ -43,9 +47,12 @@ export function RentalActionsMenu({
   const [confirmOpen, setConfirmOpen] = React.useState(false);
   const ref = React.useRef<HTMLDivElement | null>(null);
   const terminal = isTerminated(status);
+  const providerOffline = isProviderOffline(status);
   const canStart =
-    !terminal && (status === "stopped" || status === "suspended");
-  const canStop = !terminal && status === "running";
+    !terminal &&
+    !providerOffline &&
+    (status === "stopped" || status === "suspended");
+  const canStop = !terminal && !providerOffline && status === "running";
   const startLabel = status === "suspended" ? "Resume" : "Start";
 
   React.useEffect(() => {
@@ -130,7 +137,7 @@ export function RentalActionsMenu({
               <RiEyeLine className="h-4 w-4" aria-hidden />
               View details
             </button>
-            {!terminal && onCopySSH && (
+            {!terminal && !providerOffline && onCopySSH && (
               <button
                 className="vm-action-menu__item"
                 onClick={choose(() => onCopySSH(rental))}

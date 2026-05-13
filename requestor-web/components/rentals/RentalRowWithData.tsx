@@ -5,12 +5,14 @@ import { useRouter } from "next/navigation";
 import {
   useProviderInfo,
   useVmAccess,
-  useVmStatus,
+  useVmStatusSafe,
   useVmStreamStatus,
 } from "../../hooks/useApiSWR";
 import type { Rental, VMResources } from "../../lib/api";
+import { vmDetailsHref } from "../../lib/routes";
 import { humanDuration } from "../../lib/streams";
 import { countryFlagEmoji } from "../../lib/intl";
+import { deriveVmDisplayLifecycle } from "../../lib/vmLifecycle";
 import { CopyValue } from "./CopyValue";
 import { RentalActionsMenu } from "./RentalActionsMenu";
 import { RentalStatusPill } from "./RentalStatusPill";
@@ -28,24 +30,6 @@ type RentalRowWithDataProps = {
 
 function terminalStatus(status: string) {
   return status === "terminated" || status === "deleted";
-}
-
-function deriveStatus(
-  rental: Rental,
-  statusData: unknown,
-  accessData: unknown,
-) {
-  const liveStatus = String(
-    (statusData as { status?: string } | null)?.status || "",
-  ).toLowerCase();
-  const storedStatus = String(rental.status || "").toLowerCase();
-  const sshPort =
-    (accessData as { ssh_port?: number | null } | null)?.ssh_port ??
-    (statusData as { ssh_port?: number | null } | null)?.ssh_port;
-
-  if (liveStatus) return liveStatus;
-  if (storedStatus) return storedStatus;
-  return sshPort ? "running" : "creating";
 }
 
 function resourceValue(
@@ -92,12 +76,12 @@ export function RentalRowWithData({
   const { data: provider } = useProviderInfo(rental.provider_id, {
     refreshInterval: 30000,
   });
-  const { data: access } = useVmAccess(
+  const { data: access, error: accessError } = useVmAccess(
     storedTerminal ? null : rental.provider_id,
     storedTerminal ? null : rental.vm_id,
     { refreshInterval: 8000 },
   );
-  const { data: status } = useVmStatus(
+  const { data: status, error: statusError } = useVmStatusSafe(
     storedTerminal ? null : rental.provider_id,
     storedTerminal ? null : rental.vm_id,
     { refreshInterval: 8000 },
@@ -108,17 +92,38 @@ export function RentalRowWithData({
     { refreshInterval: 15000 },
   );
 
-  const liveStatus = storedTerminal
-    ? storedStatus || "terminated"
-    : deriveStatus(rental, status, access);
+  const statusPayload = ((status as { data?: unknown } | null)?.data ||
+    null) as Record<string, unknown> | null;
+  const lifecycleSource = statusPayload?.status
+    ? statusPayload
+    : (access as { status?: string } | null)?.status
+      ? (access as Record<string, unknown>)
+      : null;
+  const lifecycle = storedTerminal
+    ? deriveVmDisplayLifecycle({ lifecycle: { status: storedStatus || "terminated" } })
+    : deriveVmDisplayLifecycle({
+        lifecycle: lifecycleSource,
+        fallback: {
+          status: rental.status || (rental.ssh_port ? "running" : "creating"),
+          lifecycle_stage: rental.lifecycle_stage,
+          status_message: rental.status_message,
+          progress: rental.progress,
+          transitioning: rental.transitioning,
+          next_poll_seconds: rental.next_poll_seconds,
+        },
+        safeStatus: status,
+        statusError,
+        accessError,
+      });
+  const liveStatus = lifecycle.status;
   const isTerminated = terminalStatus(liveStatus);
   const country = (provider as { country?: string } | null)?.country || "";
   const flag = countryFlagEmoji(country);
-  const resources = ((status as { resources?: VMResources } | null)
+  const resources = ((statusPayload as { resources?: VMResources } | null)
     ?.resources || rental.resources) as VMResources | undefined;
   const platform =
     (provider as { platform?: string | null } | null)?.platform ||
-    (status as { platform?: string | null } | null)?.platform ||
+    (statusPayload as { platform?: string | null } | null)?.platform ||
     rental.platform ||
     "Linux";
   const providerIp =
@@ -137,8 +142,7 @@ export function RentalRowWithData({
         : humanDuration(remainingSeconds)
       : "-";
 
-  const openDetails = () =>
-    router.push(`/vm?id=${encodeURIComponent(rental.vm_id)}`);
+  const openDetails = () => router.push(vmDetailsHref(rental.vm_id));
 
   return (
     <tr

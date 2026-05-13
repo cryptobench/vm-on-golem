@@ -287,6 +287,7 @@ export default function StreamsPage() {
               busy={busy}
               actionsDisabled={!paymentReady}
               actionsDisabledReason={!paymentReady ? paymentMessage : null}
+              displayCurrency={displayCurrency}
               onTopUp={topUp}
             />
           ) : (

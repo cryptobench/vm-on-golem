@@ -69,9 +69,13 @@ import { VmSnapshotsPanel } from "../../components/vm/details/VmSnapshotsPanel";
 import { VmResizeModal } from "../../components/vm/details/VmResizeModal";
 import { VmPaymentStreamPanel } from "../../components/vm/details/VmPaymentStreamPanel";
 import { VmDetailsSkeleton } from "../../components/vm/details/VmDetailsSkeleton";
-import { deriveVmLifecycle } from "../../lib/vmLifecycle";
+import { deriveVmDisplayLifecycle } from "../../lib/vmLifecycle";
 
-export default function VmDetailsClient() {
+type VmDetailsClientProps = {
+  vmId?: string;
+};
+
+export default function VmDetailsClient({ vmId: vmIdProp }: VmDetailsClientProps) {
   const search = useSearchParams();
   const router = useRouter();
   const { ads } = useAds();
@@ -116,7 +120,7 @@ export default function VmDetailsClient() {
     "1h" | "6h" | "24h" | "7d"
   >("1h");
 
-  const vmId = search.get("id") || "";
+  const vmId = vmIdProp || search.get("id") || "";
   const [vmLookupReady, setVmLookupReady] = React.useState(false);
   const [authoritativeStatusReadyKey, setAuthoritativeStatusReadyKey] =
     React.useState<string | null>(null);
@@ -192,9 +196,13 @@ export default function VmDetailsClient() {
   const { data: swrProviderSummary } = useProviderSummary(vm?.provider_id, {
     refreshInterval: liveConnected ? 0 : 10000,
   });
-  const { data: swrAccess } = useVmAccess(vm?.provider_id, vm?.vm_id, {
-    refreshInterval: liveConnected ? 0 : 2000,
-  });
+  const { data: swrAccess, error: swrAccessError } = useVmAccess(
+    vm?.provider_id,
+    vm?.vm_id,
+    {
+      refreshInterval: liveConnected ? 0 : 2000,
+    },
+  );
   const { data: swrJob } = useVmCreateJobStatus(
     vm?.provider_id,
     vm?.creation_job_id,
@@ -204,11 +212,13 @@ export default function VmDetailsClient() {
     useVmStatusSafe(vm?.provider_id, vm?.vm_id, {
       refreshInterval: liveConnected ? 0 : 2000,
     });
-  const { data: swrVm, isValidating: swrVmValidating } = useVmStatus(
-    vm?.provider_id,
-    vm?.vm_id,
-    { refreshInterval: liveConnected ? 0 : 2000 },
-  );
+  const {
+    data: swrVm,
+    error: swrVmError,
+    isValidating: swrVmValidating,
+  } = useVmStatus(vm?.provider_id, vm?.vm_id, {
+    refreshInterval: liveConnected ? 0 : 2000,
+  });
   const { data: swrMetrics, isLoading: metricsLoading } = useVmMetricsLatest(
     vm?.provider_id,
     vm?.vm_id,
@@ -242,9 +252,11 @@ export default function VmDetailsClient() {
 
   React.useEffect(() => {
     if (!authoritativeStatusKey) return;
-    const swrSettledWithData =
-      Boolean(swrVm || swrStatus) && !swrStatusValidating && !swrVmValidating;
-    if (live.state.lifecycle || swrSettledWithData) {
+    const swrSettled =
+      Boolean(swrVm || swrStatus || swrVmError) &&
+      !swrStatusValidating &&
+      !swrVmValidating;
+    if (live.state.lifecycle || swrSettled) {
       setAuthoritativeStatusReadyKey(authoritativeStatusKey);
     }
   }, [
@@ -253,6 +265,7 @@ export default function VmDetailsClient() {
     swrStatus,
     swrStatusValidating,
     swrVm,
+    swrVmError,
     swrVmValidating,
   ]);
 
@@ -528,7 +541,7 @@ export default function VmDetailsClient() {
     : providerStatus === "unknown" && accessLifecycle
       ? accessLifecycle
       : rawProviderLifecycle || jobLifecycle || accessLifecycle || {};
-  const lifecycle = deriveVmLifecycle(lifecycleSource, {
+  const lifecycleFallback = {
     status: vm.status || "creating",
     lifecycle_stage:
       vm.lifecycle_stage ||
@@ -539,8 +552,22 @@ export default function VmDetailsClient() {
     progress: vm.progress ?? (vm.status === "creating" ? 15 : undefined),
     transitioning: vm.transitioning,
     next_poll_seconds: vm.next_poll_seconds,
+  };
+  const providerReachability =
+    liveConnected || live.state.connection === "connecting"
+      ? {}
+      : {
+          safeStatus: swrStatus,
+          statusError: swrVmError,
+          accessError: swrAccessError,
+        };
+  const lifecycle = deriveVmDisplayLifecycle({
+    lifecycle: lifecycleSource,
+    fallback: lifecycleFallback,
+    ...providerReachability,
   });
   const effectiveStatus = lifecycle.status;
+  const isOffline = effectiveStatus === "offline";
   const isStopped = effectiveStatus === "stopped";
   const isSuspended =
     effectiveStatus === "suspended" || effectiveStatus === "suspending";
@@ -548,6 +575,7 @@ export default function VmDetailsClient() {
   const isTerminated =
     effectiveStatus === "terminated" || effectiveStatus === "deleted";
   const isTransitioning = lifecycle.transitioning;
+  const providerActionDisabled = isOffline;
 
   const copyValue = async (value: string) => {
     try {
@@ -560,6 +588,10 @@ export default function VmDetailsClient() {
 
   const copySSH = async () => {
     try {
+      if (isOffline) {
+        show("Provider unreachable");
+        return;
+      }
       if (vm?.status === "terminated") {
         show("VM has been terminated by provider");
         return;
@@ -962,19 +994,22 @@ export default function VmDetailsClient() {
           {
             label: "Restart VM",
             onClick: restartVm,
-            disabled: busy || isTransitioning || isTerminated,
+            disabled:
+              busy || providerActionDisabled || isTransitioning || isTerminated,
             icon: RiRestartLine,
           },
           {
             label: "Stop VM",
             onClick: stopVm,
-            disabled: busy || isTransitioning || isTerminated,
+            disabled:
+              busy || providerActionDisabled || isTransitioning || isTerminated,
             icon: RiStopLine,
           },
           {
             label: "Suspend VM",
             onClick: suspendVm,
-            disabled: busy || isTransitioning || isTerminated,
+            disabled:
+              busy || providerActionDisabled || isTransitioning || isTerminated,
             icon: RiPauseLine,
           },
         ]
@@ -984,6 +1019,7 @@ export default function VmDetailsClient() {
             onClick: isSuspended ? resumeVm : startVm,
             disabled:
               busy ||
+              providerActionDisabled ||
               isTransitioning ||
               isTerminated ||
               (!isStopped && !isSuspended),
@@ -994,7 +1030,11 @@ export default function VmDetailsClient() {
       label: "Resize VM",
       onClick: openResize,
       disabled:
-        busy || isTransitioning || isTerminated || (!isRunning && !isStopped),
+        busy ||
+        providerActionDisabled ||
+        isTransitioning ||
+        isTerminated ||
+        (!isRunning && !isStopped),
       icon: RiExpandDiagonalLine,
     },
     {
@@ -1015,7 +1055,7 @@ export default function VmDetailsClient() {
         lifecycleStage={lifecycle.stage}
         progress={lifecycle.progress}
         transitioning={lifecycle.transitioning}
-        copySshDisabled={!sshCmd || isTerminated}
+        copySshDisabled={providerActionDisabled || !sshCmd || isTerminated}
         busy={busy}
         actions={actionItems}
         onCopySsh={copySSH}
@@ -1048,6 +1088,7 @@ export default function VmDetailsClient() {
           <VmSnapshotsPanel
             snapshots={(live.state.snapshots as any) || snapshots}
             stopped={isStopped}
+            disabled={providerActionDisabled}
             busy={snapshotBusy}
             onCreate={createVmSnapshot}
             onRestore={restoreVmSnapshot}
@@ -1099,6 +1140,11 @@ export default function VmDetailsClient() {
         busy={busy}
         limits={resizeLimits}
         phase={resizePhase}
+        disabledReason={
+          providerActionDisabled
+            ? "Provider unreachable. Retry when the VM is online."
+            : undefined
+        }
         onClose={() => setResizeOpen(false)}
         onCpuChange={(cpu) => updateResizeResources({ cpu })}
         onMemoryChange={(memory) => updateResizeResources({ memory })}

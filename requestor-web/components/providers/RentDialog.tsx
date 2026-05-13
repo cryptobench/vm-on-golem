@@ -32,6 +32,7 @@ import type { RemixiconComponentType } from "@remixicon/react";
 import { getPaymentNetworkErrorMessage } from "../../lib/chain";
 import { markCreateFailedSettled } from "../../lib/rentalLifecycle";
 import { openPaymentStream } from "../../lib/paymentStreams";
+import { vmDetailsHref } from "../../lib/routes";
 import { terminateStreamWithWallet } from "../../lib/streams";
 import { parseHumanDuration } from "../../lib/time";
 import { useWallet } from "../../context/WalletContext";
@@ -315,7 +316,7 @@ export function RentDialog({
         );
       }
       onClose();
-      router.push(`/vm?id=${encodeURIComponent(vmId)}`);
+      router.push(vmDetailsHref(vmId));
     } catch (createError: any) {
       if (pendingEntry && activeStreamPaymentAddress) {
         try {

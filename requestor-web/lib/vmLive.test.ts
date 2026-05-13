@@ -108,6 +108,16 @@ test("live reducer appends metric samples from streaming updates", () => {
   );
 });
 
+test("live reducer records degraded connection state", () => {
+  const updated = vmLiveReducer(baseState, {
+    type: "degraded",
+    error: "Live stream unavailable",
+  });
+
+  assert.equal(updated.connection, "degraded");
+  assert.equal(updated.errors.connection, "Live stream unavailable");
+});
+
 function metricSample(metric: string, value: number, timestamp: string) {
   return {
     scope: "vm",

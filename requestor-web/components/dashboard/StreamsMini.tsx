@@ -4,6 +4,7 @@ import { loadRentals, loadSettings, type Rental } from "../../lib/api";
 import { useToast } from "../ui/Toast";
 import { getPaymentNetworkErrorMessage } from "../../lib/chain";
 import { useWallet } from "../../context/WalletContext";
+import { vmDetailsHref } from "../../lib/routes";
 import { fetchStreamWithMeta } from "../../lib/streams";
 import { StreamCard } from "../streams/StreamCard";
 import { useStreamActions } from "../../hooks/useStreamActions";
@@ -87,7 +88,7 @@ export function StreamsMini({ projectId }: { projectId: string }) {
                   remaining={row.data.remaining}
                   meta={{ tokenSymbol: row.data.tokenSymbol, tokenDecimals: row.data.tokenDecimals, usdPrice: row.data.usdPrice }}
                   displayCurrency={displayCurrency}
-                  detailsHref={`/vm?id=${encodeURIComponent(row.r.vm_id)}`}
+                  detailsHref={vmDetailsHref(row.r.vm_id)}
                   onTopUp={(secs) => topUpSeconds(row.r, row.data.chain.ratePerSecond, row.data.chain.token, secs)}
                   busy={busy === row.r.vm_id}
                   actionsDisabled={!paymentReady}
