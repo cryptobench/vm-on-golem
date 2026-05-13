@@ -3,17 +3,6 @@
 import React from "react";
 import { useRouter } from "next/navigation";
 import {
-  RiAddLine,
-  RiArrowRightSLine,
-  RiCalendarLine,
-  RiCheckboxCircleLine,
-  RiCloseLine,
-  RiCpuLine,
-  RiDatabase2Line,
-  RiInformationLine,
-  RiRamLine,
-} from "@remixicon/react";
-import {
   computeEstimate,
   createVm,
   loadRentals,
@@ -28,7 +17,6 @@ import {
   type ProviderAd,
   type SSHKey,
 } from "../../lib/api";
-import type { RemixiconComponentType } from "@remixicon/react";
 import { getPaymentNetworkErrorMessage } from "../../lib/chain";
 import { markCreateFailedSettled } from "../../lib/rentalLifecycle";
 import { openPaymentStream } from "../../lib/paymentStreams";
@@ -37,37 +25,32 @@ import { terminateStreamWithWallet } from "../../lib/streams";
 import { parseHumanDuration } from "../../lib/time";
 import { useWallet } from "../../context/WalletContext";
 import { useProjects } from "../../context/ProjectsContext";
-import { Modal } from "../ui/Modal";
-import { Button } from "../ui/Button";
-import { KeyAddModal } from "../ssh/KeyAddModal";
-import { NumberStepper } from "../ui/NumberStepper";
-import { Spinner } from "../ui/Spinner";
-import { cn } from "../ui/cn";
+import { Alert } from "../ui/Alert";
+import { DialogScaffold } from "../ui/DialogScaffold";
+import { StepProgress } from "../ui/StepProgress";
 import {
   clampSpec,
   durationTotal,
   formatUsd,
   hourlyGlm,
 } from "./rent-dialog/formatting";
-import type { DurationPreset, RentSpec } from "./rent-dialog/types";
-
-const RENT_STEPS = [
-  "Choose specs",
-  "Rental duration",
-  "Access",
-  "Review",
-] as const;
-
-const DURATION_OPTIONS: Array<{
-  preset: Exclude<DurationPreset, "custom"> | "24h";
-  label: string;
-  seconds: number;
-}> = [
-  { preset: "24h", label: "24 hours", seconds: 24 * 3600 },
-  { preset: "1w", label: "7 days", seconds: 7 * 24 * 3600 },
-  { preset: "2w", label: "14 days", seconds: 14 * 24 * 3600 },
-  { preset: "30d", label: "30 days", seconds: 30 * 24 * 3600 },
-];
+import {
+  DURATION_OPTIONS,
+  RENT_STEPS,
+  type RentDurationPreset,
+} from "./rent-dialog/constants";
+import {
+  fingerprintForKey,
+  formatDurationLabel,
+  formatGlm,
+} from "./rent-dialog/dateFormatting";
+import { RentAccessStep } from "./rent-dialog/RentAccessStep";
+import { RentDurationStep } from "./rent-dialog/RentDurationStep";
+import { RentReviewStep } from "./rent-dialog/RentReviewStep";
+import { RentSpecsStep } from "./rent-dialog/RentSpecsStep";
+import { RentSummaryBar } from "./rent-dialog/RentSummaryBar";
+import { getStepDisabledReason } from "./rent-dialog/validation";
+import type { RentSpec } from "./rent-dialog/types";
 
 export function RentDialog({
   provider,
@@ -116,7 +99,7 @@ export function RentDialog({
   const [openedStreamPaymentAddress, setOpenedStreamPaymentAddress] =
     React.useState<string>("");
   const [step, setStep] = React.useState(0);
-  const [preset, setPreset] = React.useState<DurationPreset | "24h">("30d");
+  const [preset, setPreset] = React.useState<RentDurationPreset>("30d");
   const [customInput, setCustomInput] = React.useState("");
 
   React.useEffect(() => {
@@ -407,46 +390,48 @@ export function RentDialog({
   };
 
   return (
-    <Modal
-      open
+    <DialogScaffold
+      title="Rent a VM"
+      description="Configure your virtual machine and choose a rental duration."
+      closeLabel="Close rent VM dialog"
+      closeDisabled={creating}
       onClose={onClose}
-      size="6xl"
-      className="flex h-[calc(100vh-2rem)] max-h-[calc(100vh-2rem)] flex-col overflow-hidden rounded-lg"
+      sidebar={
+        <StepProgress
+          steps={RENT_STEPS}
+          currentStep={step}
+          label="Rent VM progress"
+          onStepChange={setStep}
+        />
+      }
+      footer={
+        <RentSummaryBar
+          step={step}
+          spec={spec}
+          durationLabel={displayDurationLabel}
+          estimateLabel={step === 0 ? "Est. hourly" : "Est. total"}
+          estimatePrimary={step === 0 ? hourlyUsd : depositUsd}
+          estimateSecondary={step === 0 ? hourlyGlmLine : depositGlmLine}
+          creating={creating}
+          phase={phase}
+          disabledReason={currentStepDisabledReason}
+          onCancel={onClose}
+          onBack={() => setStep((current) => Math.max(0, current - 1))}
+          onContinue={continueFlow}
+          actionDisabled={actionDisabled}
+        />
+      }
     >
-      <div className="shrink-0 px-6 pt-6 sm:px-8">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h2 className="text-xl font-semibold text-text-primary">
-              Rent a VM
-            </h2>
-            <p className="mt-1 text-sm text-text-secondary">
-              Configure your virtual machine and choose a rental duration.
-            </p>
-          </div>
-          <button
-            type="button"
-            className="flex h-10 w-10 items-center justify-center rounded-md text-text-secondary hover:bg-surface-muted hover:text-text-primary"
-            aria-label="Close rent VM dialog"
-            onClick={onClose}
-            disabled={creating}
-          >
-            <RiCloseLine className="h-5 w-5" aria-hidden />
-          </button>
-        </div>
-      </div>
-
-      <div className="mt-6 grid min-h-0 flex-1 grid-cols-1 overflow-hidden border-t border-border md:grid-cols-[13rem_minmax(0,1fr)]">
-        <StepProgress step={step} onStepChange={setStep} />
-
-        <main
-          key={step}
-          className="rent-vm-step min-h-0 min-w-0 overflow-y-auto px-6 py-6 sm:px-8"
-        >
+      <div key={step} className="rent-vm-step">
           {step === 0 ? (
-            <SpecsStep provider={provider} spec={spec} onSpecChange={setSpec} />
+            <RentSpecsStep
+              provider={provider}
+              spec={spec}
+              onSpecChange={setSpec}
+            />
           ) : null}
           {step === 1 ? (
-            <DurationStep
+            <RentDurationStep
               preset={preset}
               customInput={customInput}
               customSeconds={customSeconds}
@@ -456,7 +441,7 @@ export function RentDialog({
             />
           ) : null}
           {step === 2 ? (
-            <AccessStep
+            <RentAccessStep
               name={name}
               keys={sshKeys}
               selectedKeyId={selectedKeyId}
@@ -471,7 +456,7 @@ export function RentDialog({
             />
           ) : null}
           {step === 3 ? (
-            <ReviewStep
+            <RentReviewStep
               spec={spec}
               name={name}
               keyName={selectedKeyName}
@@ -484,631 +469,11 @@ export function RentDialog({
           ) : null}
 
           {error ? (
-            <div className="mt-5 rounded-md border border-danger bg-danger-soft px-4 py-3 text-sm text-danger">
+            <Alert tone="danger" className="mt-5">
               {error}
-            </div>
+            </Alert>
           ) : null}
-        </main>
       </div>
-
-      <BottomSummaryBar
-        step={step}
-        spec={spec}
-        durationLabel={displayDurationLabel}
-        estimateLabel={step === 0 ? "Est. hourly" : "Est. total"}
-        estimatePrimary={step === 0 ? hourlyUsd : depositUsd}
-        estimateSecondary={step === 0 ? hourlyGlmLine : depositGlmLine}
-        creating={creating}
-        phase={phase}
-        disabledReason={currentStepDisabledReason}
-        onCancel={onClose}
-        onBack={() => setStep((current) => Math.max(0, current - 1))}
-        onContinue={continueFlow}
-        actionDisabled={actionDisabled}
-      />
-    </Modal>
+    </DialogScaffold>
   );
-}
-
-function StepProgress({
-  step,
-  onStepChange,
-}: {
-  step: number;
-  onStepChange: (step: number) => void;
-}) {
-  return (
-    <nav
-      aria-label="Rent VM progress"
-      className="overflow-x-auto border-b border-border px-5 py-4 md:border-b-0 md:border-r md:py-6"
-    >
-      <ol className="flex gap-4 md:block md:space-y-5">
-        {RENT_STEPS.map((label, index) => {
-          const complete = index < step;
-          const active = index === step;
-          return (
-            <li key={label} className="flex items-center gap-3">
-              <button
-                type="button"
-                className={cn(
-                  "flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-xs font-medium transition",
-                  active && "border-primary bg-primary text-white",
-                  complete && "border-primary bg-primary-soft text-primary",
-                  !active &&
-                    !complete &&
-                    "border-border-strong bg-surface text-text-secondary",
-                )}
-                onClick={() => {
-                  if (index <= step) onStepChange(index);
-                }}
-                disabled={index > step}
-                aria-current={active ? "step" : undefined}
-              >
-                {complete ? (
-                  <RiCheckboxCircleLine className="h-4 w-4" aria-hidden />
-                ) : (
-                  index + 1
-                )}
-              </button>
-              <span
-                className={cn(
-                  "whitespace-nowrap text-sm",
-                  active || complete
-                    ? "font-medium text-text-primary"
-                    : "text-text-secondary",
-                )}
-              >
-                {label}
-              </span>
-            </li>
-          );
-        })}
-      </ol>
-    </nav>
-  );
-}
-
-function SpecsStep({
-  provider,
-  spec,
-  onSpecChange,
-}: {
-  provider: ProviderAd;
-  spec: RentSpec;
-  onSpecChange: (spec: RentSpec) => void;
-}) {
-  return (
-    <section className="mx-auto max-w-4xl">
-      <h3 className="text-lg font-semibold text-text-primary">
-        Choose your specs
-      </h3>
-      <p className="mt-2 text-sm text-text-secondary">
-        Select the resources your VM will have.
-      </p>
-      <div className="mt-8 space-y-8">
-        <SpecRow
-          icon={RiCpuLine}
-          label="vCPU (Cores)"
-          value={spec.cpu}
-          unit="vCPU"
-          min={1}
-          max={provider.resources.cpu}
-          onChange={(cpu) => onSpecChange({ ...spec, cpu })}
-        />
-        <SpecRow
-          icon={RiRamLine}
-          label="RAM (GB)"
-          value={spec.memory}
-          unit="GB"
-          min={1}
-          max={provider.resources.memory}
-          onChange={(memory) => onSpecChange({ ...spec, memory })}
-        />
-        <SpecRow
-          icon={RiDatabase2Line}
-          label="Storage (GB)"
-          value={spec.storage}
-          unit="GB"
-          min={1}
-          max={provider.resources.storage}
-          onChange={(storage) => onSpecChange({ ...spec, storage })}
-        />
-      </div>
-    </section>
-  );
-}
-
-function SpecRow({
-  icon: Icon,
-  label,
-  value,
-  unit,
-  min,
-  max,
-  onChange,
-}: {
-  icon: RemixiconComponentType;
-  label: string;
-  value: number;
-  unit: string;
-  min: number;
-  max: number;
-  onChange: (value: number) => void;
-}) {
-  const safeMax = Math.max(min, Math.floor(max || min));
-  return (
-    <div className="grid gap-4 sm:grid-cols-[11rem_10rem_minmax(12rem,1fr)] sm:items-center">
-      <div className="flex min-w-0 items-center gap-4">
-        <Icon className="h-5 w-5 shrink-0 text-text-secondary" aria-hidden />
-        <div className="min-w-0 text-sm font-semibold text-text-primary">
-          {label}
-        </div>
-      </div>
-      <div className="w-40">
-        <NumberStepper
-          label={label}
-          value={value}
-          min={min}
-          max={safeMax}
-          onChange={onChange}
-          hideLabel
-        />
-      </div>
-      <div className="flex flex-wrap items-center gap-x-1 gap-y-1 text-xs text-text-secondary">
-        <span>
-          Min {min} {unit} · Max {safeMax} {unit}
-        </span>
-        {label.startsWith("Storage") ? (
-          <span className="inline-flex items-center gap-1">
-            Storage can only be increased later
-            <RiInformationLine className="h-3.5 w-3.5" aria-hidden />
-          </span>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-function DurationStep({
-  preset,
-  customInput,
-  customSeconds,
-  monthlyUsd,
-  onPresetChange,
-  onCustomInputChange,
-}: {
-  preset: DurationPreset | "24h";
-  customInput: string;
-  customSeconds: number;
-  monthlyUsd?: number;
-  onPresetChange: (preset: DurationPreset | "24h") => void;
-  onCustomInputChange: (value: string) => void;
-}) {
-  return (
-    <section className="mx-auto max-w-4xl">
-      <h3 className="text-lg font-semibold text-text-primary">
-        Choose your rental duration
-      </h3>
-      <p className="mt-2 text-sm text-text-secondary">
-        Select a duration or enter a custom one.
-      </p>
-      <div className="mt-6 grid gap-3 sm:grid-cols-4">
-        {DURATION_OPTIONS.map((option) => (
-          <DurationCard
-            key={option.preset}
-            active={preset === option.preset}
-            label={option.label}
-            total={formatUsd(durationTotal(monthlyUsd, option.seconds) || 0)}
-            onClick={() => onPresetChange(option.preset)}
-          />
-        ))}
-      </div>
-      <label className="label mt-7">Custom duration</label>
-      <div className="relative mt-2 max-w-2xl">
-        <input
-          className="input h-10 pr-10"
-          placeholder="e.g. 2d 12h or 45h 30m"
-          value={customInput}
-          onChange={(event) => {
-            onPresetChange("custom");
-            onCustomInputChange(event.target.value);
-          }}
-        />
-        <RiInformationLine
-          className="absolute right-3 top-3 h-4 w-4 text-text-secondary"
-          aria-hidden
-        />
-      </div>
-      <div className="mt-3 text-sm text-text-secondary">
-        Enter a duration in days (d) and hours (h). Minimum is 1 hour.
-      </div>
-      {preset === "custom" && customInput.trim() && customSeconds <= 0 ? (
-        <div className="mt-2 text-sm text-danger">Enter a valid duration.</div>
-      ) : null}
-    </section>
-  );
-}
-
-function DurationCard({
-  active,
-  label,
-  total,
-  onClick,
-}: {
-  active: boolean;
-  label: string;
-  total: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      className={cn(
-        "relative flex min-h-28 flex-col items-center justify-center rounded-md border border-border bg-surface px-4 py-4 text-center transition hover:border-border-strong hover:bg-surface-muted",
-        active && "border-primary ring-1 ring-primary",
-      )}
-      onClick={onClick}
-    >
-      {active ? (
-        <RiCheckboxCircleLine
-          className="absolute right-3 top-3 h-5 w-5 text-primary"
-          aria-hidden
-        />
-      ) : null}
-      <span className="font-semibold text-text-primary">{label}</span>
-      <span className="mt-5 font-semibold text-text-primary">{total}</span>
-      <span className="mt-1 text-sm text-text-secondary">total</span>
-    </button>
-  );
-}
-
-function AccessStep({
-  name,
-  keys,
-  selectedKeyId,
-  defaultKeyId,
-  onNameChange,
-  onSshKeyChange,
-  onSshKeyAdded,
-}: {
-  name: string;
-  keys: SSHKey[];
-  selectedKeyId: string;
-  defaultKeyId: string;
-  onNameChange: (value: string) => void;
-  onSshKeyChange: (id: string, key: SSHKey) => void;
-  onSshKeyAdded: (key: SSHKey) => void;
-}) {
-  const [openAdd, setOpenAdd] = React.useState(false);
-
-  return (
-    <section className="mx-auto max-w-2xl">
-      <h3 className="text-lg font-semibold text-text-primary">Set up access</h3>
-      <p className="mt-2 text-sm text-text-secondary">
-        Choose or add an SSH key to access your VM.
-      </p>
-      <div className="mt-8">
-        <label className="label">SSH key</label>
-        <div className="relative mt-2">
-          <select
-            className="input h-10 appearance-none pr-10"
-            value={selectedKeyId}
-            disabled={!keys.length}
-            onChange={(event) => {
-              const key = keys.find((item) => item.id === event.target.value);
-              if (key) onSshKeyChange(key.id, key);
-            }}
-          >
-            {keys.length ? (
-              keys.map((key) => (
-                <option key={key.id} value={key.id}>
-                  {key.name || "Unnamed key"}
-                  {key.id === defaultKeyId ? " (default)" : ""}
-                </option>
-              ))
-            ) : (
-              <option>No SSH keys saved</option>
-            )}
-          </select>
-          <RiArrowRightSLine
-            className="pointer-events-none absolute right-3 top-3 h-4 w-4 rotate-90 text-text-secondary"
-            aria-hidden
-          />
-        </div>
-        <button
-          type="button"
-          className="mt-3 inline-flex h-10 items-center gap-2 rounded-md px-2 text-sm font-medium text-primary hover:bg-primary-soft"
-          onClick={() => setOpenAdd(true)}
-        >
-          <RiAddLine className="h-4 w-4" aria-hidden />
-          Add new SSH key
-        </button>
-        <KeyAddModal
-          open={openAdd}
-          onClose={() => setOpenAdd(false)}
-          onAdded={onSshKeyAdded}
-        />
-      </div>
-
-      <div className="mt-8">
-        <label className="label">VM name</label>
-        <input
-          className="input mt-2 h-10"
-          value={name}
-          onChange={(event) => onNameChange(event.target.value)}
-          placeholder="vm-ed1d"
-        />
-        <p className="mt-3 text-sm text-text-secondary">
-          Use a descriptive name to easily identify your VM.
-        </p>
-      </div>
-    </section>
-  );
-}
-
-function ReviewStep({
-  spec,
-  name,
-  keyName,
-  keyFingerprint,
-  durationLabel: displayDurationLabel,
-  startsAt,
-  endsAt,
-  onEdit,
-}: {
-  spec: RentSpec;
-  name: string;
-  keyName: string;
-  keyFingerprint: string;
-  durationLabel: string;
-  startsAt: Date;
-  endsAt: Date;
-  onEdit: (step: number) => void;
-}) {
-  return (
-    <section className="mx-auto max-w-4xl">
-      <h3 className="text-lg font-semibold text-text-primary">
-        Review and confirm
-      </h3>
-      <p className="mt-2 text-sm text-text-secondary">
-        Please review your configuration before creating the VM.
-      </p>
-      <div className="mt-5 overflow-hidden rounded-lg border border-border bg-surface">
-        <ReviewRow
-          label="Specs"
-          value={`${spec.cpu} vCPU · ${spec.memory} GB RAM · ${spec.storage} GB Storage`}
-          onEdit={() => onEdit(0)}
-        />
-        <ReviewRow
-          label="Duration"
-          value={`${displayDurationLabel} (${formatDate(startsAt)} - ${formatDate(endsAt)})`}
-          onEdit={() => onEdit(1)}
-        />
-        <ReviewRow
-          label="Access (SSH key)"
-          value={`${keyName} (${keyFingerprint})`}
-          onEdit={() => onEdit(2)}
-        />
-        <ReviewRow label="VM name" value={name} onEdit={() => onEdit(2)} />
-      </div>
-      <InfoCallout>
-        By creating this VM, a payment stream will be opened for the selected
-        duration.
-      </InfoCallout>
-    </section>
-  );
-}
-
-function ReviewRow({
-  label,
-  value,
-  onEdit,
-}: {
-  label: string;
-  value: string;
-  onEdit: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      className="grid min-h-14 w-full grid-cols-[8rem_minmax(0,1fr)_2rem] items-center gap-4 border-b border-border px-4 py-3 text-left text-sm last:border-b-0 hover:bg-surface-muted"
-      onClick={onEdit}
-    >
-      <span className="text-text-secondary">{label}</span>
-      <span className="truncate font-medium text-text-primary">{value}</span>
-      <RiArrowRightSLine className="h-4 w-4 justify-self-end text-text-secondary" />
-    </button>
-  );
-}
-
-function BottomSummaryBar({
-  step,
-  spec,
-  durationLabel,
-  estimateLabel,
-  estimatePrimary,
-  estimateSecondary,
-  creating,
-  phase,
-  disabledReason,
-  onCancel,
-  onBack,
-  onContinue,
-  actionDisabled,
-}: {
-  step: number;
-  spec: RentSpec;
-  durationLabel: string;
-  estimateLabel: string;
-  estimatePrimary: string;
-  estimateSecondary: string;
-  creating: boolean;
-  phase: string;
-  disabledReason: string;
-  onCancel: () => void;
-  onBack: () => void;
-  onContinue: () => void;
-  actionDisabled: boolean;
-}) {
-  return (
-    <div className="shrink-0 border-t border-border px-6 py-4 sm:px-8">
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_10rem_auto] lg:items-center">
-        <div className="min-w-0">
-          <div className="text-xs font-semibold text-text-primary">Summary</div>
-          <div className="mt-2 grid gap-3 text-xs text-text-primary sm:grid-cols-4">
-            <SummaryChip icon={RiCpuLine} label={`${spec.cpu} vCPU`} />
-            <SummaryChip icon={RiRamLine} label={`${spec.memory} GB RAM`} />
-            <SummaryChip
-              icon={RiDatabase2Line}
-              label={`${spec.storage} GB Storage`}
-            />
-            <SummaryChip
-              icon={RiCalendarLine}
-              label={step === 0 ? "-" : durationLabel}
-            />
-          </div>
-          {creating && phase ? (
-            <div className="mt-2 inline-flex items-center gap-2 text-sm text-text-secondary">
-              <Spinner className="h-4 w-4 text-primary" />
-              {phase}
-            </div>
-          ) : disabledReason ? (
-            <div className="mt-2 text-sm text-text-secondary">
-              {disabledReason}
-            </div>
-          ) : null}
-        </div>
-        <div className="border-border lg:border-l lg:pl-6">
-          <div className="text-xs font-semibold text-text-secondary">
-            {estimateLabel}
-          </div>
-          <div className="mt-1 text-xl font-semibold text-text-primary">
-            {estimatePrimary}
-          </div>
-          <div className="text-xs text-text-secondary">
-            approx. {estimateSecondary}
-          </div>
-        </div>
-        <div className="flex gap-3 lg:justify-end">
-          {step === 0 ? (
-            <Button
-              variant="secondary"
-              className="min-w-28"
-              onClick={onCancel}
-              disabled={creating}
-            >
-              Back
-            </Button>
-          ) : (
-            <Button
-              variant="secondary"
-              className="min-w-28"
-              onClick={onBack}
-              disabled={creating}
-            >
-              Back
-            </Button>
-          )}
-          <Button
-            className="min-w-36"
-            onClick={onContinue}
-            disabled={actionDisabled}
-            busy={creating}
-          >
-            {step === RENT_STEPS.length - 1 ? "Create VM" : "Continue"}
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function SummaryChip({
-  icon: Icon,
-  label,
-}: {
-  icon: RemixiconComponentType;
-  label: string;
-}) {
-  return (
-    <span className="flex min-w-0 items-center gap-2">
-      <Icon className="h-4 w-4 shrink-0 text-text-secondary" aria-hidden />
-      <span className="truncate">{label}</span>
-    </span>
-  );
-}
-
-function InfoCallout({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="mt-7 flex gap-3 rounded-md bg-primary-soft px-4 py-3 text-sm text-text-secondary">
-      <RiInformationLine
-        className="mt-0.5 h-4 w-4 shrink-0 text-primary"
-        aria-hidden
-      />
-      <span>{children}</span>
-    </div>
-  );
-}
-
-function getStepDisabledReason({
-  step,
-  name,
-  sshKey,
-  durationSeconds,
-  preset,
-  customInput,
-}: {
-  step: number;
-  name: string;
-  sshKey: string;
-  durationSeconds: number;
-  preset: DurationPreset | "24h";
-  customInput: string;
-}) {
-  if (step >= 1 && !durationSeconds) {
-    if (preset === "custom" && customInput.trim()) {
-      return "Enter a valid custom duration to continue.";
-    }
-    return "Select a valid rental duration to continue.";
-  }
-  if (step >= 2 && !name.trim()) return "Enter a VM name to continue.";
-  if (step >= 2 && !sshKey.trim())
-    return "Select or add an SSH key to continue.";
-  return "";
-}
-
-function formatGlm(value?: number) {
-  if (value == null || Number.isNaN(value)) return "0";
-  if (value >= 100) return value.toFixed(2);
-  if (value >= 1) return value.toFixed(4);
-  return value.toFixed(6);
-}
-
-function formatDurationLabel(seconds: number) {
-  if (!seconds) return "Duration required";
-  const days = Math.floor(seconds / 86400);
-  const hours = Math.floor((seconds % 86400) / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const parts = [];
-  if (days) parts.push(`${days}d`);
-  if (hours) parts.push(`${hours}h`);
-  if (minutes) parts.push(`${minutes}m`);
-  return parts.join(" ") || "1h";
-}
-
-function formatDate(date: Date) {
-  return new Intl.DateTimeFormat("en", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  }).format(date);
-}
-
-function fingerprintForKey(key: SSHKey | null, fallback: string) {
-  const source = key?.value || key?.public_key || fallback;
-  const body = source.split(" ")[1] || source;
-  if (!body) return "Unavailable";
-  const compact = body.replace(/\s+/g, "");
-  if (compact.length <= 36) return compact;
-  return `SHA256:${compact.slice(0, 24)}...${compact.slice(-12)}`;
 }

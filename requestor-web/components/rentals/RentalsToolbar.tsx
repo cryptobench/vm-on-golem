@@ -8,7 +8,7 @@ import {
   RiSearchLine,
   RiSettings3Line,
 } from "@remixicon/react";
-import { cn } from "../ui/cn";
+import { ToggleSwitch } from "../ui/ToggleSwitch";
 
 type RentalsToolbarProps = {
   query: string;
@@ -56,23 +56,11 @@ export function RentalsToolbar({
 
       <div className="flex items-center justify-between gap-3 lg:justify-end">
         <div className="inline-flex h-10 items-center gap-3 text-sm text-text-secondary">
-          <button
-            className={cn(
-              "relative h-6 w-11 rounded-full border border-border transition focus:outline-none focus:ring-2 focus:ring-primary",
-              showTerminated ? "bg-primary" : "bg-border",
-            )}
-            onClick={() => onShowTerminatedChange(!showTerminated)}
-            type="button"
-            role="switch"
-            aria-checked={showTerminated}
-          >
-            <span
-              className={cn(
-                "absolute top-0.5 h-5 w-5 rounded-full bg-surface shadow-soft transition-transform",
-                showTerminated ? "translate-x-5" : "translate-x-0.5",
-              )}
-            />
-          </button>
+          <ToggleSwitch
+            checked={showTerminated}
+            label="Show terminated VMs"
+            onChange={onShowTerminatedChange}
+          />
           <span>Show terminated VMs</span>
           <RiInformationLine
             className="h-5 w-5 text-text-secondary"

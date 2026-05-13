@@ -3,7 +3,7 @@
 import React from "react";
 import { RiTimeLine } from "@remixicon/react";
 import { humanDuration } from "../../../lib/streams";
-import { cn } from "../../ui/cn";
+import { SelectableCard } from "../../ui/SelectableCard";
 import type { DurationOption, DurationPreset } from "./types";
 
 export const DURATION_OPTIONS: DurationOption[] = [
@@ -76,16 +76,9 @@ function DurationButton({
   onClick: () => void;
 }) {
   return (
-    <button
-      type="button"
-      className={cn(
-        "flex min-h-16 flex-col items-center justify-center rounded-md border border-border bg-surface px-3 py-2 text-center transition hover:border-border-strong hover:bg-surface-muted",
-        active && "border-primary bg-primary-soft ring-1 ring-primary",
-      )}
-      onClick={onClick}
-    >
+    <SelectableCard selected={active} onClick={onClick} className="min-h-16 px-3 py-2">
       <span className="text-sm font-semibold text-text-primary">{label}</span>
       <span className="mt-1 text-xs text-text-secondary">{detail}</span>
-    </button>
+    </SelectableCard>
   );
 }
