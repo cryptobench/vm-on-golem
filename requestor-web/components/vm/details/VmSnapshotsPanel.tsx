@@ -19,6 +19,7 @@ export type VmSnapshotRow = {
 export function VmSnapshotsPanel({
   snapshots,
   stopped,
+  disabled,
   busy,
   onCreate,
   onRestore,
@@ -26,6 +27,7 @@ export function VmSnapshotsPanel({
 }: {
   snapshots: VmSnapshotRow[];
   stopped: boolean;
+  disabled?: boolean;
   busy?: string | null;
   onCreate: () => void;
   onRestore: (name: string) => void;
@@ -36,7 +38,7 @@ export function VmSnapshotsPanel({
       type="button"
       className="btn btn-secondary gap-2"
       onClick={onCreate}
-      disabled={!!busy || !stopped}
+      disabled={disabled || !!busy || !stopped}
     >
       {busy === "create" ? (
         <Spinner className="h-4 w-4" />
@@ -87,7 +89,7 @@ export function VmSnapshotsPanel({
                     label={`Restore ${snapshot.name}`}
                     className="h-8 w-8"
                     onClick={() => onRestore(snapshot.name)}
-                    disabled={!!busy || !stopped}
+                    disabled={disabled || !!busy || !stopped}
                   >
                     {busy === `restore:${snapshot.name}` ? (
                       <Spinner className="h-4 w-4" />
@@ -99,7 +101,7 @@ export function VmSnapshotsPanel({
                     label={`Delete ${snapshot.name}`}
                     className="h-8 w-8"
                     onClick={() => onDelete(snapshot.name)}
-                    disabled={!!busy}
+                    disabled={disabled || !!busy}
                   >
                     {busy === `delete:${snapshot.name}` ? (
                       <Spinner className="h-4 w-4" />

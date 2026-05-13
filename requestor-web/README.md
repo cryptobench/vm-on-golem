@@ -1,6 +1,6 @@
 Requestor Web (Next.js)
 
-Client-side only Next.js app (static export) to discover providers, open payment streams with MetaMask, and rent/manage VMs via the port-checker proxy.
+Client-side rendered Next.js app to discover providers, open payment streams with MetaMask, and rent/manage VMs via the port-checker proxy.
 
 Quick start
 
@@ -8,7 +8,7 @@ Quick start
 - cp .env.example .env.local and fill values
 - npm install
 - npm run dev
-- npm run build && npm run start (or deploy the `out/` folder as static site)
+- npm run build && npm run start
 
 Data fetching (SWR)
 

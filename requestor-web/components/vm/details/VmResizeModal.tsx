@@ -26,6 +26,7 @@ export function VmResizeModal({
   busy,
   limits,
   phase,
+  disabledReason: blockedReason,
   onClose,
   onCpuChange,
   onMemoryChange,
@@ -39,13 +40,14 @@ export function VmResizeModal({
   busy?: boolean;
   limits: ResizeResources;
   phase?: string | null;
+  disabledReason?: string;
   onClose: () => void;
   onCpuChange: (value: number) => void;
   onMemoryChange: (value: number) => void;
   onStorageChange: (value: number) => void;
   onResize: () => void;
 }) {
-  const blocked = !!transitioning;
+  const blocked = !!transitioning || !!blockedReason;
   const unchanged =
     current.cpu === next.cpu &&
     current.memory === next.memory &&
@@ -53,9 +55,10 @@ export function VmResizeModal({
   const disabled = blocked || unchanged || !!busy;
   const disabledReason = unchanged
     ? "Change at least one resource to resize."
-    : blocked
-      ? "Wait for the current VM transition to finish."
-      : undefined;
+    : blockedReason ||
+      (transitioning
+        ? "Wait for the current VM transition to finish."
+        : undefined);
 
   return (
     <Modal open={open} onClose={busy ? () => undefined : onClose} size="xl">
@@ -149,9 +152,10 @@ export function VmResizeModal({
           <span>
             {busy && phase
               ? phase
-              : blocked
-                ? "Wait for the current VM transition to finish before resizing."
-                : "Storage can only be increased."}
+              : blockedReason ||
+                (transitioning
+                  ? "Wait for the current VM transition to finish before resizing."
+                  : "Storage can only be increased.")}
           </span>
         </div>
 

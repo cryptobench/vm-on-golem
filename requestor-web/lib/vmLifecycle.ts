@@ -16,13 +16,21 @@ export type VmLifecycleView = {
   nextPollMs: number;
 };
 
-type LifecycleSource = {
+export type LifecycleSource = {
   status?: string | null;
   lifecycle_stage?: string | null;
   status_message?: string | null;
   progress?: number | null;
   transitioning?: boolean | null;
   next_poll_seconds?: number | null;
+};
+
+export type VmDisplayLifecycleInput = {
+  lifecycle?: LifecycleSource | null;
+  fallback?: LifecycleSource | null;
+  safeStatus?: unknown;
+  statusError?: unknown;
+  accessError?: unknown;
 };
 
 const TRANSITIONAL_STATUSES = new Set([
@@ -41,6 +49,7 @@ const READY_STAGES = new Set([
   "suspended",
   "deleted",
   "terminated",
+  "offline",
 ]);
 
 const STATUS_LABELS: Record<string, string> = {
@@ -57,6 +66,7 @@ const STATUS_LABELS: Record<string, string> = {
   failed: "Failed",
   deleted: "Deleted",
   terminated: "Terminated",
+  offline: "Offline",
   unknown: "Checking",
 };
 
@@ -74,6 +84,7 @@ const STATUS_MESSAGES: Record<string, string> = {
   failed: "VM creation failed",
   deleted: "VM has been deleted",
   terminated: "VM has been terminated",
+  offline: "Provider unreachable",
   unknown: "Checking provider status",
 };
 
@@ -103,8 +114,37 @@ const PROGRESS_BY_STATUS: Record<string, number> = {
   failed: 100,
   deleted: 100,
   terminated: 100,
+  offline: 0,
   unknown: 0,
 };
+
+export function deriveVmDisplayLifecycle({
+  lifecycle,
+  fallback,
+  safeStatus,
+  statusError,
+  accessError,
+}: VmDisplayLifecycleInput): VmLifecycleView {
+  if (
+    isProviderUnreachable({
+      safeStatus,
+      statusError,
+      accessError,
+      lifecycle,
+    })
+  ) {
+    return deriveVmLifecycle({
+      status: "offline",
+      lifecycle_stage: lastKnownLifecycleStage(lifecycle, fallback),
+      status_message: STATUS_MESSAGES.offline,
+      progress: 0,
+      transitioning: false,
+      next_poll_seconds: 8,
+    });
+  }
+
+  return deriveVmLifecycle(lifecycle || {}, fallback);
+}
 
 export function deriveVmLifecycle(
   source: LifecycleSource,
@@ -155,12 +195,56 @@ export function isVmTransitioning(status?: string | null) {
   return TRANSITIONAL_STATUSES.has(normalizeStatus(status));
 }
 
+export function isProviderUnreachable({
+  safeStatus,
+  statusError,
+  accessError,
+  lifecycle,
+}: Pick<
+  VmDisplayLifecycleInput,
+  "safeStatus" | "statusError" | "accessError" | "lifecycle"
+>) {
+  if (safeStatus && typeof safeStatus === "object" && "exists" in safeStatus) {
+    const safe = safeStatus as { exists?: boolean; code?: number | string | null };
+    if (safe.exists) return false;
+    return Number(safe.code || 0) !== 404;
+  }
+
+  if (isReachabilityError(statusError)) return true;
+  if (hasUsableLifecycleStatus(lifecycle)) return false;
+  return isReachabilityError(accessError);
+}
+
 function normalizeStatus(status?: string | null) {
   const normalized = String(status || "")
     .trim()
     .toLowerCase()
     .replaceAll("-", "_");
   return normalized;
+}
+
+function hasUsableLifecycleStatus(source?: LifecycleSource | null) {
+  const status = normalizeStatus(source?.status);
+  return Boolean(status && status !== "unknown" && status !== "offline");
+}
+
+function isReachabilityError(error: unknown) {
+  if (!error) return false;
+  const status = Number((error as { status?: number | string } | null)?.status || 0);
+  return status !== 404;
+}
+
+function lastKnownLifecycleStage(
+  lifecycle?: LifecycleSource | null,
+  fallback?: LifecycleSource | null,
+) {
+  return (
+    lifecycle?.lifecycle_stage ||
+    fallback?.lifecycle_stage ||
+    lifecycle?.status ||
+    fallback?.status ||
+    "offline"
+  );
 }
 
 function normalizeStage(stage?: string | null) {
@@ -178,7 +262,9 @@ function clampProgress(value: number) {
 function toneForStatus(status: string): VmLifecycleTone {
   if (status === "running") return "success";
   if (status === "error" || status === "failed") return "danger";
-  if (status === "deleted" || status === "terminated") return "danger";
+  if (status === "deleted" || status === "terminated" || status === "offline") {
+    return "danger";
+  }
   if (status === "stopped" || status === "suspended") return "neutral";
   if (TRANSITIONAL_STATUSES.has(status)) return "warning";
   return "primary";

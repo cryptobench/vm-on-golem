@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { deriveVmLifecycle } from "./vmLifecycle";
+import { deriveVmDisplayLifecycle, deriveVmLifecycle } from "./vmLifecycle";
 
 test("keeps local transitional state when provider is temporarily unknown", () => {
   const lifecycle = deriveVmLifecycle(
@@ -28,6 +28,71 @@ test("uses provider progress and message for creation jobs", () => {
   assert.equal(lifecycle.nextPollMs, 2000);
 });
 
+test("represents provider unreachable as offline", () => {
+  const lifecycle = deriveVmLifecycle({ status: "offline" });
+
+  assert.equal(lifecycle.status, "offline");
+  assert.equal(lifecycle.label, "Offline");
+  assert.equal(lifecycle.message, "Provider unreachable");
+  assert.equal(lifecycle.tone, "danger");
+  assert.equal(lifecycle.transitioning, false);
+  assert.equal(lifecycle.progress, 0);
+});
+
+test("display lifecycle uses reachable provider status", () => {
+  const lifecycle = deriveVmDisplayLifecycle({
+    lifecycle: { status: "running" },
+    fallback: { status: "stopped" },
+    safeStatus: { exists: true, data: { status: "running" } },
+  });
+
+  assert.equal(lifecycle.status, "running");
+  assert.equal(lifecycle.label, "Online");
+});
+
+test("display lifecycle maps non-404 safe status failures to offline", () => {
+  const lifecycle = deriveVmDisplayLifecycle({
+    lifecycle: { status: "running" },
+    fallback: { status: "running" },
+    safeStatus: { exists: false, code: 502, error: "Upstream error" },
+  });
+
+  assert.equal(lifecycle.status, "offline");
+  assert.equal(lifecycle.label, "Offline");
+  assert.equal(lifecycle.message, "Provider unreachable");
+  assert.equal(lifecycle.stage, "running");
+});
+
+test("display lifecycle does not classify 404 as offline", () => {
+  const lifecycle = deriveVmDisplayLifecycle({
+    fallback: { status: "running" },
+    safeStatus: { exists: false, code: 404, error: "not found" },
+  });
+
+  assert.equal(lifecycle.status, "running");
+});
+
+test("display lifecycle keeps local transitional state for unknown provider status", () => {
+  const lifecycle = deriveVmDisplayLifecycle({
+    lifecycle: { status: "unknown" },
+    fallback: { status: "creating", lifecycle_stage: "provisioning" },
+  });
+
+  assert.equal(lifecycle.status, "creating");
+  assert.equal(lifecycle.transitioning, true);
+});
+
+test("display lifecycle recovers from offline when safe status succeeds", () => {
+  const lifecycle = deriveVmDisplayLifecycle({
+    lifecycle: { status: "running" },
+    fallback: { status: "offline" },
+    safeStatus: { exists: true, data: { status: "running" } },
+  });
+
+  assert.equal(lifecycle.status, "running");
+  assert.equal(lifecycle.label, "Online");
+});
+
 test("represents every provider VM status", () => {
   for (const status of [
     "creating",
@@ -41,6 +106,7 @@ test("represents every provider VM status", () => {
     "stopped",
     "error",
     "deleted",
+    "offline",
     "unknown",
   ]) {
     const lifecycle = deriveVmLifecycle({ status });

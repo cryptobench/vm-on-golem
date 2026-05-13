@@ -4,6 +4,7 @@ import React from "react";
 import Link from "next/link";
 import { RiMoreFill, RiUbuntuLine, RiWindowsLine } from "@remixicon/react";
 import type { Rental, VMResources } from "../../lib/api";
+import { vmDetailsHref } from "../../lib/routes";
 import { humanDuration } from "../../lib/streams";
 import { DashboardStatus } from "./DashboardStatus";
 
@@ -60,7 +61,7 @@ export function ActiveVmsTable({ rentals }: { rentals: Rental[] }) {
             return (
               <tr key={rental.vm_id} className="border-b border-border last:border-b-0">
                 <td className="py-4 pr-4 font-medium text-text-primary">
-                  <Link className="hover:text-primary" href={`/vm?id=${encodeURIComponent(rental.vm_id)}`}>
+                  <Link className="hover:text-primary" href={vmDetailsHref(rental.vm_id)}>
                     {rental.name}
                   </Link>
                 </td>
