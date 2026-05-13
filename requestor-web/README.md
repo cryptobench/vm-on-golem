@@ -62,9 +62,10 @@ Env vars (public)
 
 Payment chain values can also be overridden in Settings -> Payments. Wallet
 connection, stream reads, stream creation, and top-ups all use the same payment
-chain configuration. The `make local` supervisor and Makefile web helper targets
-pass the StreamPayment, token, chain ID, RPC, and explorer values into the web
-app so local development uses the same payment metadata as the Python services.
+chain configuration. The `make local LOCAL_STACK_ARGS="--requestor-web"`
+supervisor mode and Makefile web helper targets pass the StreamPayment, token,
+chain ID, RPC, and explorer values into the web app so local development uses
+the same payment metadata as the Python services.
 
 For Ethereum Hoodi, connected wallets need Hoodi ETH for gas and Hoodi tGLM for
 stream deposits. Use Hoodi faucet links from `https://www.hoodi.dev/` for gas

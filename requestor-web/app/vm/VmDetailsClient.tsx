@@ -37,6 +37,7 @@ import {
   ensurePaidStreamCanStart,
   terminatePaidRental,
 } from "../../lib/rentalLifecycle";
+import { getRequestorRuntimeConfig } from "../../lib/runtimeConfig";
 import { buildSshCommand, copyText } from "../../lib/ssh";
 import {
   humanDuration,
@@ -130,7 +131,7 @@ export default function VmDetailsClient({ vmId: vmIdProp }: VmDetailsClientProps
 
   const spAddr = (
     loadSettings().stream_payment_address ||
-    process.env.NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS ||
+    getRequestorRuntimeConfig().streamPaymentAddress ||
     ""
   ).trim();
   const live = useVmLive(
@@ -412,7 +413,7 @@ export default function VmDetailsClient({ vmId: vmIdProp }: VmDetailsClientProps
     if (!addr && !tokenSymbol) return;
     const glm = (
       loadSettings().glm_token_address ||
-      process.env.NEXT_PUBLIC_GLM_TOKEN_ADDRESS ||
+      getRequestorRuntimeConfig().glmTokenAddress ||
       ""
     ).toLowerCase();
     const symUpper = (
@@ -984,7 +985,7 @@ export default function VmDetailsClient({ vmId: vmIdProp }: VmDetailsClientProps
   })();
   const explorerUrl = buildExplorerUrl(
     loadSettings().evm_explorer_url ||
-      process.env.NEXT_PUBLIC_EVM_EXPLORER_URL ||
+      getRequestorRuntimeConfig().evmExplorerUrl ||
       null,
     spAddr,
   );

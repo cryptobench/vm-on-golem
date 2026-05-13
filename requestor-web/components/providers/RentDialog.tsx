@@ -21,6 +21,7 @@ import { getPaymentNetworkErrorMessage } from "../../lib/chain";
 import { markCreateFailedSettled } from "../../lib/rentalLifecycle";
 import { openPaymentStream } from "../../lib/paymentStreams";
 import { vmDetailsHref } from "../../lib/routes";
+import { getRequestorRuntimeConfig } from "../../lib/runtimeConfig";
 import { terminateStreamWithWallet } from "../../lib/streams";
 import { parseHumanDuration } from "../../lib/time";
 import { useWallet } from "../../context/WalletContext";
@@ -192,7 +193,7 @@ export function RentDialog({
             contractAddress: (
               openedStreamPaymentAddress ||
               loadSettings().stream_payment_address ||
-              process.env.NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS ||
+              getRequestorRuntimeConfig().streamPaymentAddress ||
               ""
             ).trim(),
           }

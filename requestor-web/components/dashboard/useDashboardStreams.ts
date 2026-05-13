@@ -2,6 +2,7 @@
 
 import React from "react";
 import { loadSettings, type Rental } from "../../lib/api";
+import { getRequestorRuntimeConfig } from "../../lib/runtimeConfig";
 import { fetchStreamWithMeta } from "../../lib/streams";
 import type { DashboardStreamRow } from "./DashboardTables";
 
@@ -26,7 +27,7 @@ export function useDashboardStreams(rentals: Rental[]) {
     const streamRentals = rentals.filter((rental) => rental.stream_id);
     const spAddr = (
       loadSettings().stream_payment_address ||
-      process.env.NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS ||
+      getRequestorRuntimeConfig().streamPaymentAddress ||
       ""
     ).trim();
 

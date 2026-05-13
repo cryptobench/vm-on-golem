@@ -12,6 +12,7 @@ import {
   type VMResources,
 } from "./api";
 import { PAYMENT_PRICE_MAX_AGE_MS, usdToTokenAsync } from "./prices";
+import { getRequestorRuntimeConfig } from "./runtimeConfig";
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
@@ -53,10 +54,11 @@ export async function openPaymentStream({
     ads,
   );
   const cfg = loadSettings();
+  const runtimeConfig = getRequestorRuntimeConfig();
   const spAddr = (
     providerPayment?.stream_payment_address ||
     cfg.stream_payment_address ||
-    process.env.NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS ||
+    runtimeConfig.streamPaymentAddress ||
     ""
   ).trim();
   if (!spAddr) {
@@ -68,7 +70,7 @@ export async function openPaymentStream({
   const token = [
     providerPayment?.glm_token_address,
     cfg.glm_token_address,
-    process.env.NEXT_PUBLIC_GLM_TOKEN_ADDRESS,
+    runtimeConfig.glmTokenAddress,
   ]
     .map((value) => String(value || "").trim())
     .find((value) => value && value.toLowerCase() !== ZERO_ADDRESS);

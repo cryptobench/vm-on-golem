@@ -1,6 +1,7 @@
 "use client";
 
 import { loadSettings, type Settings } from "./api";
+import { getRequestorRuntimeConfig } from "./runtimeConfig";
 
 const DEFAULT_CHAIN_ID = "0x88bb0";
 const DEFAULT_CHAIN_NAME = "Ethereum Hoodi";
@@ -56,17 +57,18 @@ export function normalizeChainId(
 }
 
 export function getPaymentsChain(settings: Partial<Settings> = loadSettings()): PaymentsChain {
+  const runtimeConfig = getRequestorRuntimeConfig();
   const chainId = normalizeChainId(
-    settings.evm_chain_id || process.env.NEXT_PUBLIC_EVM_CHAIN_ID,
+    settings.evm_chain_id || runtimeConfig.evmChainId,
   );
   const rpcUrl = (
     settings.evm_rpc_url ||
-    process.env.NEXT_PUBLIC_EVM_RPC_URL ||
+    runtimeConfig.evmRpcUrl ||
     DEFAULT_RPC_URL
   ).trim();
   const explorerUrl = (
     settings.evm_explorer_url ||
-    process.env.NEXT_PUBLIC_EVM_EXPLORER_URL ||
+    runtimeConfig.evmExplorerUrl ||
     DEFAULT_EXPLORER_URL
   ).trim();
 
@@ -74,7 +76,7 @@ export function getPaymentsChain(settings: Partial<Settings> = loadSettings()): 
     chainId,
     chainName:
       settings.evm_chain_name ||
-      process.env.NEXT_PUBLIC_EVM_CHAIN_NAME ||
+      runtimeConfig.evmChainName ||
       DEFAULT_CHAIN_NAME,
     nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 },
     rpcUrls: [rpcUrl],
