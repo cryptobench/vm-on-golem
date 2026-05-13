@@ -9,9 +9,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 def normalize_discovery_backend(value: str | None) -> str:
     raw = (value or "").strip().lower().replace("_", "-")
-    if raw in {"", "arkiv", "golem-base", "golembase"}:
+    if raw in {"arkiv", "golem-base", "golembase"}:
         return "arkiv"
-    if raw in {"central", "discovery-server", "discovery"}:
+    if raw in {"", "central", "discovery-server", "discovery"}:
         return "central"
     raise ValueError("Discovery backend must be 'arkiv' or 'central'")
 
@@ -83,11 +83,11 @@ class RequestorConfig(BaseSettings):
 
     # Discovery. "Discovery" is the capability; Arkiv and central are backends.
     discovery_backend: str = Field(
-        default="arkiv",
+        default="central",
         description="Discovery backend: 'arkiv' or 'central'",
     )
     discovery_driver: str = Field(
-        default="arkiv", description="Deprecated alias for discovery_backend"
+        default="central", description="Deprecated alias for discovery_backend"
     )
     discovery_url: str = Field(
         default="http://195.201.39.101:9001",

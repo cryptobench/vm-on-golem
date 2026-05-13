@@ -34,8 +34,8 @@ Codex agents MUST NOT start long-running local servers or GUI processes in this 
 
 Discovery is a capability, not a single server. The repo supports two provider-discovery backends:
 
-- **Arkiv**: decentralized discovery through the current `golem-base-sdk` package. This is the default backend and the canonical product name in docs, user-facing UI, config, and new code.
-- **Central discovery**: the centralized FastAPI backend in `central-discovery-server/`. This was the original MVP server and remains a supported backend for self-hosted/fallback deployments.
+- **Central discovery**: the centralized FastAPI backend in `central-discovery-server/`. This is the default backend for packaged/distributed app flows.
+- **Arkiv**: decentralized discovery through the current `golem-base-sdk` package. This remains a supported optional backend and the canonical product name for the decentralized backend in docs, user-facing UI, config, and new code.
 
 Naming rules:
 

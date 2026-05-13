@@ -6,8 +6,8 @@ Discovery is the capability that lets providers publish available capacity and l
 
 | Backend | Mode | Purpose |
 | --- | --- | --- |
-| Arkiv | Decentralized Web3 database | Default backend. Providers publish advertisements as Arkiv entities, and requestors query Arkiv by annotations. |
-| Central Discovery | FastAPI + SQLite service | Legacy/self-hosted backend. Providers POST advertisements to an HTTP server, and requestors query that server. |
+| Central Discovery | FastAPI + SQLite service | Default backend. Providers POST advertisements to an HTTP server, and requestors query that server. |
+| Arkiv | Decentralized Web3 database | Optional decentralized backend. Providers publish advertisements as Arkiv entities, and requestors query Arkiv by annotations. |
 
 The old name “discovery-server” referred only to the centralized MVP backend. It is now named `central-discovery-server` to avoid implying it is the whole discovery system.
 
@@ -16,8 +16,8 @@ The old name “discovery-server” referred only to the centralized MVP backend
 Provider-side discovery publishing is selected with:
 
 ```bash
-GOLEM_PROVIDER_DISCOVERY_BACKEND=arkiv   # default
-GOLEM_PROVIDER_DISCOVERY_BACKEND=central
+GOLEM_PROVIDER_DISCOVERY_BACKEND=central # default
+GOLEM_PROVIDER_DISCOVERY_BACKEND=arkiv
 GOLEM_PROVIDER_DISCOVERY_BACKEND=both
 ```
 
@@ -35,8 +35,8 @@ Canonical provider classes:
 Requestor-side provider lookup is selected with:
 
 ```bash
-GOLEM_REQUESTOR_DISCOVERY_BACKEND=arkiv   # default
-GOLEM_REQUESTOR_DISCOVERY_BACKEND=central
+GOLEM_REQUESTOR_DISCOVERY_BACKEND=central # default
+GOLEM_REQUESTOR_DISCOVERY_BACKEND=arkiv
 ```
 
 Legacy `GOLEM_REQUESTOR_DISCOVERY_DRIVER=golem-base|central` is still accepted.

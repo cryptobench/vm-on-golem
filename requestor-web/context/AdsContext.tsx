@@ -24,7 +24,7 @@ const DEFAULTS: AdsConfig = (() => {
   const devWs = process.env.NEXT_PUBLIC_ARKIV_DEV_WS_URL || '';
   const baseRpc = isDevEnv && devRpc ? devRpc : BASE_RPC_URL;
   const baseWs = isDevEnv && devWs ? devWs : BASE_WS_URL;
-  const mode = (process.env.NEXT_PUBLIC_DISCOVERY_MODE || '').toLowerCase() === 'central' ? 'central' : 'arkiv';
+  const mode = (process.env.NEXT_PUBLIC_DISCOVERY_MODE || '').toLowerCase() === 'arkiv' ? 'arkiv' : 'central';
   return {
     mode,
     discovery_url: process.env.NEXT_PUBLIC_DISCOVERY_API_URL || 'http://195.201.39.101:9001/api/v1',
@@ -48,7 +48,7 @@ function uuid() { return Math.random().toString(36).slice(2, 10); }
 
 function normalizeAdsConfig(config: StoredAdsConfig): AdsConfig {
   const next = { ...DEFAULTS, ...config };
-  next.mode = next.mode === 'central' ? 'central' : 'arkiv';
+  next.mode = next.mode === 'arkiv' ? 'arkiv' : 'central';
   next.arkiv_rpc_url = config.arkiv_rpc_url || DEFAULTS.arkiv_rpc_url;
   next.arkiv_ws_url = config.arkiv_ws_url || DEFAULTS.arkiv_ws_url;
   return next;

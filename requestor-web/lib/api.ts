@@ -427,7 +427,7 @@ export function vmLiveUrl(
     ),
   );
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-  url.searchParams.set("proxy_source", ads.mode || "arkiv");
+  url.searchParams.set("proxy_source", ads.mode || "central");
   url.searchParams.set(
     "proxy_token",
     process.env.NEXT_PUBLIC_PORT_CHECKER_TOKEN || "",
@@ -645,7 +645,7 @@ async function providerFetch<TData>(
 
 function providerProxyHeaders(ads: AdsConfig): Record<string, string> {
   const headers: Record<string, string> = {
-    "X-Proxy-Source": ads.mode || "arkiv",
+    "X-Proxy-Source": ads.mode || "central",
     "X-Proxy-Token": process.env.NEXT_PUBLIC_PORT_CHECKER_TOKEN || "",
   };
   if (ads.arkiv_rpc_url) headers["X-Proxy-Arkiv-Rpc"] = ads.arkiv_rpc_url;

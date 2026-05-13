@@ -133,7 +133,7 @@ There are two modes. For better security, use provider-based routing.
 - Provider-based (recommended):
   - `ANY /proxy/provider/{provider_id}/{path}?port=<port>`
   - Headers:
-  - `X-Proxy-Source: central|arkiv` (defaults to `arkiv` if omitted)
+  - `X-Proxy-Source: central|arkiv` (defaults to `central` if omitted)
     - `X-Proxy-Token: <shared secret>` (required)
   - Resolves provider IP via central discovery or Arkiv and forwards over HTTP to `port` (default 80).
 
@@ -161,7 +161,7 @@ Environment variables:
 - `PORT_CHECKER_PROXY_ALLOW_DIRECT_IP` (default `false`)
  - `PORT_CHECKER_PROXY_TOKEN` (required to enable proxying)
   
-Arkiv (default; if using `source=arkiv`):
+Arkiv (optional; if using `source=arkiv`):
 - `ARKIV_RPC_URL` (required if not provided per-request)
 - `ARKIV_WS_URL` (required if not provided per-request)
  - `GOLEM_ENVIRONMENT` (optional; set `development` to prefer `dev_*` annotations)

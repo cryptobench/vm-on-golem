@@ -22,7 +22,7 @@ def _get_settings():
 
 def _active_discovery_backend(settings) -> str:
     """Return canonical discovery backend name."""
-    raw = getattr(settings, "DISCOVERY_BACKEND", "arkiv")
+    raw = getattr(settings, "DISCOVERY_BACKEND", "central")
     value = str(raw).lower().replace("_", "-")
     return value
 

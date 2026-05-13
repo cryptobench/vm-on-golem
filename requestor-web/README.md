@@ -57,7 +57,7 @@ Env vars (public)
 - NEXT_PUBLIC_EVM_CHAIN_NAME: wallet display name for the payments chain
 - NEXT_PUBLIC_EVM_RPC_URL: wallet RPC URL for the payments chain
 - NEXT_PUBLIC_EVM_EXPLORER_URL: block explorer URL for the payments chain
-- NEXT_PUBLIC_GOLEM_ENVIRONMENT: set to `development` to switch defaults to the Arkiv dev RPC/WS
+- NEXT_PUBLIC_GOLEM_ENVIRONMENT: set to `development` to switch Arkiv defaults to the dev RPC/WS when Arkiv mode is selected
 - NEXT_PUBLIC_ARKIV_DEV_RPC_URL / NEXT_PUBLIC_ARKIV_DEV_WS_URL: dev Arkiv endpoints used when environment=development
 
 Payment chain values can also be overridden in Settings -> Payments. Wallet
@@ -72,8 +72,8 @@ ETH and the tGLM minter documented in `../contracts/README.md`.
 
 Notes and alignment with backend
 
-- Discovery can use Arkiv (default decentralized backend) or central discovery.
-- By default, provider IP resolution for proxy calls uses Arkiv (`X-Proxy-Source: arkiv`) plus RPC/WS configuration. You can switch the profile to `central` in Settings to use the centralized backend.
+- Discovery uses central discovery by default. Arkiv remains available as an optional decentralized backend.
+- By default, provider IP resolution for proxy calls uses central discovery (`X-Proxy-Source: central`). You can switch the profile to `arkiv` in Settings to use Arkiv plus RPC/WS configuration.
 - Provider access goes through port-checker /proxy/provider/{provider_id}/... with X-Proxy-Token.
 - Only HTTP is proxied; SSH is shown as host:port for your terminal client.
 - Streams use the same StreamPayment ABI as requestor (createStream, streams, topUp, terminate). MetaMask signs transactions.

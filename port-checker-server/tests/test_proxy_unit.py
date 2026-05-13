@@ -48,7 +48,7 @@ def test_is_public_ip_recognizes_private_public_and_invalid():
 
 
 def test_proxy_source_is_arkiv_or_central_only():
-    assert normalize_proxy_source(None) == "arkiv"
+    assert normalize_proxy_source(None) == "central"
     assert normalize_proxy_source("arkiv") == "arkiv"
     assert normalize_proxy_source("central") == "central"
 

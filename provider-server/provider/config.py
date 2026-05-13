@@ -16,9 +16,9 @@ logger = setup_logger(__name__)
 def normalize_discovery_backend(value: str | None) -> str:
     """Normalize canonical discovery backend identifiers."""
     raw = (value or "").strip().lower().replace("_", "-")
-    if raw in {"", "arkiv"}:
+    if raw == "arkiv":
         return "arkiv"
-    if raw == "central":
+    if raw in {"", "central"}:
         return "central"
     if raw == "both":
         return "both"
@@ -187,7 +187,7 @@ class Settings(BaseSettings):
     # Discovery settings. "Discovery" is the capability; Arkiv and central are backends.
     DISCOVERY_URL: str = "http://195.201.39.101:9001"
     DISCOVERY_BACKEND: str = Field(
-        default="arkiv",
+        default="central",
         description="Discovery backend: 'arkiv', 'central', or 'both'",
     )
     DISCOVERY_ADVERTISEMENT_INTERVAL: int = 240  # seconds
