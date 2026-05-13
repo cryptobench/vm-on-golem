@@ -4,11 +4,11 @@ import { useRouter } from "next/navigation";
 import { loadSettings, saveSettings, type SSHKey } from "../../lib/api";
 import { useAds } from "../../context/AdsContext";
 import { KeyPicker } from "../../components/ssh/KeyPicker";
-import { Button } from "../../components/ui/Button";
-import { FormField, SelectInput, TextInput } from "../../components/ui/FormField";
-import { PageHeader } from "../../components/ui/PageHeader";
-import { Skeleton } from "../../components/ui/Skeleton";
-import { Tabs, type TabItem } from "../../components/ui/Tabs";
+import { Button } from "@golem/ui";
+import { FormField, SelectInput, TextInput } from "@golem/ui";
+import { PageHeader } from "@golem/ui";
+import { Skeleton } from "@golem/ui";
+import { Tabs, type TabItem } from "@golem/ui";
 
 type SettingsTab = "connections" | "payments" | "ssh";
 

@@ -9,8 +9,6 @@ __pycache__/
 # Distribution / packaging
 .Python
 build/
-!provider-gui/build/
-!provider-gui/build/**
 develop-eggs/
 dist/
 downloads/
@@ -165,12 +163,10 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
-# Electron builder outputs and embedded CLI staging
-provider-gui/dist/
-provider-gui/build/*.log
-provider-gui/resources/cli/
-## Do not track GUI dependencies (prevents cross-OS breakage in CI)
-provider-gui/node_modules/
+# Frontend workspace dependencies and build outputs
+node_modules/
+apps/provider-desktop/dist/
+apps/provider-desktop/src-tauri/binaries/
 requestor-gui/node_modules/
 python-sdk/
 typescript-sdk/

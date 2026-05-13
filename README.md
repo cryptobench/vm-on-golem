@@ -156,7 +156,7 @@ golem-provider pricing show
 
 ```
 make install   # install Poetry deps
-make local     # run the full local stack: discovery, provider, proxy, APIs, web, provider GUI
+make local     # run the full local stack: discovery, provider, proxy, APIs, web
 make test      # run tests
 ```
 
@@ -169,7 +169,7 @@ make local
 ```
 
 This starts local central discovery, the provider API, port-checker proxy,
-requestor API, requestor web UI, and provider GUI with one supervisor process.
+requestor API, and requestor web UI with one supervisor process.
 It uses central discovery intentionally so local provider/requestor/web checks do
 not depend on Arkiv discovery RPC/WS availability. Arkiv remains the default
 product discovery backend outside this deterministic local workflow.

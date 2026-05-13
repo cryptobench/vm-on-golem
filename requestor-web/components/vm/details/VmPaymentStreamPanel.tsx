@@ -4,7 +4,7 @@ import React from "react";
 import { RiArrowDownSLine, RiExternalLinkLine } from "@remixicon/react";
 import type { ChainStream } from "../../../lib/streams";
 import { humanDuration } from "../../../lib/streams";
-import { Button } from "../../ui/Button";
+import { Button } from "@golem/ui";
 import {
   CopyInline,
   DetailPanel,

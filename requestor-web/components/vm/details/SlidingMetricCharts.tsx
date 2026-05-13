@@ -12,7 +12,7 @@ import {
   YAxis,
   type TooltipProps,
 } from "recharts";
-import { cn } from "../../ui/cn";
+import { cn } from "@golem/ui";
 import {
   getAppendOnlySlideChange,
   type MetricChartRow,

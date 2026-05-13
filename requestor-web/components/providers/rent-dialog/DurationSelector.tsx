@@ -3,7 +3,7 @@
 import React from "react";
 import { RiTimeLine } from "@remixicon/react";
 import { humanDuration } from "../../../lib/streams";
-import { SelectableCard } from "../../ui/SelectableCard";
+import { SelectableCard } from "@golem/ui";
 import type { DurationOption, DurationPreset } from "./types";
 
 export const DURATION_OPTIONS: DurationOption[] = [

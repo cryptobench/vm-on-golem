@@ -2,7 +2,7 @@
 
 import React from "react";
 import { humanDuration } from "../../lib/streams";
-import { cn } from "../ui/cn";
+import { cn } from "@golem/ui";
 import { remainingSeconds, streamRunwayPercent, type StreamRow } from "./streamModel";
 
 export function StreamRunway({

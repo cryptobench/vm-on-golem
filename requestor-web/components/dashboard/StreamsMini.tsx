@@ -1,7 +1,7 @@
 "use client";
 import React from "react";
 import { loadRentals, loadSettings, type Rental } from "../../lib/api";
-import { useToast } from "../ui/Toast";
+import { useToast } from "@golem/ui";
 import { getPaymentNetworkErrorMessage } from "../../lib/chain";
 import { useWallet } from "../../context/WalletContext";
 import { vmDetailsHref } from "../../lib/routes";

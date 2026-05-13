@@ -2,7 +2,7 @@
 
 import React from "react";
 import { RiInformationLine } from "@remixicon/react";
-import { SelectableCard } from "../../ui/SelectableCard";
+import { SelectableCard } from "@golem/ui";
 import { DURATION_OPTIONS, type RentDurationPreset } from "./constants";
 import { durationTotal, formatUsd } from "./formatting";
 import { RentStepSection } from "./RentStepSection";

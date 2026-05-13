@@ -1,5 +1,5 @@
 "use client";
-import { useToast } from "../components/ui/Toast";
+import { useToast } from "@golem/ui";
 import { buildSshCommand, copyText } from "../lib/ssh";
 import { vmAccess, type Rental } from "../lib/api";
 import { useAds } from "../context/AdsContext";

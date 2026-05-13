@@ -1,10 +1,10 @@
 "use client";
 import React from "react";
-import { Spinner } from "../ui/Spinner";
-import { Skeleton } from "../ui/Skeleton";
+import { Spinner } from "@golem/ui";
+import { Skeleton } from "@golem/ui";
 import { useAds } from "../../context/AdsContext";
 import { fetchAllProviders, computePriceRange, computeEstimate, loadSettings, saveSettings, type SSHKey, type ProviderAd } from "../../lib/api";
-import { Modal } from "../ui/Modal";
+import { Modal } from "@golem/ui";
 import { ProviderRow } from "../providers/ProviderRow";
 import { RentDialog as RentDialogExt } from "../providers/RentDialog";
 import { KeyPicker } from "../ssh/KeyPicker";

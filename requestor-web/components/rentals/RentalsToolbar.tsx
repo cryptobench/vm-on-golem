@@ -8,7 +8,7 @@ import {
   RiSearchLine,
   RiSettings3Line,
 } from "@remixicon/react";
-import { ToggleSwitch } from "../ui/ToggleSwitch";
+import { ToggleSwitch } from "@golem/ui";
 
 type RentalsToolbarProps = {
   query: string;

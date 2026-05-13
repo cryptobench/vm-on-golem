@@ -45,3 +45,4 @@ def test_cli_start_help_options_present():
     assert result.exit_code == 0
     assert "--no-verify-port" in result.stdout
     assert "--network" in result.stdout
+    assert "--gui" not in result.stdout

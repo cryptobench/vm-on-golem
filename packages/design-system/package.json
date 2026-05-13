@@ -1,0 +1,19 @@
+{
+  "name": "@golem/design-system",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./tokens/index.ts",
+    "./tailwind-preset": "./tailwind-preset.ts",
+    "./tokens": "./tokens/index.ts",
+    "./tokens/theme.css": "./tokens/theme.css"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.10",
+    "typescript": "^5.4.5"
+  }
+}

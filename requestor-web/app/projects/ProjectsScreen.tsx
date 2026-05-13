@@ -1,10 +1,10 @@
 "use client";
 import React from "react";
 import { useProjects } from "../../context/ProjectsContext";
-import { Button } from "../../components/ui/Button";
-import { FormField, TextInput } from "../../components/ui/FormField";
-import { PageHeader } from "../../components/ui/PageHeader";
-import { cn } from "../../components/ui/cn";
+import { Button } from "@golem/ui";
+import { FormField, TextInput } from "@golem/ui";
+import { PageHeader } from "@golem/ui";
+import { cn } from "@golem/ui";
 
 export default function ProjectsPage() {
   const { projects, activeId, setActive, addProject, removeProject, renameProject } = useProjects();

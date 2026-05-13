@@ -11,7 +11,9 @@ This document is the **architectural baseline** for the repo. Some sections desc
 - `requestor-server/` (Python 3.11): Requestor API/CLI (`requestor`, entry: `golem`).
 - `port-checker-server/` (Python 3.10+): FastAPI utility (`port_checker`, entry: `port-checker`).
 - `requestor-web/`: Next.js + Tailwind + ethers.js web app for requestors.
-- `provider-gui/`, `requestor-gui/`: Electron desktop shells for provider/requestor.
+- `apps/provider-desktop/`: Tauri + Vite + React desktop shell for providers.
+- `packages/design-system/`: shared Golem design tokens, Tailwind preset, and theme CSS.
+- `packages/ui/`: shared reusable React UI components.
 - `scripts/`: Utilities (e.g., `scripts/bump_versions.py`).
 - Root `Makefile`, top-level docs, and per-service `tests/`.
 
@@ -19,14 +21,14 @@ This document is the **architectural baseline** for the repo. Some sections desc
 
 - `make install` - Install Poetry dependencies for central discovery, port-checker, provider, requestor, and shared packages.
 - `make test` - Run pytest for the four core Python services.
-- `make local` - Preferred full-stack local workflow on ARM macOS: starts local central discovery, provider, port-checker proxy, requestor API, requestor web, and provider GUI with one supervisor process. This intentionally uses local central discovery for deterministic development; Arkiv remains the canonical product default outside this local workflow.
+- `make local` - Preferred full-stack local workflow on ARM macOS: starts local central discovery, provider, port-checker proxy, requestor API, and requestor web with one supervisor process. This intentionally uses local central discovery for deterministic development; Arkiv remains the canonical product default outside this local workflow.
 - `make start` - Start provider CLI, port-checker proxy, and requestor web (development mode).
 - Per-service: `poetry -C <svc> run pytest`, `GOLEM_ENVIRONMENT=development poetry -C provider-server run golem-provider start`, `poetry -C central-discovery-server run golem-central-discovery`, `poetry -C requestor-server run golem server api --reload`.
-- GUIs: in `provider-gui/` or `requestor-gui/`: `npm install && npm start`.
+- Provider desktop: `npm install && npm --workspace @golem/provider-desktop run dev` for local desktop development; `npm --workspace @golem/provider-desktop run tauri:build` for installers.
 
 ## Agent Server Policy
 
-Codex agents MUST NOT start long-running local servers or GUI processes in this repository unless the user explicitly asks for it in the current turn. This includes `make local`, `make start`, `npm run dev`, `npm start`, `next dev`, Electron apps, Uvicorn/FastAPI servers, provider/requestor CLIs, central discovery, and port-checker. For UI work, prefer static checks, unit/type tests, code inspection, or ask the user to run the app and provide a URL/screenshot.
+Codex agents MUST NOT start long-running local servers or GUI processes in this repository unless the user explicitly asks for it in the current turn. This includes `make local`, `make start`, `npm run dev`, `npm start`, `next dev`, Tauri apps, Uvicorn/FastAPI servers, provider/requestor CLIs, central discovery, and port-checker. For UI work, prefer static checks, unit/type tests, code inspection, or ask the user to run the app and provide a URL/screenshot.
 
 ## Discovery Naming & Backends
 
@@ -217,9 +219,20 @@ DISCOVERY_URL = "http://discovery.golem.network:9001"
 
 - Python: format with Black (88 cols), import order via isort (profile `black`), type‑hint new/changed code. 4‑space indents. Names: `snake_case` (functions), `PascalCase` (classes), `lower_snake` (modules).
 - Lint/type‑check (service‑local): `poetry -C <svc> run black . && poetry -C <svc> run isort . && poetry -C <svc> run pylint <pkg> && poetry -C <svc> run mypy <pkg>`.
-- JS (Electron): follow existing patterns; keep modules small and pure where possible.
+- JS/TS: follow existing patterns; keep modules small and pure where possible.
 
 ## Frontend Standards
+
+### Shared UI Architecture
+
+- Use the repo-local `golem-ui-design` skill for UI design, frontend implementation, component extraction, provider desktop UI, and requestor web UI work.
+- Reusable UI components live in `packages/ui`. New UI must first look for an existing generalized component before creating one.
+- `packages/ui/COMPONENTS.md` is the source-of-truth shared component inventory. Update it in the same change whenever a shared component is added, renamed, removed, or materially changes purpose.
+- Feature-specific flows are not shared components, even when implemented as React components. For example, `Dialog` is a reusable component; `RentVmDialog` is a requestor feature composition that uses `Dialog`.
+- If a feature needs a new visual pattern, create or extend a generalized component in `packages/ui`, then compose it inside the feature.
+- Shared components must not import Next.js, Tauri, provider APIs, requestor APIs, wallet logic, generated clients, or feature/domain modules.
+- Shared styling comes from `packages/design-system` tokens and the shared Tailwind preset. Do not add app-local styling tokens when a shared token should exist.
+- When moving existing UI into shared packages, use `mv` for file relocation and then apply small patches for imports/package boundaries.
 
 ### requestor-web (Next.js + Tailwind)
 
@@ -242,10 +255,11 @@ DISCOVERY_URL = "http://discovery.golem.network:9001"
 - Spinners in buttons: keep compact (`h-4 w-4`) and place inline before the label. Keep the label visible (e.g., "Creating…"). Ensure sufficient contrast (`text-white` on primary).
 - Action groups: align horizontal button groups to the same height; vertical stacks use the same button height for all items.
 
-### Electron GUIs (provider-gui, requestor-gui)
+### Provider Desktop (Tauri + Vite + React)
 
-- Renderer never talks to disk, chain RPC, or local CLI processes directly. All such access goes through main‑process services exposed via small, focused IPC handlers.
-- One IPC handler module per capability. No catch‑all `ipc.js` accumulating thirty unrelated channels.
+- The provider desktop frontend uses `@golem/ui` and `@golem/design-system`; it must not define provider-only copies of shared primitives.
+- Renderer code never talks to disk, chain RPC, or local CLI processes directly. All such access goes through focused Tauri commands.
+- Tauri commands own provider sidecar lifecycle and expose small command surfaces such as start, stop, status, and API base URL.
 - Keep modules small and pure where possible.
 
 ## Testing Guidelines

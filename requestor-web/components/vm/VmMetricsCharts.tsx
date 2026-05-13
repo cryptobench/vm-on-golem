@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Skeleton } from "../ui/Skeleton";
+import { Skeleton } from "@golem/ui";
 import type { VmMonitoringHistory } from "../../lib/api";
 import { DetailPanel, PanelTitle } from "./details/VmDetailPrimitives";
 import {
@@ -10,7 +10,7 @@ import {
   metricRanges,
   type MetricRange,
 } from "./details/metrics";
-import { cn } from "../ui/cn";
+import { cn } from "@golem/ui";
 import { SlidingMetricLineChart } from "./details/SlidingMetricCharts";
 
 type VmMetricsChartsProps = {

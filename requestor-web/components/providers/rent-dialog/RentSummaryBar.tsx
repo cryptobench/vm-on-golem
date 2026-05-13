@@ -7,9 +7,9 @@ import {
   RiDatabase2Line,
   RiRamLine,
 } from "@remixicon/react";
-import { Button } from "../../ui/Button";
-import { Spinner } from "../../ui/Spinner";
-import { SummaryChip } from "../../ui/SummaryChip";
+import { Button } from "@golem/ui";
+import { Spinner } from "@golem/ui";
+import { SummaryChip } from "@golem/ui";
 import { RENT_STEPS } from "./constants";
 import type { RentSpec } from "./types";
 

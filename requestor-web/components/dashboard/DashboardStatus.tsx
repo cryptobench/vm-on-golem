@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Spinner } from "../ui/Spinner";
+import { Spinner } from "@golem/ui";
 import { deriveVmLifecycle } from "../../lib/vmLifecycle";
 
 export function DashboardStatus({ status }: { status?: string | null }) {

@@ -5,7 +5,7 @@ import { Card, Tracker } from "@tremor/react";
 import { RiCheckboxCircleFill, RiErrorWarningFill, RiCloseCircleFill, RiTimeFill } from "@remixicon/react";
 import { humanDuration } from "../../lib/streams";
 import { parseHumanDuration } from "../../lib/time";
-import { Spinner } from "../ui/Spinner";
+import { Spinner } from "@golem/ui";
 
 export type StreamMeta = {
   tokenSymbol: string;

@@ -28,7 +28,7 @@ import {
   type Rental,
 } from "../../lib/api";
 import { useAds } from "../../context/AdsContext";
-import { useToast } from "../../components/ui/Toast";
+import { useToast } from "@golem/ui";
 import { useStreamActions } from "../../hooks/useStreamActions";
 import { useVmLive } from "../../hooks/useVmLive";
 import { useWallet } from "../../context/WalletContext";
@@ -57,7 +57,7 @@ import {
   useVmMetricsLatest,
   useVmMetricsHistory,
 } from "../../hooks/useApiSWR";
-import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
+import { ConfirmDialog } from "@golem/ui";
 import { VmMetricsCharts } from "../../components/vm/VmMetricsCharts";
 import {
   VmDetailsHeader,

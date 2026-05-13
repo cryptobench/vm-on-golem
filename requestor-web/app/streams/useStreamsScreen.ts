@@ -13,7 +13,7 @@ import {
 import { getPaymentNetworkErrorMessage } from "../../lib/chain";
 import { getPriceUSD, onPricesUpdated } from "../../lib/prices";
 import { fetchStreamWithMeta } from "../../lib/streams";
-import { useToast } from "../../components/ui/Toast";
+import { useToast } from "@golem/ui";
 import {
   isEndedStream,
   type DisplayCurrency,

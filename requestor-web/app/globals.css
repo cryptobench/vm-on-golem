@@ -1,4 +1,5 @@
-@import "../../design-system/tokens/theme.css";
+@import "@golem/design-system/tokens/theme.css";
+@import "@golem/ui/styles.css";
 
 @tailwind base;
 @tailwind components;
@@ -22,43 +23,6 @@
 }
 
 @layer components {
-  .card {
-    @apply bg-surface rounded-lg shadow-sm ring-1 ring-border;
-  }
-  .card-body {
-    @apply p-4 sm:p-6;
-  }
-  /* Standardize button height across the app for consistent horizontal/vertical alignment */
-  .btn {
-    @apply inline-flex h-10 items-center justify-center rounded-md px-3 text-sm font-medium ring-1 ring-inset transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-55 disabled:shadow-none;
-  }
-  .btn-primary {
-    @apply bg-primary text-white shadow-soft ring-primary hover:bg-primary-hover;
-  }
-
-  /* Secondary: match Rent button subtle style */
-  .btn-secondary {
-    @apply bg-surface text-text-secondary ring-border hover:bg-surface-muted;
-  }
-  .btn-danger {
-    @apply bg-danger text-white ring-danger hover:opacity-90;
-  }
-  .input {
-    @apply block w-full rounded-md border-border shadow-sm focus:border-primary focus:ring-primary sm:text-sm;
-  }
-  .label {
-    @apply block text-sm font-medium text-text-secondary;
-  }
-  .table {
-    @apply min-w-full divide-y divide-border;
-  }
-  .th {
-    @apply px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wider text-text-muted;
-  }
-  .td {
-    @apply px-3 py-2 text-[13px] text-text-primary;
-  }
-
   .providers-page {
     grid-template-columns: minmax(0, 1fr);
     gap: 0;

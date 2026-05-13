@@ -3,9 +3,9 @@
 import React from "react";
 import { RiArrowDownSLine, RiWallet3Line } from "@remixicon/react";
 import { useWallet } from "../../context/WalletContext";
-import { useToast } from "../ui/Toast";
-import { Spinner } from "../ui/Spinner";
-import { cn } from "../ui/cn";
+import { useToast } from "@golem/ui";
+import { Spinner } from "@golem/ui";
+import { cn } from "@golem/ui";
 
 function shortAccount(account: string | null) {
   return account

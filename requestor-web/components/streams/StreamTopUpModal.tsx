@@ -4,10 +4,10 @@ import React from "react";
 import { RiCloseLine, RiTimeLine } from "@remixicon/react";
 import { humanDuration } from "../../lib/streams";
 import { parseHumanDuration } from "../../lib/time";
-import { Button } from "../ui/Button";
-import { Callout } from "../ui/Callout";
-import { Modal } from "../ui/Modal";
-import { SelectableCard } from "../ui/SelectableCard";
+import { Button } from "@golem/ui";
+import { Callout } from "@golem/ui";
+import { Modal } from "@golem/ui";
+import { SelectableCard } from "@golem/ui";
 import { formatTokenValue } from "./CurrencyCell";
 import {
   formatFiat,

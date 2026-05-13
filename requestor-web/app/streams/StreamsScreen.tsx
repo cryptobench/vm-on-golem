@@ -5,8 +5,8 @@ import { StreamsSkeleton } from "../../components/streams/StreamsSkeleton";
 import { StreamsSummary } from "../../components/streams/StreamsSummary";
 import { StreamsTable } from "../../components/streams/StreamsTable";
 import { StreamsToolbar } from "../../components/streams/StreamsToolbar";
-import { Alert } from "../../components/ui/Alert";
-import { PageHeader } from "../../components/ui/PageHeader";
+import { Alert } from "@golem/ui";
+import { PageHeader } from "@golem/ui";
 import { useStreamsScreen } from "./useStreamsScreen";
 
 export default function StreamsPage() {

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { RiExternalLinkLine } from "@remixicon/react";
 import { vmDetailsHref } from "../../lib/routes";
 import { CopyValue } from "../rentals/CopyValue";
-import { Button } from "../ui/Button";
+import { Button } from "@golem/ui";
 import { CurrencyCell } from "./CurrencyCell";
 import { StreamRunway } from "./StreamRunway";
 import { StreamTopUpModal } from "./StreamTopUpModal";

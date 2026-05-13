@@ -7,7 +7,7 @@ import {
   RiExternalLinkLine,
   RiRestartLine,
 } from "@remixicon/react";
-import { Spinner } from "../../ui/Spinner";
+import { Spinner } from "@golem/ui";
 import { DetailPanel, IconButton, PanelTitle } from "./VmDetailPrimitives";
 
 export type VmSnapshotRow = {

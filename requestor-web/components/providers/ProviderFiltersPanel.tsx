@@ -8,7 +8,7 @@ import {
   RiSearchLine,
 } from "@remixicon/react";
 import { countryFlagEmoji, countryFullName } from "../../lib/intl";
-import { Spinner } from "../ui/Spinner";
+import { Spinner } from "@golem/ui";
 
 export type ProviderFilters = {
   search: string;

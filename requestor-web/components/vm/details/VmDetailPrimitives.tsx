@@ -2,7 +2,7 @@
 
 import React from "react";
 import { RiFileCopyLine, RiInformationLine } from "@remixicon/react";
-import { cn } from "../../ui/cn";
+import { cn } from "@golem/ui";
 
 type DetailPanelProps = {
   children: React.ReactNode;

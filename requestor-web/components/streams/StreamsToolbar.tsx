@@ -8,7 +8,7 @@ import {
   RiMoneyDollarCircleLine,
 } from "@remixicon/react";
 import Link from "next/link";
-import { Spinner } from "../ui/Spinner";
+import { Spinner } from "@golem/ui";
 import type { DisplayCurrency } from "./streamModel";
 
 type StreamsToolbarProps = {

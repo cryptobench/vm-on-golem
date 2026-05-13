@@ -2,8 +2,8 @@
 import React from "react";
 import { RiArrowDownSLine, RiFolderLine } from "@remixicon/react";
 import { useProjects } from "../../context/ProjectsContext";
-import { Modal } from "../ui/Modal";
-import { cn } from "../ui/cn";
+import { Modal } from "@golem/ui";
+import { cn } from "@golem/ui";
 
 export function ProjectSwitcher({ className }: { className?: string }) {
   const { projects, activeId, setActive, addProject } = useProjects();

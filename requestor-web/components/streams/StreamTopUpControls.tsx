@@ -4,8 +4,8 @@ import React from "react";
 import { Menu, Transition } from "@headlessui/react";
 import { RiArrowDownSLine } from "@remixicon/react";
 import { parseHumanDuration } from "../../lib/time";
-import { cn } from "../ui/cn";
-import { Spinner } from "../ui/Spinner";
+import { cn } from "@golem/ui";
+import { Spinner } from "@golem/ui";
 
 type StreamTopUpControlsProps = {
   busy: boolean;
