@@ -4,8 +4,8 @@ import { RentalsEmptyState } from "../../components/rentals/RentalsEmptyState";
 import { RentalsToolbar } from "../../components/rentals/RentalsToolbar";
 import { RentalsTable } from "../../components/rentals/RentalsTable";
 import { RentalsTableSkeleton } from "../../components/rentals/RentalsTableSkeleton";
-import { Alert } from "../../components/ui/Alert";
-import { PageHeader } from "../../components/ui/PageHeader";
+import { Alert } from "@golem/ui";
+import { PageHeader } from "@golem/ui";
 import { useRentalsScreen } from "./useRentalsScreen";
 
 export default function RentalsPage() {

@@ -3,7 +3,7 @@ import React from "react";
 import { RiAddLine, RiCheckboxCircleLine, RiKey2Line } from "@remixicon/react";
 import { loadSettings, saveSettings, type SSHKey } from "../../lib/api";
 import { KeyAddModal } from "./KeyAddModal";
-import { cn } from "../ui/cn";
+import { cn } from "@golem/ui";
 
 type KeyPickerLayout = "grid" | "carousel" | "list";
 

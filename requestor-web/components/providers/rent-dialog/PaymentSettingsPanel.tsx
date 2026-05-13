@@ -9,8 +9,8 @@ import {
   RiWallet3Line,
 } from "@remixicon/react";
 import type { WalletNetworkStatus } from "../../../context/WalletContext";
-import { Spinner } from "../../ui/Spinner";
-import { cn } from "../../ui/cn";
+import { Spinner } from "@golem/ui";
+import { cn } from "@golem/ui";
 import { SectionCard } from "./SectionCard";
 
 export function PaymentSettingsPanel({

@@ -7,9 +7,10 @@ import {
   RiMoreFill,
   RiTerminalLine,
 } from "@remixicon/react";
-import { StatusBadge } from "../../ui/StatusBadge";
-import { Spinner } from "../../ui/Spinner";
-import { cn } from "../../ui/cn";
+import { StatusBadge } from "@golem/ui";
+import { Spinner } from "@golem/ui";
+import { cn } from "@golem/ui";
+import { deriveVmLifecycle } from "../../../lib/vmLifecycle";
 
 export type VmAction = {
   label: string;
@@ -42,6 +43,7 @@ export function VmDetailsHeader({
   actions: VmAction[];
   onCopySsh: () => void;
 }) {
+  const lifecycle = deriveVmLifecycle({ status, transitioning });
   const showProgress = Boolean(transitioning && progress != null);
   const progressValue = Math.max(0, Math.min(100, Math.round(progress || 0)));
   const visibleStatusMessage =
@@ -67,7 +69,11 @@ export function VmDetailsHeader({
           <h1 className="truncate text-2xl font-semibold text-text-primary">
             {name}
           </h1>
-          <StatusBadge status={status} />
+          <StatusBadge
+            label={lifecycle.label}
+            tone={lifecycle.tone}
+            busy={lifecycle.transitioning}
+          />
         </div>
         <div className="mt-2 flex items-center gap-2 text-sm text-text-secondary">
           {visibleStatusMessage ? <span>{visibleStatusMessage}</span> : null}

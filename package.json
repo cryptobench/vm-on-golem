@@ -1,0 +1,16 @@
+{
+  "name": "golem-vm-monorepo",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*",
+    "requestor-web"
+  ],
+  "scripts": {
+    "build:requestor-web": "npm --workspace requestor-web run build",
+    "build:provider-desktop": "npm --workspace @golem/provider-desktop run build",
+    "dev:provider-desktop": "npm --workspace @golem/provider-desktop run dev",
+    "tauri:build:provider-desktop": "npm --workspace @golem/provider-desktop run tauri:build",
+    "typecheck": "npm --workspaces --if-present run typecheck"
+  }
+}

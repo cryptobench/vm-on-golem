@@ -2,7 +2,7 @@
 
 import React from "react";
 import { RiAddLine } from "@remixicon/react";
-import { cn } from "../ui/cn";
+import { cn } from "@golem/ui";
 
 type RentVmButtonProps = {
   className?: string;

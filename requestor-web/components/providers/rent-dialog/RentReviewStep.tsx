@@ -1,8 +1,8 @@
 "use client";
 
 import React from "react";
-import { Callout } from "../../ui/Callout";
-import { ReviewList, ReviewListItem } from "../../ui/ReviewList";
+import { Callout } from "@golem/ui";
+import { ReviewList, ReviewListItem } from "@golem/ui";
 import type { RentSpec } from "./types";
 import { formatDate } from "./dateFormatting";
 import { RentStepSection } from "./RentStepSection";

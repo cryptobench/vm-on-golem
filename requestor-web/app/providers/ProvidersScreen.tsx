@@ -2,13 +2,13 @@
 
 import React from "react";
 import { RiFilter3Line } from "@remixicon/react";
-import { Alert } from "../../components/ui/Alert";
-import { Button } from "../../components/ui/Button";
-import { PageHeader } from "../../components/ui/PageHeader";
-import { Pagination } from "../../components/ui/Pagination";
-import { Spinner } from "../../components/ui/Spinner";
-import { TableSkeleton } from "../../components/ui/Skeleton";
-import { ToggleSwitch } from "../../components/ui/ToggleSwitch";
+import { Alert } from "@golem/ui";
+import { Button } from "@golem/ui";
+import { PageHeader } from "@golem/ui";
+import { Pagination } from "@golem/ui";
+import { Spinner } from "@golem/ui";
+import { TableSkeleton } from "@golem/ui";
+import { ToggleSwitch } from "@golem/ui";
 import { RentDialog } from "../../components/providers/RentDialog";
 import {
   ProviderFiltersPanel,

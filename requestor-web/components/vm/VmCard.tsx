@@ -3,12 +3,11 @@ import React from "react";
 import { useRouter } from "next/navigation";
 import type { Rental } from "../../lib/api";
 import { vmDetailsHref } from "../../lib/routes";
-import { Spinner } from "../ui/Spinner";
-import { StatusBadge } from "../ui/StatusBadge";
+import { Spinner } from "@golem/ui";
+import { StatusBadge } from "@golem/ui";
 import { RiCpuLine, RiStackLine, RiHardDrive2Line } from "@remixicon/react";
 import { humanDuration } from "../../lib/streams";
-
-// StatusBadge imported from shared UI
+import { deriveVmLifecycle } from "../../lib/vmLifecycle";
 
 type VmCardProps = {
   rental: Rental;
@@ -26,6 +25,7 @@ type VmCardProps = {
 export function VmCard({ rental: r, busy, remainingSeconds, onCopySSH, onStop, onDestroy, showStreamMeta = true, showCopy = true, showStop = true, showDestroy = true }: VmCardProps) {
   const router = useRouter();
   const isTerminated = (r.status || '').toLowerCase() === 'terminated' || (r.status || '').toLowerCase() === 'deleted';
+  const lifecycle = deriveVmLifecycle({ status: r.status || (r.ssh_port ? 'running' : 'creating') });
 
   return (
     <div
@@ -39,7 +39,7 @@ export function VmCard({ rental: r, busy, remainingSeconds, onCopySSH, onStop, o
         {/* Main info */}
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 min-w-0">
-            <StatusBadge status={r.status || (r.ssh_port ? 'running' : 'creating')} />
+            <StatusBadge label={lifecycle.label} tone={lifecycle.tone} busy={lifecycle.transitioning} />
             <a className="truncate text-base font-medium text-gray-900 hover:underline" href={vmDetailsHref(r.vm_id)}>{r.name}</a>
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-600">

@@ -2,8 +2,8 @@
 
 import React from "react";
 import { RiFileCopyLine } from "@remixicon/react";
-import { useToast } from "../ui/Toast";
-import { cn } from "../ui/cn";
+import { useToast } from "@golem/ui";
+import { cn } from "@golem/ui";
 
 function compactValue(value: string) {
   if (value.length <= 12) return value;

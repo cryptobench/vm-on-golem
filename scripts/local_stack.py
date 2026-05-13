@@ -310,14 +310,10 @@ def ensure_python_deps() -> None:
 def ensure_node_deps(package_dir: str) -> None:
     path = ROOT / package_dir
     if (path / "node_modules").exists() and node_deps_satisfied(package_dir):
-        if package_dir == "provider-gui":
-            ensure_electron_runtime(package_dir)
         return
     command = node_install_command(package_dir)
     log(f"[setup] {' '.join(command)}")
     run_checked(command)
-    if package_dir == "provider-gui":
-        ensure_electron_runtime(package_dir)
 
 
 def node_deps_satisfied(package_dir: str) -> bool:
@@ -325,53 +321,11 @@ def node_deps_satisfied(package_dir: str) -> bool:
     return check.returncode == 0
 
 
-def ensure_electron_runtime(package_dir: str) -> None:
-    package_path = ROOT / package_dir
-    if electron_runtime_available(package_path):
-        return
-
-    rebuild = ["npm", "--prefix", package_dir, "rebuild", "electron"]
-    log(f"[setup] {' '.join(rebuild)}")
-    try:
-        run_checked(rebuild)
-    except subprocess.CalledProcessError:
-        command = node_install_command(package_dir)
-        log(
-            "[setup] Electron rebuild failed; reinstalling node dependencies: "
-            + " ".join(command)
-        )
-        run_checked(command)
-
-    if electron_runtime_available(package_path):
-        return
-
-    raise LocalStackError(
-        f"{package_dir} has an incomplete Electron install. "
-        "Remove provider-gui/node_modules and run make local again."
-    )
-
-
-def electron_runtime_available(package_path: Path) -> bool:
-    script = """
-const fs = require("fs");
-try {
-  const electron = require("electron");
-  process.exit(fs.existsSync(electron) ? 0 : 1);
-} catch (_) {
-  process.exit(1);
-}
-"""
-    check = run_quiet(["node", "-e", script], cwd=package_path)
-    return check.returncode == 0
-
-
-def ensure_deps(skip_install: bool, include_gui: bool) -> None:
+def ensure_deps(skip_install: bool) -> None:
     if skip_install:
         return
     ensure_python_deps()
     ensure_node_deps("requestor-web")
-    if include_gui:
-        ensure_node_deps("provider-gui")
 
 
 def http_ok(url: str) -> bool:
@@ -504,7 +458,7 @@ def local_dirs() -> dict[str, Path]:
     return dirs
 
 
-def build_services(include_gui: bool, deployment: dict[str, str]) -> list[Service]:
+def build_services(deployment: dict[str, str]) -> list[Service]:
     dirs = local_dirs()
     provider_dir = dirs["provider"]
     requestor_dir = dirs["requestor"]
@@ -540,7 +494,6 @@ def build_services(include_gui: bool, deployment: dict[str, str]) -> list[Servic
                 "--network",
                 "development",
                 "--no-verify-port",
-                "--no-gui",
                 "--keep-vms-on-exit",
             ],
             env={
@@ -664,35 +617,7 @@ def build_services(include_gui: bool, deployment: dict[str, str]) -> list[Servic
         ),
     ]
 
-    if include_gui:
-        services.append(
-            Service(
-                name="provider-gui",
-                command=["npm", "--prefix", "provider-gui", "start"],
-                env={
-                    "PROVIDER_API_URL": PROVIDER_API_URL,
-                    "PROVIDER_CLI_CMD": "python -c 'import sys; sys.exit(0)'",
-                },
-                fatal=False,
-            )
-        )
-
     return services
-
-
-def provider_gui_status(args: argparse.Namespace, services: list[Service]) -> str:
-    if not args.gui:
-        return "disabled"
-
-    provider_gui = next(
-        (service for service in services if service.name == "provider-gui"),
-        None,
-    )
-    if provider_gui is None or provider_gui.process is None:
-        return "not started"
-    if provider_gui.process.poll() is None:
-        return "launched"
-    return f"failed (exit {provider_gui.process.returncode})"
 
 
 def run_stack(args: argparse.Namespace) -> int:
@@ -704,10 +629,9 @@ def run_stack(args: argparse.Namespace) -> int:
         deployment = load_l2_deployment()
         if not args.skip_chain_check:
             check_l2_deployment(deployment)
-        include_gui = args.gui
-        ensure_deps(args.skip_install, include_gui=include_gui)
+        ensure_deps(args.skip_install)
 
-        services = build_services(include_gui=include_gui, deployment=deployment)
+        services = build_services(deployment=deployment)
 
         def handle_signal(signum: int, _frame) -> None:
             raise KeyboardInterrupt
@@ -727,7 +651,6 @@ def run_stack(args: argparse.Namespace) -> int:
         log("")
         log("Local stack is ready:")
         log(f"  Requestor web:      {WEB_URL}")
-        log(f"  Provider GUI:       {provider_gui_status(args, running)}")
         log(f"  Central discovery:  {CENTRAL_API_URL}")
         log(f"  Provider API:       {PROVIDER_API_URL}")
         log(f"  Port checker:       {PORT_CHECKER_URL}")
@@ -768,19 +691,6 @@ def run_stack(args: argparse.Namespace) -> int:
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--no-open", action="store_true", help="Do not open the web UI")
-    gui_group = parser.add_mutually_exclusive_group()
-    gui_group.add_argument(
-        "--gui",
-        action="store_true",
-        default=False,
-        help="Launch provider GUI",
-    )
-    gui_group.add_argument(
-        "--no-gui",
-        action="store_false",
-        dest="gui",
-        help="Do not launch provider GUI (default)",
-    )
     parser.add_argument(
         "--skip-install",
         action="store_true",

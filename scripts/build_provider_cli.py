@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 Builds a standalone provider CLI binary using PyInstaller and places it
-under provider-gui/resources/cli/<platform>/.
+under apps/provider-desktop/src-tauri/binaries/ with the target-triple suffix
+required by Tauri sidecars.
 
 Requires: Python 3.11, pyinstaller installed in the active env.
 
@@ -18,16 +19,33 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 ENTRY = ROOT / "provider-server" / "cli_runner.py"
-GUI_RES = ROOT / "provider-gui" / "resources" / "cli"
+TAURI_BINARIES = ROOT / "apps" / "provider-desktop" / "src-tauri" / "binaries"
 
 
-def detect_platform_dir() -> str:
-    sysname = platform.system().lower()
-    if sysname.startswith("darwin"):
-        return "macos"
-    if sysname.startswith("windows"):
-        return "win"
-    return "linux"
+def detect_target_triple() -> str:
+    try:
+        result = subprocess.run(
+            ["rustc", "--print", "host-tuple"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        target = result.stdout.strip()
+        if target:
+            return target
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        pass
+
+    result = subprocess.run(
+        ["rustc", "-Vv"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    for line in result.stdout.splitlines():
+        if line.startswith("host:"):
+            return line.split(":", 1)[1].strip()
+    raise SystemExit("Could not determine Rust target triple for Tauri sidecar")
 
 
 def ensure_pyinstaller():
@@ -67,10 +85,11 @@ def build(onefile: bool) -> Path:
 
 
 def stage(exe_path: Path) -> Path:
-    plat = detect_platform_dir()
-    target_dir = GUI_RES / plat
+    target = detect_target_triple()
+    target_dir = TAURI_BINARIES
     target_dir.mkdir(parents=True, exist_ok=True)
-    out = target_dir / exe_path.name
+    suffix = ".exe" if platform.system().lower().startswith("windows") else ""
+    out = target_dir / f"golem-provider-{target}{suffix}"
     shutil.copy2(exe_path, out)
     # Ensure executable on POSIX
     try:
@@ -91,4 +110,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

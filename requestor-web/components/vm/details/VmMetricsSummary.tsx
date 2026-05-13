@@ -2,7 +2,7 @@
 
 import React from "react";
 import { RiArrowDownLine, RiArrowUpLine } from "@remixicon/react";
-import { Skeleton } from "../../ui/Skeleton";
+import { Skeleton } from "@golem/ui";
 import type { VmMonitoringHistory } from "../../../lib/api";
 import { DetailPanel, PanelTitle } from "./VmDetailPrimitives";
 import {

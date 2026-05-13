@@ -2,7 +2,7 @@
 
 import React from "react";
 import { RiLockLine, RiShieldCheckLine } from "@remixicon/react";
-import { Spinner } from "../../ui/Spinner";
+import { Spinner } from "@golem/ui";
 
 export function RentDialogFooter({
   disabled,

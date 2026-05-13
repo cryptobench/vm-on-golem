@@ -8,9 +8,9 @@ import {
   RiInformationLine,
   RiRam2Line,
 } from "@remixicon/react";
-import { Button } from "../../ui/Button";
-import { Modal } from "../../ui/Modal";
-import { NumberStepper } from "../../ui/NumberStepper";
+import { Button } from "@golem/ui";
+import { Modal } from "@golem/ui";
+import { NumberStepper } from "@golem/ui";
 
 type ResizeResources = {
   cpu: number;

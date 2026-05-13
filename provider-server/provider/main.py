@@ -1312,9 +1312,6 @@ def start(
         "--network",
         help="Target network: 'development', 'testnet' or 'mainnet' (overrides env)",
     ),
-    gui: bool = typer.Option(
-        False, "--gui/--no-gui", help="Launch Electron GUI (default: no)"
-    ),
     daemon: bool = typer.Option(
         False, "--daemon", help="Start in background and write a PID file"
     ),
@@ -1337,15 +1334,12 @@ def start(
             args.append("--no-verify-port")
         if network:
             args += ["--network", network]
-        # Force no GUI for daemonized child to avoid duplicates
-        args.append("--no-gui")
         if stop_vms_on_exit is not None:
             args.append(
                 "--stop-vms-on-exit" if stop_vms_on_exit else "--keep-vms-on-exit"
             )
         cmd = _self_command(args)
-        # Ensure GUI not auto-launched via env, regardless of defaults
-        env = {**os.environ, "GOLEM_PROVIDER_LAUNCH_GUI": "0"}
+        env = {**os.environ}
         child_pid = _spawn_detached(cmd, env)
         _write_pid(child_pid)
         print(f"Started provider in background (pid={child_pid})")
@@ -1355,7 +1349,6 @@ def start(
             dev_mode=False,
             no_verify_port=no_verify_port,
             network=network,
-            launch_gui=gui,
             stop_vms_on_exit=stop_vms_on_exit,
         )
 
@@ -1565,88 +1558,10 @@ def _print_pricing_examples(glm_usd):
         )
 
 
-def _maybe_launch_gui(port: int):
-    import os as _os
-    import shutil
-    import subprocess
-    from pathlib import Path
-
-    root = Path(__file__).parent.parent.parent
-    gui_dir = root / "provider-gui"
-    if not gui_dir.exists():
-        logger.info("GUI directory not found; running headless")
-        return
-    cmd = None
-    npm = shutil.which("npm")
-    electron_bin = (
-        gui_dir
-        / "node_modules"
-        / "electron"
-        / "dist"
-        / ("electron.exe" if _sys.platform.startswith("win") else "electron")
-    )
-    try:
-        # Ensure dependencies (electron) are present
-        if npm and not electron_bin.exists():
-            install_cmd = (
-                [npm, "ci", "--silent"]
-                if (gui_dir / "package-lock.json").exists()
-                else [npm, "install", "--silent"]
-            )
-            logger.info("Installing Provider GUI dependencies…")
-            subprocess.run(install_cmd, cwd=str(gui_dir), env=os.environ, check=True)
-    except Exception as e:
-        logger.warning(f"GUI dependencies install failed: {e}")
-
-    if npm:
-        cmd = [npm, "start", "--silent"]
-    elif shutil.which("electron"):
-        cmd = ["electron", "."]
-    else:
-        logger.info("No npm/electron found; skipping GUI")
-        return
-    env = {**os.environ, "PROVIDER_API_URL": f"http://127.0.0.1:{port}/api/v1"}
-    try:
-        # Detach GUI so it won't receive terminal signals (e.g., Ctrl+C) or
-        # be terminated when the provider process exits.
-        popen_kwargs = {
-            "cwd": str(gui_dir),
-            "env": env,
-            "stdin": subprocess.DEVNULL,
-            "stdout": subprocess.DEVNULL,
-            "stderr": subprocess.DEVNULL,
-        }
-        if _sys.platform.startswith("win"):
-            # Create a new process group and detach from console on Windows
-            creationflags = 0
-            try:
-                creationflags |= getattr(subprocess, "CREATE_NEW_PROCESS_GROUP")
-            except Exception:
-                pass
-            try:
-                creationflags |= getattr(subprocess, "DETACHED_PROCESS")
-            except Exception:
-                pass
-            if creationflags:
-                popen_kwargs["creationflags"] = creationflags  # type: ignore[assignment]
-        else:
-            # Start a new session/process group on POSIX
-            try:
-                popen_kwargs["preexec_fn"] = _os.setsid  # type: ignore[assignment]
-            except Exception:
-                pass
-
-        subprocess.Popen(cmd, **popen_kwargs)
-        logger.info("Launched Provider GUI")
-    except Exception as e:
-        logger.warning(f"Failed to launch GUI: {e}")
-
-
 def run_server(
     dev_mode: bool | None = None,
     no_verify_port: bool = False,
     network: str | None = None,
-    launch_gui: bool = False,
     stop_vms_on_exit: bool | None = None,
 ):
     """Helper to run the uvicorn server."""
@@ -1712,13 +1627,6 @@ def run_server(
         log_config["formatters"]["access"][
             "fmt"
         ] = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-
-        # Optionally launch GUI (non-blocking) — disabled by default
-        if bool(launch_gui):
-            try:
-                _maybe_launch_gui(int(settings.PORT))
-            except Exception:
-                logger.warning("GUI launch attempt failed; continuing headless")
 
         # Run server
         logger.process(f"🚀 Starting provider server on {settings.HOST}:{settings.PORT}")

@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { cn } from "../ui/cn";
+import { cn } from "@golem/ui";
 import type { StreamStatusKind } from "./streamModel";
 
 const STATUS_LABELS: Record<StreamStatusKind, string> = {

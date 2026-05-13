@@ -6,7 +6,7 @@ import {
   RiTimeLine,
   RiWallet3Line,
 } from "@remixicon/react";
-import { cn } from "../ui/cn";
+import { cn } from "@golem/ui";
 import {
   fiatTotal,
   formatFiat,

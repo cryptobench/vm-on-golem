@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Skeleton } from "../../ui/Skeleton";
+import { Skeleton } from "@golem/ui";
 import { DetailPanel } from "./VmDetailPrimitives";
 
 export function VmDetailsSkeleton() {

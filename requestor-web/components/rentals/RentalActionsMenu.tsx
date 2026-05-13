@@ -10,9 +10,9 @@ import {
   RiPlayLine,
 } from "@remixicon/react";
 import type { Rental } from "../../lib/api";
-import { ConfirmDialog } from "../ui/ConfirmDialog";
-import { Spinner } from "../ui/Spinner";
-import { cn } from "../ui/cn";
+import { ConfirmDialog } from "@golem/ui";
+import { Spinner } from "@golem/ui";
+import { cn } from "@golem/ui";
 
 type RentalActionsMenuProps = {
   rental: Rental;

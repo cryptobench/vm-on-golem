@@ -2,7 +2,7 @@
 
 import React from "react";
 import { RiAddLine, RiSubtractLine } from "@remixicon/react";
-import { cn } from "../../ui/cn";
+import { cn } from "@golem/ui";
 
 export function ResourceStepper({
   label,

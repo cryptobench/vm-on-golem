@@ -1,6 +1,6 @@
 "use client";
 import React from "react";
-import { Modal } from "../ui/Modal";
+import { Modal } from "@golem/ui";
 import { loadSettings, saveSettings, type SSHKey } from "../../lib/api";
 
 export function KeyAddModal({ open, onClose, onAdded }: { open: boolean; onClose: () => void; onAdded?: (key: SSHKey) => void }) {

@@ -1,8 +1,8 @@
 "use client";
 import React from "react";
 import { useWallet } from "../context/WalletContext";
-import { MetaMaskLogo } from "./ui/MetaMaskLogo";
-import { Spinner } from "./ui/Spinner";
+import { MetaMaskLogo } from "./wallet/MetaMaskLogo";
+import { Spinner } from "@golem/ui";
 
 export function Wallet() {
   const {

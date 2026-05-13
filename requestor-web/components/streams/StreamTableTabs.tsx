@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { RiSettings3Line } from "@remixicon/react";
-import { ToggleSwitch } from "../ui/ToggleSwitch";
-import { cn } from "../ui/cn";
+import { ToggleSwitch } from "@golem/ui";
+import { cn } from "@golem/ui";
 
 type StreamView = "active" | "ended";
 

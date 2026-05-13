@@ -25,9 +25,9 @@ import { terminateStreamWithWallet } from "../../lib/streams";
 import { parseHumanDuration } from "../../lib/time";
 import { useWallet } from "../../context/WalletContext";
 import { useProjects } from "../../context/ProjectsContext";
-import { Alert } from "../ui/Alert";
-import { DialogScaffold } from "../ui/DialogScaffold";
-import { StepProgress } from "../ui/StepProgress";
+import { Alert } from "@golem/ui";
+import { DialogScaffold } from "@golem/ui";
+import { StepProgress } from "@golem/ui";
 import {
   clampSpec,
   durationTotal,

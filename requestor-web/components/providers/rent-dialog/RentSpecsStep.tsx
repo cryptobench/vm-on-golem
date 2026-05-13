@@ -9,7 +9,7 @@ import {
 } from "@remixicon/react";
 import type { RemixiconComponentType } from "@remixicon/react";
 import type { ProviderAd } from "../../../lib/api";
-import { NumberStepper } from "../../ui/NumberStepper";
+import { NumberStepper } from "@golem/ui";
 import type { RentSpec } from "./types";
 import { RentStepSection } from "./RentStepSection";
 

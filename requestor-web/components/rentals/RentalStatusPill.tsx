@@ -1,8 +1,8 @@
 "use client";
 
 import React from "react";
-import { Spinner } from "../ui/Spinner";
-import { cn } from "../ui/cn";
+import { Spinner } from "@golem/ui";
+import { cn } from "@golem/ui";
 import { deriveVmLifecycle } from "../../lib/vmLifecycle";
 
 export function RentalStatusPill({ status }: { status?: string | null }) {

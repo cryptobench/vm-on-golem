@@ -12,6 +12,8 @@
     "api:check": "npm run api:generate && git diff --exit-code -- ../openapi lib/generated/api package.json package-lock.json orval.config.ts"
   },
   "dependencies": {
+    "@golem/design-system": "file:../packages/design-system",
+    "@golem/ui": "file:../packages/ui",
     "@headlessui/react": "^2.2.8",
     "@headlessui/tailwindcss": "^0.2.2",
     "@metamask/logo": "^4.0.0",

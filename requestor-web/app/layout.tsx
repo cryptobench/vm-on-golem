@@ -6,7 +6,7 @@ import { ProjectsProvider } from "../context/ProjectsContext";
 import "./globals.css";
 import { Sidebar } from "../components/layout/Sidebar";
 import { AppTopBar } from "../components/layout/AppTopBar";
-import { ToastProvider } from "../components/ui/Toast";
+import { ToastProvider } from "@golem/ui";
 import { CreateWizardHost } from "../components/create/CreateWizardHost";
 // Ensure Buffer is available in the browser for SDK dependencies
 import { Buffer } from "buffer";
