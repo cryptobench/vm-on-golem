@@ -234,21 +234,6 @@
     background: var(--surface-muted);
   }
 
-  .vm-sliding-chart .recharts-line-curve {
-    transform: translateX(var(--vm-chart-slide-x, 0));
-    transition: none;
-  }
-
-  .vm-sliding-chart[data-slide-active="true"] .recharts-line-curve {
-    transition: transform 360ms ease-out;
-  }
-
-  @media (prefers-reduced-motion: no-preference) {
-    .vm-sliding-chart[data-draw-active="true"] .recharts-line-curve {
-      animation: vm-line-draw 560ms cubic-bezier(0.22, 1, 0.36, 1) both;
-      stroke-dasharray: 12000;
-    }
-  }
 }
 
 @keyframes providers-content-enter {
@@ -390,14 +375,5 @@
   to {
     opacity: 1;
     transform: translateY(0);
-  }
-}
-
-@keyframes vm-line-draw {
-  from {
-    stroke-dashoffset: 12000;
-  }
-  to {
-    stroke-dashoffset: 0;
   }
 }

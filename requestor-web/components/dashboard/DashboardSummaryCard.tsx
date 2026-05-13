@@ -2,33 +2,21 @@
 
 import React from "react";
 import { RiBroadcastLine, RiStackLine } from "@remixicon/react";
+import { Sparkline as UiSparkline } from "@golem/ui";
 
 type SummaryVisual = "vms" | "streams" | "spend";
 
 function Sparkline({ data }: { data: number[] }) {
   const values = data.length > 1 ? data : [0, 0];
-  const width = 128;
-  const height = 64;
-  const left = 4;
-  const right = 124;
-  const top = 12;
-  const bottom = 50;
-  const max = Math.max(...values, 0);
-  const min = Math.min(...values, 0);
-  const range = max - min;
-  const points = values.map((value, index) => {
-    const x = left + ((right - left) * index) / Math.max(1, values.length - 1);
-    const y = range === 0 ? bottom : bottom - ((value - min) / range) * (bottom - top);
-    return { x, y };
-  });
-  const linePath = points.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`).join(" ");
-  const areaPath = `${linePath} L ${right} ${height} L ${left} ${height} Z`;
 
   return (
-    <svg className="h-16 w-32 text-primary" viewBox="0 0 128 64" aria-hidden>
-      <path d={areaPath} fill="currentColor" opacity="0.06" />
-      <path d={linePath} fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" />
-    </svg>
+    <UiSparkline
+      className="h-16 w-32"
+      data={values.map((value, index) => ({
+        label: String(index + 1),
+        value,
+      }))}
+    />
   );
 }
 

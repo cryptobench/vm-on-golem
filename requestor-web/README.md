@@ -26,7 +26,7 @@ Price cache (USD)
 - Results are stored in localStorage under `requestor_prices_v2` and broadcast via a `requestor_prices_updated` event. The old `requestor_prices_v1` key is read only as a compatibility fallback.
 - Price lookups use one shared in-flight request and source-level backoff. Components must not fetch price APIs directly.
 - Source order is Binance, DEX Screener, CoinGecko, then CoinPaprika. This keeps normal traffic far below published public limits and reserves lower-quota sources for fallback.
-- Use helpers in `lib/prices.ts`:
+- Use helpers from shared `@golem/prices` (re-exported by `lib/prices.ts` for compatibility):
   - `startPricePolling()` to start/stop the poller (already wired in `app/layout.tsx`).
   - `getPriceUSD(symbol)` and `usdToToken(symbol, usd)` for display-only cached conversions.
   - `ensurePricesUSD()` and `usdToTokenAsync(symbol, usd, { maxAgeMs })` for payment flows that need a fresh quote.

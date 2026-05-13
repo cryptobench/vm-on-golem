@@ -21,10 +21,10 @@ __all__ = ["app", "start"]
 def check_requirements():
     """Check if all requirements are met."""
     try:
-        # Import settings to trigger validation
-        from .config import settings
-
-        return True
+        result = _multipass_requirement_result()
+        if not result.compatible:
+            logger.error(f"Multipass requirement failed: {result.error}")
+        return result.compatible
     except Exception as e:
         logger.error(f"Requirements check failed: {e}")
         return False
@@ -83,6 +83,8 @@ cli.add_typer(wallet_app, name="wallet")
 cli.add_typer(streams_app, name="streams")
 config_app = typer.Typer(help="Configure stream monitoring and withdrawals")
 cli.add_typer(config_app, name="config")
+requirements_app = typer.Typer(help="Check host requirements")
+cli.add_typer(requirements_app, name="requirements")
 
 
 @cli.callback()
@@ -103,6 +105,24 @@ def _get_latest_version_from_pypi(pkg_name: str) -> Optional[str]:
     # Avoid network in pytest runs
     if os.environ.get("PYTEST_CURRENT_TEST"):
         return None
+    try:
+        import json as _json
+        from urllib.request import urlopen
+
+        with urlopen(f"https://pypi.org/pypi/{pkg_name}/json", timeout=5) as resp:
+            data = _json.loads(resp.read().decode("utf-8"))
+            return data.get("info", {}).get("version")
+    except Exception:
+        return None
+
+
+def _multipass_requirement_result():
+    from .config import settings as _settings
+    from .vm.multipass_requirements import check_multipass_requirements
+
+    return check_multipass_requirements(
+        explicit_path=_settings.MULTIPASS_BINARY_PATH or None
+    )
 
 
 # ---------------------------
@@ -201,15 +221,39 @@ def _self_command(base_args: list[str]) -> list[str]:
         return [exe] + base_args
     # Fallback to module execution
     return [sys.executable, "-m", "provider.main"] + base_args
-    try:
-        import json as _json
-        from urllib.request import urlopen
 
-        with urlopen(f"https://pypi.org/pypi/{pkg_name}/json", timeout=5) as resp:
-            data = _json.loads(resp.read().decode("utf-8"))
-            return data.get("info", {}).get("version")
-    except Exception:
-        return None
+
+@requirements_app.command("check")
+def requirements_check(
+    json_out: bool = typer.Option(False, "--json", help="Output machine-readable JSON")
+):
+    """Check whether host dependencies needed by the provider are available."""
+    result = _multipass_requirement_result()
+    if json_out:
+        typer.echo(result.to_json())
+    else:
+        from rich.console import Console
+        from rich.table import Table
+
+        console = Console()
+        table = Table(title="Provider Host Requirements")
+        table.add_column("Requirement")
+        table.add_column("Status")
+        table.add_column("Detail")
+        table.add_row(
+            "Multipass",
+            "ok" if result.compatible else "action required",
+            result.error or f"{result.version or 'unknown'} at {result.path}",
+        )
+        table.add_row(
+            "Multipass daemon",
+            "running" if result.daemon_running else "not responding",
+            result.driver or "-",
+        )
+        console.print(table)
+
+    if not result.compatible:
+        raise typer.Exit(code=1)
 
 
 @cli.command("status")
@@ -276,26 +320,9 @@ def status(
     dev_mode = env == "development" or bool(getattr(_settings, "DEV_MODE", False))
 
     # Multipass
-    mp = {"ok": False, "path": None, "version": None, "error": None}
-    try:
-        mp_path = _settings.MULTIPASS_BINARY_PATH
-        mp["path"] = mp_path or None
-        if mp_path:
-            import subprocess
-
-            r = subprocess.run(
-                [mp_path, "version"], capture_output=True, text=True, timeout=5
-            )
-            if r.returncode == 0:
-                mp["ok"] = True
-                mp["version"] = (r.stdout or r.stderr).strip()
-            else:
-                mp["error"] = (r.stderr or r.stdout or "failed").strip()
-        else:
-            mp["error"] = "not configured"
-    except Exception as e:
-        mp["ok"] = False
-        mp["error"] = str(e)
+    mp_result = _multipass_requirement_result()
+    mp = mp_result.to_dict()
+    mp["ok"] = mp_result.compatible
 
     # Provider port (local)
     port = int(_settings.PORT)

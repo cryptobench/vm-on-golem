@@ -2,6 +2,12 @@
 
 Tauri + Vite + React shell for the provider desktop installer.
 
+## Provider Data Catalogue
+
+The designer-facing provider data catalogue lives in
+[`PROVIDER_DATA_CATALOGUE.md`](./PROVIDER_DATA_CATALOGUE.md). It lists the data
+the provider can expose to desktop screens using realistic key/value examples.
+
 ## Development
 
 Build the frontend without starting the desktop app:

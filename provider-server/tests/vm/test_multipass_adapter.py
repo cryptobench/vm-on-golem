@@ -125,12 +125,15 @@ def test_rejects_known_broken_macos_qemu_driver(multipass_adapter, tmp_path):
     multipass.chmod(0o755)
     multipass_adapter.multipass_path = str(multipass)
 
-    with patch("provider.vm.multipass_adapter.platform.system", return_value="Darwin"):
+    with patch(
+        "provider.vm.multipass_requirements.platform.system", return_value="Darwin"
+    ):
         with patch(
-            "provider.vm.multipass_adapter.platform.machine", return_value="arm64"
+            "provider.vm.multipass_requirements.platform.machine", return_value="arm64"
         ):
             with patch(
-                "provider.vm.multipass_adapter.platform.release", return_value="25.2.0"
+                "provider.vm.multipass_requirements.platform.release",
+                return_value="25.2.0",
             ):
                 with pytest.raises(MultipassError, match="host-arm-cpu.sme"):
                     multipass_adapter._check_host_virtualization_compatibility()
@@ -149,12 +152,15 @@ def test_allows_multipass_1_16_1_macos_qemu_driver(multipass_adapter, tmp_path):
     multipass.chmod(0o755)
     multipass_adapter.multipass_path = str(multipass)
 
-    with patch("provider.vm.multipass_adapter.platform.system", return_value="Darwin"):
+    with patch(
+        "provider.vm.multipass_requirements.platform.system", return_value="Darwin"
+    ):
         with patch(
-            "provider.vm.multipass_adapter.platform.machine", return_value="arm64"
+            "provider.vm.multipass_requirements.platform.machine", return_value="arm64"
         ):
             with patch(
-                "provider.vm.multipass_adapter.platform.release", return_value="25.2.0"
+                "provider.vm.multipass_requirements.platform.release",
+                return_value="25.2.0",
             ):
                 multipass_adapter._check_host_virtualization_compatibility()
 

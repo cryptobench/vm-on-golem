@@ -1,9 +1,13 @@
-const fs = require("fs");
-const path = require("path");
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { network } from "hardhat";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 async function main() {
-  const hre = require("hardhat");
-  const { ethers, network } = hre;
+  const { ethers } = await network.create();
   const glm = process.env.GLM_TOKEN_ADDRESS;
   if (!glm) {
     throw new Error("GLM_TOKEN_ADDRESS is required for GLM-only StreamPayment deployment");
@@ -18,7 +22,7 @@ async function main() {
 
   const outDir = path.join(__dirname, "..", "deployments");
   fs.mkdirSync(outDir, { recursive: true });
-  const netName = (network && network.name) ? network.name.toLowerCase() : (process.env.HARDHAT_NETWORK || "unknown");
+  const netName = process.env.HARDHAT_NETWORK || "unknown";
   const outFile = path.join(outDir, `${netName}.json`);
   const payload = {
     network: netName,

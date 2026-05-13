@@ -12,101 +12,143 @@ import {
   YAxis,
   type TooltipProps,
 } from "recharts";
-import { cn } from "@golem/ui";
-import {
-  getAppendOnlySlideChange,
-  type MetricChartRow,
-  type MetricSparklineRow,
-} from "./metrics";
+import { cn } from "./cn";
 
-type SeriesKey = Exclude<keyof MetricChartRow, "timestamp" | "time">;
+export type ChartPoint = {
+  label: string;
+  value: number;
+  secondaryValue?: number;
+};
 
-type SeriesConfig = {
-  key: SeriesKey;
+export type ChartDatum = Record<string, string | number | null | undefined>;
+
+export type ChartSeries = {
+  key: string;
   label: string;
   colorClassName: string;
-  dotClassName: string;
+  dotClassName?: string;
 };
 
-const metricSeries: SeriesConfig[] = [
-  {
-    key: "CPU",
-    label: "CPU",
-    colorClassName: "text-blue-500",
-    dotClassName: "bg-blue-500",
-  },
-  {
-    key: "Memory",
-    label: "Memory",
-    colorClassName: "text-violet-500",
-    dotClassName: "bg-violet-500",
-  },
-  {
-    key: "Disk",
-    label: "Disk",
-    colorClassName: "text-emerald-500",
-    dotClassName: "bg-emerald-500",
-  },
-  {
-    key: "Network RX",
-    label: "Network RX",
-    colorClassName: "text-cyan-500",
-    dotClassName: "bg-cyan-500",
-  },
-  {
-    key: "Network TX",
-    label: "Network TX",
-    colorClassName: "text-orange-500",
-    dotClassName: "bg-orange-500",
-  },
-];
-
-const sparklineColors = {
-  blue: "text-blue-500",
-  violet: "text-violet-500",
-  emerald: "text-emerald-500",
-  cyan: "text-cyan-500",
-  orange: "text-orange-500",
-} as const;
-
-type SlidingMetricLineChartProps = {
+export function LineAreaChart({
+  data,
+  height = 220,
+  yUnit,
+  secondary = false,
+  className,
+}: {
+  data: ChartPoint[];
+  height?: number;
+  yUnit?: string;
+  secondary?: boolean;
   className?: string;
-  data: MetricChartRow[];
-  categories: SeriesKey[];
-  valueFormatter: (value: number) => string;
-  minValue?: number;
-  yAxisWidth?: number;
-};
+}) {
+  const chartData: ChartDatum[] = data.map((point) => ({
+    label: point.label,
+    value: point.value,
+    secondaryValue: point.secondaryValue,
+  }));
+  const series: ChartSeries[] = [
+    {
+      key: "value",
+      label: "value",
+      colorClassName: "text-primary",
+      dotClassName: "bg-primary",
+    },
+  ];
 
-export function SlidingMetricLineChart({
+  if (secondary) {
+    series.push({
+      key: "secondaryValue",
+      label: "secondary",
+      colorClassName: "text-success",
+      dotClassName: "bg-success",
+    });
+  }
+
+  return (
+    <SlidingLineChart
+      className={className}
+      data={chartData}
+      series={series}
+      xKey="label"
+      animationKey={(point) => String(point.label)}
+      valueFormatter={(value) => `${value}${yUnit ?? ""}`}
+      height={height}
+      showLegend={false}
+    />
+  );
+}
+
+export function Sparkline({
+  data,
+  className,
+  colorClassName = "text-primary",
+}: {
+  data: ChartPoint[];
+  className?: string;
+  colorClassName?: string;
+}) {
+  const chartData = data.map((point) => ({
+    label: point.label,
+    value: point.value,
+  }));
+
+  return (
+    <SlidingSparkline
+      className={cn("h-8 w-20", className)}
+      colorClassName={colorClassName}
+      data={chartData}
+      xKey="label"
+      dataKey="value"
+      animationKey={(point) => point.label}
+    />
+  );
+}
+
+export function SlidingLineChart<TData extends ChartDatum>({
   className,
   data,
-  categories,
-  valueFormatter,
+  series,
+  xKey,
+  animationKey,
+  valueFormatter = String,
   minValue,
   yAxisWidth = 56,
-}: SlidingMetricLineChartProps) {
+  height,
+  showLegend = true,
+}: {
+  className?: string;
+  data: TData[];
+  series: ChartSeries[];
+  xKey: keyof TData & string;
+  animationKey?: (row: TData) => string;
+  valueFormatter?: (value: number) => string;
+  minValue?: number;
+  yAxisWidth?: number;
+  height?: number;
+  showLegend?: boolean;
+}) {
   const slide = useAppendSlide(
-    data.map((row) => row.timestamp),
+    data.map((row, index) =>
+      animationKey ? animationKey(row) : String(row[xKey] ?? index),
+    ),
     yAxisWidth + 40,
-  );
-  const activeSeries = metricSeries.filter((series) =>
-    categories.includes(series.key),
   );
 
   return (
     <div
       ref={slide.ref}
-      className={cn("vm-sliding-chart flex min-h-0 flex-col", className)}
+      className={cn("golem-sliding-chart flex min-h-0 flex-col", className)}
       data-slide-active={slide.active ? "true" : "false"}
       data-draw-active={slide.drawActive ? "true" : "false"}
       style={
         {
-          "--vm-chart-slide-x": `${slide.offset}px`,
+          height,
+          "--golem-chart-slide-x": `${slide.offset}px`,
         } as React.CSSProperties
       }
     >
-      <ChartLegend series={activeSeries} />
+      {showLegend ? <ChartLegend series={series} /> : null}
       <div className="min-h-0 flex-1">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart
@@ -119,7 +161,7 @@ export function SlidingMetricLineChart({
               stroke="currentColor"
             />
             <XAxis
-              dataKey="time"
+              dataKey={xKey}
               tickLine={false}
               axisLine={false}
               minTickGap={18}
@@ -140,19 +182,19 @@ export function SlidingMetricLineChart({
               cursor={{ stroke: "var(--border-strong)", strokeWidth: 1 }}
               content={
                 <MetricTooltip
-                  series={activeSeries}
+                  series={series}
                   valueFormatter={valueFormatter}
                 />
               }
             />
             <Legend wrapperStyle={{ display: "none" }} />
-            {activeSeries.map((series) => (
+            {series.map((item) => (
               <Line
-                key={series.key}
-                className={series.colorClassName}
+                key={item.key}
+                className={item.colorClassName}
                 type="linear"
-                dataKey={series.key}
-                name={series.label}
+                dataKey={item.key}
+                name={item.label}
                 stroke="currentColor"
                 strokeWidth={2}
                 strokeLinecap="round"
@@ -170,29 +212,37 @@ export function SlidingMetricLineChart({
   );
 }
 
-export function SlidingSparkline({
+export function SlidingSparkline<TData extends ChartDatum>({
   className,
   data,
-  color,
+  colorClassName = "text-primary",
+  dataKey = "value",
+  xKey = "point",
+  animationKey,
 }: {
   className?: string;
-  data: MetricSparklineRow[];
-  color: keyof typeof sparklineColors;
+  data: TData[];
+  colorClassName?: string;
+  dataKey?: keyof TData & string;
+  xKey?: keyof TData & string;
+  animationKey?: (row: TData) => string;
 }) {
   const slide = useAppendSlide(
-    data.map((row) => row.timestamp),
+    data.map((row, index) =>
+      animationKey ? animationKey(row) : String(row[xKey] ?? index),
+    ),
     2,
   );
 
   return (
     <div
       ref={slide.ref}
-      className={cn("vm-sliding-chart", className)}
+      className={cn("golem-sliding-chart", className)}
       data-slide-active={slide.active ? "true" : "false"}
       data-draw-active={slide.drawActive ? "true" : "false"}
       style={
         {
-          "--vm-chart-slide-x": `${slide.offset}px`,
+          "--golem-chart-slide-x": `${slide.offset}px`,
         } as React.CSSProperties
       }
     >
@@ -202,11 +252,11 @@ export function SlidingSparkline({
           margin={{ top: 2, right: 1, bottom: 2, left: 1 }}
         >
           <YAxis hide domain={["auto", "auto"]} />
-          <XAxis hide dataKey="point" />
+          <XAxis hide dataKey={xKey} />
           <Line
-            className={sparklineColors[color]}
+            className={colorClassName}
             type="linear"
-            dataKey="value"
+            dataKey={dataKey}
             stroke="currentColor"
             strokeWidth={2}
             strokeLinecap="round"
@@ -221,12 +271,15 @@ export function SlidingSparkline({
   );
 }
 
-function ChartLegend({ series }: { series: SeriesConfig[] }) {
+function ChartLegend({ series }: { series: ChartSeries[] }) {
   return (
     <div className="mb-4 flex flex-wrap justify-center gap-x-6 gap-y-2 text-sm font-medium text-text-primary">
       {series.map((item) => (
         <div key={item.key} className="flex items-center gap-2">
-          <span className={cn("h-2 w-2 rounded-full", item.dotClassName)} />
+          <span
+            className={cn("h-2 w-2 rounded-full", item.dotClassName)}
+            style={item.dotClassName ? undefined : { color: "currentColor" }}
+          />
           {item.label}
         </div>
       ))}
@@ -241,7 +294,7 @@ function MetricTooltip({
   series,
   valueFormatter,
 }: TooltipProps<number, string> & {
-  series: SeriesConfig[];
+  series: ChartSeries[];
   valueFormatter: (value: number) => string;
 }) {
   if (!active || !payload?.length) return null;
@@ -254,7 +307,7 @@ function MetricTooltip({
         {payload
           .filter((item) => typeof item.value === "number")
           .map((item) => {
-            const config = seriesByKey.get(item.dataKey as SeriesKey);
+            const config = seriesByKey.get(String(item.dataKey));
             return (
               <div
                 key={String(item.dataKey)}
@@ -278,6 +331,42 @@ function MetricTooltip({
       </div>
     </div>
   );
+}
+
+export function getAppendOnlySlideChange(
+  previousKeys: string[],
+  nextKeys: string[],
+): { appendedCount: number; droppedCount: number } | null {
+  if (previousKeys.length === 0 || nextKeys.length === 0) return null;
+  if (hasDuplicateKeys(previousKeys) || hasDuplicateKeys(nextKeys)) return null;
+
+  const maxOverlap = Math.min(previousKeys.length, nextKeys.length);
+  for (let overlap = maxOverlap; overlap >= 1; overlap -= 1) {
+    const previousStart = previousKeys.length - overlap;
+    let matches = true;
+    for (let index = 0; index < overlap; index += 1) {
+      if (previousKeys[previousStart + index] !== nextKeys[index]) {
+        matches = false;
+        break;
+      }
+    }
+
+    if (!matches) continue;
+
+    const appendedCount = nextKeys.length - overlap;
+    if (appendedCount <= 0) return null;
+
+    const minRequiredOverlap =
+      previousKeys.length >= 3 && nextKeys.length >= 3 ? 3 : 1;
+    if (overlap < minRequiredOverlap) return null;
+
+    return {
+      appendedCount,
+      droppedCount: previousKeys.length - overlap,
+    };
+  }
+
+  return null;
 }
 
 function useAppendSlide(keys: string[], horizontalInset: number) {
@@ -365,4 +454,8 @@ function usePrefersReducedMotion() {
   }, []);
 
   return reduced;
+}
+
+function hasDuplicateKeys(keys: string[]) {
+  return new Set(keys).size !== keys.length;
 }
