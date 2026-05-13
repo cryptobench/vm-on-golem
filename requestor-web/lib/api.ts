@@ -40,6 +40,7 @@ import {
 } from "./generated/api/provider";
 import type { AdsConfig } from "../context/AdsContext";
 import type { ApiRequestOptions } from "./api/orval-fetch";
+import { getRequestorRuntimeConfig } from "./runtimeConfig";
 
 export type { AdsConfig } from "../context/AdsContext";
 export type ProviderAd = AdvertisementResponse;
@@ -153,7 +154,7 @@ export function loadSettings(): Settings {
   try {
     const settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
     const defaultStreamPayment =
-      process.env.NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS || "";
+      getRequestorRuntimeConfig().streamPaymentAddress || "";
     const currentStreamPayment = String(
       settings.stream_payment_address || "",
     ).toLowerCase();
@@ -430,7 +431,7 @@ export function vmLiveUrl(
   url.searchParams.set("proxy_source", ads.mode || "central");
   url.searchParams.set(
     "proxy_token",
-    process.env.NEXT_PUBLIC_PORT_CHECKER_TOKEN || "",
+    getRequestorRuntimeConfig().portCheckerToken || "",
   );
   if (ads.arkiv_rpc_url)
     url.searchParams.set("arkiv_rpc_url", ads.arkiv_rpc_url);
@@ -607,13 +608,13 @@ function providerOptions(providerId: string, ads: AdsConfig): RequestInit {
 
 function proxyProviderOrigin(providerId: string): string {
   const base = (
-    process.env.NEXT_PUBLIC_PORT_CHECKER_URL || "http://localhost:9000"
+    getRequestorRuntimeConfig().portCheckerUrl || "http://localhost:9000"
   ).replace(/\/$/, "");
   return `${base}/proxy/provider/${encodeURIComponent(providerId)}`;
 }
 
 function providerApiPort(): number {
-  const configured = process.env.NEXT_PUBLIC_PROVIDER_API_PORT || "7466";
+  const configured = getRequestorRuntimeConfig().providerApiPort || "7466";
   const port = Number(configured);
   if (Number.isInteger(port) && port >= 1 && port <= 65535) return port;
   return 7466;
@@ -646,7 +647,7 @@ async function providerFetch<TData>(
 function providerProxyHeaders(ads: AdsConfig): Record<string, string> {
   const headers: Record<string, string> = {
     "X-Proxy-Source": ads.mode || "central",
-    "X-Proxy-Token": process.env.NEXT_PUBLIC_PORT_CHECKER_TOKEN || "",
+    "X-Proxy-Token": getRequestorRuntimeConfig().portCheckerToken || "",
   };
   if (ads.arkiv_rpc_url) headers["X-Proxy-Arkiv-Rpc"] = ads.arkiv_rpc_url;
   if (ads.arkiv_ws_url) headers["X-Proxy-Arkiv-Ws"] = ads.arkiv_ws_url;

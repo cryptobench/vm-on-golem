@@ -1,0 +1,5 @@
+@import "../../../requestor-web/app/globals.css";
+
+#root {
+  min-height: 100vh;
+}

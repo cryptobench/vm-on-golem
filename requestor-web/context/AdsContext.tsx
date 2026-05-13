@@ -1,5 +1,6 @@
 "use client";
 import React from "react";
+import { getRequestorRuntimeConfig } from "../lib/runtimeConfig";
 
 export type AdsMode = 'arkiv' | 'central';
 export type AdsConfig = {
@@ -18,21 +19,22 @@ const BASE_WS_URL = 'wss://kaolin.hoodi.arkiv.network/rpc/ws';
 const LOCAL_CENTRAL_PROFILE_ID = 'local-central';
 const LOCAL_CENTRAL_PROFILE_NAME = 'Local Central';
 const DEFAULTS: AdsConfig = (() => {
-  const isDevEnv = (process.env.NEXT_PUBLIC_GOLEM_ENVIRONMENT || '').toLowerCase() === 'development';
+  const runtimeConfig = getRequestorRuntimeConfig();
+  const isDevEnv = (runtimeConfig.golemEnvironment || '').toLowerCase() === 'development';
   // Allow explicit dev overrides when GOLEM_ENVIRONMENT=development
-  const devRpc = process.env.NEXT_PUBLIC_ARKIV_DEV_RPC_URL || '';
-  const devWs = process.env.NEXT_PUBLIC_ARKIV_DEV_WS_URL || '';
+  const devRpc = runtimeConfig.arkivDevRpcUrl || '';
+  const devWs = runtimeConfig.arkivDevWsUrl || '';
   const baseRpc = isDevEnv && devRpc ? devRpc : BASE_RPC_URL;
   const baseWs = isDevEnv && devWs ? devWs : BASE_WS_URL;
-  const mode = (process.env.NEXT_PUBLIC_DISCOVERY_MODE || '').toLowerCase() === 'arkiv' ? 'arkiv' : 'central';
+  const mode = runtimeConfig.discoveryMode === 'arkiv' ? 'arkiv' : 'central';
   return {
     mode,
-    discovery_url: process.env.NEXT_PUBLIC_DISCOVERY_API_URL || 'http://195.201.39.101:9001/api/v1',
+    discovery_url: runtimeConfig.discoveryApiUrl || 'http://195.201.39.101:9001/api/v1',
     arkiv_rpc_url: baseRpc,
     arkiv_ws_url: baseWs,
     chain_id: (() => {
       // Keep existing default for backward compat; payments chain handled separately in UI
-      const def = process.env.NEXT_PUBLIC_EVM_CHAIN_ID || '0x88bb0';
+      const def = runtimeConfig.evmChainId || '0x88bb0';
       try { return parseInt(def, 16); } catch { return 560048; }
     })(),
     advertisement_interval_seconds: 240,

@@ -169,6 +169,11 @@ apps/provider-desktop/dist/
 apps/provider-desktop/src-tauri/binaries/
 apps/provider-desktop/src-tauri/vendor/multipass/*
 !apps/provider-desktop/src-tauri/vendor/multipass/.gitkeep
+apps/requestor-desktop/dist/
+apps/requestor-desktop/src-tauri/binaries/*
+!apps/requestor-desktop/src-tauri/binaries/.gitkeep
+apps/requestor-desktop/src-tauri/vendor/port-checker/*
+!apps/requestor-desktop/src-tauri/vendor/port-checker/.gitkeep
 requestor-gui/node_modules/
 python-sdk/
 typescript-sdk/

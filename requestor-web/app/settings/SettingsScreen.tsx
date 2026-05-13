@@ -3,6 +3,7 @@ import React from "react";
 import { useRouter } from "next/navigation";
 import { loadSettings, saveSettings, type SSHKey } from "../../lib/api";
 import { useAds } from "../../context/AdsContext";
+import { getRequestorRuntimeConfig } from "../../lib/runtimeConfig";
 import { KeyPicker } from "../../components/ssh/KeyPicker";
 import { Button } from "@golem/ui";
 import { FormField, SelectInput, TextInput } from "@golem/ui";
@@ -26,8 +27,9 @@ export default function SettingsPage() {
   React.useEffect(() => { setMounted(true); }, []);
 
   // Initialize settings state after mount
-  const [sp, setSp] = React.useState<string>(process.env.NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS || "");
-  const [glm, setGlm] = React.useState<string>(process.env.NEXT_PUBLIC_GLM_TOKEN_ADDRESS || "");
+  const runtimeConfig = getRequestorRuntimeConfig();
+  const [sp, setSp] = React.useState<string>(runtimeConfig.streamPaymentAddress || "");
+  const [glm, setGlm] = React.useState<string>(runtimeConfig.glmTokenAddress || "");
   const [sshKeys, setSshKeys] = React.useState<SSHKey[]>([]);
   const [defaultKeyId, setDefaultKeyId] = React.useState<string | undefined>(undefined);
   const [saved, setSaved] = React.useState(false);
@@ -36,10 +38,10 @@ export default function SettingsPage() {
   const [disc, setDisc] = React.useState<string>(ads.discovery_url);
   const [rpc, setRpc] = React.useState<string>(ads.arkiv_rpc_url);
   const [ws, setWs] = React.useState<string>(ads.arkiv_ws_url);
-  const [evmChainIdText, setEvmChainIdText] = React.useState<string>(process.env.NEXT_PUBLIC_EVM_CHAIN_ID || "0x88bb0");
-  const [evmChainName, setEvmChainName] = React.useState<string>(process.env.NEXT_PUBLIC_EVM_CHAIN_NAME || "Ethereum Hoodi");
-  const [evmRpcUrl, setEvmRpcUrl] = React.useState<string>(process.env.NEXT_PUBLIC_EVM_RPC_URL || "https://ethereum-hoodi-rpc.publicnode.com");
-  const [evmExplorerUrl, setEvmExplorerUrl] = React.useState<string>(process.env.NEXT_PUBLIC_EVM_EXPLORER_URL || "https://hoodi.etherscan.io");
+  const [evmChainIdText, setEvmChainIdText] = React.useState<string>(runtimeConfig.evmChainId || "0x88bb0");
+  const [evmChainName, setEvmChainName] = React.useState<string>(runtimeConfig.evmChainName || "Ethereum Hoodi");
+  const [evmRpcUrl, setEvmRpcUrl] = React.useState<string>(runtimeConfig.evmRpcUrl || "https://ethereum-hoodi-rpc.publicnode.com");
+  const [evmExplorerUrl, setEvmExplorerUrl] = React.useState<string>(runtimeConfig.evmExplorerUrl || "https://hoodi.etherscan.io");
   const [profileName, setProfileName] = React.useState<string>(profiles.find(p => p.id === activeId)?.name || "");
   const [pendingProvider, setPendingProvider] = React.useState<string | null>(null);
   // SSH key add handled by KeyPicker
@@ -56,16 +58,17 @@ export default function SettingsPage() {
   React.useEffect(() => {
     if (!mounted) return;
     const initial = loadSettings();
-    setSp(initial.stream_payment_address || (process.env.NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS || ""));
-    setGlm(initial.glm_token_address || (process.env.NEXT_PUBLIC_GLM_TOKEN_ADDRESS || ""));
+    const runtimeConfig = getRequestorRuntimeConfig();
+    setSp(initial.stream_payment_address || (runtimeConfig.streamPaymentAddress || ""));
+    setGlm(initial.glm_token_address || (runtimeConfig.glmTokenAddress || ""));
     const keys: SSHKey[] = initial.ssh_keys || (initial.ssh_public_key ? [{ id: 'default', name: 'Default', value: initial.ssh_public_key }] : []);
     setSshKeys(keys);
     setDefaultKeyId(initial.default_ssh_key_id || (keys[0]?.id) || (initial.ssh_public_key ? 'default' : undefined));
     setDisplayCurrency(initial.display_currency === 'token' ? 'token' : 'fiat');
-    setEvmChainIdText(initial.evm_chain_id || (process.env.NEXT_PUBLIC_EVM_CHAIN_ID || "0x88bb0"));
-    setEvmChainName(initial.evm_chain_name || (process.env.NEXT_PUBLIC_EVM_CHAIN_NAME || "Ethereum Hoodi"));
-    setEvmRpcUrl(initial.evm_rpc_url || (process.env.NEXT_PUBLIC_EVM_RPC_URL || "https://ethereum-hoodi-rpc.publicnode.com"));
-    setEvmExplorerUrl(initial.evm_explorer_url || (process.env.NEXT_PUBLIC_EVM_EXPLORER_URL || "https://hoodi.etherscan.io"));
+    setEvmChainIdText(initial.evm_chain_id || (runtimeConfig.evmChainId || "0x88bb0"));
+    setEvmChainName(initial.evm_chain_name || (runtimeConfig.evmChainName || "Ethereum Hoodi"));
+    setEvmRpcUrl(initial.evm_rpc_url || (runtimeConfig.evmRpcUrl || "https://ethereum-hoodi-rpc.publicnode.com"));
+    setEvmExplorerUrl(initial.evm_explorer_url || (runtimeConfig.evmExplorerUrl || "https://hoodi.etherscan.io"));
     // Sync ads-derived fields (profiles/context already mounted)
     setMode(ads.mode);
     setDisc(ads.discovery_url);

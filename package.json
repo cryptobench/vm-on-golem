@@ -9,8 +9,11 @@
   "scripts": {
     "build:requestor-web": "npm --workspace requestor-web run build",
     "build:provider-desktop": "npm --workspace @golem/provider-desktop run build",
+    "build:requestor-desktop": "npm --workspace @golem/requestor-desktop run build",
     "dev:provider-desktop": "npm --workspace @golem/provider-desktop run dev",
+    "dev:requestor-desktop": "npm --workspace @golem/requestor-desktop run dev",
     "tauri:build:provider-desktop": "npm --workspace @golem/provider-desktop run tauri:build",
+    "tauri:build:requestor-desktop": "npm --workspace @golem/requestor-desktop run tauri:build",
     "typecheck": "npm --workspaces --if-present run typecheck"
   },
   "overrides": {

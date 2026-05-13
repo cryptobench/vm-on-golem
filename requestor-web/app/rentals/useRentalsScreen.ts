@@ -16,6 +16,7 @@ import {
   vmStart,
   vmStop,
 } from "../../lib/api";
+import { getRequestorRuntimeConfig } from "../../lib/runtimeConfig";
 import {
   ensurePaidStreamCanStart,
   terminatePaidRental,
@@ -54,7 +55,7 @@ export function useRentalsScreen() {
   const { ads } = useAds();
   const streamPaymentAddress = (
     loadSettings().stream_payment_address ||
-    process.env.NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS ||
+    getRequestorRuntimeConfig().streamPaymentAddress ||
     ""
   ).trim();
   const { terminate } = useStreamActions(streamPaymentAddress);

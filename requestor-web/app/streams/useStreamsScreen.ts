@@ -12,6 +12,7 @@ import {
 } from "../../lib/api";
 import { getPaymentNetworkErrorMessage } from "../../lib/chain";
 import { getPriceUSD, onPricesUpdated } from "../../lib/prices";
+import { getRequestorRuntimeConfig } from "../../lib/runtimeConfig";
 import { fetchStreamWithMeta } from "../../lib/streams";
 import { useToast } from "@golem/ui";
 import {
@@ -50,7 +51,7 @@ export function useStreamsScreen() {
     setStreamPaymentAddress(
       (
         settings.stream_payment_address ||
-        process.env.NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS ||
+        getRequestorRuntimeConfig().streamPaymentAddress ||
         ""
       ).trim(),
     );

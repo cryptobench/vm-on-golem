@@ -5,6 +5,7 @@ import { useToast } from "@golem/ui";
 import { getPaymentNetworkErrorMessage } from "../../lib/chain";
 import { useWallet } from "../../context/WalletContext";
 import { vmDetailsHref } from "../../lib/routes";
+import { getRequestorRuntimeConfig } from "../../lib/runtimeConfig";
 import { fetchStreamWithMeta } from "../../lib/streams";
 import { StreamCard } from "../streams/StreamCard";
 import { useStreamActions } from "../../hooks/useStreamActions";
@@ -15,7 +16,7 @@ export function StreamsMini({ projectId }: { projectId: string }) {
   const [rows, setRows] = React.useState<any[] | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState<string | null>(null);
-  const spAddr = (loadSettings().stream_payment_address || process.env.NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS || '').trim();
+  const spAddr = (loadSettings().stream_payment_address || getRequestorRuntimeConfig().streamPaymentAddress || '').trim();
   const [displayCurrency, setDisplayCurrency] = React.useState<'fiat'|'token'>(loadSettings().display_currency === 'token' ? 'token' : 'fiat');
   const { paymentReady, paymentMessage } = useWallet();
 
