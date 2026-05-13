@@ -13,6 +13,7 @@ import {
   formatTokenAmount,
   hourlyTokenRate,
   remainingTokenBalance,
+  spentTokenBalance,
   streamStatus,
   type StreamRow,
 } from "./streamModel";
@@ -42,12 +43,37 @@ export function StreamsTable({
   actionsDisabledReason,
   onTopUp,
 }: StreamsTableProps) {
-  const [view, setView] = React.useState<StreamView>("active");
+  const [view, setView] = React.useState<StreamView>(
+    showEnded && ended.length ? "ended" : "active",
+  );
+  const previousShowEnded = React.useRef(showEnded);
   const rows = view === "ended" ? ended : active;
 
   React.useEffect(() => {
-    if (view === "ended" && !ended.length) setView("active");
-  }, [ended.length, view]);
+    const wasShowingEnded = previousShowEnded.current;
+    previousShowEnded.current = showEnded;
+
+    if (!showEnded) {
+      setView("active");
+      return;
+    }
+
+    if (!wasShowingEnded && ended.length) {
+      setView("ended");
+    }
+  }, [ended.length, showEnded]);
+
+  React.useEffect(() => {
+    if (view === "ended" && (!showEnded || !ended.length)) {
+      setView("active");
+    }
+  }, [ended.length, showEnded, view]);
+
+  const toggleShowEnded = () => {
+    const next = !showEnded;
+    onShowEndedChange(next);
+    setView(next && ended.length ? "ended" : "active");
+  };
 
   return (
     <section className="streams-table-shell overflow-hidden rounded-lg border border-border bg-surface shadow-soft">
@@ -58,38 +84,39 @@ export function StreamsTable({
             label={`Active streams (${active.length})`}
             onClick={() => setView("active")}
           />
-          <TabButton
-            active={view === "ended"}
-            label={`Ended streams (${ended.length})`}
-            onClick={() => setView("ended")}
-          />
+          {showEnded ? (
+            <TabButton
+              active={view === "ended"}
+              label={`Ended streams (${ended.length})`}
+              onClick={() => setView("ended")}
+            />
+          ) : null}
         </div>
         <div className="flex items-center gap-4 px-4 pb-4 sm:px-5 sm:pb-0">
-          <label className="inline-flex items-center gap-3 text-sm font-medium text-text-secondary">
-            <button
+          <button
+            className="inline-flex h-10 select-none items-center gap-3 text-sm font-medium text-text-secondary transition hover:text-text-primary focus:outline-none focus:ring-2 focus:ring-primary"
+            onClick={toggleShowEnded}
+            role="switch"
+            type="button"
+            aria-checked={showEnded}
+          >
+            <span
               className={cn(
-                "relative h-6 w-11 rounded-full border border-border transition",
+                "relative h-6 w-11 shrink-0 rounded-full border border-border transition",
                 showEnded ? "bg-primary" : "bg-border-strong",
               )}
-              onClick={() => {
-                const next = !showEnded;
-                onShowEndedChange(next);
-                setView(next ? "ended" : "active");
-              }}
-              role="switch"
-              type="button"
-              aria-checked={showEnded}
+              aria-hidden
             >
               <span
                 className={cn(
-                  "absolute top-0.5 h-5 w-5 rounded-full bg-surface shadow-soft transition-transform",
+                  "absolute left-0 top-0.5 h-5 w-5 rounded-full bg-surface shadow-soft transition-transform",
                   showEnded ? "translate-x-5" : "translate-x-0.5",
                 )}
                 aria-hidden
               />
-            </button>
-            Show ended streams
-          </label>
+            </span>
+            <span>Show ended streams</span>
+          </button>
           <Link className="btn btn-secondary w-10 px-0" href="/settings" aria-label="Stream settings">
             <RiSettings3Line className="h-5 w-5" aria-hidden />
           </Link>
@@ -107,6 +134,7 @@ export function StreamsTable({
                 "Decimals",
                 "Hourly Rate",
                 "Remaining Time",
+                "Spent So Far",
                 "Remaining Balance",
                 "Status",
                 "Halted",
@@ -187,8 +215,10 @@ function StreamsTableRow({
 }) {
   const status = streamStatus(row, nowSec);
   const tokenRate = hourlyTokenRate(row);
+  const spent = spentTokenBalance(row, nowSec);
   const balance = remainingTokenBalance(row, nowSec);
   const hourlyUsd = row.usdPrice == null ? null : tokenRate * row.usdPrice;
+  const spentUsd = row.usdPrice == null ? null : spent * row.usdPrice;
   const balanceUsd = row.usdPrice == null ? null : balance * row.usdPrice;
   const terminal = row.chain.halted || status === "out-of-funds";
 
@@ -230,6 +260,14 @@ function StreamsTableRow({
       </td>
       <td className="td whitespace-nowrap py-5">
         <StreamRunway row={row} nowSec={nowSec} />
+      </td>
+      <td className="td whitespace-nowrap py-5">
+        <div className="font-medium text-text-primary">
+          {formatTokenAmount(spent, row.tokenSymbol, 2)}
+        </div>
+        <div className="mt-1 text-xs text-text-secondary">
+          {spentUsd == null ? "No fiat price" : `≈ ${formatFiat(spentUsd, 2)}`}
+        </div>
       </td>
       <td className="td whitespace-nowrap py-5">
         <div className="font-medium text-text-primary">

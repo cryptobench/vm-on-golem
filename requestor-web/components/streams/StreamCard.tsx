@@ -17,7 +17,7 @@ export type StreamCardProps = {
   title?: string;
   streamId?: string | number | null;
   chain: {
-    token: string; recipient: string; ratePerSecond: bigint; deposit: bigint; withdrawn: bigint; halted: boolean;
+    token: string; recipient: string; startTime?: bigint; stopTime?: bigint; ratePerSecond: bigint; deposit: bigint; withdrawn: bigint; halted: boolean;
   };
   remaining: number; // seconds
   meta: StreamMeta;
@@ -41,10 +41,21 @@ export function StreamCard({ title, streamId, chain, remaining, meta, displayCur
   // For requestors, "balance" should reflect remaining budget (tokens left to pay),
   // not the provider's withdrawable amount. Compute from runway: rate * remaining seconds.
   const reqRemainingTok = Math.max(0, rps * localRemaining);
+  const currentSec = Math.floor(Date.now() / 1000);
+  const startSec = Number(chain.startTime || 0n);
+  const stopSec = Number(chain.stopTime || 0n);
+  const effectiveSec = chain.halted ? stopSec : Math.min(currentSec, stopSec);
+  const elapsedSec = Math.max(0, effectiveSec - startSec);
+  const spentTok = startSec && stopSec
+    ? Math.max(0, Math.min(dep, elapsedSec * rps))
+    : Math.max(0, dep - reqRemainingTok);
 
   const ratePerHour = (displayCurrency === 'fiat' && meta.usdPrice != null)
     ? `$${(rph * meta.usdPrice).toFixed(6)}/h`
     : `${rph.toFixed(6)} ${meta.tokenSymbol}/h`;
+  const spentStr = (displayCurrency === 'fiat' && meta.usdPrice != null)
+    ? `$${(spentTok * meta.usdPrice).toFixed(2)}`
+    : `${spentTok.toFixed(6)} ${meta.tokenSymbol}`;
   const remStr = (displayCurrency === 'fiat' && meta.usdPrice != null)
     ? `$${(reqRemainingTok * meta.usdPrice).toFixed(2)}`
     : `${reqRemainingTok.toFixed(6)} ${meta.tokenSymbol}`;
@@ -116,6 +127,10 @@ export function StreamCard({ title, streamId, chain, remaining, meta, displayCur
               </span>
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 rounded bg-gray-50 px-2.5 py-1 text-xs font-medium text-gray-700">
+                Spent so far
+                <span className="text-[11px] text-gray-600 truncate" title={spentStr}>{spentStr}</span>
+              </span>
               <span className="inline-flex items-center gap-1.5 rounded bg-gray-50 px-2.5 py-1 text-xs font-medium text-gray-700">
                 Remaining balance
                 <span className="text-[11px] text-gray-600 truncate" title={remStr}>{remStr}</span>

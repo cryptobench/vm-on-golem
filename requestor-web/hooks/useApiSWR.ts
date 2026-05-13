@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import { useAds } from "../context/AdsContext";
 import {
   providerInfo as apiProviderInfo,
+  providerSummary as apiProviderSummary,
   vmAccess as apiVmAccess,
   vmJobStatus as apiVmJobStatus,
   vmStatusSafe as apiVmStatusSafe,
@@ -33,6 +34,23 @@ export function useProviderInfo(
     [providerId, ads],
   );
   return useSWR(key, () => apiProviderInfo(providerId!, ads), {
+    revalidateOnFocus: true,
+    revalidateOnReconnect: true,
+    revalidateIfStale: true,
+    ...config,
+  });
+}
+
+export function useProviderSummary(
+  providerId?: string | null,
+  config?: SWRConfiguration,
+) {
+  const { ads } = useAds();
+  const key = useMemo(
+    () => (providerId ? keyWithAds("provider-summary", ads, providerId) : null),
+    [providerId, ads],
+  );
+  return useSWR(key, () => apiProviderSummary(providerId!, ads), {
     revalidateOnFocus: true,
     revalidateOnReconnect: true,
     revalidateIfStale: true,

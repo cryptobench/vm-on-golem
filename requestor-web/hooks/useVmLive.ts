@@ -50,7 +50,9 @@ export function vmLiveReducer(
   state: VmLiveState,
   action: Action,
 ): VmLiveState {
-  if (action.type === "connecting") return { ...state, connection: "connecting" };
+  if (action.type === "connecting") {
+    return { ...initialState, connection: "connecting" };
+  }
   if (action.type === "connected") return { ...state, connection: "connected" };
   if (action.type === "degraded") {
     return {

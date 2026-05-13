@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
@@ -8,6 +9,7 @@ from golem_streaming_abi import ERC20_ABI, STREAM_PAYMENT_ABI
 from web3 import Web3
 
 ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -35,6 +37,55 @@ class StreamPaymentClient:
         self.token_address = token_address
         self.erc20 = self.web3.eth.contract(address=self.token_address, abi=ERC20_ABI)
 
+    def _eth_value(self, name: str) -> Any:
+        value = getattr(self.web3.eth, name)
+        return value() if callable(value) else value
+
+    def _set_chain_id(self, base: dict[str, Any]) -> None:
+        try:
+            chain_id = self._eth_value("chain_id")
+        except Exception:
+            logger.debug("Could not determine chain id", exc_info=True)
+            return
+        if chain_id is not None:
+            base["chainId"] = chain_id
+
+    def _set_gas_limit(self, fn, base: dict[str, Any]) -> None:
+        try:
+            tx_preview = fn.build_transaction(base)
+            base["gas"] = self.web3.eth.estimate_gas(tx_preview)
+        except Exception:
+            logger.debug("Could not estimate gas for transaction", exc_info=True)
+
+    def _set_fee_fields(self, base: dict[str, Any]) -> None:
+        has_legacy = "gasPrice" in base
+        has_eip1559 = "maxFeePerGas" in base or "maxPriorityFeePerGas" in base
+        if has_legacy and has_eip1559:
+            raise ValueError(
+                "Transaction fee fields cannot mix gasPrice with EIP-1559 fees"
+            )
+        if has_legacy or has_eip1559:
+            return
+
+        try:
+            priority_fee = self._eth_value("max_priority_fee")
+            gas_price = self._eth_value("gas_price")
+        except Exception:
+            logger.debug("Could not read EIP-1559 fee fields", exc_info=True)
+        else:
+            if priority_fee is not None and gas_price is not None:
+                base["maxPriorityFeePerGas"] = int(priority_fee)
+                base["maxFeePerGas"] = max(int(gas_price), int(priority_fee))
+                return
+
+        try:
+            gas_price = self._eth_value("gas_price")
+        except Exception:
+            logger.debug("Could not read legacy gas price", exc_info=True)
+            return
+        if gas_price is not None:
+            base["gasPrice"] = int(gas_price)
+
     def _send(self, fn, extra: Optional[dict[str, Any]] = None) -> Dict[str, Any]:
         base = {
             "from": self.account.address,
@@ -42,35 +93,9 @@ class StreamPaymentClient:
         }
         if extra:
             base.update(extra)
-        # Fill chainId
-        try:
-            base["chainId"] = (
-                getattr(self.web3.eth, "chain_id", None) or self.web3.eth.chain_id
-            )
-        except Exception:
-            pass
-        # Try gas estimation and fee fields
-        try:
-            tx_preview = fn.build_transaction(base)
-            gas = self.web3.eth.estimate_gas(tx_preview)
-            base["gas"] = gas
-        except Exception:
-            pass
-        try:
-            # Prefer EIP-1559 if available
-            max_fee = getattr(self.web3.eth, "max_priority_fee", None)
-            if max_fee is not None:
-                base.setdefault("maxPriorityFeePerGas", max_fee)
-            base.setdefault(
-                "maxFeePerGas",
-                getattr(self.web3.eth, "gas_price", lambda: None)()
-                or self.web3.eth.gas_price,
-            )
-        except Exception:
-            try:
-                base.setdefault("gasPrice", self.web3.eth.gas_price)
-            except Exception:
-                pass
+        self._set_chain_id(base)
+        self._set_gas_limit(fn, base)
+        self._set_fee_fields(base)
 
         tx = fn.build_transaction(base)
         # In production, sign and send raw; in tests, Account may be a dummy without signer

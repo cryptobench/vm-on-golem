@@ -16,6 +16,7 @@ import {
   getVmStreamStatusApiV1VmsRequestorNameStreamGet,
   listSnapshotsApiV1VmsRequestorNameSnapshotsGet,
   providerInfoApiV1ProviderInfoGet,
+  providerSummaryApiV1SummaryGet,
   resizeVmApiV1VmsRequestorNameResizePost,
   restartVmApiV1VmsRequestorNameRestartPost,
   restoreSnapshotApiV1VmsRequestorNameSnapshotsSnapshotNameRestorePost,
@@ -35,13 +36,14 @@ import {
   type VMSnapshot,
   type CreateVMJobStatus,
   type ProviderInfo,
+  type ProviderSummary,
 } from "./generated/api/provider";
 import type { AdsConfig } from "../context/AdsContext";
 import type { ApiRequestOptions } from "./api/orval-fetch";
 
 export type { AdsConfig } from "../context/AdsContext";
 export type ProviderAd = AdvertisementResponse;
-export type { CreateVMRequest, VMResources };
+export type { CreateVMRequest, VMResources, ProviderSummary };
 
 export type SSHKey = {
   id: string;
@@ -249,11 +251,15 @@ export function computeEstimate(
   const glmCore = pricing.glm_per_core_month;
   const glmRam = pricing.glm_per_gb_ram_month;
   const glmStorage = pricing.glm_per_gb_storage_month;
-  const glm =
+  const rawGlm =
     glmCore != null && glmRam != null && glmStorage != null
       ? Number(glmCore) * cpu +
         Number(glmRam) * memory +
         Number(glmStorage) * storage
+      : undefined;
+  const glm =
+    rawGlm != null && Number.isFinite(rawGlm) && rawGlm > 0
+      ? rawGlm
       : undefined;
   return {
     usd_per_month: Number(usd.toFixed(4)),
@@ -282,6 +288,13 @@ export function computePriceRange(
 export async function providerInfo(providerId: string, ads: AdsConfig) {
   return unwrapAs<ProviderInfo>(
     await providerInfoApiV1ProviderInfoGet(providerOptions(providerId, ads)),
+    200,
+  );
+}
+
+export async function providerSummary(providerId: string, ads: AdsConfig) {
+  return unwrapAs<ProviderSummary>(
+    await providerSummaryApiV1SummaryGet(providerOptions(providerId, ads)),
     200,
   );
 }
@@ -419,7 +432,8 @@ export function vmLiveUrl(
     "proxy_token",
     process.env.NEXT_PUBLIC_PORT_CHECKER_TOKEN || "",
   );
-  if (ads.arkiv_rpc_url) url.searchParams.set("arkiv_rpc_url", ads.arkiv_rpc_url);
+  if (ads.arkiv_rpc_url)
+    url.searchParams.set("arkiv_rpc_url", ads.arkiv_rpc_url);
   if (ads.arkiv_ws_url) url.searchParams.set("arkiv_ws_url", ads.arkiv_ws_url);
   if (options.jobId) url.searchParams.set("job_id", options.jobId);
   if (options.historyRange) {

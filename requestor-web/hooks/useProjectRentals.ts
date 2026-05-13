@@ -6,6 +6,7 @@ import { useAds } from "../context/AdsContext";
 
 export function useProjectRentals(projectId: string) {
   const { ads } = useAds();
+  const [validatedKey, setValidatedKey] = React.useState<string | null>(null);
 
   const adsKey = React.useMemo(() => {
     const mode = ads?.mode || "";
@@ -14,8 +15,9 @@ export function useProjectRentals(projectId: string) {
     const chain = ads?.chain_id || "";
     return `${mode}|${rpc}|${ws}|${chain}`;
   }, [ads]);
+  const rentalsKey = `${projectId}|${adsKey}`;
 
-  const { data, mutate } = useSWR(
+  const { data, isValidating, mutate } = useSWR(
     ["project-rentals", projectId, adsKey],
     async () => {
       const list = loadRentals();
@@ -27,25 +29,23 @@ export function useProjectRentals(projectId: string) {
         if ((r.project_id || "default") !== projectId) continue;
         const status = String(r.status || "").toLowerCase();
         if (status === "terminated" || status === "deleted") continue;
-        try {
-          const st = await vmStatusSafe(r.provider_id, r.vm_id, ads);
-          if (!st.exists && st.code === 404) {
-            const createdAt = Number(r.created_at || 0);
-            const isCreating = status === "creating";
-            const withinGrace = isCreating && createdAt && nowSec - createdAt < 180; // 3 minutes
-            if (!withinGrace && r.status !== "terminated") {
-              next[i] = {
-                ...r,
-                status: "terminated",
-                ssh_port: null,
-                ended_at: nowSec,
-                terminated_at: nowSec,
-                termination_reason: "provider_missing",
-              };
-              changed = true;
-            }
+        const st = await vmStatusSafe(r.provider_id, r.vm_id, ads);
+        if (!st.exists && st.code === 404) {
+          const createdAt = Number(r.created_at || 0);
+          const isCreating = status === "creating";
+          const withinGrace = isCreating && createdAt && nowSec - createdAt < 180; // 3 minutes
+          if (!withinGrace && r.status !== "terminated") {
+            next[i] = {
+              ...r,
+              status: "terminated",
+              ssh_port: null,
+              ended_at: nowSec,
+              terminated_at: nowSec,
+              termination_reason: "provider_missing",
+            };
+            changed = true;
           }
-        } catch {}
+        }
       }
       if (changed) saveRentals(next as any);
       return next as any[];
@@ -53,12 +53,14 @@ export function useProjectRentals(projectId: string) {
     {
       refreshInterval: 8000,
       revalidateOnMount: true,
-      // Use a stable, SSR-safe fallback to avoid hydration mismatches
-      fallbackData: [] as any[],
     }
   );
 
   const items = (data as any[]) || [];
+  React.useEffect(() => {
+    if (data !== undefined && !isValidating) setValidatedKey(rentalsKey);
+  }, [data, isValidating, rentalsKey]);
+  const isInitialLoading = validatedKey !== rentalsKey;
 
   // setItems persists and updates the SWR cache
   const setItems = React.useCallback((next: any[]) => {
@@ -69,5 +71,5 @@ export function useProjectRentals(projectId: string) {
   // refresh triggers immediate revalidation
   const refresh = React.useCallback(() => { mutate(); }, [mutate]);
 
-  return { items, setItems, refresh } as const;
+  return { items, isInitialLoading, setItems, refresh } as const;
 }

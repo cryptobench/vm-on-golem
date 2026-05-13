@@ -24,6 +24,10 @@ This document is the **architectural baseline** for the repo. Some sections desc
 - Per-service: `poetry -C <svc> run pytest`, `GOLEM_ENVIRONMENT=development poetry -C provider-server run golem-provider start`, `poetry -C central-discovery-server run golem-central-discovery`, `poetry -C requestor-server run golem server api --reload`.
 - GUIs: in `provider-gui/` or `requestor-gui/`: `npm install && npm start`.
 
+## Agent Server Policy
+
+Codex agents MUST NOT start long-running local servers or GUI processes in this repository unless the user explicitly asks for it in the current turn. This includes `make local`, `make start`, `npm run dev`, `npm start`, `next dev`, Electron apps, Uvicorn/FastAPI servers, provider/requestor CLIs, central discovery, and port-checker. For UI work, prefer static checks, unit/type tests, code inspection, or ask the user to run the app and provide a URL/screenshot.
+
 ## Discovery Naming & Backends
 
 Discovery is a capability, not a single server. The repo supports two provider-discovery backends:

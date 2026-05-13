@@ -7,11 +7,16 @@ import { useWallet } from "../context/WalletContext";
 export function useStreamActions(spAddr: string | null | undefined) {
   const { ensurePaymentsNetwork } = useWallet();
 
-  async function topUp(streamId: string | number | bigint, tokenAddress: string, ratePerSecond: bigint, seconds: number) {
-    if (!spAddr) throw new Error('StreamPayment address missing');
-    const sid = typeof streamId === 'bigint' ? streamId : BigInt(streamId);
+  async function topUp(
+    streamId: string | number | bigint,
+    tokenAddress: string,
+    ratePerSecond: bigint,
+    seconds: number,
+  ) {
+    if (!spAddr) throw new Error("StreamPayment address missing");
+    const sid = typeof streamId === "bigint" ? streamId : BigInt(streamId);
     const { ethereum } = window as any;
-    if (!ethereum) throw new Error('MetaMask not detected');
+    if (!ethereum) throw new Error("MetaMask not detected");
     await ensurePaymentsNetwork();
     const provider = new BrowserProvider(ethereum);
     const signer = await provider.getSigner();
@@ -29,18 +34,35 @@ export function useStreamActions(spAddr: string | null | undefined) {
     return tx.hash as string;
   }
 
-  async function terminate(streamId: string | number | bigint) {
-    if (!spAddr) throw new Error('StreamPayment address missing');
-    const sid = typeof streamId === 'bigint' ? streamId : BigInt(streamId);
+  async function terminate(
+    streamId: string | number | bigint,
+    onPhase?: (phase: string) => void,
+  ) {
+    if (!spAddr) throw new Error("StreamPayment address missing");
+    const sid = typeof streamId === "bigint" ? streamId : BigInt(streamId);
     const { ethereum } = window as any;
+    const walletName = getWalletName(ethereum);
+    onPhase?.(
+      `Waiting for your approval in ${walletName} to terminate the old stream`,
+    );
     await ensurePaymentsNetwork();
     const provider = new BrowserProvider(ethereum);
     const signer = await provider.getSigner();
     const contract = new Contract(spAddr, (streamPayment as any).abi, signer);
     const tx = await contract.terminate(sid, { gasLimit: 180000n });
+    onPhase?.(
+      "Waiting for old stream termination confirmation on the blockchain",
+    );
     await tx.wait();
     return tx.hash as string;
   }
 
   return { topUp, terminate };
+}
+
+function getWalletName(ethereum: any) {
+  if (ethereum?.isMetaMask) return "MetaMask";
+  if (ethereum?.isRabby) return "Rabby";
+  if (ethereum?.isBraveWallet) return "Brave Wallet";
+  return "your wallet";
 }

@@ -1,24 +1,18 @@
 "use client";
 
 import React from "react";
-import { LineChart } from "@tremor/react";
-import {
-  RiArrowDownLine,
-  RiArrowUpLine,
-  RiPulseLine,
-} from "@remixicon/react";
+import { RiArrowDownLine, RiArrowUpLine } from "@remixicon/react";
 import { Skeleton } from "../../ui/Skeleton";
 import type { VmMonitoringHistory } from "../../../lib/api";
 import { DetailPanel, PanelTitle } from "./VmDetailPrimitives";
 import {
   buildMetricChartRows,
-  buildSparklineValues,
-  formatBytes,
+  buildSparklineRows,
   formatMbps,
   formatPercent,
   latestNetworkRates,
-  networkTransferTotals,
 } from "./metrics";
+import { SlidingSparkline } from "./SlidingMetricCharts";
 
 type GuestMetrics = Record<
   string,
@@ -39,15 +33,11 @@ export function VmMetricsSummary({
     [history],
   );
   const network = latestNetworkRates(rows);
-  const networkTotals = React.useMemo(
-    () => networkTransferTotals(history?.samples || []),
-    [history],
-  );
 
   return (
     <DetailPanel className="vm-page-enter">
       <PanelTitle
-        title="Latest guest metrics"
+        title="Live metrics"
         hint="Metrics are reported by the guest agent inside the VM."
       />
 
@@ -62,28 +52,38 @@ export function VmMetricsSummary({
           <MetricTile
             label="CPU"
             value={formatPercent(metricPercent(guestMetrics, "cpu_percent"))}
-            values={buildSparklineValues(rows, "CPU")}
+            values={buildSparklineRows(rows, "CPU")}
             color="blue"
           />
           <MetricTile
             label="Memory"
             value={formatPercent(metricPercent(guestMetrics, "memory_percent"))}
-            values={buildSparklineValues(rows, "Memory")}
+            values={buildSparklineRows(rows, "Memory")}
             color="violet"
           />
           <MetricTile
             label="Disk"
             value={formatPercent(metricPercent(guestMetrics, "disk_percent"))}
-            values={buildSparklineValues(rows, "Disk")}
+            values={buildSparklineRows(rows, "Disk")}
             color="emerald"
           />
-          <NetworkTile rx={network.rx} tx={network.tx} />
-          <NetworkTotalsTile rx={networkTotals.rx} tx={networkTotals.tx} />
+          <NetworkRateTile
+            label="Network In"
+            value={network.rx}
+            values={buildSparklineRows(rows, "Network RX")}
+            direction="in"
+          />
+          <NetworkRateTile
+            label="Network Out"
+            value={network.tx}
+            values={buildSparklineRows(rows, "Network TX")}
+            direction="out"
+          />
         </div>
       ) : (
         <div className="mt-4 rounded-md border border-warning bg-warning-soft p-4 text-sm text-text-primary">
-          Guest metrics are not available yet. The default VM agent only publishes
-          metrics and does not give providers shell or file access.
+          Guest metrics are not available yet. The default VM agent only
+          publishes metrics and does not give providers shell or file access.
         </div>
       )}
     </DetailPanel>
@@ -98,56 +98,46 @@ function MetricTile({
 }: {
   label: string;
   value: string;
-  values: number[];
-  color: "blue" | "violet" | "emerald";
+  values: ReturnType<typeof buildSparklineRows>;
+  color: "blue" | "violet" | "emerald" | "cyan" | "orange";
 }) {
   return (
     <div className="vm-metric-tile rounded-lg border border-border bg-surface p-4">
       <div className="text-xs font-medium text-text-muted">{label}</div>
-      <div className="mt-2 text-lg font-semibold text-text-primary">{value}</div>
+      <div className="mt-2 text-lg font-semibold text-text-primary">
+        {value}
+      </div>
       <MiniMetricChart values={values} color={color} />
     </div>
   );
 }
 
-function NetworkTile({ rx, tx }: { rx: number | null; tx: number | null }) {
-  return (
-    <div className="vm-metric-tile rounded-lg border border-border bg-surface p-4">
-      <div className="flex items-center gap-2 text-xs font-medium text-text-muted">
-        <RiPulseLine className="h-4 w-4" aria-hidden />
-        Network live
-      </div>
-      <div className="mt-2 space-y-1 text-sm font-medium text-text-primary">
-        <div className="flex items-center gap-1">
-          <RiArrowDownLine className="h-4 w-4 text-text-secondary" aria-hidden />
-          {formatMbps(rx)}
-        </div>
-        <div className="flex items-center gap-1">
-          <RiArrowUpLine className="h-4 w-4 text-text-secondary" aria-hidden />
-          {formatMbps(tx)}
-        </div>
-      </div>
-    </div>
-  );
-}
+function NetworkRateTile({
+  label,
+  value,
+  values,
+  direction,
+}: {
+  label: string;
+  value: number | null;
+  values: ReturnType<typeof buildSparklineRows>;
+  direction: "in" | "out";
+}) {
+  const Icon = direction === "in" ? RiArrowDownLine : RiArrowUpLine;
 
-function NetworkTotalsTile({ rx, tx }: { rx: number | null; tx: number | null }) {
   return (
     <div className="vm-metric-tile rounded-lg border border-border bg-surface p-4">
       <div className="flex items-center gap-2 text-xs font-medium text-text-muted">
-        <RiPulseLine className="h-4 w-4" aria-hidden />
-        Network total (1h)
+        <Icon className="h-4 w-4" aria-hidden />
+        {label}
       </div>
-      <div className="mt-2 space-y-1 text-sm font-medium text-text-primary">
-        <div className="flex items-center gap-1">
-          <RiArrowDownLine className="h-4 w-4 text-text-secondary" aria-hidden />
-          {formatBytes(rx)}
-        </div>
-        <div className="flex items-center gap-1">
-          <RiArrowUpLine className="h-4 w-4 text-text-secondary" aria-hidden />
-          {formatBytes(tx)}
-        </div>
+      <div className="mt-2 text-sm font-semibold text-text-primary">
+        {formatMbps(value)}
       </div>
+      <MiniMetricChart
+        values={values}
+        color={direction === "in" ? "cyan" : "orange"}
+      />
     </div>
   );
 }
@@ -156,38 +146,14 @@ function MiniMetricChart({
   values,
   color,
 }: {
-  values: number[];
-  color: "blue" | "violet" | "emerald";
+  values: ReturnType<typeof buildSparklineRows>;
+  color: "blue" | "violet" | "emerald" | "cyan" | "orange";
 }) {
-  const data = React.useMemo(
-    () =>
-      values.slice(-24).map((value, index) => ({
-        point: String(index + 1),
-        value,
-      })),
-    [values],
-  );
-
-  if (data.length < 2) {
+  if (values.length < 2) {
     return <div className="mt-2 h-9 rounded bg-surface-muted" />;
   }
 
-  return (
-    <LineChart
-      className="mt-2 h-9"
-      data={data}
-      index="point"
-      categories={["value"]}
-      colors={[color]}
-      showXAxis={false}
-      showYAxis={false}
-      showLegend={false}
-      showGridLines={false}
-      showTooltip={false}
-      autoMinValue
-      showAnimation
-    />
-  );
+  return <SlidingSparkline className="mt-2 h-9" data={values} color={color} />;
 }
 
 function metricPercent(guestMetrics: NonNullable<GuestMetrics>, name: string) {

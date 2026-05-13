@@ -1,10 +1,10 @@
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, call
 
 import pytest
 
 from provider.config import Settings
 from provider.discovery.resource_tracker import ResourceTracker
-from provider.errors import ConflictError
+from provider.errors import ConflictError, ValidationError
 from provider.vm.models import VMConfig, VMInfo, VMResources, VMStatus
 from provider.vm.provider import VMProvider
 from provider.vm.service import VMService
@@ -15,6 +15,7 @@ def mock_resource_tracker():
     tracker = MagicMock(spec=ResourceTracker)
     tracker.allocate = AsyncMock(return_value=True)
     tracker.deallocate = AsyncMock()
+    tracker.resize = AsyncMock(return_value=True)
     return tracker
 
 
@@ -32,6 +33,9 @@ def mock_vm_provider():
     provider.delete_vm = AsyncMock()
     provider.list_vms = AsyncMock(return_value=[])
     provider.get_vm_status = AsyncMock()
+    provider.resize_vm = AsyncMock()
+    provider.start_vm = AsyncMock()
+    provider.stop_vm = AsyncMock()
     return provider
 
 
@@ -76,7 +80,7 @@ async def test_create_vm_happy_path(
     mock_resource_tracker.allocate.assert_awaited_once_with(
         config.resources, config.name
     )
-    mock_vm_provider.create_vm.assert_awaited_once_with(config)
+    mock_vm_provider.create_vm.assert_awaited_once_with(config, None)
     assert vm_info.name == "test-vm"
     assert vm_info.status == VMStatus.RUNNING
 
@@ -166,15 +170,15 @@ async def test_delete_vm_no_mapping_raises(vm_service, mock_vm_provider):
 
 
 @pytest.mark.asyncio
-async def test_resize_vm_requires_stopped(vm_service, mock_vm_provider):
+async def test_resize_vm_rejects_unsupported_state(vm_service, mock_vm_provider):
     mock_vm_provider.get_vm_status.return_value = VMInfo(
         id="test-vm",
         name="test-vm",
-        status=VMStatus.RUNNING,
+        status=VMStatus.SUSPENDED,
         resources=VMResources(cpu=1, memory=1, storage=10),
     )
 
-    with pytest.raises(ConflictError, match="stopped"):
+    with pytest.raises(ConflictError, match="running or stopped"):
         await vm_service.resize_vm("test-vm", VMResources(cpu=2, memory=2, storage=20))
 
     mock_vm_provider.resize_vm.assert_not_called()
@@ -198,7 +202,6 @@ async def test_resize_vm_updates_tracker_and_provider(
     )
     mock_vm_provider.get_vm_status.return_value = current
     mock_vm_provider.resize_vm = AsyncMock(return_value=resized)
-    mock_resource_tracker.resize = AsyncMock(return_value=True)
 
     result = await vm_service.resize_vm(
         "test-vm", VMResources(cpu=2, memory=4, storage=20)
@@ -211,6 +214,103 @@ async def test_resize_vm_updates_tracker_and_provider(
     mock_vm_provider.resize_vm.assert_awaited_once_with(
         "test-vm", VMResources(cpu=2, memory=4, storage=20)
     )
+    mock_vm_provider.stop_vm.assert_not_awaited()
+    mock_vm_provider.start_vm.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_resize_running_vm_stops_resizes_and_restarts(
+    vm_service, mock_resource_tracker, mock_vm_provider
+):
+    current = VMInfo(
+        id="test-vm",
+        name="test-vm",
+        status=VMStatus.RUNNING,
+        resources=VMResources(cpu=1, memory=1, storage=10),
+    )
+    resized = VMInfo(
+        id="test-vm",
+        name="test-vm",
+        status=VMStatus.STOPPED,
+        resources=VMResources(cpu=3, memory=9, storage=20),
+    )
+    restarted = resized.model_copy(update={"status": VMStatus.RUNNING})
+    mock_vm_provider.get_vm_status.return_value = current
+    mock_vm_provider.stop_vm.return_value = current.model_copy(
+        update={"status": VMStatus.STOPPED}
+    )
+    mock_vm_provider.resize_vm.return_value = resized
+    mock_vm_provider.start_vm.return_value = restarted
+
+    result = await vm_service.resize_vm(
+        "test-vm", VMResources(cpu=3, memory=9, storage=20)
+    )
+
+    assert result is restarted
+    mock_vm_provider.stop_vm.assert_awaited_once_with("test-vm")
+    mock_resource_tracker.resize.assert_awaited_once_with(
+        "test-vm", VMResources(cpu=3, memory=9, storage=20)
+    )
+    mock_vm_provider.resize_vm.assert_awaited_once_with(
+        "test-vm", VMResources(cpu=3, memory=9, storage=20)
+    )
+    mock_vm_provider.start_vm.assert_awaited_once_with("test-vm")
+
+
+@pytest.mark.asyncio
+async def test_resize_vm_rejects_storage_shrink(vm_service, mock_vm_provider):
+    mock_vm_provider.get_vm_status.return_value = VMInfo(
+        id="test-vm",
+        name="test-vm",
+        status=VMStatus.STOPPED,
+        resources=VMResources(cpu=2, memory=2, storage=20),
+    )
+
+    with pytest.raises(ValidationError, match="storage can only be increased"):
+        await vm_service.resize_vm("test-vm", VMResources(cpu=2, memory=2, storage=10))
+
+    mock_vm_provider.resize_vm.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_resize_vm_insufficient_capacity_fails_before_provider_resize(
+    vm_service, mock_resource_tracker, mock_vm_provider
+):
+    mock_vm_provider.get_vm_status.return_value = VMInfo(
+        id="test-vm",
+        name="test-vm",
+        status=VMStatus.STOPPED,
+        resources=VMResources(cpu=1, memory=1, storage=10),
+    )
+    mock_resource_tracker.resize.return_value = False
+
+    with pytest.raises(ValueError, match="Insufficient resources"):
+        await vm_service.resize_vm("test-vm", VMResources(cpu=4, memory=8, storage=40))
+
+    mock_vm_provider.resize_vm.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_resize_vm_provider_failure_rolls_back_allocation(
+    vm_service, mock_resource_tracker, mock_vm_provider
+):
+    current = VMInfo(
+        id="test-vm",
+        name="test-vm",
+        status=VMStatus.STOPPED,
+        resources=VMResources(cpu=1, memory=1, storage=10),
+    )
+    target = VMResources(cpu=3, memory=9, storage=20)
+    mock_vm_provider.get_vm_status.return_value = current
+    mock_vm_provider.resize_vm.side_effect = RuntimeError("multipass failed")
+
+    with pytest.raises(RuntimeError, match="multipass failed"):
+        await vm_service.resize_vm("test-vm", target)
+
+    assert mock_resource_tracker.resize.await_args_list == [
+        call("test-vm", target),
+        call("test-vm", current.resources),
+    ]
 
 
 @pytest.mark.asyncio
