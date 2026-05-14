@@ -7,8 +7,8 @@ from typing import Callable, Literal
 import aiohttp
 
 from ..utils.logging import setup_logger
-from .acme import Http01ChallengeServer, NativeAcmeClient
-from .certs import cert_is_valid_for_ip
+from .acme import AcmeRequestError
+from .certificate_service import CertificateMaintenanceService
 from .domain import (
     NetworkSetupError,
     PortCheck,
@@ -30,10 +30,14 @@ class NetworkSetupService:
         self,
         settings,
         nat_mapper: NatMapper | None = None,
+        certificate_service: CertificateMaintenanceService | None = None,
         status_callback: Callable[[StartupSetupStatus], None] | None = None,
     ):
         self.settings = settings
         self.nat_mapper = nat_mapper or NatMapper(settings.NAT_AUTO_MAPPING_ENABLED)
+        self.certificate_service = certificate_service or CertificateMaintenanceService(
+            settings
+        )
         self.status_callback = status_callback
         self.status = StartupSetupStatus(
             stages=_default_stages(settings),
@@ -43,7 +47,6 @@ class NetworkSetupService:
             vm_port_range_end=int(settings.PORT_RANGE_END),
         )
         self.https_edge: HttpsEdgeServer | None = None
-        self.challenge_server: Http01ChallengeServer | None = None
 
     async def setup(self) -> StartupSetupStatus:
         if (
@@ -94,12 +97,20 @@ class NetworkSetupService:
             raise NetworkSetupError(self.status.message, self.status) from exc
 
     async def cleanup(self) -> None:
+        await self.certificate_service.stop()
         if self.https_edge is not None:
             await self.https_edge.stop()
             self.https_edge = None
-        if self.challenge_server is not None:
-            await self.challenge_server.stop()
-            self.challenge_server = None
+
+    async def start_certificate_maintenance(self) -> None:
+        await self.certificate_service.start(on_renewed=self.restart_https_edge)
+
+    async def restart_https_edge(self) -> None:
+        logger.info("Reloading HTTPS edge with renewed provider certificate")
+        if self.https_edge is not None:
+            await self.https_edge.stop()
+            self.https_edge = None
+        await self._start_https_edge()
 
     async def _resolve_public_ip(self) -> str:
         self._running(SetupStageName.PUBLIC_IP, "checking")
@@ -366,7 +377,7 @@ class NetworkSetupService:
                 async with semaphore:
                     self._set_port_check_state(stage_name, port, "checking")
                     request_started_at = time.perf_counter()
-                    logger.info(
+                    logger.debug(
                         "Requesting external %s port verification: "
                         "checker=%s port=%s timeout=%.2fs",
                         label,
@@ -380,7 +391,7 @@ class NetworkSetupService:
                         timeout=verifier_timeout,
                     ) as response:
                         data = await response.json(content_type=None)
-                        logger.info(
+                        logger.debug(
                             "External %s port verification returned: "
                             "checker=%s port=%s status=%s elapsed=%.2fs results=%s",
                             label,
@@ -411,57 +422,18 @@ class NetworkSetupService:
 
     async def _ensure_certificate(self, public_ip: str) -> None:
         self._running(SetupStageName.CERTIFICATE, "checking")
-        cert_dir = Path(self.settings.CERT_DIR)
-        cert_path = cert_dir / "provider-ip.crt"
-        key_path = cert_dir / "provider-ip.key"
-        account_key_path = cert_dir / "acme-account.key"
-        valid, detail = cert_is_valid_for_ip(
-            cert_path,
-            key_path,
-            public_ip,
-            int(self.settings.CERT_RENEW_BEFORE_HOURS),
-        )
-        if valid:
+        try:
+            detail = await self.certificate_service.ensure_certificate(public_ip)
             self._succeed(SetupStageName.CERTIFICATE, detail)
             return
-
-        self._running(SetupStageName.CERTIFICATE, "requesting")
-        self.challenge_server = Http01ChallengeServer(
-            self.settings.HOST,
-            int(self.settings.ACME_HTTP_INTERNAL_PORT),
-        )
-        try:
-            await self.challenge_server.start()
-            client = NativeAcmeClient(
-                directory_url=self.settings.ACME_DIRECTORY_URL,
-                account_key_path=account_key_path,
-                cert_key_path=key_path,
-                certificate_path=cert_path,
-                email=self.settings.ACME_ACCOUNT_EMAIL,
-                profile=self.settings.ACME_PROFILE,
-            )
-            await client.issue_ip_certificate(public_ip, self.challenge_server)
-            valid, detail = cert_is_valid_for_ip(
-                cert_path,
-                key_path,
-                public_ip,
-                int(self.settings.CERT_RENEW_BEFORE_HOURS),
-            )
-            if not valid:
-                raise RuntimeError(detail)
-            self._succeed(SetupStageName.CERTIFICATE, detail)
         except Exception as exc:
             error_detail = _verification_error_detail(exc)
             self._fail(
                 SetupStageName.CERTIFICATE,
                 error_detail,
-                _certificate_setup_remediation(error_detail, self.settings),
+                _certificate_setup_remediation(error_detail, self.settings, exc),
             )
             raise RuntimeError(f"Certificate setup failed: {exc}") from exc
-        finally:
-            if self.challenge_server is not None:
-                await self.challenge_server.stop()
-                self.challenge_server = None
 
     async def _start_https_edge(self) -> None:
         cert_dir = Path(self.settings.CERT_DIR)
@@ -495,6 +467,16 @@ class NetworkSetupService:
                     timeout=verifier_timeout,
                 ) as response:
                     data = await response.json()
+                    if (
+                        response.status == 200
+                        and not data.get("valid")
+                        and _is_expected_staging_tls_trust_error(data, self.settings)
+                    ):
+                        self._succeed(
+                            SetupStageName.HTTPS_VERIFICATION,
+                            "staging certificate reachable",
+                        )
+                        return
                     if response.status != 200 or not data.get("valid"):
                         raise RuntimeError(data.get("error") or await response.text())
             self._succeed(
@@ -505,9 +487,7 @@ class NetworkSetupService:
             self._fail(
                 SetupStageName.HTTPS_VERIFICATION,
                 error_detail,
-                _https_verification_remediation(
-                    error_detail, self.settings, public_ip
-                ),
+                _https_verification_remediation(error_detail, self.settings, public_ip),
             )
             raise RuntimeError(f"HTTPS verification failed: {exc}") from exc
 
@@ -531,6 +511,15 @@ class NetworkSetupService:
         stage.state = state
         stage.detail = detail
         stage.remediation = remediation
+        log = logger.warning if state == SetupStageState.FAILED else logger.info
+        log(
+            "Network setup stage updated",
+            extra={
+                "stage": name.value if hasattr(name, "value") else str(name),
+                "state": state.value if hasattr(state, "value") else str(state),
+                "detail": detail,
+            },
+        )
         self._emit()
 
     def _set_port_checks(
@@ -633,7 +622,17 @@ def _vm_port_range_remediation(start: int, end: int, blocked_ports: list[int]) -
     )
 
 
-def _certificate_setup_remediation(error_detail: str, settings) -> str:
+def _certificate_setup_remediation(
+    error_detail: str, settings, exc: Exception | None = None
+) -> str:
+    if isinstance(exc, AcmeRequestError):
+        return (
+            f"Certificate setup failed: {error_detail}. "
+            "The ACME server rejected the certificate request before HTTP-01 "
+            "validation completed. Check GOLEM_PROVIDER_ACME_ENV, "
+            "GOLEM_PROVIDER_ACME_DIRECTORY_URL, GOLEM_PROVIDER_ACME_PROFILE, "
+            "and the ACME account settings."
+        )
     public_port = int(settings.ACME_HTTP_PUBLIC_PORT)
     internal_port = int(settings.ACME_HTTP_INTERNAL_PORT)
     return (
@@ -646,6 +645,13 @@ def _certificate_setup_remediation(error_detail: str, settings) -> str:
 
 
 def _https_verification_remediation(error_detail: str, settings, public_ip: str) -> str:
+    if _is_tls_trust_error(error_detail):
+        return (
+            f"HTTPS verification failed: {error_detail}. The endpoint is reachable, "
+            "but the certificate chain is not trusted by the external checker. "
+            "Use GOLEM_PROVIDER_ACME_ENV=staging only for local validation; use "
+            "GOLEM_PROVIDER_ACME_ENV=production for a publicly trusted certificate."
+        )
     public_port = int(settings.PUBLIC_HTTPS_PORT)
     internal_port = int(settings.PUBLIC_HTTPS_INTERNAL_PORT)
     return (
@@ -707,6 +713,24 @@ def _verification_error_detail(exc: Exception) -> str:
 
 def _port_check_request_timeout(settings) -> float:
     return float(getattr(settings, "PORT_CHECK_REQUEST_TIMEOUT", 8.0))
+
+
+def _is_expected_staging_tls_trust_error(data: dict, settings) -> bool:
+    return _is_acme_staging(settings) and _is_tls_trust_error(
+        str(data.get("error", ""))
+    )
+
+
+def _is_acme_staging(settings) -> bool:
+    return str(getattr(settings, "ACME_ENV", "")).strip().lower() == "staging"
+
+
+def _is_tls_trust_error(error_detail: str) -> bool:
+    normalized = error_detail.lower()
+    return (
+        "certificate_verify_failed" in normalized
+        or "unable to get local issuer certificate" in normalized
+    )
 
 
 async def _start_temporary_tcp_listeners(

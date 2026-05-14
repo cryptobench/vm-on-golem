@@ -11,10 +11,17 @@ logger = logging.getLogger(__name__)
 class ProviderSummaryService:
     """Build concise provider summary for GUI clients."""
 
-    def __init__(self, settings: Any, resource_tracker: Any, vm_service: Any):
+    def __init__(
+        self,
+        settings: Any,
+        resource_tracker: Any,
+        vm_service: Any,
+        certificate_service: Any = None,
+    ):
         self.settings = settings
         self.resource_tracker = resource_tracker
         self.vm_service = vm_service
+        self.certificate_service = certificate_service
 
     def _setting(self, name: str, default: Any = None) -> Any:
         if isinstance(self.settings, dict):
@@ -55,6 +62,7 @@ class ProviderSummaryService:
                     "environment": self._setting("ENVIRONMENT", None),
                     "network": self._setting("NETWORK", None),
                 },
+                certificate=self._certificate_status(),
             )
         except Exception as exc:
             logger.error("summary collection failed", exc_info=True)
@@ -77,3 +85,8 @@ class ProviderSummaryService:
             }
             for vm in items
         ]
+
+    def _certificate_status(self):
+        if self.certificate_service is None:
+            return None
+        return self.certificate_service.get_status()

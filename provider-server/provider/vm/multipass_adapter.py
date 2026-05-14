@@ -7,11 +7,6 @@ from typing import Dict, List, Optional
 from ..config import settings
 from ..utils.logging import setup_logger
 from ..utils.retry import NonRetryableError, async_retry_unless_not_found
-from .multipass_requirements import (
-    MultipassCompatibilityError,
-    check_host_virtualization_compatibility,
-    detect_multipass_binary,
-)
 from .lifecycle import ProgressCallback, creation_lifecycle, lifecycle_for_status
 from .models import (
     VMConfig,
@@ -22,6 +17,11 @@ from .models import (
     VMResources,
     VMSnapshot,
     VMStatus,
+)
+from .multipass_requirements import (
+    MultipassCompatibilityError,
+    check_host_virtualization_compatibility,
+    detect_multipass_binary,
 )
 from .provider import VMProvider
 
@@ -45,9 +45,7 @@ class MultipassAdapter(VMProvider):
 
     def __init__(self, proxy_manager, name_mapper):
         self.multipass_path = (
-            settings.MULTIPASS_BINARY_PATH
-            or detect_multipass_binary()
-            or "multipass"
+            settings.MULTIPASS_BINARY_PATH or detect_multipass_binary() or "multipass"
         )
         self.proxy_manager = proxy_manager
         self.name_mapper = name_mapper
@@ -85,6 +83,10 @@ class MultipassAdapter(VMProvider):
         timeout = settings.LAUNCH_TIMEOUT_SECONDS if args[0] == "launch" else None
 
         try:
+            logger.debug(
+                "Running Multipass command",
+                extra={"command": args[0], "capture_output": should_capture},
+            )
             return await asyncio.to_thread(
                 subprocess.run,
                 [self.multipass_path, *args],
@@ -99,12 +101,20 @@ class MultipassAdapter(VMProvider):
                 if should_capture and e.stderr
                 else "No stderr captured. See provider logs for command output."
             )
+            logger.warning(
+                "Multipass command failed",
+                extra={"command": args[0], "stderr": stderr},
+            )
             raise MultipassError(f"Multipass command failed: {stderr}")
         except subprocess.TimeoutExpired as e:
             stderr = (
                 e.stderr
                 if should_capture and e.stderr
                 else "No stderr captured. See provider logs for command output."
+            )
+            logger.error(
+                "Multipass command timed out",
+                extra={"command": args[0], "timeout_seconds": timeout},
             )
             raise MultipassError(
                 f"Multipass command '{' '.join(args)}' timed out after {timeout} seconds. Stderr: {stderr}"
@@ -150,6 +160,7 @@ class MultipassAdapter(VMProvider):
             await self._restore_missing_proxy_listeners()
             await self._log_startup_mapping_summary()
         except (subprocess.CalledProcessError, FileNotFoundError) as e:
+            logger.error("Failed to initialize Multipass provider", exc_info=True)
             raise MultipassError(f"Failed to verify multipass installation: {e}")
 
     async def create_vm(
@@ -257,11 +268,44 @@ class MultipassAdapter(VMProvider):
             logger.error(
                 f"VM creation for {config.name} failed. Cleaning up.", exc_info=True
             )
-            await self._run_multipass(
-                ["delete", multipass_name, "--purge"], check=False
-            )
-            await self.proxy_manager.remove_vm(multipass_name)
-            await self.name_mapper.remove_mapping(config.name)
+            try:
+                await self._run_multipass(
+                    ["delete", multipass_name, "--purge"], check=False
+                )
+            except Exception as cleanup_exc:
+                logger.warning(
+                    "Failed to purge VM after creation failure",
+                    extra={"vm_id": config.name, "multipass_name": multipass_name},
+                    exc_info=(
+                        type(cleanup_exc),
+                        cleanup_exc,
+                        cleanup_exc.__traceback__,
+                    ),
+                )
+            try:
+                await self.proxy_manager.remove_vm(multipass_name)
+            except Exception as cleanup_exc:
+                logger.warning(
+                    "Failed to remove proxy after VM creation failure",
+                    extra={"vm_id": config.name, "multipass_name": multipass_name},
+                    exc_info=(
+                        type(cleanup_exc),
+                        cleanup_exc,
+                        cleanup_exc.__traceback__,
+                    ),
+                )
+            try:
+                await self.name_mapper.remove_mapping(config.name)
+            except Exception as cleanup_exc:
+                logger.warning(
+                    "Failed to remove VM name mapping after creation failure",
+                    extra={"vm_id": config.name, "multipass_name": multipass_name},
+                    exc_info=(
+                        type(cleanup_exc),
+                        cleanup_exc,
+                        cleanup_exc.__traceback__,
+                    ),
+                )
             raise MultipassError(f"Failed to create VM {config.name}: {e}") from e
 
     async def delete_vm(self, multipass_name: str) -> None:
@@ -274,6 +318,10 @@ class MultipassAdapter(VMProvider):
         else:
             await self.name_mapper.remove_mapping(requestor_name)
         await self._run_multipass(["delete", multipass_name, "--purge"], check=False)
+        logger.info(
+            "Deleted Multipass VM",
+            extra={"multipass_name": multipass_name, "requestor_name": requestor_name},
+        )
 
     async def list_vms(self) -> List[VMInfo]:
         """List all VMs."""
@@ -302,21 +350,25 @@ class MultipassAdapter(VMProvider):
     async def start_vm(self, multipass_name: str) -> VMInfo:
         """Start a VM."""
         await self._run_multipass(["start", multipass_name])
+        logger.info("Started Multipass VM", extra={"multipass_name": multipass_name})
         return await self.get_vm_status(multipass_name)
 
     async def stop_vm(self, multipass_name: str) -> VMInfo:
         """Stop a VM."""
         await self._run_multipass(["stop", multipass_name])
+        logger.info("Stopped Multipass VM", extra={"multipass_name": multipass_name})
         return await self.get_vm_status(multipass_name)
 
     async def restart_vm(self, multipass_name: str) -> VMInfo:
         """Restart a VM."""
         await self._run_multipass(["restart", multipass_name])
+        logger.info("Restarted Multipass VM", extra={"multipass_name": multipass_name})
         return await self.get_vm_status(multipass_name)
 
     async def suspend_vm(self, multipass_name: str) -> VMInfo:
         """Suspend a VM."""
         await self._run_multipass(["suspend", multipass_name])
+        logger.info("Suspended Multipass VM", extra={"multipass_name": multipass_name})
         return await self.get_vm_status(multipass_name)
 
     async def resize_vm(self, multipass_name: str, resources: VMResources) -> VMInfo:

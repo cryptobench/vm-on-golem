@@ -49,6 +49,19 @@
   .provider-startup-step[data-state="running"] > :first-child > :first-child {
     animation: provider-startup-pulse 1200ms ease-in-out infinite;
   }
+
+  .provider-startup-screen--exit {
+    pointer-events: none;
+    animation: provider-startup-screen-exit 420ms ease-in both;
+  }
+
+  .provider-startup-screen--exit .provider-startup-card {
+    animation: provider-startup-card-exit 420ms ease-in both;
+  }
+
+  .provider-dashboard-screen {
+    animation: provider-dashboard-enter 320ms ease-out both;
+  }
 }
 
 @keyframes provider-startup-enter {
@@ -70,6 +83,33 @@
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes provider-startup-screen-exit {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes provider-startup-card-exit {
+  from {
+    transform: translateY(0) scale(1);
+  }
+  to {
+    transform: translateY(-0.5rem) scale(0.99);
+  }
+}
+
+@keyframes provider-dashboard-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
   }
 }
 
@@ -97,7 +137,9 @@
 @media (prefers-reduced-motion: reduce) {
   .provider-startup-card,
   .provider-portforward-card,
+  .provider-startup-screen--exit,
   .provider-startup-step,
+  .provider-dashboard-screen,
   .provider-startup-step[data-state="running"] > :first-child > :first-child {
     animation: none;
   }

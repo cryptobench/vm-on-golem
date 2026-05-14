@@ -10,7 +10,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
-import provider.network_setup.service as network_setup_service
+import provider.network_setup.certificate_service as certificate_service
 from provider.network_setup.certs import cert_is_valid_for_ip
 from provider.network_setup.nat import (
     NatMappingResult,
@@ -124,7 +124,10 @@ def _assert_port_progression(
     assert states == ["pending", "checking", final_state]
 
 
-async def _start_fake_port_checker(blocked_ports: set[int] | None = None):
+async def _start_fake_port_checker(
+    blocked_ports: set[int] | None = None,
+    tls_response: dict | None = None,
+):
     app = web.Application()
     requests = []
     if blocked_ports is None:
@@ -157,6 +160,8 @@ async def _start_fake_port_checker(blocked_ports: set[int] | None = None):
 
     async def check_tls(request):
         payload = await request.json()
+        if tls_response is not None:
+            return web.json_response(tls_response)
         return web.json_response(
             {"valid": True, "peer": f"{payload['host']}:{payload['port']}"}
         )
@@ -245,7 +250,7 @@ async def test_network_setup_reports_acme_error_detail(
         raise RuntimeError(error_detail)
 
     monkeypatch.setattr(
-        network_setup_service.NativeAcmeClient,
+        certificate_service.NativeAcmeClient,
         "issue_ip_certificate",
         fail_issue_ip_certificate,
     )
@@ -342,6 +347,79 @@ async def test_network_setup_fails_when_public_port_check_fails(tmp_path):
     assert "not reachable from the internet" in service.status.message
     _assert_port_progression(events, "network_access", http_port, "closed")
     _assert_port_progression(events, "network_access", https_port, "open")
+
+
+@pytest.mark.asyncio
+async def test_network_setup_allows_staging_certificate_trust_failure(tmp_path):
+    _write_ip_cert(tmp_path)
+    http_port = _free_port()
+    https_port = _free_port()
+    runner, checker_url, _requests = await _start_fake_port_checker(
+        tls_response={
+            "valid": False,
+            "peer": "127.0.0.1:443",
+            "error": (
+                "[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: "
+                "unable to get local issuer certificate"
+            ),
+        }
+    )
+    settings = _settings(
+        tmp_path,
+        ACME_ENV="staging",
+        ACME_HTTP_PUBLIC_PORT=http_port,
+        ACME_HTTP_INTERNAL_PORT=http_port,
+        PUBLIC_HTTPS_PORT=https_port,
+        PUBLIC_HTTPS_INTERNAL_PORT=https_port,
+        PORT_CHECK_TLS_URL=checker_url,
+    )
+    service = NetworkSetupService(settings, nat_mapper=FakeNatMapper())
+
+    try:
+        status = await service.setup()
+        await service.cleanup()
+    finally:
+        await runner.cleanup()
+
+    assert status.complete is True
+    assert status.stage("https_verification").detail == "staging certificate reachable"
+
+
+@pytest.mark.asyncio
+async def test_network_setup_fails_production_certificate_trust_failure(tmp_path):
+    _write_ip_cert(tmp_path)
+    http_port = _free_port()
+    https_port = _free_port()
+    runner, checker_url, _requests = await _start_fake_port_checker(
+        tls_response={
+            "valid": False,
+            "peer": "127.0.0.1:443",
+            "error": (
+                "[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: "
+                "unable to get local issuer certificate"
+            ),
+        }
+    )
+    settings = _settings(
+        tmp_path,
+        ACME_ENV="production",
+        ACME_HTTP_PUBLIC_PORT=http_port,
+        ACME_HTTP_INTERNAL_PORT=http_port,
+        PUBLIC_HTTPS_PORT=https_port,
+        PUBLIC_HTTPS_INTERNAL_PORT=https_port,
+        PORT_CHECK_TLS_URL=checker_url,
+    )
+    service = NetworkSetupService(settings, nat_mapper=FakeNatMapper())
+
+    try:
+        with pytest.raises(Exception):
+            await service.setup()
+    finally:
+        await runner.cleanup()
+
+    stage = service.status.stage("https_verification")
+    assert stage.state == "failed"
+    assert "certificate chain is not trusted" in (stage.remediation or "")
 
 
 @pytest.mark.asyncio

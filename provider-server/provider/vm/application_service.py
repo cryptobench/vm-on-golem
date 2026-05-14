@@ -45,6 +45,10 @@ class VMApplicationService:
         return getattr(self.settings, name, default)
 
     async def create_vm(self, command: CreateVMCommand) -> VMInfo | CreateVMJobResult:
+        logger.info(
+            "Provider VM create requested",
+            extra={"vm_id": command.name, "async_mode": command.async_mode},
+        )
         if await self.stream_status_service.is_payment_required():
             await self.stream_status_service.require_valid_stream(command.stream_id)
 
@@ -75,6 +79,10 @@ class VMApplicationService:
             await self.stream_status_service.set_vm_stream(
                 vm_info.id, command.stream_id
             )
+            logger.info(
+                "Persisted VM stream mapping",
+                extra={"vm_id": vm_info.id, "stream_id": command.stream_id},
+            )
         except Exception as exc:
             logger.error(
                 "failed to persist stream mapping after VM creation",
@@ -83,6 +91,10 @@ class VMApplicationService:
             raise ExternalServiceError(
                 f"failed to persist stream mapping for {vm_info.id}: {exc}"
             ) from exc
+        logger.info(
+            "Provider VM create completed",
+            extra={"vm_id": vm_info.id, "status": str(vm_info.status)},
+        )
         return vm_info
 
     async def _schedule_create_vm(
@@ -103,6 +115,10 @@ class VMApplicationService:
             progress=initial.progress,
             transitioning=initial.transitioning,
             next_poll_seconds=initial.next_poll_seconds,
+        )
+        logger.info(
+            "Scheduled VM creation job",
+            extra={"job_id": job_id, "vm_id": command.name},
         )
 
         async def _update_progress(progress: VMLifecycleState) -> None:
@@ -140,6 +156,10 @@ class VMApplicationService:
                     transitioning=False,
                     next_poll_seconds=ready.next_poll_seconds,
                 )
+                logger.info(
+                    "Create VM job completed",
+                    extra={"job_id": job_id, "vm_id": vm_info.id},
+                )
             except Exception as exc:
                 logger.error(
                     "Create VM job failed",
@@ -170,6 +190,7 @@ class VMApplicationService:
         )
 
     async def get_create_job(self, job_id: str) -> dict[str, Any]:
+        logger.debug("Fetching VM creation job", extra={"job_id": job_id})
         job = await self.job_store.get_job(job_id)
         if not job:
             raise NotFoundError("job not found")
@@ -177,12 +198,14 @@ class VMApplicationService:
 
     async def list_vms(self) -> list[VMInfo]:
         try:
+            logger.debug("Listing provider VMs")
             return await self.vm_service.list_vms()
         except Exception as exc:
             raise ExternalServiceError(f"failed to list VMs: {exc}") from exc
 
     async def get_vm_status(self, vm_id: str) -> VMInfo:
         try:
+            logger.debug("Fetching provider VM status", extra={"vm_id": vm_id})
             return await self.vm_service.get_vm_status(vm_id)
         except VMNotFoundError as exc:
             return await self._synthetic_creating_status(vm_id, exc)
@@ -207,6 +230,7 @@ class VMApplicationService:
         if not resources:
             raise original_error
 
+        logger.debug("Returning synthetic creating VM status", extra={"vm_id": vm_id})
         return VMInfo(
             id=vm_id,
             name=vm_id,
@@ -223,6 +247,7 @@ class VMApplicationService:
 
     async def get_vm_access(self, vm_id: str) -> VMAccessInfo | dict[str, Any]:
         try:
+            logger.debug("Fetching provider VM access", extra={"vm_id": vm_id})
             vm = await self.vm_service.get_vm_status(vm_id)
         except VMNotFoundError:
             raise
@@ -267,42 +292,67 @@ class VMApplicationService:
 
     async def stop_vm(self, vm_id: str) -> VMInfo:
         try:
-            return await self.vm_service.stop_vm(vm_id)
+            vm = await self.vm_service.stop_vm(vm_id)
+            logger.info("Provider VM stopped", extra={"vm_id": vm_id})
+            return vm
         except VMNotFoundError:
             raise
         except Exception as exc:
+            logger.error(
+                "Provider VM stop failed", extra={"vm_id": vm_id}, exc_info=True
+            )
             raise ExternalServiceError(f"failed to stop VM {vm_id}: {exc}") from exc
 
     async def start_vm(self, vm_id: str) -> VMInfo:
         try:
-            return await self.vm_service.start_vm(vm_id)
+            vm = await self.vm_service.start_vm(vm_id)
+            logger.info("Provider VM started", extra={"vm_id": vm_id})
+            return vm
         except VMNotFoundError:
             raise
         except Exception as exc:
+            logger.error(
+                "Provider VM start failed", extra={"vm_id": vm_id}, exc_info=True
+            )
             raise ExternalServiceError(f"failed to start VM {vm_id}: {exc}") from exc
 
     async def restart_vm(self, vm_id: str) -> VMInfo:
         try:
-            return await self.vm_service.restart_vm(vm_id)
+            vm = await self.vm_service.restart_vm(vm_id)
+            logger.info("Provider VM restarted", extra={"vm_id": vm_id})
+            return vm
         except VMNotFoundError:
             raise
         except Exception as exc:
+            logger.error(
+                "Provider VM restart failed", extra={"vm_id": vm_id}, exc_info=True
+            )
             raise ExternalServiceError(f"failed to restart VM {vm_id}: {exc}") from exc
 
     async def suspend_vm(self, vm_id: str) -> VMInfo:
         try:
-            return await self.vm_service.suspend_vm(vm_id)
+            vm = await self.vm_service.suspend_vm(vm_id)
+            logger.info("Provider VM suspended", extra={"vm_id": vm_id})
+            return vm
         except VMNotFoundError:
             raise
         except Exception as exc:
+            logger.error(
+                "Provider VM suspend failed", extra={"vm_id": vm_id}, exc_info=True
+            )
             raise ExternalServiceError(f"failed to suspend VM {vm_id}: {exc}") from exc
 
     async def resize_vm(self, vm_id: str, resources: VMResources) -> VMInfo:
         try:
-            return await self.vm_service.resize_vm(vm_id, resources)
+            vm = await self.vm_service.resize_vm(vm_id, resources)
+            logger.info("Provider VM resized", extra={"vm_id": vm_id})
+            return vm
         except VMNotFoundError:
             raise
         except Exception as exc:
+            logger.error(
+                "Provider VM resize failed", extra={"vm_id": vm_id}, exc_info=True
+            )
             raise ExternalServiceError(f"failed to resize VM {vm_id}: {exc}") from exc
 
     async def list_images(self) -> list[VMImage]:
@@ -325,7 +375,12 @@ class VMApplicationService:
         self, vm_id: str, name: str | None = None, comment: str | None = None
     ) -> VMSnapshot:
         try:
-            return await self.vm_service.create_snapshot(vm_id, name, comment)
+            snapshot = await self.vm_service.create_snapshot(vm_id, name, comment)
+            logger.info(
+                "Provider VM snapshot created",
+                extra={"vm_id": vm_id, "snapshot_name": snapshot.name},
+            )
+            return snapshot
         except VMNotFoundError:
             raise
         except Exception as exc:
@@ -335,7 +390,12 @@ class VMApplicationService:
 
     async def restore_snapshot(self, vm_id: str, snapshot_name: str) -> VMInfo:
         try:
-            return await self.vm_service.restore_snapshot(vm_id, snapshot_name)
+            vm = await self.vm_service.restore_snapshot(vm_id, snapshot_name)
+            logger.info(
+                "Provider VM snapshot restored",
+                extra={"vm_id": vm_id, "snapshot_name": snapshot_name},
+            )
+            return vm
         except VMNotFoundError:
             raise
         except Exception as exc:
@@ -346,6 +406,10 @@ class VMApplicationService:
     async def delete_snapshot(self, vm_id: str, snapshot_name: str) -> None:
         try:
             await self.vm_service.delete_snapshot(vm_id, snapshot_name)
+            logger.info(
+                "Provider VM snapshot deleted",
+                extra={"vm_id": vm_id, "snapshot_name": snapshot_name},
+            )
         except VMNotFoundError:
             raise
         except Exception as exc:
@@ -355,7 +419,15 @@ class VMApplicationService:
 
     async def clone_vm(self, source_vm_id: str, destination_vm_id: str) -> VMInfo:
         try:
-            return await self.vm_service.clone_vm(source_vm_id, destination_vm_id)
+            vm = await self.vm_service.clone_vm(source_vm_id, destination_vm_id)
+            logger.info(
+                "Provider VM cloned",
+                extra={
+                    "source_vm_id": source_vm_id,
+                    "destination_vm_id": destination_vm_id,
+                },
+            )
+            return vm
         except VMNotFoundError:
             raise
         except Exception as exc:
@@ -367,8 +439,15 @@ class VMApplicationService:
         try:
             await self.vm_service.delete_vm(vm_id)
             await self.stream_status_service.remove_vm_stream(vm_id)
+            logger.info("Provider VM deleted", extra={"vm_id": vm_id})
         except VMNotFoundError:
             await self.stream_status_service.remove_vm_stream(vm_id)
+            logger.warning(
+                "Provider VM delete target not found", extra={"vm_id": vm_id}
+            )
             raise
         except Exception as exc:
+            logger.error(
+                "Provider VM delete failed", extra={"vm_id": vm_id}, exc_info=True
+            )
             raise ExternalServiceError(f"failed to delete VM {vm_id}: {exc}") from exc

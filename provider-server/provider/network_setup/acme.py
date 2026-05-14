@@ -12,9 +12,16 @@ from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
 from .certs import build_ip_csr, load_or_create_rsa_key
 
+ACME_JWS_CONTENT_TYPE = "application/jose+json"
+PEM_CERTIFICATE_CHAIN_CONTENT_TYPE = "application/pem-certificate-chain"
+
 
 def _b64url(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+
+class AcmeRequestError(RuntimeError):
+    """Raised when the ACME server rejects a protocol or account request."""
 
 
 class Http01ChallengeServer:
@@ -89,6 +96,7 @@ class NativeAcmeClient:
             self.account_key = load_or_create_rsa_key(self.account_key_path)
             self.cert_key = load_or_create_rsa_key(self.cert_key_path)
             self.directory = await self._get_json(self.directory_url)
+            self._ensure_profile_available()
             await self._new_account()
             order = await self._new_order(ip_address)
             await self._complete_authorization(
@@ -178,11 +186,12 @@ class NativeAcmeClient:
         return await self._post(url, None)
 
     async def _post_as_get_text(self, url: str) -> str:
-        assert self.session is not None
-        body = await self._jws(url, None)
-        async with self.session.post(url, json=body) as response:
-            response.raise_for_status()
-            return await response.text()
+        _headers, text = await self._post_jws(
+            url,
+            None,
+            accept=PEM_CERTIFICATE_CHAIN_CONTENT_TYPE,
+        )
+        return text
 
     async def _post(
         self,
@@ -190,18 +199,35 @@ class NativeAcmeClient:
         payload: dict[str, Any] | None,
         use_jwk: bool = False,
     ) -> dict[str, Any]:
+        headers, text = await self._post_jws(url, payload, use_jwk=use_jwk)
+        data = json.loads(text) if text else {}
+        if headers.get("Location"):
+            data["url"] = headers["Location"]
+        if use_jwk and headers.get("Location"):
+            data["kid"] = headers["Location"]
+        return data
+
+    async def _post_jws(
+        self,
+        url: str,
+        payload: dict[str, Any] | None,
+        use_jwk: bool = False,
+        accept: str | None = None,
+    ) -> tuple[dict[str, str], str]:
         assert self.session is not None
         body = await self._jws(url, payload, use_jwk=use_jwk)
-        async with self.session.post(url, json=body) as response:
+        headers = {"Content-Type": ACME_JWS_CONTENT_TYPE}
+        if accept:
+            headers["Accept"] = accept
+        async with self.session.post(
+            url,
+            data=json.dumps(body, separators=(",", ":")).encode("utf-8"),
+            headers=headers,
+        ) as response:
             text = await response.text()
             if response.status >= 400:
-                raise RuntimeError(f"ACME request failed {response.status}: {text}")
-            data = json.loads(text) if text else {}
-            if response.headers.get("Location"):
-                data["url"] = response.headers["Location"]
-            if use_jwk and response.headers.get("Location"):
-                data["kid"] = response.headers["Location"]
-            return data
+                raise AcmeRequestError(f"ACME request failed {response.status}: {text}")
+            return dict(response.headers), text
 
     async def _jws(
         self,
@@ -221,9 +247,13 @@ class NativeAcmeClient:
             if not self.kid:
                 raise RuntimeError("ACME account is not initialized")
             protected["kid"] = self.kid
-        protected64 = _b64url(json.dumps(protected).encode("utf-8"))
+        protected64 = _b64url(
+            json.dumps(protected, separators=(",", ":")).encode("utf-8")
+        )
         payload64 = (
-            "" if payload is None else _b64url(json.dumps(payload).encode("utf-8"))
+            ""
+            if payload is None
+            else _b64url(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
         )
         signing_input = f"{protected64}.{payload64}".encode("ascii")
         signature = self.account_key.sign(
@@ -263,6 +293,20 @@ class NativeAcmeClient:
             separators=(",", ":"),
         ).encode("utf-8")
         return _b64url(hashlib.sha256(canonical).digest())
+
+    def _ensure_profile_available(self) -> None:
+        if not self.profile:
+            return
+        profiles = self.directory.get("meta", {}).get("profiles")
+        if not isinstance(profiles, dict):
+            return
+        if self.profile in profiles:
+            return
+        available = ", ".join(sorted(str(profile) for profile in profiles))
+        raise AcmeRequestError(
+            f"Configured ACME profile '{self.profile}' is not advertised by "
+            f"the ACME directory. Available profiles: {available or 'none'}."
+        )
 
     @staticmethod
     def _hash_algorithm():

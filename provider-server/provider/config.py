@@ -25,6 +25,16 @@ def normalize_discovery_backend(value: str | None) -> str:
     raise ValueError("Discovery backend must be 'arkiv', 'central', or 'both'")
 
 
+def normalize_acme_env(value: str | None) -> str:
+    """Normalize ACME environment names used for certificate issuance."""
+    raw = (value or "production").strip().lower()
+    if raw == "staging":
+        return "staging"
+    if raw in {"production", "prod"}:
+        return "production"
+    raise ValueError("ACME environment must be 'staging', 'production', or 'prod'")
+
+
 def ensure_config() -> None:
     """Ensure the provider configuration directory and defaults exist."""
     base_dir = Path.home() / ".golem" / "provider"
@@ -716,16 +726,25 @@ class Settings(BaseSettings):
     ACME_ACCOUNT_EMAIL: str = ""
     CERT_DIR: str = ""
     CERT_RENEW_BEFORE_HOURS: int = 48
+    CERT_RENEWAL_ENABLED: bool = True
+    CERT_RENEWAL_CHECK_INTERVAL_SECONDS: int = 3600
+    CERT_RENEWAL_RETRY_INITIAL_SECONDS: int = 300
+    CERT_RENEWAL_RETRY_MAX_SECONDS: int = 21600
     NAT_AUTO_MAPPING_ENABLED: bool = False
     PORT_CHECK_TLS_URL: str = "http://195.201.39.101:9000"
     PORT_CHECK_REQUEST_TIMEOUT: float = 8.0
+
+    @field_validator("ACME_ENV", mode="before")
+    @classmethod
+    def normalize_acme_environment(cls, v: str) -> str:
+        return normalize_acme_env(v)
 
     @field_validator("ACME_DIRECTORY_URL", mode="before")
     @classmethod
     def resolve_acme_directory_url(cls, v: str, values: dict) -> str:
         if os.environ.get("GOLEM_PROVIDER_ACME_DIRECTORY_URL"):
             return v
-        env = str(values.data.get("ACME_ENV") or "production").lower()
+        env = normalize_acme_env(str(values.data.get("ACME_ENV") or "production"))
         if env == "staging":
             return "https://acme-staging-v02.api.letsencrypt.org/directory"
         return v or "https://acme-v02.api.letsencrypt.org/directory"

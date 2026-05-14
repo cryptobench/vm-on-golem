@@ -41,11 +41,13 @@ export function ServiceStopped({
   error,
   busy,
   setupStatus,
+  exiting = false,
   onStart,
 }: {
   error: string | null;
   busy: boolean;
   setupStatus: StartupSetupStatus | null;
+  exiting?: boolean;
   onStart: () => void;
 }) {
   const setupFailed = setupStatus?.stages.some((stage) => stage.state === "failed");
@@ -58,6 +60,7 @@ export function ServiceStopped({
         setupFailed={setupFailed ?? false}
         status={setupStatus ?? startingStartupStatus()}
         busy={busy}
+        exiting={exiting}
         onStart={onStart}
       />
     );
@@ -89,12 +92,14 @@ function ProviderStartupScreen({
   error,
   setupFailed,
   busy,
+  exiting,
   onStart,
 }: {
   status: StartupSetupStatus;
   error: string | null;
   setupFailed: boolean;
   busy: boolean;
+  exiting: boolean;
   onStart: () => void;
 }) {
   const visibleStages = startupVisibleStages(status);
@@ -126,7 +131,12 @@ function ProviderStartupScreen({
   }
 
   return (
-    <div className="provider-startup-screen flex min-h-screen items-center justify-center px-6 py-12">
+    <div
+      className={cn(
+        "provider-startup-screen flex min-h-screen items-center justify-center px-6 py-12",
+        exiting ? "provider-startup-screen--exit" : null,
+      )}
+    >
       <Card className="provider-startup-card w-full max-w-3xl overflow-hidden">
         <CardBody className="px-8 py-8 sm:px-12 sm:py-10">
           <div className="flex flex-col items-center text-center">
@@ -309,9 +319,13 @@ function startingStartupStatus(): StartupSetupStatus {
         label: "VM ports 50800-50900 reachable",
         detail: "",
       },
-      { name: "provider_start", state: "pending", label: "Provider start", detail: "" },
     ],
   };
+}
+
+export function isStartupSetupComplete(status: StartupSetupStatus): boolean {
+  const visibleStages = startupVisibleStages(status);
+  return visibleStages.length > 0 && visibleStages.every((stage) => stage.state === "success");
 }
 
 function startupVisibleStages(status: StartupSetupStatus): SetupStage[] {
@@ -319,8 +333,8 @@ function startupVisibleStages(status: StartupSetupStatus): SetupStage[] {
     hostRequirementsStage(status.stages),
     apiPortForwardingStage(status),
     certificateStage(status.stages),
+    secureEndpointStage(status.stages),
     vmPortRangeStage(status),
-    providerStartStage(status.stages),
   ];
 }
 
@@ -349,10 +363,9 @@ function apiPortForwardingStage(status: StartupSetupStatus): SetupStage {
   const ports = startupPortConfig(status);
   const publicIp = findStage(stages, "public_ip");
   const networkAccess = findStage(stages, "network_access");
-  const httpsVerification = findStage(stages, "https_verification");
-  const sources = [publicIp, networkAccess, httpsVerification].filter(Boolean) as SetupStage[];
+  const sources = [publicIp, networkAccess].filter(Boolean) as SetupStage[];
   const failed = sources.find((stage) => stage.state === "failed");
-  const base = failed ?? networkAccess ?? publicIp ?? httpsVerification;
+  const base = failed ?? networkAccess ?? publicIp;
 
   if (failed) {
     return {
@@ -364,7 +377,7 @@ function apiPortForwardingStage(status: StartupSetupStatus): SetupStage {
     };
   }
 
-  const running = [publicIp, networkAccess, httpsVerification].find(
+  const running = [publicIp, networkAccess].find(
     (stage) => stage?.state === "running",
   );
   if (running) {
@@ -414,37 +427,34 @@ function certificateStage(stages: SetupStage[]): SetupStage {
   };
 }
 
-function vmPortRangeStage(status: StartupSetupStatus): SetupStage {
-  const ports = startupPortConfig(status);
-  const stage = findStage(status.stages, "vm_port_range");
-  const providerStart = findStage(status.stages, "provider_start");
-  const fallbackState = providerStart?.state === "success" ? "success" : "pending";
-  const fallbackDetail = providerStart?.state === "success" ? "ready" : "waiting";
-
-  return {
-    name: "vm_port_range",
-    state: stage?.state ?? fallbackState,
-    label: `Verifying VM ports ${ports.vmStart}-${ports.vmEnd}`,
-    detail: stage?.detail || fallbackDetail,
-    remediation: stage?.remediation,
-    port_checks: vmPortChecks(status, stage),
-  };
-}
-
-function providerStartStage(stages: SetupStage[]): SetupStage {
-  const stage = findStage(stages, "provider_start");
+function secureEndpointStage(stages: SetupStage[]): SetupStage {
+  const stage = findStage(stages, "https_verification");
   if (!stage) {
     return {
-      name: "provider_start",
+      name: "https_verification",
       state: "pending",
-      label: "Provider start",
-      detail: "",
+      label: "Verifying HTTPS endpoint",
+      detail: "waiting",
     };
   }
 
   return {
     ...stage,
-    label: stage.state === "success" ? "Provider started" : "Provider start",
+    label: secureEndpointStageLabel(stage),
+  };
+}
+
+function vmPortRangeStage(status: StartupSetupStatus): SetupStage {
+  const ports = startupPortConfig(status);
+  const stage = findStage(status.stages, "vm_port_range");
+
+  return {
+    name: "vm_port_range",
+    state: stage?.state ?? "pending",
+    label: `Verifying VM ports ${ports.vmStart}-${ports.vmEnd}`,
+    detail: stage?.detail || "waiting",
+    remediation: stage?.remediation,
+    port_checks: vmPortChecks(status, stage),
   };
 }
 
@@ -505,6 +515,10 @@ function formatPortRange(start: number, end: number): string {
 }
 
 function networkAccessFailureLabel(stage: SetupStage): string {
+  if (stage.name === "public_ip") {
+    return "Public IP could not be detected";
+  }
+
   if (stage.detail.startsWith("port unavailable")) {
     return "API ports are not reachable";
   }
@@ -526,6 +540,18 @@ function certificateStageLabel(stage: SetupStage): string {
   }
 
   return "Checking certificate";
+}
+
+function secureEndpointStageLabel(stage: SetupStage): string {
+  if (stage.state === "failed") {
+    return "HTTPS endpoint verification failed";
+  }
+
+  if (stage.state === "success") {
+    return "HTTPS endpoint verified";
+  }
+
+  return "Verifying HTTPS endpoint";
 }
 
 function findStage(stages: SetupStage[], name: string): SetupStage | undefined {

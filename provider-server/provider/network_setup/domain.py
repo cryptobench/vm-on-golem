@@ -1,4 +1,5 @@
 from enum import Enum
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -18,6 +19,26 @@ class SetupStageState(str, Enum):
     RUNNING = "running"
     SUCCESS = "success"
     FAILED = "failed"
+
+
+class CertificateState(str, Enum):
+    DISABLED = "disabled"
+    VALID = "valid"
+    RENEWAL_DUE = "renewal_due"
+    RENEWING = "renewing"
+    RENEWED = "renewed"
+    FAILED = "failed"
+    EXPIRED = "expired"
+
+
+class CertificateStatus(BaseModel):
+    state: CertificateState = CertificateState.DISABLED
+    expires_at: datetime | None = None
+    renew_after: datetime | None = None
+    last_checked_at: datetime | None = None
+    last_renewed_at: datetime | None = None
+    next_check_at: datetime | None = None
+    last_error: str | None = None
 
 
 class PortCheck(BaseModel):

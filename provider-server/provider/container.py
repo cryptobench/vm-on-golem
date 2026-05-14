@@ -13,6 +13,7 @@ from .jobs.store import JobStore
 from .live.service import VMLiveService
 from .monitoring.repo import MonitoringRepository
 from .monitoring.services import MonitoringService
+from .network_setup.certificate_service import CertificateMaintenanceService
 from .network_setup.service import NetworkSetupService
 from .payments.blockchain_service import StreamPaymentClient
 from .payments.blockchain_service import StreamPaymentConfig as _SPC
@@ -38,19 +39,27 @@ class Container(containers.DeclarativeContainer):
 
     resource_tracker = providers.Singleton(ResourceTracker)
 
+    certificate_maintenance_service = providers.Singleton(
+        CertificateMaintenanceService,
+        settings=provider_settings,
+    )
+
     discovery_publisher = providers.Selector(
         config.DISCOVERY_BACKEND,
         arkiv=providers.Singleton(
             ArkivDiscoveryPublisher,
             resource_tracker=resource_tracker,
+            certificate_service=certificate_maintenance_service,
         ),
         central=providers.Singleton(
             CentralDiscoveryPublisher,
             resource_tracker=resource_tracker,
+            certificate_service=certificate_maintenance_service,
         ),
         both=providers.Singleton(
             CompositeDiscoveryPublisher,
             resource_tracker=resource_tracker,
+            certificate_service=certificate_maintenance_service,
         ),
     )
 
@@ -160,6 +169,7 @@ class Container(containers.DeclarativeContainer):
     network_setup_service = providers.Singleton(
         NetworkSetupService,
         settings=provider_settings,
+        certificate_service=certificate_maintenance_service,
     )
 
     provider_service = providers.Singleton(
@@ -205,4 +215,5 @@ class Container(containers.DeclarativeContainer):
         settings=config,
         resource_tracker=resource_tracker,
         vm_service=vm_service,
+        certificate_service=certificate_maintenance_service,
     )

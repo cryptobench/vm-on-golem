@@ -200,12 +200,14 @@ DISCOVERY_URL = "http://discovery.golem.network:9001"
 
 - Use stdlib `logging` (or `structlog` where structured context is valuable). Never `print()`.
 - One module‑level logger per file: `logger = logging.getLogger(__name__)`.
+- Log at service/business boundaries, lifecycle transitions, background task start/stop, external calls, and failure/compensation paths. Do not log every read, poll, loop tick, or per-message event at INFO.
 - Levels:
-    - **ERROR** — an exception was raised or an operation could not complete. Always include context.
-    - **WARNING** — recoverable degradation (retry succeeded, fallback engaged at a real boundary).
-    - **INFO** — state transitions worth seeing in production (VM started, payment captured).
-    - **DEBUG** — verbose tracing for local development.
+    - **ERROR** — operation cannot complete, startup fails, or an unexpected exception is re-raised. Include `exc_info=True` where useful.
+    - **WARNING** — recoverable degradation, rejected/invalid external state, retryable upstream failure, or best-effort cleanup failure.
+    - **INFO** — meaningful production state changes (startup/shutdown, VM lifecycle, payment submitted, advertisement published).
+    - **DEBUG** — noisy diagnostics: polling, per-attempt checks, unchanged state, request/response summaries, and repeated monitor details.
 - Include identifiers (vm_id, requestor_id, request_id) in log records, not just human prose.
+- Never log secrets, private keys, SSH keys, auth tokens, full request bodies, or full transaction payloads.
 
 ## Database Discipline
 

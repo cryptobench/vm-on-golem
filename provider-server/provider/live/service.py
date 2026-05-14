@@ -48,6 +48,10 @@ class VMLiveService:
     ) -> None:
         history_range = self._normalize_history_range(history_range)
         await websocket.accept()
+        logger.info(
+            "VM live stream opened",
+            extra={"vm_id": vm_id, "history_range": history_range, "job_id": job_id},
+        )
         async with self.monitoring_service.watch_vm(vm_id):
             await self._send(
                 websocket,
@@ -98,6 +102,7 @@ class VMLiveService:
                             "VM live task ended",
                             exc_info=(type(exc), exc, exc.__traceback__),
                         )
+        logger.info("VM live stream closed", extra={"vm_id": vm_id})
 
     async def _receive_loop(
         self,
@@ -129,6 +134,10 @@ class VMLiveService:
                     websocket, vm_id, current_range, job_id, scopes
                 )
             else:
+                logger.warning(
+                    "Unsupported VM live event",
+                    extra={"vm_id": vm_id, "event_type": event_type},
+                )
                 await self._send(
                     websocket,
                     "error",

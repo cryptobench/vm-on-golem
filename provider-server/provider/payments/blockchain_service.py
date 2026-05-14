@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Any, Dict
 
@@ -8,6 +9,7 @@ from golem_streaming_abi import STREAM_PAYMENT_ABI
 from web3 import Web3
 
 # ABI imported from shared package
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -28,6 +30,7 @@ class StreamPaymentClient:
         )
 
     def _send(self, fn) -> Dict[str, Any]:
+        logger.debug("Preparing provider stream payment transaction")
         tx = fn.build_transaction(
             {
                 "from": self.account.address,
@@ -47,14 +50,24 @@ class StreamPaymentClient:
         else:
             tx_hash = self.web3.eth.send_transaction(tx)
         receipt = self.web3.eth.wait_for_transaction_receipt(tx_hash)
+        logger.info(
+            "Provider stream payment transaction submitted",
+            extra={"transaction_hash": tx_hash.hex(), "status": receipt.status},
+        )
         return {"transactionHash": tx_hash.hex(), "status": receipt.status}
 
     def withdraw(self, stream_id: int) -> str:
+        logger.info(
+            "Withdrawing provider payment stream", extra={"stream_id": stream_id}
+        )
         fn = self.contract.functions.withdraw(int(stream_id))
         receipt = self._send(fn)
         return receipt["transactionHash"]
 
     def terminate(self, stream_id: int) -> str:
+        logger.info(
+            "Terminating provider payment stream", extra={"stream_id": stream_id}
+        )
         fn = self.contract.functions.terminate(int(stream_id))
         receipt = self._send(fn)
         return receipt["transactionHash"]

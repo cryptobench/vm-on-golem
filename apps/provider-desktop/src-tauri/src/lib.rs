@@ -106,15 +106,7 @@ async fn run_secure_setup_once(app: tauri::AppHandle) -> Result<Value, String> {
     })
 }
 
-fn mark_provider_start_running(status: &mut Value) {
-    if let Some(stages) = status.get_mut("stages").and_then(Value::as_array_mut) {
-        for stage in stages {
-            if stage.get("name").and_then(Value::as_str) == Some("provider_start") {
-                stage["state"] = json!("running");
-                stage["detail"] = json!("starting");
-            }
-        }
-    }
+fn mark_provider_daemon_starting(status: &mut Value) {
     status["message"] = json!("Starting provider service.");
 }
 
@@ -131,8 +123,7 @@ fn setup_status_starting() -> Value {
             {"name": "network_access", "state": "pending", "label": "Ports 80 and 443 available", "detail": ""},
             {"name": "certificate", "state": "pending", "label": "Checking certificate", "detail": ""},
             {"name": "https_verification", "state": "pending", "label": "Secure endpoint verified", "detail": ""},
-            {"name": "vm_port_range", "state": "pending", "label": "VM ports 50800-50900 reachable", "detail": ""},
-            {"name": "provider_start", "state": "pending", "label": "Provider start", "detail": ""}
+            {"name": "vm_port_range", "state": "pending", "label": "VM ports 50800-50900 reachable", "detail": ""}
         ]
     })
 }
@@ -150,8 +141,7 @@ fn setup_status_started() -> Value {
             {"name": "network_access", "state": "success", "label": "Ports 80 and 443 available", "detail": "ready"},
             {"name": "certificate", "state": "success", "label": "Checking certificate", "detail": "ready"},
             {"name": "https_verification", "state": "success", "label": "Secure endpoint verified", "detail": "ready"},
-            {"name": "vm_port_range", "state": "success", "label": "VM ports 50800-50900 reachable", "detail": "ready"},
-            {"name": "provider_start", "state": "success", "label": "Provider start", "detail": "started"}
+            {"name": "vm_port_range", "state": "success", "label": "VM ports 50800-50900 reachable", "detail": "ready"}
         ]
     })
 }
@@ -365,7 +355,7 @@ async fn start_provider(app: tauri::AppHandle) -> Result<(), String> {
     let mut status = run_secure_setup_stream(app.clone()).await?;
     ensure_host_requirements_success(&mut status);
     eprintln!("[provider-sidecar] Secure endpoint setup finished");
-    mark_provider_start_running(&mut status);
+    mark_provider_daemon_starting(&mut status);
     emit_setup_status(&app, status);
     eprintln!("[provider-sidecar] Starting provider daemon");
     run_provider_sidecar(app.clone(), &["start", "--daemon"]).await?;

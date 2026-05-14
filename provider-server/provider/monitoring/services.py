@@ -56,6 +56,7 @@ class MonitoringService:
             return
         self._stop_event.clear()
         self._task = asyncio.create_task(self._run_loop(), name="monitoring")
+        logger.info("Monitoring background loop started")
 
     async def stop(self) -> None:
         self._stop_event.set()
@@ -65,6 +66,7 @@ class MonitoringService:
                 await self._task
             except asyncio.CancelledError:
                 pass
+        logger.info("Monitoring background loop stopped")
 
     def issue_guest_token(self, vm_id: str) -> str:
         self.repo.init_schema()
@@ -216,6 +218,10 @@ class MonitoringService:
     @asynccontextmanager
     async def watch_vm(self, vm_id: str):
         self._active_watchers[vm_id] = self._active_watchers.get(vm_id, 0) + 1
+        logger.debug(
+            "VM live watcher connected",
+            extra={"vm_id": vm_id, "watchers": self._active_watchers[vm_id]},
+        )
         try:
             yield
         finally:
@@ -225,18 +231,30 @@ class MonitoringService:
             else:
                 self._active_watchers.pop(vm_id, None)
                 self._last_disconnect[vm_id] = datetime.utcnow()
+            logger.debug(
+                "VM live watcher disconnected",
+                extra={"vm_id": vm_id, "watchers": self._active_watchers.get(vm_id, 0)},
+            )
 
     @asynccontextmanager
     async def subscribe_vm_metrics(self, vm_id: str):
         queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=16)
         subscribers = self._live_subscribers.setdefault(vm_id, set())
         subscribers.add(queue)
+        logger.debug(
+            "VM metrics subscriber connected",
+            extra={"vm_id": vm_id, "subscribers": len(subscribers)},
+        )
         try:
             yield queue
         finally:
             subscribers.discard(queue)
             if not subscribers:
                 self._live_subscribers.pop(vm_id, None)
+            logger.debug(
+                "VM metrics subscriber disconnected",
+                extra={"vm_id": vm_id, "subscribers": len(subscribers)},
+            )
 
     def list_alert_rules(self) -> list[AlertRule]:
         return self.repo.list_alert_rules()
@@ -299,6 +317,7 @@ class MonitoringService:
         retention_days = int(self._setting("MONITORING_RETENTION_DAYS", 30))
         while not self._stop_event.is_set():
             try:
+                logger.debug("Monitoring collection tick")
                 samples = await self._collect_samples()
                 self.repo.add_samples(samples)
                 self.repo.prune(retention_days)
@@ -458,6 +477,11 @@ class MonitoringService:
             self.repo.update_webhook_result(
                 webhook.id, str(status) if status else "error", error
             )
+            if error is not None:
+                logger.warning(
+                    "Monitoring webhook delivery failed",
+                    extra={"webhook_id": webhook.id, "status": status, "error": error},
+                )
 
     async def _post_webhook(
         self, webhook: WebhookConfig, payload: dict[str, Any]

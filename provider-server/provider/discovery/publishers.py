@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import Any, Optional
 
 import aiohttp
 
@@ -44,18 +44,24 @@ class CentralDiscoveryPublisher(DiscoveryPublisher):
         resource_tracker: "ResourceTracker",
         discovery_url: Optional[str] = None,
         provider_id: Optional[str] = None,
+        certificate_service: Any = None,
     ):
         self.resource_tracker = resource_tracker
         self.discovery_url = discovery_url or settings.DISCOVERY_URL
         self.provider_id = provider_id or settings.PROVIDER_ID
+        self.certificate_service = certificate_service
         self.session: Optional[aiohttp.ClientSession] = None
         self._stop_event = asyncio.Event()
 
     async def initialize(self):
         """Initialize the publisher."""
+        logger.info("Initializing central discovery publisher")
         self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10))
         self.resource_tracker.on_update(
-            lambda: asyncio.create_task(self.post_advertisement())
+            lambda: (
+                logger.debug("Resource update triggered central advertisement post"),
+                asyncio.create_task(self.post_advertisement()),
+            )
         )
         try:
             await self._check_discovery_health()
@@ -64,11 +70,14 @@ class CentralDiscoveryPublisher(DiscoveryPublisher):
                 f"Could not connect to central discovery after retries, continuing without advertising: {e}"
             )
             return
+        logger.info("Central discovery publisher initialized")
 
     async def start_loop(self):
         """Start publishing resource advertisements in a loop."""
+        logger.info("Central discovery advertisement loop started")
         try:
             while not self._stop_event.is_set():
+                logger.debug("Posting periodic central discovery advertisement")
                 await self.post_advertisement()
                 await asyncio.sleep(settings.DISCOVERY_ADVERTISEMENT_INTERVAL)
         finally:
@@ -80,6 +89,7 @@ class CentralDiscoveryPublisher(DiscoveryPublisher):
         if self.session:
             await self.session.close()
             self.session = None
+        logger.info("Central discovery publisher stopped")
 
     @async_retry(
         retries=settings.RETRY_ATTEMPTS,
@@ -109,7 +119,22 @@ class CentralDiscoveryPublisher(DiscoveryPublisher):
         if not self.session:
             raise RuntimeError("Session not initialized")
 
+        if not _endpoint_is_advertisable(self.certificate_service):
+            logger.warning(
+                "Skipping central discovery advertisement because provider "
+                "certificate is not usable"
+            )
+            return
+
         resources = self.resource_tracker.get_available_resources()
+        logger.debug(
+            "Prepared central discovery advertisement resources",
+            extra={
+                "cpu": resources.get("cpu"),
+                "memory": resources.get("memory"),
+                "storage": resources.get("storage"),
+            },
+        )
 
         if not self.resource_tracker._meets_minimum_requirements(resources):
             logger.warning("Resources too low, skipping advertisement")
@@ -179,7 +204,7 @@ class CentralDiscoveryPublisher(DiscoveryPublisher):
                     f"Memory={resources['memory']}GB, Storage={resources['storage']}GB"
                 )
         except asyncio.TimeoutError:
-            logger.error("Advertisement request timed out")
+            logger.error("Advertisement request timed out", exc_info=True)
             raise
 
     @async_retry(
@@ -212,3 +237,9 @@ class CentralDiscoveryPublisher(DiscoveryPublisher):
         raise Exception(
             f"Failed to get public IP address from all services: {'; '.join(errors)}"
         )
+
+
+def _endpoint_is_advertisable(certificate_service: Any) -> bool:
+    if certificate_service is None:
+        return True
+    return bool(certificate_service.endpoint_is_advertisable())

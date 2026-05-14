@@ -53,6 +53,13 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 t for t in self.requests[client_ip] if current_time - t < 60
             ]  # Last minute
             if len(requests) >= self.requests_per_minute:
+                logger.warning(
+                    "Rate limit exceeded",
+                    extra={
+                        "client_ip": client_ip,
+                        "requests_per_minute": self.requests_per_minute,
+                    },
+                )
                 return JSONResponse(
                     status_code=429,
                     content=jsonable_encoder(
@@ -84,8 +91,10 @@ async def cleanup_expired_advertisements():
                 removed = await repo.cleanup_expired()
                 if removed > 0:
                     logger.info(f"Removed {removed} expired advertisements")
+                else:
+                    logger.debug("No expired advertisements to remove")
         except Exception as e:
-            logger.error(f"Error cleaning up advertisements: {e}")
+            logger.error(f"Error cleaning up advertisements: {e}", exc_info=True)
 
         await asyncio.sleep(settings.CLEANUP_INTERVAL_SECONDS)
 
@@ -94,6 +103,7 @@ async def cleanup_expired_advertisements():
 async def startup_event():
     """Initialize application on startup."""
     try:
+        logger.info("Starting central discovery service")
         # Initialize database
         await init_db()
         logger.info("Database initialized")
@@ -102,7 +112,7 @@ async def startup_event():
         asyncio.create_task(cleanup_expired_advertisements())
         logger.info("Advertisement cleanup task started")
     except Exception as e:
-        logger.error(f"Error during startup: {e}")
+        logger.error(f"Error during startup: {e}", exc_info=True)
         raise
 
 
@@ -110,10 +120,11 @@ async def startup_event():
 async def shutdown_event():
     """Clean up resources on shutdown."""
     try:
+        logger.info("Shutting down central discovery service")
         await cleanup_db()
         logger.info("Database connection closed")
     except Exception as e:
-        logger.error(f"Error during shutdown: {e}")
+        logger.error(f"Error during shutdown: {e}", exc_info=True)
 
 
 @app.get("/health", response_model=HealthResponse)

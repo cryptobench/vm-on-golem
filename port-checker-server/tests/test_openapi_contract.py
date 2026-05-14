@@ -12,6 +12,9 @@ def test_openapi_exposes_typed_port_checker_contracts():
     assert paths["/health"]["get"]["responses"]["200"]["content"]["application/json"][
         "schema"
     ]["$ref"].endswith("/HealthResponse")
+    assert paths["/check-tls"]["post"]["responses"]["200"]["content"][
+        "application/json"
+    ]["schema"]["$ref"].endswith("/TlsCheckResponse")
     assert "proxy_provider_get" in {
         operation["operationId"]
         for methods in paths.values()

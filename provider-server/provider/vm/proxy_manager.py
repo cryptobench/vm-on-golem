@@ -27,6 +27,10 @@ class SSHProxyProtocol(Protocol):
         """Called when connection is established."""
         self.transport = transport
         self.counters["connections"] = self.counters.get("connections", 0) + 1
+        logger.debug(
+            "SSH proxy client connected",
+            extra={"target_host": self.target_host, "target_port": self.target_port},
+        )
         asyncio.create_task(self.connect_to_target())
 
     async def connect_to_target(self) -> None:
@@ -61,7 +65,9 @@ class SSHProxyProtocol(Protocol):
     def connection_lost(self, exc: Optional[Exception]) -> None:
         """Handle connection loss."""
         if exc:
-            logger.error(f"Client connection lost with error: {exc}")
+            logger.warning(f"Client connection lost with error: {exc}")
+        else:
+            logger.debug("SSH proxy client disconnected")
 
         # Ensure target connection is properly closed
         if self.target_transport:
@@ -99,7 +105,9 @@ class SSHTargetProtocol(Protocol):
     def connection_lost(self, exc: Optional[Exception]) -> None:
         """Handle connection loss."""
         if exc:
-            logger.error(f"Target connection lost with error: {exc}")
+            logger.warning(f"Target connection lost with error: {exc}")
+        else:
+            logger.debug("SSH proxy target disconnected")
 
         # Ensure client connection is properly closed
         if self.client_protocol and self.client_protocol.transport:
@@ -386,6 +394,10 @@ class PythonProxyManager:
                     logger.error(f"Failed to allocate port for VM {vm_id}")
                     return False
                 port = allocated_port
+                logger.info(
+                    "Allocated SSH proxy port",
+                    extra={"vm_id": vm_id, "port": port},
+                )
 
             # Create and start proxy server
             counters = self._traffic_counters.setdefault(
@@ -422,6 +434,7 @@ class PythonProxyManager:
                 self._active_ports.pop(vm_id, None)
             if self.port_manager:
                 self.port_manager.deallocate_port(vm_id)
+                logger.info("Released SSH proxy port", extra={"vm_id": vm_id})
             self._traffic_counters.pop(vm_id, None)
             await self._save_state()
             logger.info(f"Removed proxy for VM {vm_id}")

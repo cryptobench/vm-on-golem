@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
@@ -6,6 +7,8 @@ from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .models import Advertisement
+
+logger = logging.getLogger(__name__)
 
 
 class AdvertisementRepository:
@@ -59,6 +62,9 @@ class AdvertisementRepository:
 
         await self.session.execute(stmt)
         await self.session.commit()
+        logger.debug(
+            "Advertisement upsert committed", extra={"provider_id": provider_id}
+        )
 
         # Fetch and return the updated advertisement
         result = await self.session.execute(
@@ -108,6 +114,10 @@ class AdvertisementRepository:
         stmt = delete(Advertisement).where(Advertisement.updated_at < five_minutes_ago)
         result = await self.session.execute(stmt)
         await self.session.commit()
+        logger.debug(
+            "Expired advertisement cleanup committed",
+            extra={"removed_count": result.rowcount},
+        )
         return result.rowcount
 
     async def get_by_id(self, provider_id: str) -> Optional[Advertisement]:
@@ -123,4 +133,8 @@ class AdvertisementRepository:
             delete(Advertisement).where(Advertisement.provider_id == provider_id)
         )
         await self.session.commit()
+        logger.debug(
+            "Advertisement delete committed",
+            extra={"provider_id": provider_id, "deleted": result.rowcount > 0},
+        )
         return result.rowcount > 0

@@ -1,4 +1,5 @@
 import asyncio
+import logging
 
 from fastapi.testclient import TestClient
 
@@ -23,7 +24,9 @@ async def _no_sleep(delay: float):
     return None
 
 
-def test_check_ports_endpoint_success_and_fail():
+def test_check_ports_endpoint_success_and_fail(caplog):
+    caplog.set_level(logging.INFO)
+
     async def fake_open_connection(host, port):
         if port == 80:
             return object(), _DummyWriter()
@@ -55,6 +58,7 @@ def test_check_ports_endpoint_success_and_fail():
     assert data["success"] is True
     assert data["results"]["80"]["accessible"] is True
     assert data["results"]["1234"]["accessible"] is False
+    assert "Port check summary" in caplog.text
 
 
 def test_check_ports_validator_rejects_out_of_range():
@@ -68,7 +72,9 @@ def test_check_ports_validator_rejects_out_of_range():
     assert response.status_code == 422
 
 
-def test_port_check_service_handles_timeout_and_generic_error():
+def test_port_check_service_handles_timeout_and_generic_error(caplog):
+    caplog.set_level(logging.WARNING)
+
     async def timeout(host, port):
         raise asyncio.TimeoutError()
 
@@ -89,3 +95,4 @@ def test_port_check_service_handles_timeout_and_generic_error():
     assert timeout_result.error == "Connection timed out"
     assert generic_result.accessible is False
     assert generic_result.error == "boom"
+    assert "Port 80 is inaccessible" in caplog.text

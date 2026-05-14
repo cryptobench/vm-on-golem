@@ -29,18 +29,23 @@ container = Container()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global db_service, stream_monitor
+    logger.info("Starting requestor API")
     logger.info(f"Initializing DatabaseService with db_path: {config.db_path}")
     config.db_path.parent.mkdir(parents=True, exist_ok=True)
     db_service = DatabaseService(config.db_path)
     try:
         await db_service.init()
-        app.container.vm_repo().init_schema()
         logger.info("DatabaseService initialized successfully.")
+        app.container.vm_repo().init_schema()
+        logger.info("VM repository schema initialized.")
     except DatabaseError as e:
-        logger.error(f"Failed to initialize database during startup: {e}")
+        logger.error(
+            f"Failed to initialize database during startup: {e}", exc_info=True
+        )
         raise RuntimeError(f"Database initialization failed: {e}") from e
     stream_monitor = RequestorStreamMonitor(db_service)
     stream_monitor.start()
+    logger.info("Requestor stream monitor start requested")
     yield
     logger.info("Shutting down API.")
     if stream_monitor:
@@ -48,6 +53,7 @@ async def lifespan(app: FastAPI):
     shutdown = app.container.shutdown_resources()
     if shutdown is not None:
         await shutdown
+    logger.info("Requestor API shutdown complete")
 
 
 def create_app() -> FastAPI:
@@ -101,7 +107,7 @@ async def list_vms():
 
     try:
         vms = await db_service.list_vms()
-        logger.info(f"Retrieved {len(vms)} VMs from database.")
+        logger.debug(f"Retrieved {len(vms)} VMs from database.")
         return vms
     except DatabaseError as e:
         logger.error(f"API Error fetching VMs: {e}")

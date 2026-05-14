@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import types
 
 import pytest
@@ -52,8 +53,17 @@ class StubSession:
         pass
 
 
+class StubCertificateService:
+    def __init__(self, advertisable):
+        self.advertisable = advertisable
+
+    def endpoint_is_advertisable(self):
+        return self.advertisable
+
+
 @pytest.mark.asyncio
-async def test_central_publisher_includes_pricing(monkeypatch):
+async def test_central_publisher_includes_pricing(monkeypatch, caplog):
+    caplog.set_level(logging.INFO)
     resources = {"cpu": 2, "memory": 2, "storage": 10}
     rt = StubResourceTracker(resources)
     adv = CentralDiscoveryPublisher(rt, discovery_url="http://x")
@@ -76,6 +86,7 @@ async def test_central_publisher_includes_pricing(monkeypatch):
     payload = capture["json"]
     assert payload["pricing"]["usd_per_core_month"] == 6.0
     assert payload["pricing"]["glm_per_gb_ram_month"] == 5.0
+    assert "Posted central discovery advertisement" in caplog.text
 
 
 @pytest.mark.asyncio
@@ -94,6 +105,27 @@ async def test_central_publisher_uses_configured_public_ip(monkeypatch):
     await adv.post_advertisement()
 
     assert capture["json"]["ip_address"] == "127.0.0.1"
+
+
+@pytest.mark.asyncio
+async def test_central_publisher_skips_when_certificate_is_not_usable(
+    monkeypatch, caplog
+):
+    caplog.set_level(logging.WARNING)
+    rt = StubResourceTracker({"cpu": 2, "memory": 2, "storage": 10})
+    adv = CentralDiscoveryPublisher(
+        rt,
+        discovery_url="http://x",
+        certificate_service=StubCertificateService(False),
+    )
+    capture = {}
+    adv.session = StubSession(capture)
+    monkeypatch.setattr(settings, "PUBLIC_IP", "127.0.0.1")
+
+    await adv.post_advertisement()
+
+    assert capture == {}
+    assert "Skipping central discovery advertisement" in caplog.text
 
 
 @pytest.mark.asyncio
@@ -152,3 +184,24 @@ async def test_arkiv_publisher_annotations_include_pricing(monkeypatch):
     assert num_anns["golem_cpu"] == 2
     assert num_anns["golem_memory"] == 2
     assert num_anns["golem_storage"] == 10
+
+
+@pytest.mark.asyncio
+async def test_arkiv_publisher_skips_when_certificate_is_not_usable(monkeypatch):
+    class StubClient:
+        async def disconnect(self):
+            pass
+
+    rt = StubResourceTracker({"cpu": 2, "memory": 2, "storage": 10})
+    adv = ArkivDiscoveryPublisher(rt, certificate_service=StubCertificateService(False))
+    adv.client = StubClient()
+    settings.PUBLIC_IP = "1.2.3.4"
+
+    from provider.discovery import arkiv_publisher
+
+    async def fail_lookup(*_args, **_kwargs):
+        raise AssertionError("advertisement lookup should not run")
+
+    monkeypatch.setattr(arkiv_publisher, "get_provider_entity_keys", fail_lookup)
+
+    await adv.post_advertisement()

@@ -161,6 +161,75 @@ def _pid_dir() -> str:
     return str(base)
 
 
+def _provider_log_dir(env: dict | None = None) -> str:
+    from pathlib import Path
+
+    source = os.environ if env is None else env
+    raw_dir = source.get("GOLEM_PROVIDER_LOG_DIR")
+    base = Path(raw_dir).expanduser() if raw_dir else Path(_pid_dir()) / "logs"
+    base.mkdir(parents=True, exist_ok=True)
+    return str(base)
+
+
+def _provider_log_int(env: dict, key: str, default: int) -> int:
+    raw = env.get(key)
+    if raw is None or raw == "":
+        return default
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return default
+
+
+def _rotate_log_file(path, max_bytes: int, backups: int) -> None:
+    from pathlib import Path
+
+    log_path = Path(path)
+    if max_bytes <= 0 or backups <= 0 or not log_path.exists():
+        return
+    if log_path.stat().st_size < max_bytes:
+        return
+    oldest = log_path.with_name(f"{log_path.name}.{backups}")
+    if oldest.exists():
+        oldest.unlink()
+    for index in range(backups - 1, 0, -1):
+        source = log_path.with_name(f"{log_path.name}.{index}")
+        if source.exists():
+            source.rename(log_path.with_name(f"{log_path.name}.{index + 1}"))
+    log_path.rename(log_path.with_name(f"{log_path.name}.1"))
+
+
+def _open_daemon_stdio(env: dict):
+    from pathlib import Path
+
+    log_dir = Path(_provider_log_dir(env))
+    max_bytes = _provider_log_int(env, "GOLEM_PROVIDER_LOG_MAX_BYTES", 10 * 1024 * 1024)
+    backups = _provider_log_int(env, "GOLEM_PROVIDER_LOG_BACKUPS", 5)
+    path = log_dir / "provider-daemon-stdio.log"
+    _rotate_log_file(path, max_bytes, backups)
+    return open(path, "a", buffering=1, encoding="utf-8")
+
+
+def _provider_file_log_handler_config() -> dict | None:
+    from pathlib import Path
+
+    raw_dir = os.environ.get("GOLEM_PROVIDER_LOG_DIR")
+    if not raw_dir:
+        return None
+    log_dir = Path(raw_dir).expanduser()
+    log_dir.mkdir(parents=True, exist_ok=True)
+    return {
+        "class": "logging.handlers.RotatingFileHandler",
+        "formatter": "default",
+        "filename": str(log_dir / "provider.log"),
+        "maxBytes": _provider_log_int(
+            os.environ, "GOLEM_PROVIDER_LOG_MAX_BYTES", 10 * 1024 * 1024
+        ),
+        "backupCount": _provider_log_int(os.environ, "GOLEM_PROVIDER_LOG_BACKUPS", 5),
+        "encoding": "utf-8",
+    }
+
+
 def _pid_path() -> str:
     from pathlib import Path
 
@@ -198,11 +267,16 @@ def _is_running(pid: int) -> bool:
 def _spawn_detached(argv: list[str], env: dict | None = None) -> int:
     import subprocess
 
+    resolved_env = dict(env or os.environ.copy())
+    resolved_env.setdefault("GOLEM_PROVIDER_LOG_DIR", _provider_log_dir(resolved_env))
+    resolved_env.setdefault("GOLEM_PROVIDER_LOG_MAX_BYTES", str(10 * 1024 * 1024))
+    resolved_env.setdefault("GOLEM_PROVIDER_LOG_BACKUPS", "5")
+    stdio = _open_daemon_stdio(resolved_env)
     popen_kwargs = {
         "stdin": subprocess.DEVNULL,
-        "stdout": subprocess.DEVNULL,
-        "stderr": subprocess.DEVNULL,
-        "env": env or os.environ.copy(),
+        "stdout": stdio,
+        "stderr": subprocess.STDOUT,
+        "env": resolved_env,
     }
     if _platform.system().lower().startswith("windows"):
         creationflags = 0
@@ -214,7 +288,10 @@ def _spawn_detached(argv: list[str], env: dict | None = None) -> int:
             popen_kwargs["creationflags"] = creationflags  # type: ignore[assignment]
     else:
         popen_kwargs["preexec_fn"] = os.setsid  # type: ignore[assignment]
-    proc = subprocess.Popen(argv, **popen_kwargs)
+    try:
+        proc = subprocess.Popen(argv, **popen_kwargs)
+    finally:
+        stdio.close()
     return int(proc.pid)
 
 
@@ -947,6 +1024,7 @@ def wallet_faucet_l2():
 
     try:
         if not bool(getattr(settings, "FAUCET_ENABLED", False)):
+            logger.info("Provider L2 faucet command skipped because faucet is disabled")
             print("Faucet is disabled for current payments network.")
             raise typer.Exit(code=0)
         addr = settings.PROVIDER_ID
@@ -955,6 +1033,7 @@ def wallet_faucet_l2():
             svc = L2FaucetService(settings)
             tx = await svc.request_funds(addr)
             if tx:
+                logger.info("Provider L2 faucet transaction received")
                 print(f"Faucet tx: {tx}")
             else:
                 # Either skipped due to sufficient balance or failed
@@ -962,6 +1041,7 @@ def wallet_faucet_l2():
 
         asyncio.run(_run())
     except Exception as e:
+        logger.error("Provider L2 faucet command failed", exc_info=True)
         print(f"Error: {e}")
         raise typer.Exit(code=1)
 
@@ -1454,15 +1534,18 @@ def start(
 ):
     """Start the provider server."""
     if daemon:
+        logger.info("Starting provider daemon")
         # If a previous daemon is active, do not start another
         pid = _read_pid()
         if pid and _is_running(pid):
+            logger.info("Provider daemon already running", extra={"pid": pid})
             print(f"Provider already running (pid={pid})")
             raise typer.Exit(code=0)
         if not no_verify_port:
             try:
                 asyncio.run(_run_secure_setup_preflight())
             except Exception as exc:
+                logger.error("Provider daemon preflight failed", exc_info=True)
                 print(f"Secure connection setup failed: {exc}")
                 raise typer.Exit(code=1)
         # Build child command and detach
@@ -1479,6 +1562,7 @@ def start(
         env = {**os.environ}
         child_pid = _spawn_detached(cmd, env)
         _write_pid(child_pid)
+        logger.info("Provider daemon started", extra={"pid": child_pid})
         print(f"Started provider in background (pid={child_pid})")
         raise typer.Exit(code=0)
     else:
@@ -1499,16 +1583,23 @@ def stop(
     """Stop a background provider started with --daemon."""
     pid = _read_pid()
     if not pid:
+        logger.info("No provider PID file found during stop")
         print("No PID file found; nothing to stop")
         raise typer.Exit(code=0)
     if not _is_running(pid):
+        logger.info("Removing stale provider PID file", extra={"pid": pid})
         print("No running provider process; cleaning up PID file")
         _remove_pid_file()
         raise typer.Exit(code=0)
     try:
         p = psutil.Process(pid)
         p.terminate()
-    except Exception:
+        logger.info("Sent terminate to provider daemon", extra={"pid": pid})
+    except Exception as exc:
+        logger.warning(
+            "Failed to terminate provider daemon through psutil",
+            extra={"pid": pid, "error": str(exc)},
+        )
         # Fallback to signal/kill
         try:
             if _platform.system().lower().startswith("windows"):
@@ -1524,6 +1615,9 @@ def stop(
             break
         _time.sleep(0.2)
     if _is_running(pid):
+        logger.warning(
+            "Provider daemon did not exit before timeout", extra={"pid": pid}
+        )
         print("Process did not exit in time; sending kill")
         try:
             psutil.Process(pid).kill()
@@ -1534,6 +1628,7 @@ def stop(
             except Exception:
                 pass
     _remove_pid_file()
+    logger.info("Provider daemon stopped", extra={"pid": pid})
     print("Provider stopped")
 
 
@@ -1622,6 +1717,10 @@ def config_withdraw(
         print("No changes (use --enable/--interval/--min-wei)")
         raise typer.Exit(code=0)
     _write_env_vars(env_path, updates)
+    logger.info(
+        "Updated provider withdraw settings",
+        extra={"env_path": env_path, "updated_keys": sorted(updates.keys())},
+    )
     print(f"Updated withdraw settings in {env_path}")
 
 
@@ -1668,6 +1767,10 @@ def config_monitor(
         print("No changes (use --enable/--interval/--min-remaining)")
         raise typer.Exit(code=0)
     _write_env_vars(env_path, updates)
+    logger.info(
+        "Updated provider stream monitor settings",
+        extra={"env_path": env_path, "updated_keys": sorted(updates.keys())},
+    )
     print(f"Updated monitor settings in {env_path}")
 
 
@@ -1767,10 +1870,20 @@ def run_server(
             sys.exit(1)
 
         # Configure uvicorn logging
-        log_config = uvicorn.config.LOGGING_CONFIG
+        import copy as _copy
+
+        log_config = _copy.deepcopy(uvicorn.config.LOGGING_CONFIG)
         log_config["formatters"]["access"][
             "fmt"
         ] = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        file_handler = _provider_file_log_handler_config()
+        if file_handler is not None:
+            log_config["handlers"]["provider_file"] = file_handler
+            for logger_name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+                logger_config = log_config["loggers"].setdefault(logger_name, {})
+                logger_config.setdefault("handlers", [])
+                if "provider_file" not in logger_config["handlers"]:
+                    logger_config["handlers"].append("provider_file")
 
         # Run server
         logger.process(f"🚀 Starting provider server on {settings.HOST}:{settings.PORT}")
@@ -1849,6 +1962,10 @@ def pricing_set(
         "GOLEM_PROVIDER_PRICE_USD_PER_GB_STORAGE_MONTH": usd_per_disk,
     }
     _write_env_vars(env_path, updates)
+    logger.info(
+        "Updated provider USD pricing",
+        extra={"env_path": env_path, "updated_keys": sorted(updates.keys())},
+    )
     print(f"Updated pricing in {env_path}")
     # Immediately reflect in current process settings as well
     settings.PRICE_USD_PER_CORE_MONTH = usd_per_core

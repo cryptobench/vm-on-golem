@@ -164,6 +164,10 @@ class StreamPaymentClient:
                 self.account.address, self.contract.address
             ).call()
         except Exception:
+            logger.warning(
+                "Could not read GLM allowance; forcing approval transaction",
+                exc_info=True,
+            )
             allowance = 0
         if int(allowance) >= int(amount_wei):
             return

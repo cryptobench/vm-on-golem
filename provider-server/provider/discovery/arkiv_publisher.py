@@ -1,5 +1,5 @@
 import asyncio
-from typing import Optional
+from typing import Any, Optional
 
 from golem_base_sdk import (
     Annotation,
@@ -13,7 +13,7 @@ from golem_base_sdk import (
 from ..config import settings
 from ..utils.logging import setup_logger
 from .arkiv_utils import get_provider_entity_keys
-from .publishers import DiscoveryPublisher
+from .publishers import DiscoveryPublisher, _endpoint_is_advertisable
 
 logger = setup_logger(__name__)
 
@@ -21,13 +21,17 @@ logger = setup_logger(__name__)
 class ArkivDiscoveryPublisher(DiscoveryPublisher):
     """Publish provider advertisements to Arkiv, the decentralized discovery backend."""
 
-    def __init__(self, resource_tracker: "ResourceTracker"):
+    def __init__(
+        self, resource_tracker: "ResourceTracker", certificate_service: Any = None
+    ):
         self.resource_tracker = resource_tracker
+        self.certificate_service = certificate_service
         self.client: Optional[GolemBaseClient] = None
         self._stop_event = asyncio.Event()
 
     async def initialize(self):
         """Initialize the Arkiv publisher."""
+        logger.info("Initializing Arkiv discovery publisher")
         private_key_hex = settings.ETHEREUM_PRIVATE_KEY.replace("0x", "")
         private_key_bytes = bytes.fromhex(private_key_hex)
         self.client = await GolemBaseClient.create(
@@ -36,13 +40,19 @@ class ArkivDiscoveryPublisher(DiscoveryPublisher):
             private_key=private_key_bytes,
         )
         self.resource_tracker.on_update(
-            lambda: asyncio.create_task(self.post_advertisement())
+            lambda: (
+                logger.debug("Resource update triggered Arkiv advertisement post"),
+                asyncio.create_task(self.post_advertisement()),
+            )
         )
+        logger.info("Arkiv discovery publisher initialized")
 
     async def start_loop(self):
         """Start publishing resource advertisements in a loop."""
+        logger.info("Arkiv advertisement loop started")
         try:
             while not self._stop_event.is_set():
+                logger.debug("Posting periodic Arkiv advertisement")
                 await self.post_advertisement()
                 # Check more frequently than full TTL to ensure seamless renewal
                 interval = max(30, int(settings.ARKIV_ADVERTISEMENT_INTERVAL // 3))
@@ -55,11 +65,18 @@ class ArkivDiscoveryPublisher(DiscoveryPublisher):
         self._stop_event.set()
         if self.client:
             await self.client.disconnect()
+        logger.info("Arkiv discovery publisher stopped")
 
     async def post_advertisement(self):
         """Post or update resource advertisement on Arkiv."""
         if not self.client:
             raise RuntimeError("Arkiv client not initialized")
+
+        if not _endpoint_is_advertisable(self.certificate_service):
+            logger.warning(
+                "Skipping Arkiv advertisement because provider certificate is not usable"
+            )
+            return
 
         resources = self.resource_tracker.get_available_resources()
         if not self.resource_tracker._meets_minimum_requirements(resources):
@@ -177,9 +194,9 @@ class ArkivDiscoveryPublisher(DiscoveryPublisher):
                 )
 
                 # Debugging logs to compare annotations
-                logger.info(f"IP address from settings: {ip_address}")
-                logger.info(f"Current on-chain annotations: {current_annotations}")
-                logger.info(
+                logger.debug(f"IP address from settings: {ip_address}")
+                logger.debug(f"Current on-chain annotations: {current_annotations}")
+                logger.debug(
                     f"Expected annotations based on current config: {expected_annotations}"
                 )
 
@@ -235,7 +252,10 @@ class ArkivDiscoveryPublisher(DiscoveryPublisher):
                 )
 
         except Exception as e:
-            logger.error(f"Failed to post or update advertisement on Arkiv: {e}")
+            logger.error(
+                f"Failed to post or update advertisement on Arkiv: {e}",
+                exc_info=True,
+            )
 
     async def _create_advertisement(self, string_annotations, numeric_annotations):
         """Helper to create a new advertisement."""

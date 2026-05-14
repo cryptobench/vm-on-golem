@@ -39,6 +39,10 @@ class VMService:
     ) -> Dict:
         """Create a new VM with validation and error handling."""
         try:
+            logger.info(
+                "Legacy requestor VM create requested",
+                extra={"vm_name": name, "provider_ip": provider_ip},
+            )
             # Check if VM name already exists
             existing_vm = await self.db.get_vm(name)
             if existing_vm:
@@ -52,6 +56,10 @@ class VMService:
                 storage=storage,
                 ssh_key=ssh_key,
                 stream_id=stream_id,
+            )
+            logger.info(
+                "Provider accepted legacy VM create request",
+                extra={"vm_name": name, "job_id": job.get("job_id")},
             )
 
             vm_id = job.get("vm_id") or job.get("id") or name
@@ -69,6 +77,7 @@ class VMService:
                 },
                 status="creating",
             )
+            logger.info("Saved legacy VM creation record", extra={"vm_name": name})
 
             if "job_id" in job and job.get("status") not in {"ready", "running"}:
                 # Poll provider until VM is ready, then fetch access info.
@@ -79,10 +88,18 @@ class VMService:
                 while _asyncio.get_event_loop().time() < deadline:
                     info = await self.provider_client.get_vm_info(vm_id)
                     last_status = (info.get("status") or "").lower() or last_status
+                    logger.debug(
+                        "Polling legacy VM create status",
+                        extra={"vm_name": name, "vm_id": vm_id, "status": last_status},
+                    )
                     if last_status == "running":
                         break
                     await _asyncio.sleep(2.0)
                 if last_status != "running":
+                    logger.warning(
+                        "Timed out waiting for legacy VM to become ready",
+                        extra={"vm_name": name, "last_status": last_status},
+                    )
                     raise VMError(
                         f"VM did not become ready in time (status={last_status})"
                     )
@@ -109,6 +126,7 @@ class VMService:
                 config=config,
                 status="running",
             )
+            logger.info("Legacy requestor VM is running", extra={"vm_name": name})
 
             return {
                 "name": name,
@@ -119,6 +137,7 @@ class VMService:
             }
 
         except Exception as e:
+            logger.error("Legacy requestor VM create failed", exc_info=True)
             raise VMError(f"Failed to create VM: {str(e)}")
 
     async def destroy_vm(self, name: str) -> None:
@@ -138,7 +157,16 @@ class VMService:
                     self.blockchain_client.terminate(stream_id)
                 except Exception as e:
                     if "no-stream" not in str(e).lower():
+                        logger.error(
+                            "Failed to terminate stream during legacy VM destroy",
+                            extra={"vm_name": name, "stream_id": stream_id},
+                            exc_info=True,
+                        )
                         raise
+                    logger.warning(
+                        "Ignoring missing stream during legacy VM destroy",
+                        extra={"vm_name": name, "stream_id": stream_id},
+                    )
 
             try:
                 # Destroy VM on provider
@@ -149,8 +177,14 @@ class VMService:
 
             # Remove from database
             await self.db.delete_vm(name)
+            logger.info("Legacy requestor VM destroyed", extra={"vm_name": name})
 
         except Exception as e:
+            logger.error(
+                "Legacy requestor VM destroy failed",
+                extra={"vm_name": name},
+                exc_info=True,
+            )
             raise VMError(f"Failed to destroy VM: {str(e)}")
 
     async def start_vm(self, name: str) -> None:
@@ -166,8 +200,14 @@ class VMService:
 
             # Update status in database
             await self.db.update_vm_status(name, "running")
+            logger.info("Legacy requestor VM started", extra={"vm_name": name})
 
         except Exception as e:
+            logger.error(
+                "Legacy requestor VM start failed",
+                extra={"vm_name": name},
+                exc_info=True,
+            )
             raise VMError(f"Failed to start VM: {str(e)}")
 
     async def stop_vm(self, name: str) -> None:
@@ -183,8 +223,14 @@ class VMService:
 
             # Update status in database
             await self.db.update_vm_status(name, "stopped")
+            logger.info("Legacy requestor VM stopped", extra={"vm_name": name})
 
         except Exception as e:
+            logger.error(
+                "Legacy requestor VM stop failed",
+                extra={"vm_name": name},
+                exc_info=True,
+            )
             raise VMError(f"Failed to stop VM: {str(e)}")
 
     async def restart_vm(self, name: str) -> Dict:
@@ -213,6 +259,10 @@ class VMService:
             if not vm:
                 raise VMError(f"VM '{name}' not found")
             if vm.get("config", {}).get("stream_id") is not None and stream_id is None:
+                logger.warning(
+                    "Paid legacy VM resize missing replacement stream",
+                    extra={"vm_name": name},
+                )
                 raise VMError("resizing a paid VM requires a replacement stream")
 
             result = await self.provider_client.resize_vm(
@@ -228,8 +278,14 @@ class VMService:
             await self.db.update_vm_config(
                 name, config, result.get("status", vm["status"])
             )
+            logger.info("Legacy requestor VM resized", extra={"vm_name": name})
             return result
         except Exception as e:
+            logger.error(
+                "Legacy requestor VM resize failed",
+                extra={"vm_name": name},
+                exc_info=True,
+            )
             raise VMError(f"Failed to resize VM: {str(e)}")
 
     async def list_images(self) -> List[Dict]:
@@ -292,6 +348,7 @@ class VMService:
     async def list_vms(self) -> List[Dict]:
         """List all VMs with their current status."""
         try:
+            logger.debug("Listing legacy requestor VMs")
             return await self.db.list_vms()
         except Exception as e:
             raise VMError(f"Failed to list VMs: {str(e)}")
@@ -316,6 +373,7 @@ class VMService:
             )
 
         access_info = await self.provider_client.get_vm_access(vm["vm_id"])
+        logger.debug("Backfilled legacy VM SSH access", extra={"vm_name": vm["name"]})
         config = {
             **vm["config"],
             "ssh_user": require_ssh_user(access_info),
@@ -335,8 +393,17 @@ class VMService:
             vm = await self._require_vm(name)
             result = await getattr(self.provider_client, method_name)(vm["vm_id"])
             await self._sync_status_from_result(name, vm, result, fallback_status)
+            logger.info(
+                "Legacy requestor VM lifecycle action completed",
+                extra={"vm_name": name, "action": method_name},
+            )
             return result
         except Exception as e:
+            logger.error(
+                "Legacy requestor VM lifecycle action failed",
+                extra={"vm_name": name, "action": method_name},
+                exc_info=True,
+            )
             raise VMError(f"Failed to update VM lifecycle: {str(e)}")
 
     async def _require_vm(self, name: str) -> Dict:

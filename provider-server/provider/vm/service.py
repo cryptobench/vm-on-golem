@@ -49,6 +49,15 @@ class VMService:
         progress_callback: ProgressCallback | None = None,
     ) -> VMInfo:
         """Create a new VM and optionally report lifecycle progress."""
+        logger.info(
+            "Creating VM",
+            extra={
+                "vm_id": config.name,
+                "cpu": config.resources.cpu,
+                "memory": config.resources.memory,
+                "storage": config.resources.storage,
+            },
+        )
         await self._report_progress(
             progress_callback,
             "allocating_resources",
@@ -56,6 +65,10 @@ class VMService:
             10,
         )
         if not await self.resource_tracker.allocate(config.resources, config.name):
+            logger.warning(
+                "Insufficient provider resources for VM creation",
+                extra={"vm_id": config.name},
+            )
             raise ValueError("Insufficient resources available on provider")
 
         # Generate a stable multipass name up-front so downstream code and
@@ -65,6 +78,10 @@ class VMService:
         multipass_name = f"golem-{uuid4()}"
         config.multipass_name = multipass_name
         await self.name_mapper.add_mapping(config.name, multipass_name)
+        logger.debug(
+            "Generated VM multipass mapping",
+            extra={"vm_id": config.name, "multipass_name": multipass_name},
+        )
         await self._report_progress(
             progress_callback,
             "preparing_guest",
@@ -87,9 +104,21 @@ class VMService:
 
         try:
             vm_info = await self.provider.create_vm(config, progress_callback)
+            logger.info(
+                "VM created",
+                extra={
+                    "vm_id": vm_info.id,
+                    "multipass_name": multipass_name,
+                    "status": str(vm_info.status),
+                },
+            )
             return vm_info
         except Exception as e:
-            logger.error(f"Failed to create VM, deallocating resources", exc_info=True)
+            logger.error(
+                "Failed to create VM, deallocating resources",
+                extra={"vm_id": config.name, "multipass_name": multipass_name},
+                exc_info=True,
+            )
             await self.resource_tracker.deallocate(config.resources, config.name)
             if self.monitoring_repo is not None:
                 self.monitoring_repo.delete_guest_token(config.name)
@@ -106,6 +135,10 @@ class VMService:
     ) -> None:
         if progress_callback is None:
             return
+        logger.debug(
+            "Reporting VM lifecycle progress",
+            extra={"stage": stage, "progress": progress},
+        )
         await progress_callback(creation_lifecycle(stage, message, progress))
 
     async def delete_vm(self, vm_id: str) -> None:
@@ -121,6 +154,10 @@ class VMService:
             )
             await self.provider.delete_vm(multipass_name)
             await self.resource_tracker.deallocate(vm_info.resources, vm_id)
+            logger.info(
+                "VM deleted",
+                extra={"vm_id": vm_id, "multipass_name": multipass_name},
+            )
             if self.monitoring_repo is not None:
                 self.monitoring_repo.delete_guest_token(vm_id)
             # Optional: best-effort on-chain termination if we have a mapping
@@ -183,26 +220,58 @@ class VMService:
             raise ValidationError("storage can only be increased")
 
         if restart_after_resize:
+            logger.info(
+                "Stopping VM before resize",
+                extra={"vm_id": vm_id, "multipass_name": multipass_name},
+            )
             await self.provider.stop_vm(multipass_name)
 
         if not await self.resource_tracker.resize(vm_id, resources):
+            logger.warning(
+                "Insufficient provider resources for VM resize",
+                extra={"vm_id": vm_id, "multipass_name": multipass_name},
+            )
             if restart_after_resize:
                 await self._restart_after_failed_resize(vm_id, multipass_name)
             raise ValueError("Insufficient resources available on provider")
 
         try:
+            logger.info(
+                "Resizing VM",
+                extra={
+                    "vm_id": vm_id,
+                    "multipass_name": multipass_name,
+                    "cpu": resources.cpu,
+                    "memory": resources.memory,
+                    "storage": resources.storage,
+                },
+            )
             resized = await self.provider.resize_vm(multipass_name, resources)
         except Exception:
+            logger.error(
+                "VM resize failed after resource tracker update; rolling back",
+                extra={"vm_id": vm_id, "multipass_name": multipass_name},
+                exc_info=True,
+            )
             await self.resource_tracker.resize(vm_id, current.resources)
             if restart_after_resize:
                 await self._restart_after_failed_resize(vm_id, multipass_name)
             raise
 
         if not restart_after_resize:
+            logger.info(
+                "VM resized",
+                extra={"vm_id": vm_id, "multipass_name": multipass_name},
+            )
             return resized
 
         try:
-            return await self.provider.start_vm(multipass_name)
+            restarted = await self.provider.start_vm(multipass_name)
+            logger.info(
+                "VM resized and restarted",
+                extra={"vm_id": vm_id, "multipass_name": multipass_name},
+            )
+            return restarted
         except Exception:
             logger.error(
                 "VM resize succeeded but restart failed",
@@ -226,11 +295,16 @@ class VMService:
 
     async def list_images(self) -> list[VMImage]:
         """List available VM images."""
+        logger.debug("Listing VM images")
         return await self.provider.list_images()
 
     async def list_snapshots(self, vm_id: str) -> list[VMSnapshot]:
         """List snapshots for a VM."""
         multipass_name = await self._require_multipass_name(vm_id)
+        logger.debug(
+            "Listing VM snapshots",
+            extra={"vm_id": vm_id, "multipass_name": multipass_name},
+        )
         return await self.provider.list_snapshots(multipass_name)
 
     async def create_snapshot(
@@ -240,19 +314,45 @@ class VMService:
         multipass_name = await self._require_multipass_name(vm_id)
         current = await self.provider.get_vm_status(multipass_name)
         self._require_stopped(current, "snapshot")
-        return await self.provider.create_snapshot(multipass_name, name, comment)
+        snapshot = await self.provider.create_snapshot(multipass_name, name, comment)
+        logger.info(
+            "VM snapshot created",
+            extra={
+                "vm_id": vm_id,
+                "multipass_name": multipass_name,
+                "snapshot_name": snapshot.name,
+            },
+        )
+        return snapshot
 
     async def restore_snapshot(self, vm_id: str, snapshot_name: str) -> VMInfo:
         """Restore a stopped VM from a snapshot."""
         multipass_name = await self._require_multipass_name(vm_id)
         current = await self.provider.get_vm_status(multipass_name)
         self._require_stopped(current, "restore snapshot")
-        return await self.provider.restore_snapshot(multipass_name, snapshot_name)
+        restored = await self.provider.restore_snapshot(multipass_name, snapshot_name)
+        logger.info(
+            "VM snapshot restored",
+            extra={
+                "vm_id": vm_id,
+                "multipass_name": multipass_name,
+                "snapshot_name": snapshot_name,
+            },
+        )
+        return restored
 
     async def delete_snapshot(self, vm_id: str, snapshot_name: str) -> None:
         """Delete a VM snapshot."""
         multipass_name = await self._require_multipass_name(vm_id)
         await self.provider.delete_snapshot(multipass_name, snapshot_name)
+        logger.info(
+            "VM snapshot deleted",
+            extra={
+                "vm_id": vm_id,
+                "multipass_name": multipass_name,
+                "snapshot_name": snapshot_name,
+            },
+        )
 
     async def clone_vm(self, source_vm_id: str, destination_vm_id: str) -> VMInfo:
         """Clone a stopped VM under a new requestor-facing name."""
@@ -265,6 +365,13 @@ class VMService:
         if not await self.resource_tracker.allocate(
             source.resources, destination_vm_id
         ):
+            logger.warning(
+                "Insufficient provider resources for VM clone",
+                extra={
+                    "source_vm_id": source_vm_id,
+                    "destination_vm_id": destination_vm_id,
+                },
+            )
             raise ValueError("Insufficient resources available on provider")
 
         from uuid import uuid4
@@ -274,21 +381,42 @@ class VMService:
             destination_vm_id, destination_multipass_name
         )
         try:
-            return await self.provider.clone_vm(
+            cloned = await self.provider.clone_vm(
                 source_multipass_name, destination_multipass_name
             )
+            logger.info(
+                "VM cloned",
+                extra={
+                    "source_vm_id": source_vm_id,
+                    "destination_vm_id": destination_vm_id,
+                },
+            )
+            return cloned
         except Exception:
+            logger.error(
+                "VM clone failed; rolling back local allocation",
+                extra={
+                    "source_vm_id": source_vm_id,
+                    "destination_vm_id": destination_vm_id,
+                },
+                exc_info=True,
+            )
             await self.resource_tracker.deallocate(source.resources, destination_vm_id)
             await self.name_mapper.remove_mapping(destination_vm_id)
             raise
 
     async def list_vms(self) -> List[VMInfo]:
         """List all VMs."""
+        logger.debug("Listing VMs")
         return await self.provider.list_vms()
 
     async def get_vm_status(self, vm_id: str) -> VMInfo:
         """Get the status of a VM."""
         multipass_name = await self._require_multipass_name(vm_id)
+        logger.debug(
+            "Getting VM status",
+            extra={"vm_id": vm_id, "multipass_name": multipass_name},
+        )
         return await self.provider.get_vm_status(multipass_name)
 
     async def get_all_vms_resources(self) -> Dict[str, VMResources]:

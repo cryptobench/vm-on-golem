@@ -2,7 +2,7 @@ import React from "react";
 import { Card, CardBody, PageHeader } from "@golem/ui";
 import { startPricePolling } from "@golem/prices";
 import { AppShell } from "./components/AppShell";
-import { ServiceStopped } from "./components/StateViews";
+import { ServiceStopped, isStartupSetupComplete } from "./components/StateViews";
 import type { NavigateTarget, PageId } from "./components/types";
 import { AlertsPage } from "./features/alerts/AlertsPage";
 import { MonitoringPage } from "./features/monitoring/MonitoringPage";
@@ -18,79 +18,129 @@ type AppRoute = { page: PageId } | { page: "vm-detail"; vmId: string };
 export function App() {
   const [route, setRoute] = React.useState<AppRoute>({ page: "overview" });
   const service = useProviderServiceStatus();
-  const dashboard = useDashboardData(service.status?.running);
+  const autoStartAttempted = React.useRef(false);
+  const setupComplete = service.setupStatus
+    ? isStartupSetupComplete(service.setupStatus)
+    : false;
+  const startupReadyForDashboard =
+    !service.error && setupComplete && service.status?.running === true;
+  const [startupHandoffComplete, setStartupHandoffComplete] = React.useState(false);
+  const dashboardEnabled = service.status?.running === true;
+  const dashboard = useDashboardData(dashboardEnabled);
 
   React.useEffect(() => startPricePolling(), []);
+
+  React.useEffect(() => {
+    if (
+      autoStartAttempted.current ||
+      !service.status ||
+      service.status.running ||
+      service.busyAction !== null ||
+      service.setupStatus ||
+      service.error
+    ) {
+      return;
+    }
+
+    autoStartAttempted.current = true;
+    void service.runAction("start");
+  }, [
+    service.busyAction,
+    service.error,
+    service.runAction,
+    service.setupStatus,
+    service.status,
+  ]);
+
+  React.useEffect(() => {
+    if (!startupReadyForDashboard) {
+      setStartupHandoffComplete(false);
+      return;
+    }
+
+    const id = window.setTimeout(() => setStartupHandoffComplete(true), 420);
+    return () => window.clearTimeout(id);
+  }, [startupReadyForDashboard]);
 
   const navigate = React.useCallback((target: NavigateTarget) => {
     setRoute(target);
   }, []);
 
-  if (service.status && !service.status.running) {
+  if (
+    (startupReadyForDashboard && !startupHandoffComplete) ||
+    (service.status && !service.status.running && !startupHandoffComplete)
+  ) {
     return (
       <ServiceStopped
         error={service.error}
         busy={service.busyAction === "start"}
         setupStatus={service.setupStatus}
+        exiting={startupReadyForDashboard}
         onStart={() => void service.runAction("start")}
       />
     );
   }
 
+  const serviceStatus = service.status
+    ? { ...service.status, running: service.status.running || dashboardEnabled }
+    : service.status;
+
   return (
-    <AppShell
-      activePage={route.page}
-      data={dashboard.data}
-      serviceStatus={service.status}
-      busyAction={service.busyAction}
-      onNavigate={navigate}
-      onStopProvider={() => void service.runAction("stop")}
-    >
-      {route.page === "overview" ? (
-        <OverviewPage
-          data={dashboard.data}
-          loading={dashboard.loading}
-          onNavigate={navigate}
-        />
-      ) : null}
-      {route.page === "vms" ? (
-        <VirtualMachinesPage
-          data={dashboard.data}
-          loading={dashboard.loading}
-          onNavigate={navigate}
-        />
-      ) : null}
-      {route.page === "streams" ? (
-        <StreamsPage
-          data={dashboard.data}
-          loading={dashboard.loading}
-          onNavigate={navigate}
-        />
-      ) : null}
-      {route.page === "monitoring" ? (
-        <MonitoringPage data={dashboard.data} loading={dashboard.loading} />
-      ) : null}
-      {route.page === "alerts" ? (
-        <AlertsPage
-          data={dashboard.data}
-          loading={dashboard.loading}
-          onRefresh={dashboard.refresh}
-        />
-      ) : null}
-      {route.page === "webhooks" ? (
-        <WebhooksPage
-          data={dashboard.data}
-          loading={dashboard.loading}
-          onRefresh={dashboard.refresh}
-        />
-      ) : null}
-      {route.page === "vm-detail" ? (
-        <VmDetailsPage vmId={route.vmId} onNavigate={navigate} />
-      ) : null}
-      {route.page === "settings" || route.page === "health" ? (
-        <PlaceholderPage page={route.page} />
-      ) : null}
-    </AppShell>
+    <div className={startupHandoffComplete ? "provider-dashboard-screen" : undefined}>
+      <AppShell
+        activePage={route.page}
+        data={dashboard.data}
+        serviceStatus={serviceStatus}
+        busyAction={service.busyAction}
+        onNavigate={navigate}
+        onStopProvider={() => void service.runAction("stop")}
+      >
+        {route.page === "overview" ? (
+          <OverviewPage
+            data={dashboard.data}
+            loading={dashboard.loading}
+            onNavigate={navigate}
+          />
+        ) : null}
+        {route.page === "vms" ? (
+          <VirtualMachinesPage
+            data={dashboard.data}
+            loading={dashboard.loading}
+            onNavigate={navigate}
+          />
+        ) : null}
+        {route.page === "streams" ? (
+          <StreamsPage
+            data={dashboard.data}
+            loading={dashboard.loading}
+            onNavigate={navigate}
+          />
+        ) : null}
+        {route.page === "monitoring" ? (
+          <MonitoringPage data={dashboard.data} loading={dashboard.loading} />
+        ) : null}
+        {route.page === "alerts" ? (
+          <AlertsPage
+            data={dashboard.data}
+            loading={dashboard.loading}
+            onRefresh={dashboard.refresh}
+          />
+        ) : null}
+        {route.page === "webhooks" ? (
+          <WebhooksPage
+            data={dashboard.data}
+            loading={dashboard.loading}
+            onRefresh={dashboard.refresh}
+          />
+        ) : null}
+        {route.page === "vm-detail" ? (
+          <VmDetailsPage vmId={route.vmId} onNavigate={navigate} />
+        ) : null}
+        {route.page === "settings" || route.page === "health" ? (
+          <PlaceholderPage page={route.page} />
+        ) : null}
+      </AppShell>
+    </div>
   );
 }
 

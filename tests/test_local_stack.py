@@ -14,18 +14,147 @@ def load_local_stack_module():
     return module
 
 
+def deployment():
+    return {
+        "rpc_url": "http://127.0.0.1:8545",
+        "stream_payment_address": "0x0000000000000000000000000000000000000000",
+        "glm_token_address": "0x0000000000000000000000000000000000000000",
+    }
+
+
+def test_local_stack_default_log_config_uses_repo_local_logs(monkeypatch):
+    local_stack = load_local_stack_module()
+    monkeypatch.delenv("LOCAL_STACK_LOG_DIR", raising=False)
+    monkeypatch.delenv("LOCAL_STACK_LOG_MAX_BYTES", raising=False)
+    monkeypatch.delenv("LOCAL_STACK_LOG_BACKUPS", raising=False)
+
+    config = local_stack.default_log_config()
+
+    assert config.log_dir == local_stack.ROOT / ".local" / "logs"
+    assert config.max_bytes == 10 * 1024 * 1024
+    assert config.backups == 5
+
+
+def test_local_stack_parses_custom_log_args(tmp_path):
+    local_stack = load_local_stack_module()
+
+    args = local_stack.parse_args(
+        [
+            "--log-dir",
+            str(tmp_path),
+            "--log-max-bytes",
+            "128",
+            "--log-backups",
+            "2",
+        ]
+    )
+
+    assert args.log_dir == str(tmp_path)
+    assert args.log_max_bytes == 128
+    assert args.log_backups == 2
+
+
+def test_local_stack_writes_aggregate_setup_and_service_logs(tmp_path):
+    local_stack = load_local_stack_module()
+    sink = local_stack.configure_stack_logging(
+        local_stack.LogConfig(log_dir=tmp_path, max_bytes=1024, backups=1)
+    )
+
+    local_stack.log("supervisor line")
+    local_stack.log_setup("setup line")
+    local_stack.log_service("provider", "provider line", echo=False)
+    sink.close()
+
+    assert "supervisor line" in (tmp_path / "local-stack.log").read_text()
+    assert "setup line" in (tmp_path / "local-stack.log").read_text()
+    assert "provider line" in (tmp_path / "local-stack.log").read_text()
+    assert "setup line" in (tmp_path / "setup.log").read_text()
+    assert "provider line" in (tmp_path / "provider.log").read_text()
+
+
+def test_local_stack_logs_setup_command_output(tmp_path):
+    local_stack = load_local_stack_module()
+    sink = local_stack.configure_stack_logging(
+        local_stack.LogConfig(log_dir=tmp_path, max_bytes=1024, backups=1)
+    )
+
+    local_stack.run_checked(
+        [sys.executable, "-c", "print('setup command output')"],
+        cwd=local_stack.ROOT,
+    )
+    sink.close()
+
+    assert "setup command output" in (tmp_path / "setup.log").read_text()
+    assert "setup command output" in (tmp_path / "local-stack.log").read_text()
+
+
+def test_local_stack_build_services_passes_log_env_to_every_service(tmp_path):
+    local_stack = load_local_stack_module()
+    sink = local_stack.configure_stack_logging(
+        local_stack.LogConfig(log_dir=tmp_path, max_bytes=2048, backups=3)
+    )
+
+    services = [
+        *local_stack.build_services(
+            deployment=deployment(),
+            start_provider_desktop=False,
+            start_requestor_desktop=True,
+        ),
+        *local_stack.build_services(
+            deployment=deployment(),
+            start_provider_desktop=True,
+            start_requestor_desktop=False,
+        ),
+    ]
+    sink.close()
+
+    service_names = {service.name for service in services}
+    assert {
+        "central-discovery",
+        "provider",
+        "central-advertisement",
+        "requestor-api",
+        "requestor-desktop",
+        "port-checker",
+        "requestor-web",
+        "provider-desktop",
+    }.issubset(service_names)
+
+    for service in services:
+        assert service.env["GOLEM_LOCAL_STACK_LOG_DIR"] == str(tmp_path)
+        assert service.env["GOLEM_LOCAL_STACK_LOG_MAX_BYTES"] == "2048"
+        assert service.env["GOLEM_LOCAL_STACK_LOG_BACKUPS"] == "3"
+
+    provider = next(service for service in services if service.name == "provider")
+    provider_desktop = next(
+        service for service in services if service.name == "provider-desktop"
+    )
+    port_checker = next(
+        service for service in services if service.name == "port-checker"
+    )
+    requestor_api = next(
+        service for service in services if service.name == "requestor-api"
+    )
+    central = next(
+        service for service in services if service.name == "central-discovery"
+    )
+
+    assert provider.env["GOLEM_PROVIDER_LOG_DIR"] == str(tmp_path)
+    assert provider_desktop.env["GOLEM_PROVIDER_LOG_DIR"] == str(tmp_path)
+    assert port_checker.env["PORT_CHECKER_LOG_DIR"] == str(tmp_path)
+    assert requestor_api.env["GOLEM_REQUESTOR_LOG_DIR"] == str(tmp_path)
+    assert central.env["GOLEM_CENTRAL_DISCOVERY_LOG_DIR"] == str(tmp_path)
+
+
 def test_local_stack_binds_provider_for_guest_metrics():
     local_stack = load_local_stack_module()
     services = local_stack.build_services(
-        include_gui=False,
-        deployment={
-            "rpc_url": "http://127.0.0.1:8545",
-            "stream_payment_address": "0x0000000000000000000000000000000000000000",
-            "glm_token_address": "0x0000000000000000000000000000000000000000",
-        },
+        deployment=deployment(),
+        start_provider_desktop=False,
+        start_requestor_desktop=True,
     )
 
     provider = next(service for service in services if service.name == "provider")
 
     assert provider.env["GOLEM_PROVIDER_HOST"] == "0.0.0.0"
-    assert provider.env["GOLEM_PROVIDER_PUBLIC_IP"] == "127.0.0.1"
+    assert provider.env["GOLEM_PROVIDER_PUBLIC_IP"] == "auto"
