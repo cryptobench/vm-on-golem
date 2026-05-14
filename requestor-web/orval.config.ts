@@ -21,13 +21,6 @@ export default defineConfig({
       target: "lib/generated/api/central-discovery.ts",
     },
   },
-  portChecker: {
-    input: "../openapi/port-checker.json",
-    output: {
-      ...output,
-      target: "lib/generated/api/port-checker.ts",
-    },
-  },
   provider: {
     input: "../openapi/provider.json",
     output: {

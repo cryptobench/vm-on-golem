@@ -48,25 +48,25 @@ export function StatCard({
 
   return (
     <Card className={className}>
-      <CardBody className="flex min-h-28 items-start justify-between gap-4">
-        <div className="min-w-0">
+      <CardBody className="min-h-28">
+        <div className="flex items-start justify-between gap-4">
           <div className="text-sm font-medium text-text-secondary">{label}</div>
-          <div className="mt-3 text-2xl font-semibold text-text-primary">
-            {value}
-          </div>
-          {detail ? (
-            <div className="mt-3 text-sm text-text-secondary">{detail}</div>
+          {icon ? (
+            <span
+              className={cn(
+                "grid h-11 w-11 shrink-0 place-items-center rounded-lg",
+                toneClass,
+              )}
+            >
+              {icon}
+            </span>
           ) : null}
         </div>
-        {icon ? (
-          <span
-            className={cn(
-              "grid h-11 w-11 shrink-0 place-items-center rounded-lg",
-              toneClass,
-            )}
-          >
-            {icon}
-          </span>
+        <div className="mt-3 min-w-0 text-2xl font-semibold leading-tight text-text-primary tabular-nums">
+          {value}
+        </div>
+        {detail ? (
+          <div className="mt-3 text-sm text-text-secondary">{detail}</div>
         ) : null}
       </CardBody>
     </Card>

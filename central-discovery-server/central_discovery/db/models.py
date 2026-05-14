@@ -1,9 +1,9 @@
-from datetime import datetime
-
 from sqlalchemy import JSON, Column, DateTime, ForeignKey, Integer, String
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
+
+from central_discovery.time import ensure_utc, utc_now
 
 Base = declarative_base()
 
@@ -23,9 +23,9 @@ class Advertisement(Base):
     endpoint_url = Column(String, nullable=True)
     resources = Column(JSON, nullable=False)  # CPU, memory, storage
     pricing = Column(JSON, nullable=True)  # Optional pricing info
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=utc_now)
     updated_at = Column(
-        DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
+        DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now
     )
 
     def __repr__(self):
@@ -36,5 +36,5 @@ class Advertisement(Base):
         """Check if advertisement has expired (older than 5 minutes)."""
         if not self.updated_at:
             return True
-        age = datetime.utcnow() - self.updated_at
+        age = utc_now() - ensure_utc(self.updated_at)
         return age.total_seconds() > 300  # 5 minutes

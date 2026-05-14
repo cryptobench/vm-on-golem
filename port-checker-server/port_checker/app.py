@@ -17,7 +17,6 @@ from .errors import (
     ValidationError,
 )
 from .ports.api import router as ports_router
-from .proxy.api import router as proxy_router
 
 logger = logging.getLogger(__name__)
 
@@ -26,10 +25,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app_settings = settings or Settings()
     logger.info(
         "Creating port checker app",
-        extra={
-            "proxy_enabled": app_settings.proxy_enabled,
-            "proxy_allowed_ports": app_settings.proxy_allowed_ports,
-        },
+        extra={"host": app_settings.host, "port": app_settings.port},
     )
     app = FastAPI(title="Golem Port Checker", openapi_url="/openapi.json")
     app.state.settings = app_settings
@@ -44,7 +40,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     _register_exception_handlers(app)
     app.include_router(ports_router)
-    app.include_router(proxy_router)
     return app
 
 

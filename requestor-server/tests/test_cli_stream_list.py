@@ -19,8 +19,18 @@ def runner(monkeypatch):
     # Stub db_service with async list_vms
     async def list_vms_stub():
         return [
-            {"name": "vm-unmapped", "vm_id": "vm-unmapped", "provider_ip": "10.0.0.1"},
-            {"name": "vm-mapped", "vm_id": "vm-mapped", "provider_ip": "10.0.0.2"},
+            {
+                "name": "vm-unmapped",
+                "vm_id": "vm-unmapped",
+                "provider_ip": "10.0.0.1",
+                "config": {"provider_endpoint_url": "https://provider-unmapped.test"},
+            },
+            {
+                "name": "vm-mapped",
+                "vm_id": "vm-mapped",
+                "provider_ip": "10.0.0.2",
+                "config": {"provider_endpoint_url": "https://provider-mapped.test"},
+            },
         ]
 
     monkeypatch.setattr(
@@ -56,7 +66,7 @@ def runner(monkeypatch):
     monkeypatch.setattr("requestor.cli.commands.ProviderClient", DummyProviderClient)
 
     # Provide trivial config helpers used by the command
-    cfg = types.SimpleNamespace(get_provider_url=lambda ip: f"http://{ip}:8000")
+    cfg = types.SimpleNamespace(get_provider_url=lambda endpoint: endpoint.rstrip("/"))
     monkeypatch.setattr("requestor.cli.commands.config", cfg)
 
     return CliRunner()

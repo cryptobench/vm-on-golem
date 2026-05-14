@@ -17,27 +17,30 @@ const baseState: VmLiveState = {
   errors: {},
 };
 
-test("builds provider live websocket URL through the proxy", () => {
-  process.env.NEXT_PUBLIC_PORT_CHECKER_URL = "http://localhost:9000";
-  process.env.NEXT_PUBLIC_PORT_CHECKER_TOKEN = "secret";
-
+test("builds provider live websocket URL from HTTPS endpoint", () => {
   const url = vmLiveUrl(
-    "provider-a",
+    "https://203.0.113.10",
     "vm-a",
-    {
-      mode: "central",
-      discovery_url: "http://localhost:9001/api/v1",
-      arkiv_rpc_url: "http://rpc",
-      arkiv_ws_url: "ws://arkiv",
-      chain_id: 1,
-    },
     { jobId: "job-a", historyRange: "6h" },
   );
 
   assert.equal(
     url,
-    "ws://localhost:9000/proxy/provider/provider-a/api/v1/vms/vm-a/live?port=7466&proxy_source=central&proxy_token=secret&arkiv_rpc_url=http%3A%2F%2Frpc&arkiv_ws_url=ws%3A%2F%2Farkiv&job_id=job-a&history_range=6h",
+    "wss://203.0.113.10/api/v1/vms/vm-a/live?job_id=job-a&history_range=6h",
   );
+});
+
+test("builds provider live websocket URL from HTTP development endpoint", () => {
+  const previous = process.env.NEXT_PUBLIC_GOLEM_ENVIRONMENT;
+  process.env.NEXT_PUBLIC_GOLEM_ENVIRONMENT = "development";
+  try {
+    const url = vmLiveUrl("http://127.0.0.1:7466", "vm-a", {});
+
+    assert.equal(url, "ws://127.0.0.1:7466/api/v1/vms/vm-a/live");
+  } finally {
+    if (previous == null) delete process.env.NEXT_PUBLIC_GOLEM_ENVIRONMENT;
+    else process.env.NEXT_PUBLIC_GOLEM_ENVIRONMENT = previous;
+  }
 });
 
 test("live reducer applies snapshots and metric updates", () => {

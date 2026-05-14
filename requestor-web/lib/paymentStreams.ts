@@ -7,6 +7,7 @@ import {
   computeEstimate,
   loadSettings,
   providerInfo,
+  providerEndpointUrl,
   type AdsConfig,
   type ProviderAd,
   type VMResources,
@@ -17,7 +18,7 @@ import { getRequestorRuntimeConfig } from "./runtimeConfig";
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
 export type OpenPaymentStreamOptions = {
-  provider: Pick<ProviderAd, "provider_id" | "pricing">;
+  provider: Pick<ProviderAd, "provider_id" | "pricing" | "endpoint_url">;
   resources: VMResources;
   durationSeconds: number;
   ads: AdsConfig;
@@ -50,8 +51,7 @@ export async function openPaymentStream({
 
   onPhase?.("Loading provider payment settings");
   const providerPayment = await loadProviderPaymentMetadata(
-    provider.provider_id,
-    ads,
+    provider as ProviderAd,
   );
   const cfg = loadSettings();
   const runtimeConfig = getRequestorRuntimeConfig();
@@ -134,9 +134,9 @@ function getWalletName() {
   return "your wallet";
 }
 
-async function loadProviderPaymentMetadata(providerId: string, ads: AdsConfig) {
+async function loadProviderPaymentMetadata(provider: ProviderAd) {
   try {
-    return await providerInfo(providerId, ads);
+    return await providerInfo(providerEndpointUrl(provider));
   } catch (error) {
     console.warn(
       "Provider payment metadata unavailable, using local payment settings",

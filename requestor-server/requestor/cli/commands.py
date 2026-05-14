@@ -123,7 +123,7 @@ async def _vm_service_for(name: str) -> tuple[dict, VMService]:
     vm_record = await db_service.get_vm(name)
     if not vm_record:
         raise click.BadParameter(f"VM '{name}' not found")
-    provider_url = config.get_provider_url(vm_record["provider_ip"])
+    provider_url = _provider_url_for_vm(vm_record)
     client = ProviderClient(provider_url)
     await client.__aenter__()
     service = VMService(db_service, SSHService(config.ssh_key_dir), client)
@@ -134,13 +134,27 @@ async def _vm_with_access_details(vm_record: dict) -> dict:
     if vm_record.get("config", {}).get("ssh_user"):
         return vm_record
 
-    provider_url = config.get_provider_url(vm_record["provider_ip"])
+    provider_url = _provider_url_for_vm(vm_record)
     async with ProviderClient(provider_url) as client:
         service = VMService(db_service, SSHService(config.ssh_key_dir), client)
         refreshed = await service.get_vm(vm_record["name"])
     if not refreshed:
         raise click.BadParameter(f"VM '{vm_record['name']}' not found")
     return refreshed
+
+
+def _provider_url_for_vm(vm: dict) -> str:
+    endpoint_url = (vm.get("config") or {}).get("provider_endpoint_url")
+    if not endpoint_url:
+        raise RequestorError("Provider endpoint URL not found for VM")
+    return config.get_provider_url(str(endpoint_url))
+
+
+def _provider_url_for_advertisement(provider: dict) -> str:
+    endpoint_url = provider.get("endpoint_url")
+    if not endpoint_url:
+        raise RequestorError("Provider endpoint URL not found in advertisement")
+    return config.get_provider_url(str(endpoint_url))
 
 
 async def _close_vm_service(service: VMService) -> None:
@@ -490,7 +504,7 @@ async def create_vm(
                 key_pair = await ssh_service.get_key_pair()
 
                 # Initialize VM service
-                provider_url = config.get_provider_url(provider_ip)
+                provider_url = _provider_url_for_advertisement(provider)
                 async with ProviderClient(provider_url) as client:
                     # Fetch provider info if available (for preferred contract addresses); proceed regardless
                     info = None
@@ -560,6 +574,9 @@ async def create_vm(
                         provider_ip=provider_ip,
                         ssh_key=key_pair.public_key_content,
                         stream_id=stream_id,
+                        provider_endpoint_url=_provider_url_for_advertisement(
+                            provider
+                        ),
                     )
 
                     # Get access info from config
@@ -648,7 +665,7 @@ async def stream_list(as_json: bool):
                 "error": None,
             }
             try:
-                provider_url = config.get_provider_url(vm["provider_ip"])
+                provider_url = _provider_url_for_vm(vm)
                 async with ProviderClient(provider_url) as client:
                     status = await client.get_vm_stream_status(vm["vm_id"])
                 item.update(
@@ -778,7 +795,7 @@ async def stream_open(
             )
             if not provider_ip and config.environment == "production":
                 raise RequestorError("Provider IP address not found in advertisement")
-            provider_url = config.get_provider_url(provider_ip)
+            provider_url = _provider_url_for_advertisement(provider)
             async with ProviderClient(provider_url) as client:
                 info = await client.get_provider_info()
                 recipient = info["provider_id"]
@@ -863,7 +880,7 @@ async def stream_status(name: str, as_json: bool):
         vm = await db_service.get_vm(name)
         if not vm:
             raise RequestorError(f"VM '{name}' not found in local DB")
-        provider_url = config.get_provider_url(vm["provider_ip"])
+        provider_url = _provider_url_for_vm(vm)
         async with ProviderClient(provider_url) as client:
             status = await client.get_vm_stream_status(vm["vm_id"])
         if as_json:
@@ -1057,7 +1074,7 @@ async def ssh_vm(name: str):
 
         # Get VM access info using service
         logger.process("Fetching connection details")
-        provider_url = config.get_provider_url(vm["provider_ip"])
+        provider_url = _provider_url_for_vm(vm)
         async with ProviderClient(provider_url) as client:
             vm_service = VMService(db_service, ssh_service, client)
             vm = await vm_service.get_vm(name)  # Get fresh VM info
@@ -1164,7 +1181,7 @@ async def destroy_vm(name: str):
             raise click.BadParameter(f"VM '{name}' not found")
 
         # Initialize VM service
-        provider_url = config.get_provider_url(vm["provider_ip"])
+        provider_url = _provider_url_for_vm(vm)
         async with ProviderClient(provider_url) as client:
             # Initialize blockchain client for stream termination on destroy
             from ..payments.blockchain_service import (
@@ -1233,7 +1250,7 @@ async def purge_vms(force: bool):
         for vm in vms:
             try:
                 logger.process(f"Purging VM '{vm['name']}'")
-                provider_url = config.get_provider_url(vm["provider_ip"])
+                provider_url = _provider_url_for_vm(vm)
 
                 async with ProviderClient(provider_url) as client:
                     # Initialize blockchain client for stream termination on purge
@@ -1338,7 +1355,7 @@ async def start_vm(name: str):
             raise click.BadParameter(f"VM '{name}' not found")
 
         # Initialize VM service
-        provider_url = config.get_provider_url(vm["provider_ip"])
+        provider_url = _provider_url_for_vm(vm)
         async with ProviderClient(provider_url) as client:
             vm_service = VMService(db_service, SSHService(config.ssh_key_dir), client)
             await vm_service.start_vm(name)
@@ -1386,7 +1403,7 @@ async def stop_vm(name: str):
             raise click.BadParameter(f"VM '{name}' not found")
 
         # Initialize VM service
-        provider_url = config.get_provider_url(vm["provider_ip"])
+        provider_url = _provider_url_for_vm(vm)
         async with ProviderClient(provider_url) as client:
             vm_service = VMService(db_service, SSHService(config.ssh_key_dir), client)
             await vm_service.stop_vm(name)
@@ -1723,13 +1740,13 @@ async def _get_provider_vm_stats(vm: dict) -> dict:
     import json
     import urllib.request
 
-    provider_ip = vm.get("provider_ip")
     vm_id = vm.get("vm_id")
-    if not provider_ip or not vm_id:
+    if not vm_id:
         raise click.ClickException("Provider address or VM id is missing")
+    provider_url = _provider_url_for_vm(vm)
 
     def _fetch() -> dict:
-        url = f"http://{provider_ip}:7466/api/v1/vms/{vm_id}/metrics/latest"
+        url = f"{provider_url}/api/v1/vms/{vm_id}/metrics/latest"
         with urllib.request.urlopen(url, timeout=5) as response:
             return json.loads(response.read().decode("utf-8"))
 

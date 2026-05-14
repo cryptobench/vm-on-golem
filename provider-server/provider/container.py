@@ -10,7 +10,7 @@ from .discovery.publishers import CentralDiscoveryPublisher
 from .discovery.publishing_service import DiscoveryPublishingService
 from .discovery.resource_tracker import ResourceTracker
 from .jobs.store import JobStore
-from .live.service import VMLiveService
+from .live.service import HostLiveService, VMLiveService
 from .monitoring.repo import MonitoringRepository
 from .monitoring.services import MonitoringService
 from .network_setup.certificate_service import CertificateMaintenanceService
@@ -208,6 +208,11 @@ class Container(containers.DeclarativeContainer):
         vm_application_service=vm_application_service,
         provider_info_service=provider_info_service,
         stream_status_service=stream_status_service,
+    )
+
+    host_live_service = providers.Singleton(
+        HostLiveService,
+        monitoring_service=monitoring_service,
     )
 
     summary_service = providers.Factory(

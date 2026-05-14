@@ -3,6 +3,8 @@ from typing import Dict, Optional
 
 from pydantic import BaseModel, Field, constr, validator
 
+from central_discovery.time import ensure_utc, utc_now
+
 
 class ResourceRequirements(BaseModel):
     """Resource requirements for querying advertisements."""
@@ -79,6 +81,10 @@ class AdvertisementResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+    @validator("created_at", "updated_at", pre=True)
+    def ensure_timestamp_timezone(cls, value):
+        return ensure_utc(value) if isinstance(value, datetime) else value
+
     class Config:
         orm_mode = True
 
@@ -88,7 +94,7 @@ class ErrorResponse(BaseModel):
 
     code: str
     message: str
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=utc_now)
 
 
 class DeleteAdvertisementResponse(BaseModel):

@@ -1,9 +1,6 @@
 "use client";
 
 export type RequestorRuntimeConfig = {
-  portCheckerUrl: string;
-  portCheckerToken: string;
-  providerApiPort: string;
   discoveryApiUrl: string;
   discoveryMode: "arkiv" | "central";
   streamPaymentAddress: string;
@@ -24,9 +21,6 @@ declare global {
 }
 
 const DEFAULTS: RequestorRuntimeConfig = {
-  portCheckerUrl: "http://localhost:9000",
-  portCheckerToken: "",
-  providerApiPort: "7466",
   discoveryApiUrl: "http://195.201.39.101:9001/api/v1",
   discoveryMode: "central",
   streamPaymentAddress: "",
@@ -63,9 +57,6 @@ export function getRequestorRuntimeConfig(): RequestorRuntimeConfig {
       ? {}
       : window.__GOLEM_REQUESTOR_RUNTIME_CONFIG__ || {};
   const env: Partial<RequestorRuntimeConfig> = {
-    portCheckerUrl: envValue("NEXT_PUBLIC_PORT_CHECKER_URL"),
-    portCheckerToken: envValue("NEXT_PUBLIC_PORT_CHECKER_TOKEN"),
-    providerApiPort: envValue("NEXT_PUBLIC_PROVIDER_API_PORT"),
     discoveryApiUrl: envValue("NEXT_PUBLIC_DISCOVERY_API_URL"),
     discoveryMode:
       envValue("NEXT_PUBLIC_DISCOVERY_MODE").toLowerCase() === "arkiv"

@@ -223,6 +223,14 @@ DISCOVERY_URL = "http://discovery.golem.network:9001"
 - Lint/type‑check (service‑local): `poetry -C <svc> run black . && poetry -C <svc> run isort . && poetry -C <svc> run pylint <pkg> && poetry -C <svc> run mypy <pkg>`.
 - JS/TS: follow existing patterns; keep modules small and pure where possible.
 
+## Time & Date Handling
+
+- Backend timestamps crossing API, websocket, webhook, persistence, or DTO boundaries MUST be absolute UTC instants with explicit timezone offsets. In Python, use `provider.utils.time.utc_now()` in `provider-server/`, `central_discovery.time.utc_now()` in `central-discovery-server/`, or `datetime.now(timezone.utc)` when a service-local helper does not exist; do not add new `datetime.utcnow()` uses.
+- When serializing datetimes, preserve the timezone offset in `isoformat()` output. If legacy stored data is naive, normalize it on the backend before returning it to clients; frontend code must not repair missing timezones.
+- Frontend display formatting MUST use the user agent's system locale and clock settings: `Intl.DateTimeFormat(undefined, ...)`, `toLocaleString(undefined, ...)`, or shared helpers that do the same. Do not hardcode `"en"`, `"en-US"`, `hour12`, or app-specific 12h/24h behavior for user-visible dates/times.
+- Frontend timestamp parsing MUST require timezone-bearing ISO strings or numeric Unix timestamps. Do not append `"Z"`, guess UTC/local time, or reinterpret naive strings in UI code.
+- Frontend time formatting/parsing MUST use the shared `@golem/ui` helpers exported from `packages/ui/src/time.ts`: `formatLocalDateTime`, `formatLocalDate`, `formatLocalTime`, `formatUnixSecondsDateTime`, and `parseAbsoluteTimestamp`. App-local wrappers such as `requestor-web/lib/time.ts` may re-export these helpers, but components must not create local date/time formatter functions.
+
 ## Frontend Standards
 
 ### Shared UI Architecture

@@ -108,6 +108,24 @@ async def test_central_publisher_uses_configured_public_ip(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_central_publisher_advertises_http_endpoint_in_development(monkeypatch):
+    rt = StubResourceTracker({"cpu": 2, "memory": 2, "storage": 10})
+    adv = CentralDiscoveryPublisher(rt, discovery_url="http://x")
+    capture = {}
+    adv.session = StubSession(capture)
+    monkeypatch.setattr(settings, "ENVIRONMENT", "development")
+    monkeypatch.setattr(settings, "SECURE_SETUP_IN_DEVELOPMENT", False)
+    monkeypatch.setattr(settings, "PUBLIC_IP", "127.0.0.1")
+    monkeypatch.setattr(settings, "PORT", 7466)
+
+    await adv.post_advertisement()
+
+    assert capture["json"]["endpoint_protocol"] == "http"
+    assert capture["json"]["endpoint_port"] == 7466
+    assert capture["json"]["endpoint_url"] == "http://127.0.0.1:7466"
+
+
+@pytest.mark.asyncio
 async def test_central_publisher_skips_when_certificate_is_not_usable(
     monkeypatch, caplog
 ):

@@ -1,6 +1,6 @@
 Requestor Web (Next.js)
 
-Client-side rendered Next.js app to discover providers, open payment streams with MetaMask, and rent/manage VMs via the port-checker proxy.
+Client-side rendered Next.js app to discover providers, open payment streams with MetaMask, and rent/manage VMs through provider-advertised direct endpoints.
 
 Quick start
 
@@ -14,10 +14,10 @@ Data fetching (SWR)
 
 - SWR is used for client-side fetching, caching and polling. A global `SWRConfig` is set in `app/layout.tsx`.
 - Prefer hooks in `hooks/useApiSWR.ts` over ad‑hoc `fetch` calls:
-  - `useProviderInfo(providerId, { refreshInterval })`
-  - `useVmAccess(providerId, vmId, { refreshInterval })`
-  - `useVmStatusSafe(providerId, vmId, { refreshInterval })`
-  - `useVmStreamStatus(providerId, vmId, { refreshInterval })`
+  - `useProviderInfo(providerEndpointUrl, { refreshInterval })`
+  - `useVmAccess(providerEndpointUrl, vmId, { refreshInterval })`
+  - `useVmStatusSafe(providerEndpointUrl, vmId, { refreshInterval })`
+  - `useVmStreamStatus(providerEndpointUrl, vmId, { refreshInterval })`
 - Pages that display VM status poll at intervals and use skeletons for content loading, per the Loading UX guidelines.
 
 Price cache (USD)
@@ -48,9 +48,6 @@ Env vars (public)
 
 - NEXT_PUBLIC_DISCOVERY_API_URL: discovery service base, e.g. http://localhost:9001/api/v1
 - NEXT_PUBLIC_DISCOVERY_MODE: default profile mode, `arkiv` or `central`
-- NEXT_PUBLIC_PORT_CHECKER_URL: port-checker proxy base, e.g. http://localhost:9000
-- NEXT_PUBLIC_PORT_CHECKER_TOKEN: shared proxy token (exposed to users)
-- NEXT_PUBLIC_PROVIDER_API_PORT: provider HTTP API port used by the port-checker proxy; defaults to `7466`
 - NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS: default StreamPayment contract (can be overridden in Settings or provider info)
 - NEXT_PUBLIC_GLM_TOKEN_ADDRESS: GLM token address for stream deposits (Ethereum Hoodi tGLM is `0x55555555555556AcFf9C332Ed151758858bd7a26`)
 - NEXT_PUBLIC_EVM_CHAIN_ID: hex chain id for MetaMask (Ethereum Hoodi is `0x88bb0`)
@@ -74,9 +71,9 @@ ETH and the tGLM minter documented in `../contracts/README.md`.
 Notes and alignment with backend
 
 - Discovery uses central discovery by default. Arkiv remains available as an optional decentralized backend.
-- By default, provider IP resolution for proxy calls uses central discovery (`X-Proxy-Source: central`). You can switch the profile to `arkiv` in Settings to use Arkiv plus RPC/WS configuration.
-- Provider access goes through port-checker /proxy/provider/{provider_id}/... with X-Proxy-Token.
-- Only HTTP is proxied; SSH is shown as host:port for your terminal client.
+- Requestor web only lists providers with a usable `endpoint_url`.
+- Provider API access goes directly to the advertised endpoint. Production endpoints must be HTTPS; development mode also accepts HTTP for local stacks. Live VM sessions convert `https:` to `wss:` and development `http:` to `ws:`.
+- SSH is shown as host:port for your terminal client.
 - Streams use the same StreamPayment ABI as requestor (createStream, streams, topUp, terminate). MetaMask signs transactions.
 - Pricing estimate logic computes GLM stream rates from provider USD pricing and current GLM/USD.
 
@@ -84,5 +81,5 @@ Limitations
 
 - VM ownership isn’t globally queryable; the app tracks “your rentals” in localStorage.
 - Streaming payments are GLM-only; native ETH is still required for gas.
-- The proxy token is public in a static site; use a token suitable for public use and rely on the port-checker’s IP/port allowlist and timeouts. Consider rate limiting.
-- Provider listing should use the selected discovery backend.
+- Local rental records created before provider endpoints were stored are ignored because they cannot be managed directly.
+- Provider listing uses the selected discovery backend.

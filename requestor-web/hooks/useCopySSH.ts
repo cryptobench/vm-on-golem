@@ -2,14 +2,16 @@
 import { useToast } from "@golem/ui";
 import { buildSshCommand, copyText } from "../lib/ssh";
 import { vmAccess, type Rental } from "../lib/api";
-import { useAds } from "../context/AdsContext";
 
 export function useCopySSH() {
   const { show } = useToast();
-  const { ads } = useAds();
   return async function copySSH(r: Rental): Promise<boolean> {
     try {
-      const acc = await vmAccess(r.provider_id, r.vm_id, ads);
+      if (!r.provider_endpoint_url) {
+        show("Provider endpoint unavailable");
+        return false;
+      }
+      const acc = await vmAccess(r.provider_endpoint_url, r.vm_id);
       if (!("ssh_host" in acc) || acc.ssh_port == null || !acc.ssh_user) {
         show("SSH port unavailable");
         return false;

@@ -3,32 +3,30 @@ import { test } from "node:test";
 import {
   ensurePaidStreamCanStart,
   terminatePaidRental,
-  type TerminateRentalOptions,
 } from "./rentalLifecycle";
 import type { Rental } from "./api";
 
 const rental: Rental = {
   name: "vm",
   provider_id: "provider",
+  provider_endpoint_url: "https://provider.example",
   provider_ip: "127.0.0.1",
   vm_id: "vm-id",
   status: "running",
   stream_id: "42",
 };
 
-const ads = { mode: "central" } as TerminateRentalOptions["ads"];
-
 test("terminates stream before deleting provider VM and keeps history fields", async () => {
   const calls: string[] = [];
 
   const next = await terminatePaidRental({
     rental,
-    ads,
     terminateStream: async (streamId) => {
       calls.push(`terminate:${streamId}`);
       return "0xtx";
     },
-    destroyVm: async (_providerId, vmId) => {
+    destroyVm: async (providerEndpointUrl, vmId) => {
+      assert.equal(providerEndpointUrl, "https://provider.example");
       calls.push(`destroy:${vmId}`);
       return null;
     },
@@ -48,7 +46,6 @@ test("failed settlement blocks provider VM deletion", async () => {
   await assert.rejects(
     terminatePaidRental({
       rental,
-      ads,
       terminateStream: async () => {
         calls.push("terminate");
         throw new Error("user rejected");
@@ -67,7 +64,6 @@ test("failed settlement blocks provider VM deletion", async () => {
 test("provider 404 after settlement is treated as terminated", async () => {
   const next = await terminatePaidRental({
     rental,
-    ads,
     terminateStream: async () => "0xtx",
     destroyVm: async () => {
       throw { status: 404 };

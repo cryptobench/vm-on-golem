@@ -7,6 +7,7 @@ import {
   createVm,
   loadRentals,
   loadSettings,
+  providerEndpointUrl,
   saveRentals,
   saveSettings,
   vmAccess,
@@ -184,6 +185,7 @@ export function RentDialog({
     let pendingEntry: Rental | null = null;
     let activeStreamPaymentAddress = "";
     try {
+      const endpointUrl = providerEndpointUrl(provider);
       setCreating(true);
       setError(null);
       setPhase(paymentReady ? "Preparing VM rental" : "Preparing wallet");
@@ -210,6 +212,7 @@ export function RentDialog({
       pendingEntry = {
         name: payload.name,
         provider_id: provider.provider_id,
+        provider_endpoint_url: endpointUrl,
         provider_ip: provider.ip_address || null,
         platform: provider.platform || null,
         resources: spec,
@@ -229,7 +232,7 @@ export function RentDialog({
         settlement_status: "pending",
       };
       upsertRental(pendingEntry);
-      const vm = await createVm(provider.provider_id, payload, adsMode);
+      const vm = await createVm(endpointUrl, payload);
       const jobId = (vm as any)?.job_id || null;
       let vmId = (vm as any)?.vm_id || (vm as any)?.id || null;
       if (!vmId && jobId) {
@@ -238,9 +241,8 @@ export function RentDialog({
           await new Promise((resolve) => setTimeout(resolve, 2000));
           try {
             const status = await vmJobStatus(
-              provider.provider_id,
+              endpointUrl,
               jobId,
-              adsMode,
             );
             vmId = status?.vm_id || null;
             if (vmId) break;
@@ -254,6 +256,7 @@ export function RentDialog({
       const entry = {
         name: payload.name,
         provider_id: provider.provider_id,
+        provider_endpoint_url: endpointUrl,
         provider_ip: provider.ip_address || null,
         platform: provider.platform || null,
         resources: spec,
@@ -275,7 +278,7 @@ export function RentDialog({
       upsertRental(entry as Rental);
       try {
         setPhase("Loading VM access details");
-        const access = await vmAccess(provider.provider_id, vmId, adsMode);
+        const access = await vmAccess(endpointUrl, vmId);
         if (access?.ssh_port) {
           const current = loadRentals();
           const index = current.findIndex(

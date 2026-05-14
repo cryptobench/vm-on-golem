@@ -71,6 +71,7 @@ export type Settings = {
 export type Rental = {
   name: string;
   provider_id: string;
+  provider_endpoint_url?: string | null;
   provider_ip?: string | null;
   vm_id: string;
   status: string;
@@ -188,7 +189,14 @@ export function loadRentals(): Rental[] {
   if (typeof window === "undefined") return [];
   try {
     const rows = JSON.parse(localStorage.getItem(RENTALS_KEY) || "[]");
-    return Array.isArray(rows) ? rows : [];
+    if (!Array.isArray(rows)) return [];
+    const rentals = rows.filter((row) =>
+      isUsableProviderEndpoint(row?.provider_endpoint_url),
+    );
+    if (rentals.length !== rows.length) {
+      localStorage.setItem(RENTALS_KEY, JSON.stringify(rentals));
+    }
+    return rentals;
   } catch {
     return [];
   }
@@ -203,13 +211,14 @@ export function saveRentals(next: Rental[]) {
 }
 
 export async function fetchAllProviders(ads: AdsConfig): Promise<ProviderAd[]> {
-  return unwrapAs<ProviderAd[]>(
+  const providers = await unwrapAs<ProviderAd[]>(
     await listAdvertisementsApiV1AdvertisementsGet(
       {},
       withBaseUrl(centralDiscoveryOrigin(ads)),
     ),
     200,
   );
+  return filterProvidersWithUsableEndpoint(providers);
 }
 
 export async function fetchProviders(
@@ -229,12 +238,31 @@ export async function fetchProviders(
   if (query.country) params.country = query.country;
   if (query.platform) params.platform = query.platform;
 
-  return unwrapAs<ProviderAd[]>(
+  const providers = await unwrapAs<ProviderAd[]>(
     await listAdvertisementsApiV1AdvertisementsGet(
       params,
       withBaseUrl(centralDiscoveryOrigin(ads)),
     ),
     200,
+  );
+  return filterProvidersWithUsableEndpoint(providers);
+}
+
+export function filterProvidersWithUsableEndpoint(
+  providers: ProviderAd[],
+): ProviderAd[] {
+  return providers.filter(hasUsableProviderEndpoint);
+}
+
+export function hasUsableProviderEndpoint(provider: ProviderAd): boolean {
+  return isUsableProviderEndpoint(
+    (provider as { endpoint_url?: string | null }).endpoint_url,
+  );
+}
+
+export function providerEndpointUrl(provider: ProviderAd): string {
+  return requireProviderEndpoint(
+    (provider as { endpoint_url?: string | null }).endpoint_url,
   );
 }
 
@@ -286,30 +314,29 @@ export function computePriceRange(
   return { min: Math.min(...values), max: Math.max(...values) };
 }
 
-export async function providerInfo(providerId: string, ads: AdsConfig) {
+export async function providerInfo(providerEndpointUrl: string) {
   return unwrapAs<ProviderInfo>(
-    await providerInfoApiV1ProviderInfoGet(providerOptions(providerId, ads)),
+    await providerInfoApiV1ProviderInfoGet(providerOptions(providerEndpointUrl)),
     200,
   );
 }
 
-export async function providerSummary(providerId: string, ads: AdsConfig) {
+export async function providerSummary(providerEndpointUrl: string) {
   return unwrapAs<ProviderSummary>(
-    await providerSummaryApiV1SummaryGet(providerOptions(providerId, ads)),
+    await providerSummaryApiV1SummaryGet(providerOptions(providerEndpointUrl)),
     200,
   );
 }
 
 export async function createVm(
-  providerId: string,
+  providerEndpointUrl: string,
   payload: CreateVMRequest,
-  ads: AdsConfig,
 ): Promise<VMInfo | CreateVMJobResponse> {
   return unwrapAs<VMInfo | CreateVMJobResponse>(
     await createVmApiV1VmsPost(
       payload,
       { async: true },
-      providerOptions(providerId, ads),
+      providerOptions(providerEndpointUrl),
     ),
     200,
     202,
@@ -317,28 +344,26 @@ export async function createVm(
 }
 
 export async function vmJobStatus(
-  providerId: string,
+  providerEndpointUrl: string,
   jobId: string,
-  ads: AdsConfig,
 ) {
   return unwrapAs<CreateVMJobStatus>(
     await getCreateJobApiV1VmsJobsJobIdGet(
       jobId,
-      providerOptions(providerId, ads),
+      providerOptions(providerEndpointUrl),
     ),
     200,
   );
 }
 
 export async function vmAccess(
-  providerId: string,
+  providerEndpointUrl: string,
   vmId: string,
-  ads: AdsConfig,
 ) {
   return unwrapAs<VMAccessInfo | VMAccessPendingResponse>(
     await getVmAccessApiV1VmsRequestorNameAccessGet(
       vmId,
-      providerOptions(providerId, ads),
+      providerOptions(providerEndpointUrl),
     ),
     200,
     202,
@@ -346,26 +371,24 @@ export async function vmAccess(
 }
 
 export async function vmStatus(
-  providerId: string,
+  providerEndpointUrl: string,
   vmId: string,
-  ads: AdsConfig,
 ) {
   return unwrapAs<VMInfo>(
     await getVmStatusApiV1VmsRequestorNameGet(
       vmId,
-      providerOptions(providerId, ads),
+      providerOptions(providerEndpointUrl),
     ),
     200,
   );
 }
 
 export async function vmStatusSafe(
-  providerId: string,
+  providerEndpointUrl: string,
   vmId: string,
-  ads: AdsConfig,
 ) {
   try {
-    return { exists: true, data: await vmStatus(providerId, vmId, ads) };
+    return { exists: true, data: await vmStatus(providerEndpointUrl, vmId) };
   } catch (error) {
     const apiError = error as Error & { status?: number };
     return {
@@ -377,65 +400,48 @@ export async function vmStatusSafe(
 }
 
 export async function vmStreamStatus(
-  providerId: string,
+  providerEndpointUrl: string,
   vmId: string,
-  ads: AdsConfig,
 ) {
   return unwrapAs<StreamStatus>(
     await getVmStreamStatusApiV1VmsRequestorNameStreamGet(
       vmId,
-      providerOptions(providerId, ads),
+      providerOptions(providerEndpointUrl),
     ),
     200,
   );
 }
 
 export async function vmMetricsLatest(
-  providerId: string,
+  providerEndpointUrl: string,
   vmId: string,
-  ads: AdsConfig,
 ) {
   return providerFetch<VmMonitoringLatest>(
-    providerId,
+    providerEndpointUrl,
     `/api/v1/vms/${encodeURIComponent(vmId)}/metrics/latest`,
-    ads,
   );
 }
 
 export async function vmMetricsHistory(
-  providerId: string,
+  providerEndpointUrl: string,
   vmId: string,
-  ads: AdsConfig,
   range = "1h",
 ) {
   return providerFetch<VmMonitoringHistory>(
-    providerId,
+    providerEndpointUrl,
     `/api/v1/vms/${encodeURIComponent(vmId)}/metrics/history?range=${encodeURIComponent(range)}`,
-    ads,
   );
 }
 
 export function vmLiveUrl(
-  providerId: string,
+  providerEndpointUrl: string,
   vmId: string,
-  ads: AdsConfig,
   options: { jobId?: string | null; historyRange?: string } = {},
 ) {
   const url = new URL(
-    proxyProviderUrl(
-      providerId,
-      `/api/v1/vms/${encodeURIComponent(vmId)}/live`,
-    ),
+    `${normalizeProviderEndpoint(providerEndpointUrl)}/api/v1/vms/${encodeURIComponent(vmId)}/live`,
   );
-  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-  url.searchParams.set("proxy_source", ads.mode || "central");
-  url.searchParams.set(
-    "proxy_token",
-    getRequestorRuntimeConfig().portCheckerToken || "",
-  );
-  if (ads.arkiv_rpc_url)
-    url.searchParams.set("arkiv_rpc_url", ads.arkiv_rpc_url);
-  if (ads.arkiv_ws_url) url.searchParams.set("arkiv_ws_url", ads.arkiv_ws_url);
+  url.protocol = url.protocol === "http:" ? "ws:" : "wss:";
   if (options.jobId) url.searchParams.set("job_id", options.jobId);
   if (options.historyRange) {
     url.searchParams.set("history_range", options.historyRange);
@@ -443,120 +449,121 @@ export function vmLiveUrl(
   return url.toString();
 }
 
-export const vmStart = (providerId: string, vmId: string, ads: AdsConfig) =>
+export const vmStart = (providerEndpointUrl: string, vmId: string) =>
   unwrapAs<VMInfo>(
     startVmApiV1VmsRequestorNameStartPost(
       vmId,
-      providerOptions(providerId, ads),
+      providerOptions(providerEndpointUrl),
     ),
     200,
   );
-export const vmStop = (providerId: string, vmId: string, ads: AdsConfig) =>
+export const vmStop = (providerEndpointUrl: string, vmId: string) =>
   unwrapAs<VMInfo>(
-    stopVmApiV1VmsRequestorNameStopPost(vmId, providerOptions(providerId, ads)),
+    stopVmApiV1VmsRequestorNameStopPost(
+      vmId,
+      providerOptions(providerEndpointUrl),
+    ),
     200,
   );
-export const vmRestart = (providerId: string, vmId: string, ads: AdsConfig) =>
+export const vmRestart = (providerEndpointUrl: string, vmId: string) =>
   unwrapAs<VMInfo>(
     restartVmApiV1VmsRequestorNameRestartPost(
       vmId,
-      providerOptions(providerId, ads),
+      providerOptions(providerEndpointUrl),
     ),
     200,
   );
-export const vmSuspend = (providerId: string, vmId: string, ads: AdsConfig) =>
+export const vmSuspend = (providerEndpointUrl: string, vmId: string) =>
   unwrapAs<VMInfo>(
     suspendVmApiV1VmsRequestorNameSuspendPost(
       vmId,
-      providerOptions(providerId, ads),
+      providerOptions(providerEndpointUrl),
     ),
     200,
   );
-export const vmResume = (providerId: string, vmId: string, ads: AdsConfig) =>
+export const vmResume = (providerEndpointUrl: string, vmId: string) =>
   unwrapAs<VMInfo>(
     resumeVmApiV1VmsRequestorNameResumePost(
       vmId,
-      providerOptions(providerId, ads),
+      providerOptions(providerEndpointUrl),
     ),
     200,
   );
-export const vmDestroy = (providerId: string, vmId: string, ads: AdsConfig) =>
+export const vmDestroy = (providerEndpointUrl: string, vmId: string) =>
   unwrapAs<null>(
-    deleteVmApiV1VmsRequestorNameDelete(vmId, providerOptions(providerId, ads)),
+    deleteVmApiV1VmsRequestorNameDelete(
+      vmId,
+      providerOptions(providerEndpointUrl),
+    ),
     200,
   );
 
 export function vmResize(
-  providerId: string,
+  providerEndpointUrl: string,
   vmId: string,
   resources: VMResources,
-  ads: AdsConfig,
 ) {
   const payload: ResizeVMRequest = { resources };
   return unwrapAs<VMInfo>(
     resizeVmApiV1VmsRequestorNameResizePost(
       vmId,
       payload,
-      providerOptions(providerId, ads),
+      providerOptions(providerEndpointUrl),
     ),
     200,
   );
 }
 
 export const listSnapshots = (
-  providerId: string,
+  providerEndpointUrl: string,
   vmId: string,
-  ads: AdsConfig,
 ) =>
   unwrapAs<VMSnapshot[]>(
     listSnapshotsApiV1VmsRequestorNameSnapshotsGet(
       vmId,
-      providerOptions(providerId, ads),
+      providerOptions(providerEndpointUrl),
     ),
     200,
   );
 
 export const createSnapshot = (
-  providerId: string,
+  providerEndpointUrl: string,
   vmId: string,
   payload: CreateSnapshotRequest,
-  ads: AdsConfig,
 ) =>
   unwrapAs<VMSnapshot>(
     createSnapshotApiV1VmsRequestorNameSnapshotsPost(
       vmId,
       payload,
-      providerOptions(providerId, ads),
+      providerOptions(providerEndpointUrl),
     ),
     200,
   );
 
 export const restoreSnapshot = (
-  providerId: string,
+  providerEndpointUrl: string,
   vmId: string,
   snapshot: string,
-  ads: AdsConfig,
 ) =>
   unwrapAs<VMInfo>(
     restoreSnapshotApiV1VmsRequestorNameSnapshotsSnapshotNameRestorePost(
       vmId,
       snapshot,
-      providerOptions(providerId, ads),
+      providerOptions(providerEndpointUrl),
     ),
     200,
   );
 
 export const deleteSnapshot = (
-  providerId: string,
+  providerEndpointUrl: string,
   vmId: string,
   snapshot: string,
-  ads: AdsConfig,
 ) =>
   unwrapAs<null>(
     deleteSnapshotApiV1VmsRequestorNameSnapshotsSnapshotNameDelete(
       vmId,
       snapshot,
-      providerOptions(providerId, ads),
+      providerOptions(providerEndpointUrl),
     ),
     200,
   );
@@ -599,42 +606,15 @@ function centralDiscoveryOrigin(ads: AdsConfig): string {
   return ads.discovery_url.replace(/\/api\/v1\/?$/, "").replace(/\/$/, "");
 }
 
-function providerOptions(providerId: string, ads: AdsConfig): RequestInit {
-  return withBaseUrl(proxyProviderOrigin(providerId), {
-    headers: providerProxyHeaders(ads),
-    queryParams: { port: providerApiPort() },
-  });
-}
-
-function proxyProviderOrigin(providerId: string): string {
-  const base = (
-    getRequestorRuntimeConfig().portCheckerUrl || "http://localhost:9000"
-  ).replace(/\/$/, "");
-  return `${base}/proxy/provider/${encodeURIComponent(providerId)}`;
-}
-
-function providerApiPort(): number {
-  const configured = getRequestorRuntimeConfig().providerApiPort || "7466";
-  const port = Number(configured);
-  if (Number.isInteger(port) && port >= 1 && port <= 65535) return port;
-  return 7466;
-}
-
-function proxyProviderUrl(providerId: string, path: string): string {
-  const url = new URL(`${proxyProviderOrigin(providerId)}${path}`);
-  if (!url.searchParams.has("port")) {
-    url.searchParams.set("port", String(providerApiPort()));
-  }
-  return url.toString();
+function providerOptions(providerEndpointUrl: string): RequestInit {
+  return withBaseUrl(normalizeProviderEndpoint(providerEndpointUrl));
 }
 
 async function providerFetch<TData>(
-  providerId: string,
+  providerEndpointUrl: string,
   path: string,
-  ads: AdsConfig,
 ): Promise<TData> {
-  const response = await fetch(proxyProviderUrl(providerId, path), {
-    headers: providerProxyHeaders(ads),
+  const response = await fetch(providerUrl(providerEndpointUrl, path), {
     cache: "no-store",
   });
   const data = await response.json().catch(() => null);
@@ -644,14 +624,34 @@ async function providerFetch<TData>(
   return data as TData;
 }
 
-function providerProxyHeaders(ads: AdsConfig): Record<string, string> {
-  const headers: Record<string, string> = {
-    "X-Proxy-Source": ads.mode || "central",
-    "X-Proxy-Token": getRequestorRuntimeConfig().portCheckerToken || "",
-  };
-  if (ads.arkiv_rpc_url) headers["X-Proxy-Arkiv-Rpc"] = ads.arkiv_rpc_url;
-  if (ads.arkiv_ws_url) headers["X-Proxy-Arkiv-Ws"] = ads.arkiv_ws_url;
-  return headers;
+function providerUrl(providerEndpointUrl: string, path: string): string {
+  return `${normalizeProviderEndpoint(providerEndpointUrl)}${path}`;
+}
+
+function normalizeProviderEndpoint(endpointUrl: string): string {
+  return requireProviderEndpoint(endpointUrl).replace(/\/$/, "");
+}
+
+function requireProviderEndpoint(endpointUrl: unknown): string {
+  const value = typeof endpointUrl === "string" ? endpointUrl.trim() : "";
+  if (!isUsableProviderEndpoint(value)) {
+    throw new Error("Provider endpoint unavailable");
+  }
+  return value;
+}
+
+function isUsableProviderEndpoint(endpointUrl: unknown): endpointUrl is string {
+  if (typeof endpointUrl !== "string" || !endpointUrl.trim()) return false;
+  try {
+    const url = new URL(endpointUrl);
+    if (url.protocol === "https:") return true;
+    return (
+      url.protocol === "http:" &&
+      getRequestorRuntimeConfig().golemEnvironment === "development"
+    );
+  } catch {
+    return false;
+  }
 }
 
 function withBaseUrl(

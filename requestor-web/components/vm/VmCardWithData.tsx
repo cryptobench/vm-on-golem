@@ -16,13 +16,13 @@ export function VmCardWithData(props: {
   showDestroy?: boolean;
 }) {
   const { rental } = props;
-  const { data } = useVmStreamStatus(rental.provider_id, rental.vm_id, {
+  const { data } = useVmStreamStatus(rental.provider_endpoint_url, rental.vm_id, {
     refreshInterval: 12000,
   });
   const [remaining, setRemaining] = React.useState<number | undefined>(
     undefined,
   );
-  const { data: vmData } = useVmStatus(rental.provider_id, rental.vm_id, {
+  const { data: vmData } = useVmStatus(rental.provider_endpoint_url, rental.vm_id, {
     refreshInterval: 8000,
   });
 

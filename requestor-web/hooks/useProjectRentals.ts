@@ -2,23 +2,14 @@
 import React from "react";
 import useSWR from "swr";
 import { loadRentals, saveRentals, vmStatusSafe } from "../lib/api";
-import { useAds } from "../context/AdsContext";
 
 export function useProjectRentals(projectId: string) {
-  const { ads } = useAds();
   const [validatedKey, setValidatedKey] = React.useState<string | null>(null);
 
-  const adsKey = React.useMemo(() => {
-    const mode = ads?.mode || "";
-    const rpc = ads?.arkiv_rpc_url || "";
-    const ws = ads?.arkiv_ws_url || "";
-    const chain = ads?.chain_id || "";
-    return `${mode}|${rpc}|${ws}|${chain}`;
-  }, [ads]);
-  const rentalsKey = `${projectId}|${adsKey}`;
+  const rentalsKey = projectId;
 
   const { data, isValidating, mutate } = useSWR(
-    ["project-rentals", projectId, adsKey],
+    ["project-rentals", projectId],
     async () => {
       const list = loadRentals();
       const next = [...list];
@@ -29,7 +20,8 @@ export function useProjectRentals(projectId: string) {
         if ((r.project_id || "default") !== projectId) continue;
         const status = String(r.status || "").toLowerCase();
         if (status === "terminated" || status === "deleted") continue;
-        const st = await vmStatusSafe(r.provider_id, r.vm_id, ads);
+        if (!r.provider_endpoint_url) continue;
+        const st = await vmStatusSafe(r.provider_endpoint_url, r.vm_id);
         if (!st.exists && st.code === 404) {
           const createdAt = Number(r.created_at || 0);
           const isCreating = status === "creating";

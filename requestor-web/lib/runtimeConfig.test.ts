@@ -7,15 +7,13 @@ import {
 } from "./runtimeConfig";
 
 test("runtime config falls back to public env values", () => {
-  process.env.NEXT_PUBLIC_PORT_CHECKER_URL = "http://127.0.0.1:9100";
-  process.env.NEXT_PUBLIC_PORT_CHECKER_TOKEN = "env-token";
-  process.env.NEXT_PUBLIC_PROVIDER_API_PORT = "7467";
+  process.env.NEXT_PUBLIC_DISCOVERY_API_URL = "http://127.0.0.1:9001/api/v1";
+  process.env.NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS = "0x123";
 
   const config = getRequestorRuntimeConfig();
 
-  assert.equal(config.portCheckerUrl, "http://127.0.0.1:9100");
-  assert.equal(config.portCheckerToken, "env-token");
-  assert.equal(config.providerApiPort, "7467");
+  assert.equal(config.discoveryApiUrl, "http://127.0.0.1:9001/api/v1");
+  assert.equal(config.streamPaymentAddress, "0x123");
 });
 
 test("runtime config keeps built-in defaults when env values are unset", () => {
@@ -32,16 +30,16 @@ test("runtime config prefers desktop overrides", () => {
   const originalWindow = (globalThis as any).window;
   (globalThis as any).window = {};
   try {
-    process.env.NEXT_PUBLIC_PORT_CHECKER_URL = "http://127.0.0.1:9100";
+    process.env.NEXT_PUBLIC_DISCOVERY_API_URL = "http://127.0.0.1:9100/api/v1";
     setRequestorRuntimeConfig({
-      portCheckerUrl: "http://127.0.0.1:9200",
-      portCheckerToken: "desktop-token",
+      discoveryApiUrl: "http://127.0.0.1:9200/api/v1",
+      golemEnvironment: "development",
     });
 
     const config = getRequestorRuntimeConfig();
 
-    assert.equal(config.portCheckerUrl, "http://127.0.0.1:9200");
-    assert.equal(config.portCheckerToken, "desktop-token");
+    assert.equal(config.discoveryApiUrl, "http://127.0.0.1:9200/api/v1");
+    assert.equal(config.golemEnvironment, "development");
   } finally {
     (globalThis as any).window = originalWindow;
   }

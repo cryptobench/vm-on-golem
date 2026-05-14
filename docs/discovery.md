@@ -30,11 +30,13 @@ Canonical provider classes:
 - `CompositeDiscoveryPublisher` publishes to both.
 - `DiscoveryPublishingService` owns lifecycle and immediate update triggering.
 
-Advertisements carry both legacy `ip_address` and public endpoint metadata. New
-providers publish `endpoint_protocol=https`, `endpoint_host`, `endpoint_port`,
-and `endpoint_url` after the provider has verified its public IP HTTPS
-certificate. Requestors prefer `endpoint_url` and keep `ip_address` as a
-development and legacy fallback.
+Advertisements carry both legacy `ip_address` and public endpoint metadata. In
+production, providers publish `endpoint_protocol=https`, `endpoint_host`,
+`endpoint_port`, and `endpoint_url` after verifying the public IP HTTPS
+certificate. In development, providers may publish an HTTP endpoint for local
+direct access. Requestor clients require a usable `endpoint_url` for provider
+API traffic. `ip_address` remains legacy metadata and may still be used for SSH
+host display, but it is not a provider API fallback.
 
 ## Requestor Flow
 
@@ -52,6 +54,11 @@ Canonical requestor clients:
 - `ArkivDiscoveryClient` queries Arkiv annotations.
 - `CentralDiscoveryClient` queries `/api/v1/advertisements`.
 - `ProviderService` delegates discovery lookup to the selected client and keeps higher-level provider operations stable.
+
+Requestor web hides advertisements without a usable `endpoint_url`. Requestor
+server and CLI commands fail clearly when a selected provider or stored VM does
+not have one. HTTP endpoints are accepted only in development; production
+requestor clients require HTTPS.
 
 ## Naming
 

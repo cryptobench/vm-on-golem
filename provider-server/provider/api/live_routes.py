@@ -4,9 +4,19 @@ from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends, Query, WebSocket
 
 from provider.container import Container
-from provider.live.service import VMLiveService
+from provider.live.service import HostLiveService, VMLiveService
 
 router = APIRouter()
+
+
+@router.websocket("/monitoring/host/live")
+@inject
+async def host_live(
+    websocket: WebSocket,
+    history_range: str = Query(default="1h"),
+    live_service: HostLiveService = Depends(Provide[Container.host_live_service]),
+) -> None:
+    await live_service.stream_host(websocket, history_range=history_range)
 
 
 @router.websocket("/vms/{requestor_name}/live")

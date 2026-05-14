@@ -17,6 +17,8 @@ eggs/
 lib/
 !requestor-web/lib/
 !requestor-web/lib/**
+!apps/provider-desktop/src/lib/
+!apps/provider-desktop/src/lib/**
 lib64/
 parts/
 sdist/

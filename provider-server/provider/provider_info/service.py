@@ -1,5 +1,6 @@
 from typing import Any
 
+from provider.discovery.publishers import _provider_endpoint
 from provider.platform import current_platform
 
 from .domain import ProviderInfo
@@ -19,14 +20,9 @@ class ProviderInfoService:
     def get_info(self) -> ProviderInfo:
         glm_token = str(self._setting("GLM_TOKEN_ADDRESS", "") or "")
         ip_address = self._setting("PUBLIC_IP", None)
-        endpoint_port = int(self._setting("PUBLIC_HTTPS_PORT", 443) or 443)
         endpoint_url = None
         if ip_address:
-            endpoint_url = (
-                f"https://{ip_address}"
-                if endpoint_port == 443
-                else f"https://{ip_address}:{endpoint_port}"
-            )
+            _, _, _, endpoint_url = _provider_endpoint(self.settings, str(ip_address))
         return ProviderInfo(
             provider_id=str(self._setting("PROVIDER_ID", "") or ""),
             stream_payment_address=str(

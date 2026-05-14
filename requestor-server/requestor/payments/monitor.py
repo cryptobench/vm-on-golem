@@ -47,7 +47,13 @@ class RequestorStreamMonitor:
             return sid
         # Ask provider for mapping
         try:
-            provider_url = config.get_provider_url(vm["provider_ip"])
+            endpoint_url = vm.get("config", {}).get("provider_endpoint_url")
+            if not endpoint_url:
+                self._logger.debug(
+                    f"Could not resolve stream for VM {vm['name']}: provider endpoint missing"
+                )
+                return None
+            provider_url = config.get_provider_url(str(endpoint_url))
             async with ProviderClient(provider_url) as client:
                 status = await client.get_vm_stream_status(vm["vm_id"])
                 sid = status.get("stream_id")

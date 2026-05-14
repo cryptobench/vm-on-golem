@@ -1,4 +1,4 @@
-import type { AdsConfig, Rental } from "./api";
+import type { Rental } from "./api";
 import { vmDestroy } from "./api";
 import { fetchStreamWithMeta } from "./streams";
 
@@ -6,7 +6,6 @@ const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
 export type TerminateRentalOptions = {
   rental: Rental;
-  ads: AdsConfig;
   terminateStream: (streamId: string | number | bigint) => Promise<string>;
   destroyVm?: typeof vmDestroy;
   now?: () => number;
@@ -21,7 +20,6 @@ export type StartGuardOptions = {
 
 export async function terminatePaidRental({
   rental,
-  ads,
   terminateStream,
   destroyVm = vmDestroy,
   now = nowSeconds,
@@ -38,7 +36,10 @@ export async function terminatePaidRental({
   }
 
   try {
-    await destroyVm(rental.provider_id, rental.vm_id, ads);
+    if (!rental.provider_endpoint_url) {
+      throw new Error("Provider endpoint unavailable");
+    }
+    await destroyVm(rental.provider_endpoint_url, rental.vm_id);
   } catch (error) {
     if (!isNotFoundError(error)) throw error;
   }

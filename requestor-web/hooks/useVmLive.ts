@@ -1,7 +1,6 @@
 "use client";
 
 import React from "react";
-import { useAds } from "../context/AdsContext";
 import {
   vmLiveUrl,
   type VmLiveEvent,
@@ -128,19 +127,18 @@ export function vmLiveReducer(
 }
 
 export function useVmLive(
-  providerId?: string | null,
+  providerEndpointUrl?: string | null,
   vmId?: string | null,
   jobId?: string | null,
   historyRange = "1h",
 ) {
-  const { ads } = useAds();
   const [state, dispatch] = React.useReducer(vmLiveReducer, initialState);
   const socketRef = React.useRef<WebSocket | null>(null);
 
   React.useEffect(() => {
-    if (!providerId || !vmId || typeof window === "undefined") return;
+    if (!providerEndpointUrl || !vmId || typeof window === "undefined") return;
     const socket = new WebSocket(
-      vmLiveUrl(providerId, vmId, ads, { jobId, historyRange }),
+      vmLiveUrl(providerEndpointUrl, vmId, { jobId, historyRange }),
     );
     socketRef.current = socket;
     dispatch({ type: "connecting" });
@@ -177,7 +175,7 @@ export function useVmLive(
       socketRef.current = null;
       socket.close();
     };
-  }, [providerId, vmId, jobId, historyRange, ads]);
+  }, [providerEndpointUrl, vmId, jobId, historyRange]);
 
   const send = React.useCallback((payload: Record<string, unknown>) => {
     const socket = socketRef.current;

@@ -17,7 +17,7 @@ renamed, removed, or materially changes purpose.
 - `FormField` - Field label, helper text, and input wrappers.
 - `IconTile` - Tone-aware square icon container.
 - `KeyValueList` - Consistent key/value detail rows.
-- `LineAreaChart` - Shared responsive requestor-style line chart with append-aware animation.
+- `LineAreaChart` - Shared responsive requestor-style line chart with append-aware animation and formatted values.
 - `Modal` - Low-level modal container.
 - `NumberStepper` - Numeric input with increment/decrement controls.
 - `PageHeader` - Standard page heading and actions layout.

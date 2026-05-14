@@ -7,16 +7,15 @@ import {
   PageHeader,
   ProgressBar,
   StatCard,
-  StatusBadge,
 } from "@golem/ui";
 import { RiCpuLine, RiDownloadLine, RiHardDrive3Line, RiLineChartLine, RiUploadLine } from "@remixicon/react";
 import { EndpointErrors, LoadingGrid } from "../../components/StateViews";
+import { metricChartPoints } from "../../components/metricChartPoints";
 import { RangePicker } from "../../components/RangePicker";
-import { chartPoints, metricNumber } from "../../lib/derived";
 import { EMPTY_VALUE, formatBytes, formatPercent } from "../../lib/format";
-import { providerApi } from "../../lib/providerApi";
-import type { HistoryRange, MetricsHistoryResponse } from "../../lib/types";
+import type { HistoryRange } from "../../lib/types";
 import type { DashboardData } from "../../lib/useProviderData";
+import { useHostMonitoringLive } from "./useHostMonitoringLive";
 
 export function MonitoringPage({
   data,
@@ -26,29 +25,10 @@ export function MonitoringPage({
   loading: boolean;
 }) {
   const [range, setRange] = React.useState<HistoryRange>("1h");
-  const [history, setHistory] = React.useState<MetricsHistoryResponse | null>(null);
-  const [historyError, setHistoryError] = React.useState<string | null>(null);
+  const live = useHostMonitoringLive(range);
 
-  React.useEffect(() => {
-    let cancelled = false;
-    providerApi
-      .metricsHistory(range)
-      .then((value) => {
-        if (!cancelled) {
-          setHistory(value);
-          setHistoryError(null);
-        }
-      })
-      .catch((err) => {
-        if (!cancelled) setHistoryError(err instanceof Error ? err.message : String(err));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [range]);
-
-  if (loading && !data) return <LoadingGrid />;
-  const host = data?.monitoring?.host ?? data?.latestMetrics?.host ?? {};
+  if (loading && !data && !live.state.metricsLatest) return <LoadingGrid />;
+  const host = live.state.metricsLatest?.host ?? {};
   const cpu = metricNumber(host, "cpu_percent");
   const memoryUsed = metricNumber(host, "memory_used_bytes");
   const memoryTotal = metricNumber(host, "memory_total_bytes");
@@ -56,31 +36,25 @@ export function MonitoringPage({
   const diskTotal = metricNumber(host, "disk_total_bytes");
   const networkRx = metricNumber(host, "network_rx_bytes");
   const networkTx = metricNumber(host, "network_tx_bytes");
-  const effectiveHistory = history ?? data?.hostCpuHistory;
+  const effectiveHistory = live.state.metricsHistory;
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-        <PageHeader
-          title="Monitoring"
-          description="Track host performance and VM usage."
-        />
-        <div className="flex items-center gap-3">
-          <StatusBadge
-            label={data?.monitoring?.status ?? "Unknown"}
-            tone={data?.monitoring?.status === "healthy" ? "success" : "neutral"}
-          />
-          <span className="text-sm text-text-secondary">
-            Last sample: {data?.monitoring?.last_sample_at ?? EMPTY_VALUE}
-          </span>
-        </div>
-      </div>
-      <EndpointErrors errors={{ ...(data?.errors ?? {}), ...(historyError ? { history: historyError } : {}) }} />
+      <PageHeader
+        title="Monitoring"
+        description="Track host performance and VM usage."
+      />
+      <EndpointErrors
+        errors={{
+          ...(data?.errors ?? {}),
+          ...(live.error ? { hostLive: live.error } : {}),
+        }}
+      />
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Host CPU" value={formatPercent(cpu)} detail="% of total" icon={<RiCpuLine className="h-5 w-5" />} tone="primary" />
-        <StatCard label="Host Memory" value={`${formatBytes(memoryUsed)} / ${formatBytes(memoryTotal)}`} detail={memoryUsed && memoryTotal ? formatPercent((memoryUsed / memoryTotal) * 100) : EMPTY_VALUE} icon={<RiLineChartLine className="h-5 w-5" />} tone="primary" />
-        <StatCard label="Host Disk" value={`${formatBytes(diskUsed)} / ${formatBytes(diskTotal)}`} detail={diskUsed && diskTotal ? formatPercent((diskUsed / diskTotal) * 100) : EMPTY_VALUE} icon={<RiHardDrive3Line className="h-5 w-5" />} tone="primary" />
+        <StatCard label="Host Memory" value={`${formatBytes(memoryUsed)} / ${formatBytes(memoryTotal)}`} detail={memoryUsed != null && memoryTotal ? formatPercent((memoryUsed / memoryTotal) * 100) : EMPTY_VALUE} icon={<RiLineChartLine className="h-5 w-5" />} tone="primary" />
+        <StatCard label="Host Disk" value={`${formatBytes(diskUsed)} / ${formatBytes(diskTotal)}`} detail={diskUsed != null && diskTotal ? formatPercent((diskUsed / diskTotal) * 100) : EMPTY_VALUE} icon={<RiHardDrive3Line className="h-5 w-5" />} tone="primary" />
         <StatCard label="Host Load" value={metricNumber(host, "load_1m") ?? EMPTY_VALUE} detail="1m average" icon={<RiLineChartLine className="h-5 w-5" />} tone="primary" />
       </div>
 
@@ -96,7 +70,7 @@ export function MonitoringPage({
               <h2 className="text-base font-semibold text-text-primary">Host CPU Usage</h2>
               <RangePicker value={range} onChange={setRange} />
             </div>
-            <LineAreaChart data={chartPoints(effectiveHistory, "cpu_percent")} yUnit="%" height={240} />
+            <LineAreaChart data={metricChartPoints(effectiveHistory, "cpu_percent")} yUnit="%" height={240} />
           </CardBody>
         </Card>
         <Card>
@@ -105,7 +79,11 @@ export function MonitoringPage({
               <h2 className="text-base font-semibold text-text-primary">Host Memory Usage</h2>
               <RangePicker value={range} onChange={setRange} />
             </div>
-            <LineAreaChart data={chartPoints(effectiveHistory, "memory_used_bytes")} height={240} />
+            <LineAreaChart
+              data={metricChartPoints(effectiveHistory, "memory_used_bytes")}
+              height={240}
+              valueFormatter={formatBytes}
+            />
           </CardBody>
         </Card>
       </div>
@@ -153,4 +131,14 @@ export function MonitoringPage({
       </Card>
     </div>
   );
+}
+
+function metricNumber(source: Record<string, unknown> | undefined, key: string) {
+  const value = source?.[key];
+  if (typeof value === "number") return value;
+  if (value && typeof value === "object") {
+    const nested = (value as { value?: unknown }).value;
+    return typeof nested === "number" ? nested : null;
+  }
+  return null;
 }

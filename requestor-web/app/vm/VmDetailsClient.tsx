@@ -135,7 +135,7 @@ export default function VmDetailsClient({ vmId: vmIdProp }: VmDetailsClientProps
     ""
   ).trim();
   const live = useVmLive(
-    vm?.provider_id,
+    vm?.provider_endpoint_url,
     vm?.vm_id,
     vm?.creation_job_id,
     metricsRange,
@@ -191,42 +191,42 @@ export default function VmDetailsClient({ vmId: vmIdProp }: VmDetailsClientProps
   }, [vmId]);
 
   // SWR-backed provider info, access, and VM existence polling
-  const { data: swrProvider } = useProviderInfo(vm?.provider_id, {
+  const { data: swrProvider } = useProviderInfo(vm?.provider_endpoint_url, {
     refreshInterval: liveConnected ? 0 : 30000,
   });
-  const { data: swrProviderSummary } = useProviderSummary(vm?.provider_id, {
+  const { data: swrProviderSummary } = useProviderSummary(vm?.provider_endpoint_url, {
     refreshInterval: liveConnected ? 0 : 10000,
   });
   const { data: swrAccess, error: swrAccessError } = useVmAccess(
-    vm?.provider_id,
+    vm?.provider_endpoint_url,
     vm?.vm_id,
     {
       refreshInterval: liveConnected ? 0 : 2000,
     },
   );
   const { data: swrJob } = useVmCreateJobStatus(
-    vm?.provider_id,
+    vm?.provider_endpoint_url,
     vm?.creation_job_id,
     { refreshInterval: liveConnected ? 0 : 2000 },
   );
   const { data: swrStatus, isValidating: swrStatusValidating } =
-    useVmStatusSafe(vm?.provider_id, vm?.vm_id, {
+    useVmStatusSafe(vm?.provider_endpoint_url, vm?.vm_id, {
       refreshInterval: liveConnected ? 0 : 2000,
     });
   const {
     data: swrVm,
     error: swrVmError,
     isValidating: swrVmValidating,
-  } = useVmStatus(vm?.provider_id, vm?.vm_id, {
+  } = useVmStatus(vm?.provider_endpoint_url, vm?.vm_id, {
     refreshInterval: liveConnected ? 0 : 2000,
   });
   const { data: swrMetrics, isLoading: metricsLoading } = useVmMetricsLatest(
-    vm?.provider_id,
+    vm?.provider_endpoint_url,
     vm?.vm_id,
     { refreshInterval: liveConnected ? 0 : 10000 },
   );
   const { data: swrMetricsHistory, isLoading: metricsHistoryLoading } =
-    useVmMetricsHistory(vm?.provider_id, vm?.vm_id, metricsRange, {
+    useVmMetricsHistory(vm?.provider_endpoint_url, vm?.vm_id, metricsRange, {
       refreshInterval: liveConnected ? 0 : 30000,
     });
   const { topUp: topUpAction, terminate } = useStreamActions(spAddr);
@@ -239,12 +239,9 @@ export default function VmDetailsClient({ vmId: vmIdProp }: VmDetailsClientProps
   const metricsHistoryData = live.state.metricsHistory || swrMetricsHistory;
   const authoritativeStatusKey = vm
     ? [
+        vm.provider_endpoint_url,
         vm.provider_id,
         vm.vm_id,
-        ads?.mode || "",
-        ads?.arkiv_rpc_url || "",
-        ads?.arkiv_ws_url || "",
-        ads?.chain_id || "",
       ].join(":")
     : null;
   const hasAuthoritativeStatus =
@@ -471,11 +468,11 @@ export default function VmDetailsClient({ vmId: vmIdProp }: VmDetailsClientProps
 
   React.useEffect(() => {
     if (liveConnected) return;
-    if (!vm) return;
-    listSnapshots(vm.provider_id, vm.vm_id, ads)
+    if (!vm?.provider_endpoint_url) return;
+    listSnapshots(vm.provider_endpoint_url, vm.vm_id)
       .then((rows) => setSnapshots(Array.isArray(rows) ? rows : []))
       .catch(() => setSnapshots([]));
-  }, [vm?.provider_id, vm?.vm_id, vm?.status, ads, liveConnected]);
+  }, [vm?.provider_endpoint_url, vm?.vm_id, vm?.status, liveConnected]);
 
   React.useEffect(() => {
     const resources = getEffectiveResources(vmData, vm);
@@ -616,7 +613,7 @@ export default function VmDetailsClient({ vmId: vmIdProp }: VmDetailsClientProps
     try {
       setBusy(true);
       updateVmStatus("stopping");
-      await vmStop(vm.provider_id, vm.vm_id, ads);
+      await vmStop(requireProviderEndpoint(vm), vm.vm_id);
       live.refresh(["lifecycle", "access", "metrics"]);
       show("Stop requested");
     } catch (e) {
@@ -637,7 +634,7 @@ export default function VmDetailsClient({ vmId: vmIdProp }: VmDetailsClientProps
         streamPaymentAddress: spAddr,
       });
       updateVmStatus("starting");
-      await vmStart(vm.provider_id, vm.vm_id, ads);
+      await vmStart(requireProviderEndpoint(vm), vm.vm_id);
       live.refresh(["lifecycle", "access", "metrics"]);
       show("Start requested");
     } catch (e) {
@@ -654,7 +651,7 @@ export default function VmDetailsClient({ vmId: vmIdProp }: VmDetailsClientProps
     try {
       setBusy(true);
       updateVmStatus("restarting");
-      await vmRestart(vm.provider_id, vm.vm_id, ads);
+      await vmRestart(requireProviderEndpoint(vm), vm.vm_id);
       live.refresh(["lifecycle", "access", "metrics"]);
       show("Restart requested");
     } catch (e) {
@@ -671,7 +668,7 @@ export default function VmDetailsClient({ vmId: vmIdProp }: VmDetailsClientProps
     try {
       setBusy(true);
       updateVmStatus("suspending");
-      await vmSuspend(vm.provider_id, vm.vm_id, ads);
+      await vmSuspend(requireProviderEndpoint(vm), vm.vm_id);
       live.refresh(["lifecycle", "access", "metrics"]);
       show("Suspend requested");
     } catch (e) {
@@ -692,7 +689,7 @@ export default function VmDetailsClient({ vmId: vmIdProp }: VmDetailsClientProps
         streamPaymentAddress: spAddr,
       });
       updateVmStatus("starting");
-      await vmResume(vm.provider_id, vm.vm_id, ads);
+      await vmResume(requireProviderEndpoint(vm), vm.vm_id);
       live.refresh(["lifecycle", "access", "metrics"]);
       show("Resume requested");
     } catch (e) {
@@ -717,14 +714,14 @@ export default function VmDetailsClient({ vmId: vmIdProp }: VmDetailsClientProps
     setVm(next as any);
   };
   const refreshSnapshots = async () => {
-    const rows = await listSnapshots(vm.provider_id, vm.vm_id, ads);
+    const rows = await listSnapshots(requireProviderEndpoint(vm), vm.vm_id);
     setSnapshots(Array.isArray(rows) ? rows : []);
     live.refresh(["snapshots"]);
   };
   const createVmSnapshot = async () => {
     try {
       setSnapshotBusy("create");
-      await createSnapshot(vm.provider_id, vm.vm_id, {}, ads);
+      await createSnapshot(requireProviderEndpoint(vm), vm.vm_id, {});
       await refreshSnapshots();
       show("Snapshot created");
     } catch {
@@ -736,7 +733,7 @@ export default function VmDetailsClient({ vmId: vmIdProp }: VmDetailsClientProps
   const restoreVmSnapshot = async (name: string) => {
     try {
       setSnapshotBusy(`restore:${name}`);
-      await restoreSnapshot(vm.provider_id, vm.vm_id, name, ads);
+      await restoreSnapshot(requireProviderEndpoint(vm), vm.vm_id, name);
       await refreshSnapshots();
       show("Snapshot restored");
     } catch {
@@ -748,7 +745,7 @@ export default function VmDetailsClient({ vmId: vmIdProp }: VmDetailsClientProps
   const deleteVmSnapshot = async (name: string) => {
     try {
       setSnapshotBusy(`delete:${name}`);
-      await deleteSnapshot(vm.provider_id, vm.vm_id, name, ads);
+      await deleteSnapshot(requireProviderEndpoint(vm), vm.vm_id, name);
       await refreshSnapshots();
       show("Snapshot deleted");
     } catch {
@@ -829,7 +826,7 @@ export default function VmDetailsClient({ vmId: vmIdProp }: VmDetailsClientProps
           ? "Stopping, resizing, and restarting VM"
           : "Applying resource changes",
       );
-      await vmResize(vm.provider_id, vm.vm_id, targetResources, ads);
+      await vmResize(requireProviderEndpoint(vm), vm.vm_id, targetResources);
       setResizeOpen(false);
       const next = {
         ...vm,
@@ -892,7 +889,6 @@ export default function VmDetailsClient({ vmId: vmIdProp }: VmDetailsClientProps
       setBusy(true);
       const next = await terminatePaidRental({
         rental: vm,
-        ads,
         terminateStream: terminate,
         destroyVm: vmDestroy,
       });
@@ -1187,6 +1183,13 @@ function getEffectiveResources(swrVm: unknown, vm: Rental | null) {
   return vm?.resources || null;
 }
 
+function requireProviderEndpoint(vm: Rental): string {
+  if (!vm.provider_endpoint_url) {
+    throw new Error("Provider endpoint unavailable");
+  }
+  return vm.provider_endpoint_url;
+}
+
 function mergeVmStatus(vm: Rental, payload: unknown): Rental | null {
   const data = (payload as any) || {};
   const status = String(data.status || "").toLowerCase();
@@ -1232,7 +1235,7 @@ function mergeVmStatus(vm: Rental, payload: unknown): Rental | null {
 function buildResizePaymentProvider(
   vm: Rental,
   summary: unknown,
-): Pick<ProviderAd, "provider_id" | "pricing"> {
+): Pick<ProviderAd, "provider_id" | "pricing" | "endpoint_url"> {
   const pricing = ((summary as any)?.pricing || {}) as ProviderAd["pricing"];
   const hasUsdPricing = [
     pricing?.usd_per_core_month,
@@ -1253,6 +1256,7 @@ function buildResizePaymentProvider(
 
   return {
     provider_id: vm.provider_id,
+    endpoint_url: requireProviderEndpoint(vm),
     pricing,
   };
 }

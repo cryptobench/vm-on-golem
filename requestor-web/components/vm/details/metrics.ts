@@ -1,4 +1,5 @@
 import type { VmMonitoringHistory } from "../../../lib/api";
+import { formatLocalTime, parseAbsoluteTimestamp } from "../../../lib/time";
 export { getAppendOnlySlideChange } from "@golem/ui";
 
 export type MetricRange = "1h" | "6h" | "24h" | "7d";
@@ -210,17 +211,14 @@ function bytesToMbps(bytesPerSecond: number) {
 }
 
 function formatChartTime(timestamp: string) {
-  return new Date(parseMetricTimestamp(timestamp)).toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  parseMetricTimestamp(timestamp);
+  return formatLocalTime(timestamp) ?? timestamp;
 }
 
 export function parseMetricTimestamp(timestamp: string) {
-  const normalized = hasTimezone(timestamp) ? timestamp : `${timestamp}Z`;
-  return Date.parse(normalized);
-}
-
-function hasTimezone(timestamp: string) {
-  return /(?:Z|[+-]\d{2}:?\d{2})$/i.test(timestamp);
+  const parsed = parseAbsoluteTimestamp(timestamp);
+  if (parsed == null) {
+    throw new Error(`Metric timestamp must include an explicit timezone: ${timestamp}`);
+  }
+  return parsed;
 }

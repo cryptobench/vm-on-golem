@@ -5,15 +5,17 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
+from provider.utils.time import ensure_utc, utc_now
+
 from .domain import AlertRule, MetricSample, MetricScope, MetricSource, WebhookConfig
 
 
 def _dt(value: datetime | str | None = None) -> datetime:
     if value is None:
-        return datetime.utcnow()
+        return utc_now()
     if isinstance(value, datetime):
-        return value
-    return datetime.fromisoformat(value)
+        return ensure_utc(value)
+    return ensure_utc(datetime.fromisoformat(value))
 
 
 class MonitoringRepository:
@@ -86,7 +88,7 @@ class MonitoringRepository:
     def add_samples(self, samples: Iterable[MetricSample]) -> None:
         rows = [
             (
-                sample.timestamp.isoformat(),
+                ensure_utc(sample.timestamp).isoformat(),
                 sample.scope.value,
                 sample.source.value,
                 sample.vm_id,
@@ -140,7 +142,7 @@ class MonitoringRepository:
             FROM metric_samples
             WHERE scope = ? AND ts >= ?
         """
-        params: list[Any] = [scope.value, since.isoformat()]
+        params: list[Any] = [scope.value, ensure_utc(since).isoformat()]
         if vm_id is not None:
             query += " AND vm_id = ?"
             params.append(vm_id)
@@ -153,7 +155,7 @@ class MonitoringRepository:
         return [self._sample_from_row(row) for row in rows]
 
     def prune(self, retention_days: int) -> None:
-        cutoff = datetime.utcnow() - timedelta(days=retention_days)
+        cutoff = utc_now() - timedelta(days=retention_days)
         with self._connect() as conn:
             conn.execute(
                 "DELETE FROM metric_samples WHERE ts < ?", (cutoff.isoformat(),)
@@ -168,7 +170,7 @@ class MonitoringRepository:
                 VALUES (?, ?, ?)
                 ON CONFLICT(vm_id) DO UPDATE SET token=excluded.token, created_at=excluded.created_at
                 """,
-                (vm_id, token, datetime.utcnow().isoformat()),
+                (vm_id, token, utc_now().isoformat()),
             )
         return token
 
@@ -246,7 +248,7 @@ class MonitoringRepository:
                 INSERT INTO alerts (rule_id, vm_id, status, fired_at, last_value)
                 VALUES (?, ?, 'active', ?, ?)
                 """,
-                (rule.id, vm_id, datetime.utcnow().isoformat(), value),
+                (rule.id, vm_id, utc_now().isoformat(), value),
             )
             return True
 
@@ -266,7 +268,7 @@ class MonitoringRepository:
                 UPDATE alerts SET status = 'resolved', resolved_at = ?
                 WHERE id = ?
                 """,
-                (datetime.utcnow().isoformat(), row["id"]),
+                (utc_now().isoformat(), row["id"]),
             )
             return True
 
@@ -297,7 +299,7 @@ class MonitoringRepository:
                 SET last_status = ?, last_error = ?, last_delivered_at = ?
                 WHERE id = ?
                 """,
-                (status, error, datetime.utcnow().isoformat(), webhook_id),
+                (status, error, utc_now().isoformat(), webhook_id),
             )
 
     def _connect(self) -> sqlite3.Connection:

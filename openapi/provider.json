@@ -76,6 +76,100 @@
         "title": "AlertRule",
         "type": "object"
       },
+      "CertificateState": {
+        "enum": [
+          "disabled",
+          "valid",
+          "renewal_due",
+          "renewing",
+          "renewed",
+          "failed",
+          "expired"
+        ],
+        "title": "CertificateState",
+        "type": "string"
+      },
+      "CertificateStatus": {
+        "properties": {
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "last_checked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Checked At"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "last_renewed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Renewed At"
+          },
+          "next_check_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Check At"
+          },
+          "renew_after": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Renew After"
+          },
+          "state": {
+            "$ref": "#/components/schemas/CertificateState",
+            "default": "disabled"
+          }
+        },
+        "title": "CertificateStatus",
+        "type": "object"
+      },
       "CloneVMRequest": {
         "description": "Request to clone a stopped VM.",
         "properties": {
@@ -318,6 +412,29 @@
           "ssh_key"
         ],
         "title": "CreateVMRequest",
+        "type": "object"
+      },
+      "GuestMetricAccepted": {
+        "properties": {
+          "live_mode": {
+            "title": "Live Mode",
+            "type": "boolean"
+          },
+          "next_interval_seconds": {
+            "title": "Next Interval Seconds",
+            "type": "integer"
+          },
+          "status": {
+            "default": "accepted",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "next_interval_seconds",
+          "live_mode"
+        ],
+        "title": "GuestMetricAccepted",
         "type": "object"
       },
       "GuestMetricPayload": {
@@ -621,6 +738,17 @@
             ],
             "title": "Country"
           },
+          "endpoint_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endpoint Url"
+          },
           "eth_token_address": {
             "title": "Eth Token Address",
             "type": "string"
@@ -671,6 +799,16 @@
       },
       "ProviderSummary": {
         "properties": {
+          "certificate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CertificateStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "env": {
             "additionalProperties": true,
             "title": "Env",
@@ -1094,7 +1232,7 @@
           },
           "storage": {
             "description": "Storage in GB",
-            "minimum": 10.0,
+            "minimum": 1.0,
             "title": "Storage",
             "type": "integer"
           }
@@ -1488,11 +1626,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": {
-                    "type": "string"
-                  },
-                  "title": "Response Record Guest Sample Api V1 Monitoring Guest  Vm Id  Samples Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/GuestMetricAccepted"
                 }
               }
             },

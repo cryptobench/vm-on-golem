@@ -31,7 +31,7 @@ def test_discovery_url_dev_mode_remains_valid_url():
 
 def test_get_provider_url():
     cfg = RequestorConfig()
-    assert cfg.get_provider_url("127.0.0.1") == "http://127.0.0.1:7466"
+    assert cfg.get_provider_url("https://127.0.0.1") == "https://127.0.0.1"
 
 
 def test_custom_base_dir(tmp_path):
@@ -77,5 +77,13 @@ def test_db_path_not_overwritten(tmp_path):
 
 def test_get_provider_url_dev_mode():
     cfg = RequestorConfig(environment="development")
-    url = cfg.get_provider_url("1.2.3.4")
-    assert url == "http://1.2.3.4:7466"
+    assert cfg.get_provider_url("https://1.2.3.4") == "https://1.2.3.4"
+    assert cfg.get_provider_url("http://127.0.0.1:7466") == "http://127.0.0.1:7466"
+
+
+def test_get_provider_url_rejects_missing_or_production_http():
+    cfg = RequestorConfig()
+    with pytest.raises(ValueError):
+        cfg.get_provider_url(None)
+    with pytest.raises(ValueError):
+        cfg.get_provider_url("http://1.2.3.4:7466")

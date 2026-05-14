@@ -33,12 +33,14 @@ export function LineAreaChart({
   data,
   height = 220,
   yUnit,
+  valueFormatter,
   secondary = false,
   className,
 }: {
   data: ChartPoint[];
   height?: number;
   yUnit?: string;
+  valueFormatter?: (value: number) => string;
   secondary?: boolean;
   className?: string;
 }) {
@@ -72,7 +74,7 @@ export function LineAreaChart({
       series={series}
       xKey="label"
       animationKey={(point) => String(point.label)}
-      valueFormatter={(value) => `${value}${yUnit ?? ""}`}
+      valueFormatter={valueFormatter ?? ((value) => `${value}${yUnit ?? ""}`)}
       height={height}
       showLegend={false}
     />

@@ -1,4 +1,5 @@
 import type { SSHKey } from "../../../lib/api";
+import { formatLocalDate } from "../../../lib/time";
 
 export function formatDurationLabel(seconds: number) {
   if (!seconds) return "Duration required";
@@ -13,11 +14,7 @@ export function formatDurationLabel(seconds: number) {
 }
 
 export function formatDate(date: Date) {
-  return new Intl.DateTimeFormat("en", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  }).format(date);
+  return formatLocalDate(date) ?? "Unavailable";
 }
 
 export function fingerprintForKey(key: SSHKey | null, fallback: string) {

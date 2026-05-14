@@ -7,19 +7,15 @@ class ValidationError(DomainError):
 
 
 class ForbiddenError(DomainError):
-    """The request is not allowed by proxy policy."""
+    """The request is not allowed by service policy."""
 
 
 class NotFoundError(DomainError):
     """The requested provider or route target was not found."""
 
 
-class ProxyDisabledError(NotFoundError):
-    """Proxy routes are intentionally hidden when disabled."""
-
-
 class PayloadTooLargeError(DomainError):
-    """Request body exceeds configured proxy limits."""
+    """Request body exceeds configured service limits."""
 
 
 class GatewayTimeoutError(DomainError):

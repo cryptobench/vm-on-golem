@@ -1,11 +1,16 @@
 import asyncio
 import logging
+import ntpath
+import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any, Optional
 
 import aiohttp
 import psutil
+
+from provider.utils.time import ensure_utc, utc_now
 
 from .domain import (
     AlertRule,
@@ -40,11 +45,15 @@ class MonitoringService:
         self.vm_service = vm_service
         self.proxy_manager = proxy_manager
         self._task: Optional[asyncio.Task] = None
+        self._host_live_task: Optional[asyncio.Task] = None
         self._stop_event = asyncio.Event()
+        self._host_live_latest: dict[str, MetricSample] = {}
+        self._host_live_subscribers: set[asyncio.Queue[dict[str, Any]]] = set()
         self._live_latest: dict[tuple[str, str, str, str], MetricSample] = {}
         self._live_subscribers: dict[str, set[asyncio.Queue[dict[str, Any]]]] = {}
         self._active_watchers: dict[str, int] = {}
         self._last_disconnect: dict[str, datetime] = {}
+        self._last_persisted_host_sample: Optional[datetime] = None
         self._last_persisted_guest_sample: dict[str, datetime] = {}
 
     async def start(self) -> None:
@@ -60,6 +69,13 @@ class MonitoringService:
 
     async def stop(self) -> None:
         self._stop_event.set()
+        if self._host_live_task:
+            self._host_live_task.cancel()
+            try:
+                await self._host_live_task
+            except asyncio.CancelledError:
+                pass
+            self._host_live_task = None
         if self._task:
             self._task.cancel()
             try:
@@ -82,7 +98,7 @@ class MonitoringService:
         if not self.repo.validate_guest_token(vm_id, payload.token):
             raise ValueError("invalid guest metrics token")
 
-        timestamp = payload.timestamp or datetime.utcnow()
+        timestamp = ensure_utc(payload.timestamp) if payload.timestamp else utc_now()
         samples: list[MetricSample] = [
             MetricSample(
                 scope=MetricScope.VM,
@@ -160,13 +176,12 @@ class MonitoringService:
         latest = self._latest_by_scope()
         vms = await self._vm_overview(latest)
         host = latest.get("host", {})
-        last_sample_at = self._latest_timestamp()
         return MonitoringOverview(
-            status="healthy" if not self.repo.active_alerts() else "issues",
+            status=self.status(),
             host=host,
             vms=vms,
             active_alerts=self.repo.active_alerts(),
-            last_sample_at=last_sample_at,
+            last_sample_at=self.latest_sample_at(),
         )
 
     def latest(self) -> MetricsLatestResponse:
@@ -174,13 +189,22 @@ class MonitoringService:
         return MetricsLatestResponse(
             host=latest.get("host", {}),
             vms=latest.get("vms", {}),
-            generated_at=datetime.utcnow(),
+            generated_at=utc_now(),
         )
 
     def latest_for_vm(self, vm_id: str) -> MetricsLatestResponse:
         latest = self.latest()
         latest.vms = {vm_id: latest.vms.get(vm_id, {})}
         return latest
+
+    def status(self) -> str:
+        return "healthy" if not self.repo.active_alerts() else "issues"
+
+    def latest_sample_at(self) -> Optional[datetime]:
+        return self._latest_timestamp()
+
+    def live_sample_interval_seconds(self) -> int:
+        return int(self._setting("MONITORING_LIVE_ACTIVE_INTERVAL_SECONDS", 1))
 
     def history(
         self,
@@ -189,7 +213,7 @@ class MonitoringService:
         vm_id: Optional[str] = None,
         source: Optional[MetricSource] = None,
     ) -> MetricsHistoryResponse:
-        since = datetime.utcnow() - self._range_delta(range_name)
+        since = utc_now() - self._range_delta(range_name)
         return MetricsHistoryResponse(
             samples=self.repo.history(
                 scope=scope, since=since, vm_id=vm_id, source=source
@@ -203,7 +227,7 @@ class MonitoringService:
         if disconnected_at is None:
             return False
         grace = int(self._setting("MONITORING_LIVE_DISCONNECT_GRACE_SECONDS", 60))
-        return datetime.utcnow() - disconnected_at <= timedelta(seconds=grace)
+        return utc_now() - disconnected_at <= timedelta(seconds=grace)
 
     def guest_sample_interval(self, vm_id: str) -> int:
         if self.is_vm_live(vm_id):
@@ -230,10 +254,34 @@ class MonitoringService:
                 self._active_watchers[vm_id] = current
             else:
                 self._active_watchers.pop(vm_id, None)
-                self._last_disconnect[vm_id] = datetime.utcnow()
+                self._last_disconnect[vm_id] = utc_now()
             logger.debug(
                 "VM live watcher disconnected",
                 extra={"vm_id": vm_id, "watchers": self._active_watchers.get(vm_id, 0)},
+            )
+
+    @asynccontextmanager
+    async def subscribe_host_metrics(self):
+        self.repo.init_schema()
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=16)
+        self._host_live_subscribers.add(queue)
+        logger.debug(
+            "Host metrics subscriber connected",
+            extra={"subscribers": len(self._host_live_subscribers)},
+        )
+        self._ensure_host_live_task()
+        try:
+            yield queue
+        finally:
+            self._host_live_subscribers.discard(queue)
+            if not self._host_live_subscribers and self._host_live_task:
+                task = self._host_live_task
+                task.cancel()
+                self._host_live_task = None
+                await asyncio.gather(task, return_exceptions=True)
+            logger.debug(
+                "Host metrics subscriber disconnected",
+                extra={"subscribers": len(self._host_live_subscribers)},
             )
 
     @asynccontextmanager
@@ -281,7 +329,7 @@ class MonitoringService:
             webhook,
             {
                 "event": "webhook.test",
-                "sent_at": datetime.utcnow().isoformat(),
+                "sent_at": utc_now().isoformat(),
                 "provider_id": self._setting("PROVIDER_ID", ""),
             },
         )
@@ -330,16 +378,47 @@ class MonitoringService:
                 pass
 
     async def _collect_samples(self) -> list[MetricSample]:
-        now = datetime.utcnow()
+        now = utc_now()
         samples = self._host_samples(now)
         samples.extend(await self._vm_infrastructure_samples(now))
         return samples
 
+    def _ensure_host_live_task(self) -> None:
+        if self._host_live_task and not self._host_live_task.done():
+            return
+        self._host_live_task = asyncio.create_task(
+            self._run_host_live_loop(), name="monitoring-host-live"
+        )
+
+    async def _run_host_live_loop(self) -> None:
+        interval = self.live_sample_interval_seconds()
+        while self._host_live_subscribers and not self._stop_event.is_set():
+            try:
+                await self.record_host_live_sample()
+            except Exception:
+                logger.error("host live monitoring collection failed", exc_info=True)
+            try:
+                await asyncio.wait_for(self._stop_event.wait(), timeout=interval)
+            except asyncio.TimeoutError:
+                pass
+
+    async def record_host_live_sample(
+        self, timestamp: Optional[datetime] = None
+    ) -> list[MetricSample]:
+        self.repo.init_schema()
+        samples = self._host_samples(ensure_utc(timestamp) if timestamp else utc_now())
+        self._cache_host_live_samples(samples)
+        if self._should_persist_host_samples(samples[0].timestamp):
+            self.repo.add_samples(samples)
+            self._last_persisted_host_sample = samples[0].timestamp
+            await self._evaluate_alerts()
+        await self._publish_host_metrics(samples)
+        return samples
+
     def _host_samples(self, now: datetime) -> list[MetricSample]:
-        disk = psutil.disk_usage("/")
+        disk = psutil.disk_usage(self._host_disk_path())
         memory = psutil.virtual_memory()
         net = psutil.net_io_counters()
-        load_1m, load_5m, load_15m = psutil.getloadavg()
         values = {
             "cpu_percent": (psutil.cpu_percent(interval=None), "percent"),
             "memory_percent": (memory.percent, "percent"),
@@ -350,10 +429,19 @@ class MonitoringService:
             "disk_used_bytes": (disk.used, "bytes"),
             "network_rx_bytes": (net.bytes_recv, "bytes"),
             "network_tx_bytes": (net.bytes_sent, "bytes"),
-            "load_1m": (load_1m, "count"),
-            "load_5m": (load_5m, "count"),
-            "load_15m": (load_15m, "count"),
         }
+        try:
+            load_1m, load_5m, load_15m = psutil.getloadavg()
+        except (AttributeError, NotImplementedError, OSError):
+            pass
+        else:
+            values.update(
+                {
+                    "load_1m": (load_1m, "count"),
+                    "load_5m": (load_5m, "count"),
+                    "load_15m": (load_15m, "count"),
+                }
+            )
         return [
             MetricSample(
                 scope=MetricScope.HOST,
@@ -365,6 +453,20 @@ class MonitoringService:
             )
             for metric, (value, unit) in values.items()
         ]
+
+    def _host_disk_path(self) -> str:
+        configured = str(self._setting("VM_DATA_DIR", "") or "").strip()
+        if configured:
+            drive, _ = ntpath.splitdrive(configured)
+            if drive:
+                return f"{drive}\\"
+            path = Path(configured).expanduser()
+            for candidate in (path, *path.parents):
+                if candidate.exists():
+                    return str(candidate)
+            if path.anchor:
+                return path.anchor
+        return Path.cwd().anchor or os.sep
 
     async def _vm_infrastructure_samples(self, now: datetime) -> list[MetricSample]:
         samples: list[MetricSample] = []
@@ -456,7 +558,7 @@ class MonitoringService:
     def _sustained(self, rule: AlertRule, vm_id: Optional[str]) -> bool:
         if rule.duration_seconds <= 0:
             return True
-        since = datetime.utcnow() - timedelta(seconds=rule.duration_seconds)
+        since = utc_now() - timedelta(seconds=rule.duration_seconds)
         history = self.repo.history(
             scope=rule.scope, source=rule.source, vm_id=vm_id, since=since
         )
@@ -509,6 +611,8 @@ class MonitoringService:
         result: dict[str, Any] = {"host": {}, "vms": {}}
         for sample in self.repo.latest_samples():
             self._merge_latest_sample(result, sample)
+        for sample in self._host_live_latest.values():
+            self._merge_latest_sample(result, sample)
         for sample in self._live_latest.values():
             self._merge_latest_sample(result, sample)
         return result
@@ -534,10 +638,20 @@ class MonitoringService:
         return rows
 
     def _latest_timestamp(self) -> Optional[datetime]:
-        samples = [*self.repo.latest_samples(), *self._live_latest.values()]
+        samples = [
+            *self.repo.latest_samples(),
+            *self._host_live_latest.values(),
+            *self._live_latest.values(),
+        ]
         if not samples:
             return None
         return max(sample.timestamp for sample in samples)
+
+    def _cache_host_live_samples(self, samples: list[MetricSample]) -> None:
+        for sample in samples:
+            if sample.scope != MetricScope.HOST:
+                continue
+            self._host_live_latest[sample.metric] = sample
 
     def _cache_live_samples(self, samples: list[MetricSample]) -> None:
         for sample in samples:
@@ -550,6 +664,14 @@ class MonitoringService:
                 sample.metric,
             )
             self._live_latest[key] = sample
+
+    def _should_persist_host_samples(self, timestamp: datetime) -> bool:
+        interval = int(self._setting("MONITORING_HISTORY_DOWNSAMPLE_SECONDS", 10))
+        if self._last_persisted_host_sample is None:
+            return True
+        return timestamp - self._last_persisted_host_sample >= timedelta(
+            seconds=interval
+        )
 
     def _should_persist_guest_samples(self, vm_id: str, timestamp: datetime) -> bool:
         interval = int(self._setting("MONITORING_HISTORY_DOWNSAMPLE_SECONDS", 10))
@@ -573,6 +695,31 @@ class MonitoringService:
             ],
             "guest_interval_seconds": self.guest_sample_interval(vm_id),
             "live_mode": self.is_vm_live(vm_id),
+        }
+        for queue in subscribers:
+            if queue.full():
+                try:
+                    queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    pass
+            queue.put_nowait(payload)
+
+    async def _publish_host_metrics(self, samples: list[MetricSample]) -> None:
+        subscribers = list(self._host_live_subscribers)
+        if not subscribers:
+            return
+        last_sample_at = self.latest_sample_at()
+        payload = {
+            "latest": self.latest().model_dump(mode="json"),
+            "samples": [
+                sample.model_dump(mode="json")
+                for sample in samples
+                if sample.scope == MetricScope.HOST
+            ],
+            "status": self.status(),
+            "last_sample_at": ensure_utc(last_sample_at).isoformat()
+            if last_sample_at
+            else None,
         }
         for queue in subscribers:
             if queue.full():
@@ -643,5 +790,5 @@ class MonitoringService:
             "unit": sample.unit,
             "source": sample.source.value,
             "scope": sample.scope.value,
-            "sent_at": datetime.utcnow().isoformat(),
+            "sent_at": utc_now().isoformat(),
         }

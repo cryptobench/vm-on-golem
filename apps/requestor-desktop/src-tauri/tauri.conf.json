@@ -27,7 +27,6 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
-    "externalBin": ["binaries/golem-port-checker"]
+    "targets": "all"
   }
 }

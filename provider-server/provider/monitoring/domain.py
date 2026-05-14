@@ -2,7 +2,9 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from provider.utils.time import ensure_utc, utc_now
 
 
 class MetricSource(str, Enum):
@@ -21,8 +23,13 @@ class MetricSample(BaseModel):
     metric: str
     value: float
     unit: str
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=utc_now)
     vm_id: Optional[str] = None
+
+    @field_validator("timestamp")
+    @classmethod
+    def ensure_timestamp_timezone(cls, value: datetime) -> datetime:
+        return ensure_utc(value)
 
 
 class GuestMetricPayload(BaseModel):
@@ -38,6 +45,17 @@ class GuestMetricPayload(BaseModel):
     agent_version: str = "unknown"
     timestamp: Optional[datetime] = None
 
+    @field_validator("timestamp")
+    @classmethod
+    def require_explicit_timestamp_timezone(
+        cls, value: Optional[datetime]
+    ) -> Optional[datetime]:
+        if value is None:
+            return value
+        if value.tzinfo is None:
+            raise ValueError("timestamp must include an explicit timezone")
+        return ensure_utc(value)
+
 
 class GuestMetricAccepted(BaseModel):
     status: str = "accepted"
@@ -50,6 +68,11 @@ class MetricsLatestResponse(BaseModel):
     vms: dict[str, dict[str, Any]]
     generated_at: datetime
 
+    @field_validator("generated_at")
+    @classmethod
+    def ensure_generated_at_timezone(cls, value: datetime) -> datetime:
+        return ensure_utc(value)
+
 
 class MetricsHistoryResponse(BaseModel):
     samples: list[MetricSample]
@@ -61,6 +84,13 @@ class MonitoringOverview(BaseModel):
     vms: list[dict[str, Any]]
     active_alerts: list[dict[str, Any]]
     last_sample_at: Optional[datetime] = None
+
+    @field_validator("last_sample_at")
+    @classmethod
+    def ensure_last_sample_at_timezone(
+        cls, value: Optional[datetime]
+    ) -> Optional[datetime]:
+        return ensure_utc(value) if value is not None else value
 
 
 class AlertRule(BaseModel):
@@ -84,6 +114,13 @@ class WebhookConfig(BaseModel):
     last_status: Optional[str] = None
     last_error: Optional[str] = None
     last_delivered_at: Optional[datetime] = None
+
+    @field_validator("last_delivered_at")
+    @classmethod
+    def ensure_last_delivered_at_timezone(
+        cls, value: Optional[datetime]
+    ) -> Optional[datetime]:
+        return ensure_utc(value) if value is not None else value
 
 
 class WebhookTestResponse(BaseModel):
