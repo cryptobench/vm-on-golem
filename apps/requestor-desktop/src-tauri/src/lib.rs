@@ -81,7 +81,10 @@ fn runtime_config(port: u16, token: String) -> RequestorRuntimeConfig {
     RequestorRuntimeConfig {
         port_checker_url: format!("http://{PORT_CHECKER_HOST}:{port}"),
         port_checker_token: token,
-        provider_api_port: env_or("NEXT_PUBLIC_PROVIDER_API_PORT", &PROVIDER_API_PORT.to_string()),
+        provider_api_port: env_or(
+            "NEXT_PUBLIC_PROVIDER_API_PORT",
+            &PROVIDER_API_PORT.to_string(),
+        ),
         discovery_api_url: env_or("NEXT_PUBLIC_DISCOVERY_API_URL", CENTRAL_DISCOVERY_API_URL),
         discovery_mode: env_or("NEXT_PUBLIC_DISCOVERY_MODE", "central"),
         stream_payment_address: env_or(
@@ -154,6 +157,9 @@ fn start_port_checker(app: tauri::AppHandle) -> Result<RequestorRuntimeConfig, S
         .env("PORT_CHECKER_PORT", port.to_string())
         .env("PORT_CHECKER_PROXY_TOKEN", &config.port_checker_token)
         .env("PORT_CHECKER_PROXY_ENABLED", "true")
+        .env("PORT_CHECK_RETRIES", "1")
+        .env("PORT_CHECK_TIMEOUT", "3")
+        .env("PORT_CHECK_RETRY_DELAY", "0.25")
         .env("GOLEM_ENVIRONMENT", &config.golem_environment)
         .env("PORT_CHECKER_EXPECTED_NETWORK", expected_network(&config))
         .env("CENTRAL_DISCOVERY_API_URL", &config.discovery_api_url)
@@ -205,9 +211,7 @@ fn configured_port(config: &RequestorRuntimeConfig) -> Result<u16, String> {
 }
 
 #[tauri::command]
-fn requestor_runtime_config(
-    app: tauri::AppHandle,
-) -> Result<RequestorRuntimeConfig, String> {
+fn requestor_runtime_config(app: tauri::AppHandle) -> Result<RequestorRuntimeConfig, String> {
     start_port_checker(app)
 }
 

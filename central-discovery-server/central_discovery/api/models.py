@@ -26,6 +26,18 @@ class AdvertisementCreate(BaseModel):
     platform: Optional[str] = Field(
         None, description="Provider platform/architecture (e.g., x86_64, arm64)"
     )
+    endpoint_protocol: Optional[str] = Field(
+        None, description="Provider public endpoint protocol"
+    )
+    endpoint_host: Optional[str] = Field(
+        None, description="Provider public endpoint host"
+    )
+    endpoint_port: Optional[int] = Field(
+        None, ge=1, le=65535, description="Provider public endpoint port"
+    )
+    endpoint_url: Optional[str] = Field(
+        None, description="Provider public endpoint URL"
+    )
     resources: Dict[str, int] = Field(
         ..., description="Available resources (cpu, memory, storage)"
     )
@@ -58,6 +70,10 @@ class AdvertisementResponse(BaseModel):
     ip_address: str
     country: str
     platform: Optional[str]
+    endpoint_protocol: Optional[str]
+    endpoint_host: Optional[str]
+    endpoint_port: Optional[int]
+    endpoint_url: Optional[str]
     resources: Dict[str, int]
     pricing: Optional[Dict]
     created_at: datetime

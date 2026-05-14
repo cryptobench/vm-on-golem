@@ -17,6 +17,10 @@ class Advertisement(Base):
     ip_address = Column(String, nullable=False)
     country = Column(String(2), nullable=False)  # ISO 3166-1 alpha-2
     platform = Column(String(32), nullable=True)  # e.g., x86_64, arm64
+    endpoint_protocol = Column(String(16), nullable=True)
+    endpoint_host = Column(String, nullable=True)
+    endpoint_port = Column(Integer, nullable=True)
+    endpoint_url = Column(String, nullable=True)
     resources = Column(JSON, nullable=False)  # CPU, memory, storage
     pricing = Column(JSON, nullable=True)  # Optional pricing info
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)

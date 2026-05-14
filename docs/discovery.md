@@ -30,6 +30,12 @@ Canonical provider classes:
 - `CompositeDiscoveryPublisher` publishes to both.
 - `DiscoveryPublishingService` owns lifecycle and immediate update triggering.
 
+Advertisements carry both legacy `ip_address` and public endpoint metadata. New
+providers publish `endpoint_protocol=https`, `endpoint_host`, `endpoint_port`,
+and `endpoint_url` after the provider has verified its public IP HTTPS
+certificate. Requestors prefer `endpoint_url` and keep `ip_address` as a
+development and legacy fallback.
+
 ## Requestor Flow
 
 Requestor-side provider lookup is selected with:

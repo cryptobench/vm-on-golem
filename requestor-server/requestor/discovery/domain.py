@@ -34,6 +34,10 @@ class ProviderAdvertisement(BaseModel):
     provider_id: str
     provider_name: str | None = None
     ip_address: str | None = None
+    endpoint_protocol: str | None = None
+    endpoint_host: str | None = None
+    endpoint_port: int | None = None
+    endpoint_url: str | None = None
     country: str | None = None
     platform: str | None = None
     payments_network: str | None = None

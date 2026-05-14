@@ -117,6 +117,12 @@ class ArkivDiscoveryClient:
                     "provider_id": annotations.get("golem_provider_id"),
                     "provider_name": annotations.get("golem_provider_name"),
                     "ip_address": annotations.get("golem_ip_address"),
+                    "endpoint_protocol": annotations.get("golem_endpoint_protocol"),
+                    "endpoint_host": annotations.get("golem_endpoint_host"),
+                    "endpoint_port": self._to_int(
+                        annotations.get("golem_endpoint_port")
+                    ),
+                    "endpoint_url": annotations.get("golem_endpoint_url"),
                     "country": annotations.get("golem_country"),
                     "platform": annotations.get("golem_platform") or None,
                     "payments_network": annotations.get("golem_payments_network"),
@@ -184,5 +190,14 @@ class ArkivDiscoveryClient:
             return None
         try:
             return float(val)
+        except Exception:
+            return None
+
+    @staticmethod
+    def _to_int(val):
+        if val is None:
+            return None
+        try:
+            return int(val)
         except Exception:
             return None

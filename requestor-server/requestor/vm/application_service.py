@@ -69,8 +69,11 @@ class VMApplicationService:
         )
         if not provider_ip:
             raise ValidationError("Provider IP address not found in advertisement")
+        provider_endpoint_url = provider.get("endpoint_url")
 
-        async with self.provider_client_factory.for_provider_ip(provider_ip) as client:
+        async with self.provider_client_factory.for_provider_endpoint(
+            provider_ip, provider_endpoint_url
+        ) as client:
             try:
                 job = await client.create_vm(
                     name=command.name,
@@ -94,6 +97,11 @@ class VMApplicationService:
                             if command.stream_id is not None
                             else {}
                         ),
+                        **(
+                            {"provider_endpoint_url": provider_endpoint_url}
+                            if provider_endpoint_url
+                            else {}
+                        ),
                     },
                     status="creating",
                 )
@@ -113,6 +121,11 @@ class VMApplicationService:
             **(
                 {"stream_id": command.stream_id}
                 if command.stream_id is not None
+                else {}
+            ),
+            **(
+                {"provider_endpoint_url": provider_endpoint_url}
+                if provider_endpoint_url
                 else {}
             ),
         }
@@ -159,9 +172,7 @@ class VMApplicationService:
         if vm.config.get("ssh_user"):
             return vm
 
-        async with self.provider_client_factory.for_provider_ip(
-            vm.provider_ip
-        ) as client:
+        async with self._client_for_vm(vm) as client:
             access = await client.get_vm_access(vm.vm_id)
 
         config = {
@@ -178,45 +189,35 @@ class VMApplicationService:
 
     async def start_vm(self, name: str) -> VMRecord:
         vm = self.vm_repo.require(name)
-        async with self.provider_client_factory.for_provider_ip(
-            vm.provider_ip
-        ) as client:
+        async with self._client_for_vm(vm) as client:
             await client.start_vm(vm.vm_id)
         self.vm_repo.update_status(name, "running")
         return self.vm_repo.require(name)
 
     async def stop_vm(self, name: str) -> VMRecord:
         vm = self.vm_repo.require(name)
-        async with self.provider_client_factory.for_provider_ip(
-            vm.provider_ip
-        ) as client:
+        async with self._client_for_vm(vm) as client:
             await client.stop_vm(vm.vm_id)
         self.vm_repo.update_status(name, "stopped")
         return self.vm_repo.require(name)
 
     async def restart_vm(self, name: str) -> VMRecord:
         vm = self.vm_repo.require(name)
-        async with self.provider_client_factory.for_provider_ip(
-            vm.provider_ip
-        ) as client:
+        async with self._client_for_vm(vm) as client:
             result = await client.restart_vm(vm.vm_id)
         self._sync_record(name, result)
         return self.vm_repo.require(name)
 
     async def suspend_vm(self, name: str) -> VMRecord:
         vm = self.vm_repo.require(name)
-        async with self.provider_client_factory.for_provider_ip(
-            vm.provider_ip
-        ) as client:
+        async with self._client_for_vm(vm) as client:
             result = await client.suspend_vm(vm.vm_id)
         self._sync_record(name, result, fallback_status="suspended")
         return self.vm_repo.require(name)
 
     async def resume_vm(self, name: str) -> VMRecord:
         vm = self.vm_repo.require(name)
-        async with self.provider_client_factory.for_provider_ip(
-            vm.provider_ip
-        ) as client:
+        async with self._client_for_vm(vm) as client:
             result = await client.resume_vm(vm.vm_id)
         self._sync_record(name, result, fallback_status="running")
         return self.vm_repo.require(name)
@@ -225,9 +226,7 @@ class VMApplicationService:
         vm = self.vm_repo.require(name)
         if vm.config.get("stream_id") is not None and command.stream_id is None:
             raise ValidationError("resizing a paid VM requires a replacement stream")
-        async with self.provider_client_factory.for_provider_ip(
-            vm.provider_ip
-        ) as client:
+        async with self._client_for_vm(vm) as client:
             result = await client.resize_vm(
                 vm.vm_id, command.cpu, command.memory, command.storage
             )
@@ -258,37 +257,31 @@ class VMApplicationService:
         )
         if not provider_ip:
             raise ValidationError("Provider IP address not found in advertisement")
-        async with self.provider_client_factory.for_provider_ip(provider_ip) as client:
+        async with self.provider_client_factory.for_provider_endpoint(
+            provider_ip, provider.get("endpoint_url")
+        ) as client:
             return await client.list_images()
 
     async def list_snapshots(self, name: str) -> list[dict]:
         vm = self.vm_repo.require(name)
-        async with self.provider_client_factory.for_provider_ip(
-            vm.provider_ip
-        ) as client:
+        async with self._client_for_vm(vm) as client:
             return await client.list_snapshots(vm.vm_id)
 
     async def create_snapshot(self, name: str, command: SnapshotCommand) -> dict:
         vm = self.vm_repo.require(name)
-        async with self.provider_client_factory.for_provider_ip(
-            vm.provider_ip
-        ) as client:
+        async with self._client_for_vm(vm) as client:
             return await client.create_snapshot(vm.vm_id, command.name, command.comment)
 
     async def restore_snapshot(self, name: str, snapshot_name: str) -> VMRecord:
         vm = self.vm_repo.require(name)
-        async with self.provider_client_factory.for_provider_ip(
-            vm.provider_ip
-        ) as client:
+        async with self._client_for_vm(vm) as client:
             result = await client.restore_snapshot(vm.vm_id, snapshot_name)
         self._sync_record(name, result)
         return self.vm_repo.require(name)
 
     async def delete_snapshot(self, name: str, snapshot_name: str) -> None:
         vm = self.vm_repo.require(name)
-        async with self.provider_client_factory.for_provider_ip(
-            vm.provider_ip
-        ) as client:
+        async with self._client_for_vm(vm) as client:
             await client.delete_snapshot(vm.vm_id, snapshot_name)
 
     async def clone_vm(self, source_name: str, command: CloneVMCommand) -> VMRecord:
@@ -297,9 +290,7 @@ class VMApplicationService:
             raise ConflictError(f"VM with name '{command.name}' already exists")
         if source.config.get("stream_id") is not None and command.stream_id is None:
             raise ValidationError("cloning a paid VM requires a replacement stream")
-        async with self.provider_client_factory.for_provider_ip(
-            source.provider_ip
-        ) as client:
+        async with self._client_for_vm(source) as client:
             result = await client.clone_vm(source.vm_id, command.name)
         config = {
             **source.config,
@@ -321,9 +312,7 @@ class VMApplicationService:
     async def delete_vm(self, name: str) -> None:
         vm = self.vm_repo.require(name)
         await self._terminate_stream_for_delete(vm)
-        async with self.provider_client_factory.for_provider_ip(
-            vm.provider_ip
-        ) as client:
+        async with self._client_for_vm(vm) as client:
             await client.destroy_vm(vm.vm_id)
         self.vm_repo.delete(name)
 
@@ -373,4 +362,11 @@ class VMApplicationService:
             name,
             config,
             status=str(result.get("status") or fallback_status or current.status),
+        )
+
+    def _client_for_vm(self, vm: VMRecord):
+        endpoint_url = vm.config.get("provider_endpoint_url")
+        return self.provider_client_factory.for_provider_endpoint(
+            vm.provider_ip,
+            str(endpoint_url) if endpoint_url else None,
         )

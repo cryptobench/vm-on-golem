@@ -56,6 +56,10 @@ async def create_advertisement(
             resources=advertisement.resources,
             pricing=advertisement.pricing,
             platform=advertisement.platform,
+            endpoint_protocol=advertisement.endpoint_protocol,
+            endpoint_host=advertisement.endpoint_host,
+            endpoint_port=advertisement.endpoint_port,
+            endpoint_url=advertisement.endpoint_url,
         )
         return db_advertisement
     except Exception as e:

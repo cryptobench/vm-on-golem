@@ -31,6 +31,7 @@ export function App() {
       <ServiceStopped
         error={service.error}
         busy={service.busyAction === "start"}
+        setupStatus={service.setupStatus}
         onStart={() => void service.runAction("start")}
       />
     );

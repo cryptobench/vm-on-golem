@@ -18,6 +18,15 @@ class ProviderInfoService:
 
     def get_info(self) -> ProviderInfo:
         glm_token = str(self._setting("GLM_TOKEN_ADDRESS", "") or "")
+        ip_address = self._setting("PUBLIC_IP", None)
+        endpoint_port = int(self._setting("PUBLIC_HTTPS_PORT", 443) or 443)
+        endpoint_url = None
+        if ip_address:
+            endpoint_url = (
+                f"https://{ip_address}"
+                if endpoint_port == 443
+                else f"https://{ip_address}:{endpoint_port}"
+            )
         return ProviderInfo(
             provider_id=str(self._setting("PROVIDER_ID", "") or ""),
             stream_payment_address=str(
@@ -25,7 +34,8 @@ class ProviderInfoService:
             ),
             glm_token_address=glm_token,
             eth_token_address=glm_token,
-            ip_address=self._setting("PUBLIC_IP", None),
+            ip_address=ip_address,
+            endpoint_url=endpoint_url,
             country=self._setting("PROVIDER_COUNTRY", None),
             platform=current_platform(),
         )

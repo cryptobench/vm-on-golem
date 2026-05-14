@@ -12,6 +12,11 @@ class DummyPortManager:
         return None
 
 
+class FailingPortManager:
+    async def initialize(self):
+        return False
+
+
 class DummyDiscoveryPublishingService:
     def __init__(self):
         self.started = False
@@ -102,6 +107,14 @@ class DummyPricingUpdater:
         self.started = False
 
 
+class DummyNetworkSetup:
+    async def setup(self):
+        return None
+
+    async def cleanup(self):
+        return None
+
+
 class DummyApp:
     def __init__(self, stream_map, reader, stream_monitor=None):
         class _C:
@@ -167,6 +180,30 @@ async def test_startup_terminates_vms_without_active_stream(monkeypatch):
     # Synced before and after termination
     assert vm_service.resource_tracker.sync_calls >= 2
     assert adv.started is True
+
+
+@pytest.mark.asyncio
+async def test_startup_aborts_when_port_verification_fails(monkeypatch):
+    from provider import service as ps
+    from provider.config import settings
+
+    settings.STREAM_MONITOR_ENABLED = False
+    settings.STREAM_WITHDRAW_ENABLED = False
+    monkeypatch.setattr(ps, "PricingAutoUpdater", DummyPricingUpdater)
+
+    vm_service = DummyVMService({})
+    adv = DummyDiscoveryPublishingService()
+    provider_service = ProviderService(
+        vm_service=vm_service,
+        advertisement_service=adv,
+        port_manager=FailingPortManager(),
+        network_setup_service=DummyNetworkSetup(),
+    )
+
+    with pytest.raises(RuntimeError, match="externally reachable"):
+        await provider_service.setup(DummyApp(DummyStreamMap({}), DummyReader({})))  # type: ignore[arg-type]
+
+    assert adv.started is False
 
 
 @pytest.mark.asyncio

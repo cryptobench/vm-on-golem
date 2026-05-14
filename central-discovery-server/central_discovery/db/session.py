@@ -44,10 +44,16 @@ async def init_db():
                 # Ensure 'platform' column exists on 'advertisements'
                 res = await conn.exec_driver_sql("PRAGMA table_info(advertisements)")
                 cols = [row[1] for row in res.fetchall()]  # second field is name
-                if "platform" not in cols:
-                    await conn.exec_driver_sql(
-                        "ALTER TABLE advertisements ADD COLUMN platform TEXT NULL"
-                    )
+                migrations = {
+                    "platform": "ALTER TABLE advertisements ADD COLUMN platform TEXT NULL",
+                    "endpoint_protocol": "ALTER TABLE advertisements ADD COLUMN endpoint_protocol TEXT NULL",
+                    "endpoint_host": "ALTER TABLE advertisements ADD COLUMN endpoint_host TEXT NULL",
+                    "endpoint_port": "ALTER TABLE advertisements ADD COLUMN endpoint_port INTEGER NULL",
+                    "endpoint_url": "ALTER TABLE advertisements ADD COLUMN endpoint_url TEXT NULL",
+                }
+                for column, statement in migrations.items():
+                    if column not in cols:
+                        await conn.exec_driver_sql(statement)
         except Exception:
             logger.exception("Failed to apply central discovery database migrations")
             raise
