@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::fs::{self, File};
+use std::io::{Read, Seek, SeekFrom};
 use std::net::{SocketAddr, TcpStream};
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use tauri::Emitter;
 use tauri_plugin_shell::process::CommandEvent;
@@ -8,6 +11,7 @@ use tauri_plugin_shell::ShellExt;
 
 const PROVIDER_HOST: &str = "127.0.0.1";
 const PROVIDER_PORT: u16 = 7466;
+const PROVIDER_START_TIMEOUT: Duration = Duration::from_secs(180);
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -108,6 +112,18 @@ async fn run_secure_setup_once(app: tauri::AppHandle) -> Result<Value, String> {
 
 fn mark_provider_daemon_starting(status: &mut Value) {
     status["message"] = json!("Starting provider service.");
+    set_stage(status, "provider_start", "running", "starting daemon");
+}
+
+fn mark_provider_daemon_started(status: &mut Value) {
+    status["message"] = json!("Provider service started.");
+    set_stage(status, "provider_start", "success", "API listening");
+}
+
+fn mark_provider_daemon_failed(status: &mut Value, detail: &str) {
+    status["message"] = json!(detail);
+    status["error"] = json!(detail);
+    set_stage(status, "provider_start", "failed", detail);
 }
 
 fn setup_status_starting() -> Value {
@@ -123,25 +139,8 @@ fn setup_status_starting() -> Value {
             {"name": "network_access", "state": "pending", "label": "Ports 80 and 443 available", "detail": ""},
             {"name": "certificate", "state": "pending", "label": "Checking certificate", "detail": ""},
             {"name": "https_verification", "state": "pending", "label": "Secure endpoint verified", "detail": ""},
-            {"name": "vm_port_range", "state": "pending", "label": "VM ports 50800-50900 reachable", "detail": ""}
-        ]
-    })
-}
-
-fn setup_status_started() -> Value {
-    json!({
-        "message": "Provider service started.",
-        "api_http_public_port": 80,
-        "api_https_public_port": 443,
-        "vm_port_range_start": 50800,
-        "vm_port_range_end": 50900,
-        "stages": [
-            {"name": "host_requirements", "state": "success", "label": "Checking host requirements", "detail": "ready"},
-            {"name": "public_ip", "state": "success", "label": "Public IP detected", "detail": "ready"},
-            {"name": "network_access", "state": "success", "label": "Ports 80 and 443 available", "detail": "ready"},
-            {"name": "certificate", "state": "success", "label": "Checking certificate", "detail": "ready"},
-            {"name": "https_verification", "state": "success", "label": "Secure endpoint verified", "detail": "ready"},
-            {"name": "vm_port_range", "state": "success", "label": "VM ports 50800-50900 reachable", "detail": "ready"}
+            {"name": "vm_port_range", "state": "pending", "label": "VM ports 50800-50900 reachable", "detail": ""},
+            {"name": "provider_start", "state": "pending", "label": "Provider service started", "detail": ""}
         ]
     })
 }
@@ -149,6 +148,109 @@ fn setup_status_started() -> Value {
 fn provider_is_listening() -> bool {
     let addr = SocketAddr::from(([127, 0, 0, 1], PROVIDER_PORT));
     TcpStream::connect_timeout(&addr, Duration::from_millis(300)).is_ok()
+}
+
+fn daemon_stdio_log_path() -> Option<PathBuf> {
+    std::env::var("GOLEM_PROVIDER_LOG_DIR")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .map(|value| PathBuf::from(value).join("provider-daemon-stdio.log"))
+}
+
+fn file_len(path: &Path) -> u64 {
+    fs::metadata(path).map(|metadata| metadata.len()).unwrap_or(0)
+}
+
+fn read_daemon_log_since(path: &Path, offset: u64) -> String {
+    let Ok(mut file) = File::open(path) else {
+        return String::new();
+    };
+    if file.seek(SeekFrom::Start(offset)).is_err() {
+        return String::new();
+    }
+    let mut output = String::new();
+    if file.read_to_string(&mut output).is_err() {
+        return String::new();
+    }
+    const MAX_CHARS: usize = 4000;
+    let char_count = output.chars().count();
+    if char_count > MAX_CHARS {
+        output.chars().skip(char_count - MAX_CHARS).collect()
+    } else {
+        output
+    }
+}
+
+fn daemon_log_has_fatal_startup_error(output: &str) -> bool {
+    output.contains("Traceback (most recent call last)")
+        || output.contains("Failed to execute script")
+        || output.contains("[PYI-")
+}
+
+async fn wait_for_provider_api(
+    timeout: Duration,
+    daemon_log_path: Option<&Path>,
+    daemon_log_offset: u64,
+) -> Result<(), String> {
+    let started_at = Instant::now();
+    let mut last_log_at = Instant::now();
+
+    loop {
+        if provider_is_listening() {
+            eprintln!(
+                "[provider-sidecar] Provider API is listening on {}:{} after {:.2}s",
+                PROVIDER_HOST,
+                PROVIDER_PORT,
+                started_at.elapsed().as_secs_f64()
+            );
+            return Ok(());
+        }
+
+        if let Some(path) = daemon_log_path {
+            let daemon_log = read_daemon_log_since(path, daemon_log_offset);
+            if daemon_log_has_fatal_startup_error(&daemon_log) {
+                return Err(format!(
+                    "Provider daemon exited before opening API port {}:{}:\n{}",
+                    PROVIDER_HOST,
+                    PROVIDER_PORT,
+                    daemon_log.trim()
+                ));
+            }
+        }
+
+        if started_at.elapsed() >= timeout {
+            let daemon_log = daemon_log_path
+                .map(|path| read_daemon_log_since(path, daemon_log_offset))
+                .unwrap_or_default();
+            if !daemon_log.trim().is_empty() {
+                return Err(format!(
+                    "Provider daemon did not open API port {}:{} within {:.0}s. Daemon output:\n{}",
+                    PROVIDER_HOST,
+                    PROVIDER_PORT,
+                    timeout.as_secs_f64(),
+                    daemon_log.trim()
+                ));
+            }
+            return Err(format!(
+                "Provider daemon did not open API port {}:{} within {:.0}s",
+                PROVIDER_HOST,
+                PROVIDER_PORT,
+                timeout.as_secs_f64()
+            ));
+        }
+
+        if last_log_at.elapsed() >= Duration::from_secs(5) {
+            eprintln!(
+                "[provider-sidecar] Waiting for provider API on {}:{} elapsed={:.2}s",
+                PROVIDER_HOST,
+                PROVIDER_PORT,
+                started_at.elapsed().as_secs_f64()
+            );
+            last_log_at = Instant::now();
+        }
+
+        std::thread::sleep(Duration::from_millis(500));
+    }
 }
 
 async fn run_provider_sidecar(app: tauri::AppHandle, args: &[&str]) -> Result<(), String> {
@@ -356,10 +458,42 @@ async fn start_provider(app: tauri::AppHandle) -> Result<(), String> {
     ensure_host_requirements_success(&mut status);
     eprintln!("[provider-sidecar] Secure endpoint setup finished");
     mark_provider_daemon_starting(&mut status);
-    emit_setup_status(&app, status);
+    emit_setup_status(&app, status.clone());
     eprintln!("[provider-sidecar] Starting provider daemon");
-    run_provider_sidecar(app.clone(), &["start", "--daemon"]).await?;
-    emit_setup_status(&app, setup_status_started());
+    let daemon_started_at = Instant::now();
+    let daemon_log_path = daemon_stdio_log_path();
+    let daemon_log_offset = daemon_log_path
+        .as_deref()
+        .map(file_len)
+        .unwrap_or_default();
+    // Desktop already ran secure setup with live progress; avoid a duplicate
+    // daemon preflight that would be invisible to the startup UI.
+    if let Err(err) =
+        run_provider_sidecar(app.clone(), &["start", "--daemon", "--no-verify-port"]).await
+    {
+        let detail = format!("Provider daemon command failed: {err}");
+        mark_provider_daemon_failed(&mut status, &detail);
+        emit_setup_status(&app, status);
+        return Err(detail);
+    }
+    eprintln!(
+        "[provider-sidecar] Provider daemon command finished in {:.2}s; waiting for API",
+        daemon_started_at.elapsed().as_secs_f64()
+    );
+    if let Err(err) =
+        wait_for_provider_api(
+            PROVIDER_START_TIMEOUT,
+            daemon_log_path.as_deref(),
+            daemon_log_offset,
+        )
+        .await
+    {
+        mark_provider_daemon_failed(&mut status, &err);
+        emit_setup_status(&app, status);
+        return Err(err);
+    }
+    mark_provider_daemon_started(&mut status);
+    emit_setup_status(&app, status);
     Ok(())
 }
 

@@ -6,7 +6,6 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-from logging.handlers import RotatingFileHandler
 import os
 import platform
 import shutil
@@ -20,9 +19,9 @@ import urllib.error
 import urllib.request
 import webbrowser
 from dataclasses import dataclass, field
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Callable
-
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCAL_DIR = ROOT / ".local"
@@ -626,9 +625,34 @@ def provider_sidecar_is_stale(sidecar: Path) -> bool:
     )
 
 
+def sync_existing_provider_tauri_sidecars(sidecar: Path) -> None:
+    suffix = ".exe" if os.name == "nt" else ""
+    for profile in ("debug", "release"):
+        target = (
+            ROOT
+            / "apps"
+            / "provider-desktop"
+            / "src-tauri"
+            / "target"
+            / profile
+            / f"golem-provider{suffix}"
+        )
+        if not target.exists():
+            continue
+        if target.stat().st_mtime >= sidecar.stat().st_mtime and (
+            target.stat().st_size == sidecar.stat().st_size
+        ):
+            continue
+        log_setup(f"[setup] syncing provider sidecar copy: {target}")
+        shutil.copy2(sidecar, target)
+        if os.name != "nt":
+            target.chmod(0o755)
+
+
 def ensure_provider_sidecar() -> None:
     sidecar = provider_sidecar_path()
     if not provider_sidecar_is_stale(sidecar):
+        sync_existing_provider_tauri_sidecars(sidecar)
         return
 
     log_setup("[setup] staging provider desktop sidecar")
@@ -650,6 +674,7 @@ def ensure_provider_sidecar() -> None:
             "  poetry -C provider-server run pip install pyinstaller\n"
             "Then retry make local.\n\n" + result.stdout.strip()
         )
+    sync_existing_provider_tauri_sidecars(sidecar)
 
 
 def ensure_deps(

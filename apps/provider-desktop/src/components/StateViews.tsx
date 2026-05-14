@@ -319,6 +319,12 @@ function startingStartupStatus(): StartupSetupStatus {
         label: "VM ports 50800-50900 reachable",
         detail: "",
       },
+      {
+        name: "provider_start",
+        state: "pending",
+        label: "Provider service started",
+        detail: "",
+      },
     ],
   };
 }
@@ -335,6 +341,7 @@ function startupVisibleStages(status: StartupSetupStatus): SetupStage[] {
     certificateStage(status.stages),
     secureEndpointStage(status.stages),
     vmPortRangeStage(status),
+    providerStartStage(status.stages),
   ];
 }
 
@@ -458,6 +465,23 @@ function vmPortRangeStage(status: StartupSetupStatus): SetupStage {
   };
 }
 
+function providerStartStage(stages: SetupStage[]): SetupStage {
+  const stage = findStage(stages, "provider_start");
+  if (!stage) {
+    return {
+      name: "provider_start",
+      state: "pending",
+      label: "Starting provider service",
+      detail: "waiting",
+    };
+  }
+
+  return {
+    ...stage,
+    label: providerStartStageLabel(stage),
+  };
+}
+
 function apiPortChecks(status: StartupSetupStatus, stage?: SetupStage) {
   if (stage?.port_checks?.length) {
     return stage.port_checks;
@@ -552,6 +576,18 @@ function secureEndpointStageLabel(stage: SetupStage): string {
   }
 
   return "Verifying HTTPS endpoint";
+}
+
+function providerStartStageLabel(stage: SetupStage): string {
+  if (stage.state === "failed") {
+    return "Provider service failed to start";
+  }
+
+  if (stage.state === "success") {
+    return "Provider service started";
+  }
+
+  return "Starting provider service";
 }
 
 function findStage(stages: SetupStage[], name: string): SetupStage | undefined {
