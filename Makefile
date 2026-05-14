@@ -10,8 +10,8 @@ ARKIV_WS_URL ?= wss://kaolin.hoodi.arkiv.network/rpc/ws
 # Optional dev-only Arkiv endpoints.
 ARKIV_DEV_RPC_URL ?=
 ARKIV_DEV_WS_URL ?=
-# Central discovery API used by requestor-web.
-CENTRAL_DISCOVERY_API_URL ?= http://195.201.39.101:9001/api/v1
+# Central discovery API used by requestor-web in local development.
+CENTRAL_DISCOVERY_API_URL ?= http://127.0.0.1:9001/api/v1
 # Payments chain used by MetaMask/requestor-web.
 L2_RPC_URL ?= https://ethereum-hoodi-rpc.publicnode.com
 L2_EXPLORER_URL ?= https://hoodi.etherscan.io

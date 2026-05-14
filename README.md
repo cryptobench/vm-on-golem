@@ -156,7 +156,7 @@ golem-provider pricing show
 
 ```
 make install   # install Poetry deps
-make local     # run the full local stack: discovery, provider, APIs, desktop apps
+make local     # run the full local stack: discovery, provider, APIs, requestor web
 make test      # run tests
 ```
 
@@ -169,19 +169,18 @@ make local
 ```
 
 This starts local central discovery, the provider API, requestor API, provider
-desktop, and requestor desktop with one supervisor process. The requestor
-desktop starts its bundled port-checker proxy sidecar.
+desktop, port-checker, and requestor web with one supervisor process. The
+requestor web app opens in your browser by default so MetaMask and other browser
+wallets are available.
 It uses central discovery intentionally so local provider/requestor/web checks do
 not depend on Arkiv discovery RPC/WS availability. Arkiv remains the default
 product discovery backend outside this deterministic local workflow.
 
 Streaming payments use the Ethereum Hoodi profile by default. `make local`
 loads `contracts/deployments/hoodi.json`, injects the StreamPayment address into
-provider, requestor, and desktop processes, and verifies the contract has bytecode on
-`https://ethereum-hoodi-rpc.publicnode.com` before startup. For offline UI-only smoke
-checks, use `make local LOCAL_STACK_ARGS="--no-open --skip-chain-check"`.
-To use the legacy Next.js requestor web dev server instead of requestor desktop,
-run `make local LOCAL_STACK_ARGS="--requestor-web"`.
+provider, requestor, and frontend processes, and verifies the contract has bytecode
+on `https://ethereum-hoodi-rpc.publicnode.com` before startup. For offline UI-only
+smoke checks, use `make local LOCAL_STACK_ARGS="--no-open --skip-chain-check"`.
 
 Requestor wallets need Hoodi ETH for gas and Hoodi tGLM for stream deposits.
 The GLM token is `0x55555555555556AcFf9C332Ed151758858bd7a26`; mint test tGLM

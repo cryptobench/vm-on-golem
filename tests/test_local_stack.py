@@ -98,12 +98,10 @@ def test_local_stack_build_services_passes_log_env_to_every_service(tmp_path):
         *local_stack.build_services(
             deployment=deployment(),
             start_provider_desktop=False,
-            start_requestor_desktop=True,
         ),
         *local_stack.build_services(
             deployment=deployment(),
             start_provider_desktop=True,
-            start_requestor_desktop=False,
         ),
     ]
     sink.close()
@@ -114,7 +112,6 @@ def test_local_stack_build_services_passes_log_env_to_every_service(tmp_path):
         "provider",
         "central-advertisement",
         "requestor-api",
-        "requestor-desktop",
         "port-checker",
         "requestor-web",
         "provider-desktop",
@@ -138,12 +135,58 @@ def test_local_stack_build_services_passes_log_env_to_every_service(tmp_path):
     central = next(
         service for service in services if service.name == "central-discovery"
     )
+    requestor_web = next(
+        service for service in services if service.name == "requestor-web"
+    )
 
     assert provider.env["GOLEM_PROVIDER_LOG_DIR"] == str(tmp_path)
     assert provider_desktop.env["GOLEM_PROVIDER_LOG_DIR"] == str(tmp_path)
     assert port_checker.env["PORT_CHECKER_LOG_DIR"] == str(tmp_path)
     assert requestor_api.env["GOLEM_REQUESTOR_LOG_DIR"] == str(tmp_path)
     assert central.env["GOLEM_CENTRAL_DISCOVERY_LOG_DIR"] == str(tmp_path)
+    assert requestor_web.command == [
+        "npm",
+        "--prefix",
+        "requestor-web",
+        "run",
+        "dev",
+        "--",
+        "--hostname",
+        "127.0.0.1",
+        "--port",
+        "3000",
+    ]
+    assert requestor_web.env["NEXT_PUBLIC_GOLEM_ENVIRONMENT"] == "development"
+    assert requestor_web.env["NEXT_PUBLIC_DISCOVERY_MODE"] == "central"
+    assert (
+        requestor_web.env["NEXT_PUBLIC_DISCOVERY_API_URL"]
+        == "http://127.0.0.1:9001/api/v1"
+    )
+    assert (
+        requestor_web.env["NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS"]
+        == deployment()["stream_payment_address"]
+    )
+    assert (
+        requestor_web.env["NEXT_PUBLIC_GLM_TOKEN_ADDRESS"]
+        == deployment()["glm_token_address"]
+    )
+    assert requestor_web.env["NEXT_PUBLIC_EVM_CHAIN_ID"] == "0x88bb0"
+    assert requestor_web.env["NEXT_PUBLIC_EVM_CHAIN_NAME"] == "Ethereum Hoodi"
+    assert requestor_web.env["NEXT_PUBLIC_EVM_RPC_URL"] == deployment()["rpc_url"]
+    assert (
+        requestor_web.env["NEXT_PUBLIC_EVM_EXPLORER_URL"]
+        == "https://hoodi.etherscan.io"
+    )
+    assert (
+        requestor_web.env["NEXT_PUBLIC_ARKIV_DEV_RPC_URL"]
+        == "https://kaolin.hoodi.arkiv.network/rpc"
+    )
+    assert (
+        requestor_web.env["NEXT_PUBLIC_ARKIV_DEV_WS_URL"]
+        == "wss://kaolin.hoodi.arkiv.network/rpc/ws"
+    )
+    assert requestor_web.env["WATCHPACK_POLLING"] == "true"
+    assert requestor_web.env["CHOKIDAR_USEPOLLING"] == "true"
 
 
 def test_local_stack_binds_provider_for_guest_metrics():
@@ -151,7 +194,6 @@ def test_local_stack_binds_provider_for_guest_metrics():
     services = local_stack.build_services(
         deployment=deployment(),
         start_provider_desktop=False,
-        start_requestor_desktop=True,
     )
 
     provider = next(service for service in services if service.name == "provider")
