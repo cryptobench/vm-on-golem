@@ -1,10 +1,12 @@
 import logging
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy import delete, select
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from central_discovery.time import utc_now
 
 from .models import Advertisement
 
@@ -40,7 +42,7 @@ class AdvertisementRepository:
             endpoint_url=endpoint_url,
             resources=resources,
             pricing=pricing,
-            updated_at=datetime.utcnow(),
+            updated_at=utc_now(),
         )
 
         # Handle upsert for SQLite
@@ -102,7 +104,7 @@ class AdvertisementRepository:
             query = query.where(Advertisement.platform == platform)
 
         # Only return non-expired advertisements
-        five_minutes_ago = datetime.utcnow() - timedelta(minutes=5)
+        five_minutes_ago = utc_now() - timedelta(minutes=5)
         query = query.where(Advertisement.updated_at >= five_minutes_ago)
 
         result = await self.session.execute(query)
@@ -110,7 +112,7 @@ class AdvertisementRepository:
 
     async def cleanup_expired(self) -> int:
         """Remove expired advertisements (older than 5 minutes)."""
-        five_minutes_ago = datetime.utcnow() - timedelta(minutes=5)
+        five_minutes_ago = utc_now() - timedelta(minutes=5)
         stmt = delete(Advertisement).where(Advertisement.updated_at < five_minutes_ago)
         result = await self.session.execute(stmt)
         await self.session.commit()

@@ -4,6 +4,8 @@ from typing import Dict, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
+from provider.utils.time import ensure_utc, utc_now
+
 
 class VMStatus(str, Enum):
     """VM status enum."""
@@ -225,12 +227,17 @@ class VMInfo(BaseModel):
         ge=1,
         description="Suggested client polling cadence for this state",
     )
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
     error_message: Optional[str] = None
 
     class Config:
         json_encoders = {datetime: lambda v: v.isoformat()}
+
+    @field_validator("created_at", "updated_at")
+    @classmethod
+    def ensure_timestamp_timezone(cls, value: datetime) -> datetime:
+        return ensure_utc(value)
 
     def model_post_init(self, __context) -> None:
         if self.lifecycle_stage == "unknown" and self.status != VMStatus.UNKNOWN:

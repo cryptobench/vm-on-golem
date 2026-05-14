@@ -30,3 +30,4 @@ export * from "./Tabs";
 export * from "./Toast";
 export * from "./ToggleSwitch";
 export * from "./cn";
+export * from "./time";

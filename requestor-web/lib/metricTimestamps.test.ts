@@ -3,10 +3,10 @@ import test from "node:test";
 
 import { parseMetricTimestamp } from "../components/vm/details/metrics";
 
-test("parses timezone-less provider metric timestamps as UTC", () => {
-  assert.equal(
-    parseMetricTimestamp("2026-05-12T21:25:44"),
-    Date.UTC(2026, 4, 12, 21, 25, 44),
+test("rejects timezone-less provider metric timestamps", () => {
+  assert.throws(
+    () => parseMetricTimestamp("2026-05-12T21:25:44"),
+    /explicit timezone/,
   );
 });
 

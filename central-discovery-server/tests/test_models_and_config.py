@@ -1,5 +1,5 @@
 import os
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from fastapi.testclient import TestClient
 
@@ -42,6 +42,7 @@ def test_config_assemble_db_url_uses_dir_and_name(tmp_path):
 
 def test_db_model_is_expired_property():
     from discovery.db.models import Advertisement
+    from discovery.time import utc_now
 
     a = Advertisement(provider_id="p", ip_address="i", country="US", resources={})
     a.updated_at = None
@@ -50,10 +51,10 @@ def test_db_model_is_expired_property():
     # repr covered
     assert "Advertisement(" in repr(a)
 
-    a.updated_at = datetime.utcnow()
+    a.updated_at = utc_now()
     assert a.is_expired is False
 
-    a.updated_at = datetime.utcnow() - timedelta(minutes=6)
+    a.updated_at = utc_now() - timedelta(minutes=6)
     assert a.is_expired is True
 
 

@@ -9,6 +9,7 @@ import {
   SectionHeader,
   StatCard,
   StatusBadge,
+  formatLocalDateTime,
 } from "@golem/ui";
 import {
   RiAlertLine,
@@ -81,7 +82,7 @@ export function OverviewPage({
         <StatCard
           label="Service health"
           value={titleCase(data?.monitoring?.status ?? data?.summary?.status)}
-          detail={data?.monitoring?.last_sample_at ?? "Last sample unavailable"}
+          detail={formatLocalDateTime(data?.monitoring?.last_sample_at) ?? "Last sample unavailable"}
           icon={<RiLineChartLine className="h-5 w-5" />}
           tone={data?.monitoring?.status === "healthy" ? "success" : "neutral"}
         />
@@ -190,7 +191,7 @@ export function OverviewPage({
                   {
                     key: "uptime",
                     header: "Updated",
-                    render: (vm) => new Date(vm.updated_at).toLocaleString(),
+                    render: (vm) => formatLocalDateTime(vm.updated_at) ?? EMPTY_VALUE,
                   },
                 ]}
               />

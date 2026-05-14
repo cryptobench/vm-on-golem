@@ -10,14 +10,14 @@ import {
 
 test("reports latest network rates separately from transfer totals", () => {
   const samples = [
-    networkSample("network_rx_bytes", 100_000_000, "2026-05-12T21:00:00"),
-    networkSample("network_tx_bytes", 1_000_000, "2026-05-12T21:00:00"),
-    networkSample("network_rx_bytes", 100_040_000, "2026-05-12T21:00:10"),
-    networkSample("network_tx_bytes", 1_040_000, "2026-05-12T21:00:10"),
-    networkSample("network_rx_bytes", 170_040_000, "2026-05-12T21:00:20"),
-    networkSample("network_tx_bytes", 1_080_000, "2026-05-12T21:00:20"),
-    networkSample("network_rx_bytes", 170_080_000, "2026-05-12T21:00:30"),
-    networkSample("network_tx_bytes", 1_120_000, "2026-05-12T21:00:30"),
+    networkSample("network_rx_bytes", 100_000_000, "2026-05-12T21:00:00+00:00"),
+    networkSample("network_tx_bytes", 1_000_000, "2026-05-12T21:00:00+00:00"),
+    networkSample("network_rx_bytes", 100_040_000, "2026-05-12T21:00:10+00:00"),
+    networkSample("network_tx_bytes", 1_040_000, "2026-05-12T21:00:10+00:00"),
+    networkSample("network_rx_bytes", 170_040_000, "2026-05-12T21:00:20+00:00"),
+    networkSample("network_tx_bytes", 1_080_000, "2026-05-12T21:00:20+00:00"),
+    networkSample("network_rx_bytes", 170_080_000, "2026-05-12T21:00:30+00:00"),
+    networkSample("network_tx_bytes", 1_120_000, "2026-05-12T21:00:30+00:00"),
   ];
   const rows = buildMetricChartRows(samples);
 

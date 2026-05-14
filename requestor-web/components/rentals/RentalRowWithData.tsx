@@ -9,6 +9,7 @@ import {
   useVmStreamStatus,
 } from "../../hooks/useApiSWR";
 import type { Rental, VMResources } from "../../lib/api";
+import { formatUnixSecondsDateTime } from "../../lib/time";
 import { vmDetailsHref } from "../../lib/routes";
 import { humanDuration } from "../../lib/streams";
 import { countryFlagEmoji } from "../../lib/intl";
@@ -50,15 +51,7 @@ function resourceWithUnit(
 }
 
 function formatEndedAt(value?: number) {
-  if (!value) return "-";
-  return new Intl.DateTimeFormat("en", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZoneName: "short",
-  }).format(new Date(value * 1000));
+  return formatUnixSecondsDateTime(value) ?? "-";
 }
 
 export function RentalRowWithData({
@@ -73,21 +66,21 @@ export function RentalRowWithData({
   const router = useRouter();
   const storedStatus = String(rental.status || "").toLowerCase();
   const storedTerminal = terminalStatus(storedStatus) || !!terminated;
-  const { data: provider } = useProviderInfo(rental.provider_id, {
+  const { data: provider } = useProviderInfo(rental.provider_endpoint_url, {
     refreshInterval: 30000,
   });
   const { data: access, error: accessError } = useVmAccess(
-    storedTerminal ? null : rental.provider_id,
+    storedTerminal ? null : rental.provider_endpoint_url,
     storedTerminal ? null : rental.vm_id,
     { refreshInterval: 8000 },
   );
   const { data: status, error: statusError } = useVmStatusSafe(
-    storedTerminal ? null : rental.provider_id,
+    storedTerminal ? null : rental.provider_endpoint_url,
     storedTerminal ? null : rental.vm_id,
     { refreshInterval: 8000 },
   );
   const { data: stream } = useVmStreamStatus(
-    storedTerminal || !rental.stream_id ? null : rental.provider_id,
+    storedTerminal || !rental.stream_id ? null : rental.provider_endpoint_url,
     storedTerminal || !rental.stream_id ? null : rental.vm_id,
     { refreshInterval: 15000 },
   );

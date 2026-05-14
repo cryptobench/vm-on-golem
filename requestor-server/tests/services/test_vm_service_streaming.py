@@ -80,8 +80,18 @@ async def test_create_vm_preserves_stream_id_stop_keeps_stream_destroy_terminate
     svc = VMService(db, DummySSH(), DummyProvider(), blockchain_client=chain)
 
     # Provide an explicit stream id; service should store it and not auto-create
-    vm = await svc.create_vm("n", 1, 1, 1, "127.0.0.1", "ssh-key", stream_id=42)
+    vm = await svc.create_vm(
+        "n",
+        1,
+        1,
+        1,
+        "127.0.0.1",
+        "ssh-key",
+        stream_id=42,
+        provider_endpoint_url="https://127.0.0.1",
+    )
     assert vm["config"]["stream_id"] == 42
+    assert vm["config"]["provider_endpoint_url"] == "https://127.0.0.1"
     assert chain.created == []
 
     # stop is a power-state action; paid lease and stream stay active

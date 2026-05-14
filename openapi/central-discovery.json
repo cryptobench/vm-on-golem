@@ -11,6 +11,28 @@
             "title": "Country",
             "type": "string"
           },
+          "endpoint_host": {
+            "description": "Provider public endpoint host",
+            "title": "Endpoint Host",
+            "type": "string"
+          },
+          "endpoint_port": {
+            "description": "Provider public endpoint port",
+            "maximum": 65535.0,
+            "minimum": 1.0,
+            "title": "Endpoint Port",
+            "type": "integer"
+          },
+          "endpoint_protocol": {
+            "description": "Provider public endpoint protocol",
+            "title": "Endpoint Protocol",
+            "type": "string"
+          },
+          "endpoint_url": {
+            "description": "Provider public endpoint URL",
+            "title": "Endpoint Url",
+            "type": "string"
+          },
           "ip_address": {
             "pattern": "^(\\d{1,3}\\.){3}\\d{1,3}$",
             "title": "Ip Address",
@@ -53,6 +75,22 @@
           "created_at": {
             "format": "date-time",
             "title": "Created At",
+            "type": "string"
+          },
+          "endpoint_host": {
+            "title": "Endpoint Host",
+            "type": "string"
+          },
+          "endpoint_port": {
+            "title": "Endpoint Port",
+            "type": "integer"
+          },
+          "endpoint_protocol": {
+            "title": "Endpoint Protocol",
+            "type": "string"
+          },
+          "endpoint_url": {
+            "title": "Endpoint Url",
             "type": "string"
           },
           "ip_address": {

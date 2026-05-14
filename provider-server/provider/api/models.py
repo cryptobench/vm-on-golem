@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field, field_validator
 
 from ..utils.logging import setup_logger
+from ..utils.time import ensure_utc, utc_now
 from ..vm.models import MULTIPASS_SSH_USER, VMResources, VMSize, VMStatus
 
 logger = setup_logger(__name__)
@@ -87,6 +88,11 @@ class VMResponse(BaseModel):
     updated_at: datetime
     error_message: Optional[str] = None
 
+    @field_validator("created_at", "updated_at")
+    @classmethod
+    def ensure_timestamp_timezone(cls, value: datetime) -> datetime:
+        return ensure_utc(value)
+
     class Config:
         json_encoders = {datetime: lambda v: v.isoformat()}
 
@@ -104,7 +110,7 @@ class ErrorResponse(BaseModel):
     code: str
     message: str
     details: Optional[Dict] = None
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=utc_now)
 
 
 class ListVMsResponse(BaseModel):

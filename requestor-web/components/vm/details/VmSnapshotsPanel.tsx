@@ -8,6 +8,7 @@ import {
   RiRestartLine,
 } from "@remixicon/react";
 import { Spinner } from "@golem/ui";
+import { formatLocalDateTime } from "../../../lib/time";
 import { DetailPanel, IconButton, PanelTitle } from "./VmDetailPrimitives";
 
 export type VmSnapshotRow = {
@@ -145,14 +146,5 @@ export function VmSnapshotsPanel({
 }
 
 function formatSnapshotDate(value?: string | null) {
-  if (!value) return "-";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return `${date.toLocaleString([], {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  })}`;
+  return formatLocalDateTime(value) ?? "-";
 }

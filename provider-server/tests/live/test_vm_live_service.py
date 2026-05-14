@@ -2,8 +2,13 @@ import asyncio
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from provider.live.service import VMLiveService
-from provider.monitoring.domain import GuestMetricPayload
+from provider.live.service import HostLiveService, VMLiveService
+from provider.monitoring.domain import (
+    GuestMetricPayload,
+    MetricSample,
+    MetricScope,
+    MetricSource,
+)
 from provider.monitoring.repo import MonitoringRepository
 from provider.monitoring.services import MonitoringService
 from provider.payments.errors import StreamNotFoundError
@@ -109,3 +114,58 @@ def test_vm_live_stream_sends_hello_snapshot_and_metric_update(tmp_path: Path):
         )
 
     asyncio.run(run())
+
+
+def test_host_live_stream_sends_hello_snapshot_and_metric_update(tmp_path: Path):
+    async def run():
+        repo = MonitoringRepository(str(tmp_path / "monitoring.sqlite"))
+        repo.init_schema()
+        monitoring = MonitoringService(
+            {"MONITORING_LIVE_ACTIVE_INTERVAL_SECONDS": 1},
+            repo,
+            MagicMock(),
+            MagicMock(),
+        )
+        monitoring._host_samples = MagicMock(
+            return_value=[
+                MetricSample(
+                    scope=MetricScope.HOST,
+                    source=MetricSource.INFRASTRUCTURE,
+                    metric="cpu_percent",
+                    value=42,
+                    unit="percent",
+                    timestamp=datetime_fromisoformat("2026-05-14T18:00:00+00:00"),
+                )
+            ]
+        )
+        service = HostLiveService(monitoring)
+        websocket = FakeWebSocket()
+        task = asyncio.create_task(service.stream_host(websocket))
+        try:
+            hello = await asyncio.wait_for(websocket.sent.get(), timeout=1)
+            snapshot = await asyncio.wait_for(websocket.sent.get(), timeout=1)
+            update = await asyncio.wait_for(websocket.sent.get(), timeout=1)
+        finally:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+        assert websocket.accepted is True
+        assert hello["type"] == "hello"
+        assert hello["data"]["protocol"] == "provider-host-live.v1"
+        assert snapshot["type"] == "snapshot"
+        assert update["type"] == "update"
+        assert update["scope"] == "metrics"
+        assert update["data"]["latest"]["host"]["cpu_percent"]["value"] == 42
+        assert has_explicit_timezone(update["data"]["samples"][0]["timestamp"])
+
+    asyncio.run(run())
+
+
+def datetime_fromisoformat(value: str):
+    from datetime import datetime
+
+    return datetime.fromisoformat(value)
+
+
+def has_explicit_timezone(value: str) -> bool:
+    return value.endswith("Z") or value.endswith("+00:00")

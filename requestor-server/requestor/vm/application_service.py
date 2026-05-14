@@ -87,7 +87,9 @@ class VMApplicationService:
                 extra={"provider_id": command.provider_id},
             )
             raise ValidationError("Provider IP address not found in advertisement")
-        provider_endpoint_url = provider.get("endpoint_url")
+        provider_endpoint_url = self._require_provider_endpoint(
+            provider, command.provider_id
+        )
         logger.info(
             "Selected provider for VM create",
             extra={
@@ -98,7 +100,7 @@ class VMApplicationService:
         )
 
         async with self.provider_client_factory.for_provider_endpoint(
-            provider_ip, provider_endpoint_url
+            provider_endpoint_url
         ) as client:
             try:
                 job = await client.create_vm(
@@ -129,8 +131,6 @@ class VMApplicationService:
                         ),
                         **(
                             {"provider_endpoint_url": provider_endpoint_url}
-                            if provider_endpoint_url
-                            else {}
                         ),
                     },
                     status="creating",
@@ -163,8 +163,6 @@ class VMApplicationService:
             ),
             **(
                 {"provider_endpoint_url": provider_endpoint_url}
-                if provider_endpoint_url
-                else {}
             ),
         }
         self.vm_repo.update_status(command.name, "running")
@@ -318,15 +316,9 @@ class VMApplicationService:
         provider = await self.discovery_service.require_provider(
             provider_id, ProviderSearchQuery()
         )
-        provider_ip = (
-            "localhost"
-            if self.settings.environment == "development"
-            else provider.get("ip_address")
-        )
-        if not provider_ip:
-            raise ValidationError("Provider IP address not found in advertisement")
+        endpoint_url = self._require_provider_endpoint(provider, provider_id)
         async with self.provider_client_factory.for_provider_endpoint(
-            provider_ip, provider.get("endpoint_url")
+            endpoint_url
         ) as client:
             return await client.list_images()
 
@@ -471,9 +463,19 @@ class VMApplicationService:
             "Creating provider client for VM",
             extra={"vm_name": vm.name, "provider_ip": vm.provider_ip},
         )
-        if not hasattr(self.provider_client_factory, "for_provider_endpoint"):
-            return self.provider_client_factory.for_provider_ip(vm.provider_ip)
-        return self.provider_client_factory.for_provider_endpoint(
-            vm.provider_ip,
-            str(endpoint_url) if endpoint_url else None,
-        )
+        if not endpoint_url:
+            raise ValidationError("Provider endpoint URL not found for VM")
+        return self.provider_client_factory.for_provider_endpoint(str(endpoint_url))
+
+    def _require_provider_endpoint(self, provider: dict, provider_id: str) -> str:
+        endpoint_url = provider.get("endpoint_url")
+        try:
+            return self.settings.get_provider_url(str(endpoint_url or ""))
+        except ValueError as exc:
+            logger.warning(
+                "Provider advertisement missing endpoint",
+                extra={"provider_id": provider_id},
+            )
+            raise ValidationError(
+                "Provider endpoint URL not found in advertisement"
+            ) from exc

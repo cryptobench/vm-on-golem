@@ -1,5 +1,5 @@
 import os
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import pytest
 
@@ -13,6 +13,7 @@ async def test_repository_filters_and_cleanup():
     from discovery.db.models import Advertisement
     from discovery.db.repository import AdvertisementRepository
     from discovery.db.session import AsyncSessionLocal, init_db
+    from discovery.time import utc_now
 
     await init_db()
 
@@ -57,7 +58,7 @@ async def test_repository_filters_and_cleanup():
         await session.execute(
             update(Advertisement)
             .where(Advertisement.provider_id == "PX")
-            .values(updated_at=datetime.utcnow() - timedelta(minutes=10))
+            .values(updated_at=utc_now() - timedelta(minutes=10))
         )
         await session.commit()
 

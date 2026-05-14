@@ -1,7 +1,6 @@
 "use client";
 
 import React from "react";
-import { useAds } from "../../context/AdsContext";
 import { useProjects } from "../../context/ProjectsContext";
 import { useCopySSH } from "../../hooks/useCopySSH";
 import { useProjectRentals } from "../../hooks/useProjectRentals";
@@ -52,7 +51,6 @@ export function useRentalsScreen() {
   const [query, setQuery] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
   const [busyId, setBusyId] = React.useState<string | null>(null);
-  const { ads } = useAds();
   const streamPaymentAddress = (
     loadSettings().stream_payment_address ||
     getRequestorRuntimeConfig().streamPaymentAddress ||
@@ -150,9 +148,9 @@ export function useRentalsScreen() {
         streamPaymentAddress,
       });
       if (String(rental.status || "").toLowerCase() === "suspended") {
-        await vmResume(rental.provider_id, rental.vm_id, ads);
+        await vmResume(requireProviderEndpoint(rental), rental.vm_id);
       } else {
-        await vmStart(rental.provider_id, rental.vm_id, ads);
+        await vmStart(requireProviderEndpoint(rental), rental.vm_id);
       }
       updateRentalStatus(rental, "running");
     } catch (startError) {
@@ -166,7 +164,7 @@ export function useRentalsScreen() {
     setError(null);
     setBusyId(rental.vm_id);
     try {
-      await vmStop(rental.provider_id, rental.vm_id, ads);
+      await vmStop(requireProviderEndpoint(rental), rental.vm_id);
       updateRentalStatus(rental, "stopped");
     } catch (stopError) {
       setError(errorMessage(stopError));
@@ -181,7 +179,6 @@ export function useRentalsScreen() {
     try {
       const terminatedRental = await terminatePaidRental({
         rental,
-        ads,
         terminateStream: terminate,
         destroyVm: vmDestroy,
       });
@@ -222,4 +219,11 @@ export function useRentalsScreen() {
     terminated,
     toggleTerminated,
   };
+}
+
+function requireProviderEndpoint(rental: Rental): string {
+  if (!rental.provider_endpoint_url) {
+    throw new Error("Provider endpoint unavailable");
+  }
+  return rental.provider_endpoint_url;
 }

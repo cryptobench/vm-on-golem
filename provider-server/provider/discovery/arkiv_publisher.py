@@ -13,7 +13,11 @@ from golem_base_sdk import (
 from ..config import settings
 from ..utils.logging import setup_logger
 from .arkiv_utils import get_provider_entity_keys
-from .publishers import DiscoveryPublisher, _endpoint_is_advertisable
+from .publishers import (
+    DiscoveryPublisher,
+    _endpoint_is_advertisable,
+    _provider_endpoint,
+)
 
 logger = setup_logger(__name__)
 
@@ -105,6 +109,9 @@ class ArkivDiscoveryPublisher(DiscoveryPublisher):
                     platform_str = "x86_64"
                 else:
                     platform_str = raw
+            endpoint_protocol, endpoint_host, endpoint_port, endpoint_url = (
+                _provider_endpoint(settings, ip_address)
+            )
             string_annotations = [
                 Annotation(key="golem_type", value="provider"),
                 Annotation(key="golem_network", value=settings.NETWORK),
@@ -113,20 +120,13 @@ class ArkivDiscoveryPublisher(DiscoveryPublisher):
                 ),
                 Annotation(key="golem_provider_id", value=settings.PROVIDER_ID),
                 Annotation(key="golem_ip_address", value=ip_address),
-                Annotation(key="golem_endpoint_protocol", value="https"),
-                Annotation(key="golem_endpoint_host", value=ip_address),
+                Annotation(key="golem_endpoint_protocol", value=endpoint_protocol),
+                Annotation(key="golem_endpoint_host", value=endpoint_host),
                 Annotation(
                     key="golem_endpoint_port",
-                    value=str(int(getattr(settings, "PUBLIC_HTTPS_PORT", 443))),
+                    value=str(endpoint_port),
                 ),
-                Annotation(
-                    key="golem_endpoint_url",
-                    value=(
-                        f"https://{ip_address}"
-                        if int(getattr(settings, "PUBLIC_HTTPS_PORT", 443)) == 443
-                        else f"https://{ip_address}:{int(getattr(settings, 'PUBLIC_HTTPS_PORT', 443))}"
-                    ),
-                ),
+                Annotation(key="golem_endpoint_url", value=endpoint_url),
                 Annotation(key="golem_country", value=settings.PROVIDER_COUNTRY),
                 Annotation(key="golem_provider_name", value=settings.PROVIDER_NAME),
                 Annotation(key="golem_platform", value=platform_str or ""),

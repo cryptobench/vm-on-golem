@@ -23,9 +23,10 @@ import {
   RiStopLine,
 } from "@remixicon/react";
 import { EmptyPanel, EndpointErrors, LoadingGrid } from "../../components/StateViews";
+import { metricChartPoints } from "../../components/metricChartPoints";
 import { RangePicker } from "../../components/RangePicker";
 import type { NavigateTarget } from "../../components/types";
-import { chartPoints, metricNumber, streamEarningsPoints, vmStatusTone } from "../../lib/derived";
+import { metricNumber, streamEarningsPoints, vmStatusTone } from "../../lib/derived";
 import {
   EMPTY_VALUE,
   formatBytes,
@@ -263,7 +264,12 @@ function MetricChart({
           <h2 className="text-base font-semibold text-text-primary">{title}</h2>
           <RangePicker value={range} onChange={setRange} />
         </div>
-        <LineAreaChart data={chartPoints(data?.history, metric)} height={240} />
+        <LineAreaChart
+          data={metricChartPoints(data?.history, metric)}
+          height={240}
+          yUnit={metric === "cpu_percent" ? "%" : undefined}
+          valueFormatter={metric.endsWith("_bytes") ? formatBytes : undefined}
+        />
       </CardBody>
     </Card>
   );

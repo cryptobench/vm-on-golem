@@ -36,6 +36,7 @@ class VMService:
         provider_ip: str,
         ssh_key: str,
         stream_id: int | None = None,
+        provider_endpoint_url: str | None = None,
     ) -> Dict:
         """Create a new VM with validation and error handling."""
         try:
@@ -73,6 +74,11 @@ class VMService:
                     "cpu": cpu,
                     "memory": memory,
                     "storage": storage,
+                    **(
+                        {"provider_endpoint_url": provider_endpoint_url}
+                        if provider_endpoint_url
+                        else {}
+                    ),
                     **({"stream_id": stream_id} if stream_id is not None else {}),
                 },
                 status="creating",
@@ -117,6 +123,11 @@ class VMService:
                 "storage": storage,
                 "ssh_port": access_info["ssh_port"],
                 "ssh_user": require_ssh_user(access_info),
+                **(
+                    {"provider_endpoint_url": provider_endpoint_url}
+                    if provider_endpoint_url
+                    else {}
+                ),
                 **({"stream_id": stream_id} if stream_id is not None else {}),
             }
             await self.db.save_vm(

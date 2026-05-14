@@ -7,6 +7,7 @@ from typing import Any
 from fastapi import WebSocket, WebSocketDisconnect
 
 from provider.monitoring.domain import MetricScope
+from provider.utils.time import ensure_utc
 
 from .domain import LiveScope, LiveSnapshot
 
@@ -298,6 +299,169 @@ class VMLiveService:
         self, websocket: WebSocket, scope: str, exc: Exception
     ) -> None:
         await self._send(websocket, "error", scope=scope, error=str(exc))
+
+    async def _send(
+        self,
+        websocket: WebSocket,
+        event_type: str,
+        *,
+        scope: str | None = None,
+        data: dict[str, Any] | list[Any] | None = None,
+        error: str | None = None,
+    ) -> None:
+        await websocket.send_json(
+            {
+                "type": event_type,
+                "generated_at": self._now(),
+                "scope": scope,
+                "data": data,
+                "error": error,
+            }
+        )
+
+    @staticmethod
+    def _normalize_history_range(history_range: str) -> str:
+        return history_range if history_range in VALID_HISTORY_RANGES else "1h"
+
+    @staticmethod
+    def _now() -> str:
+        return datetime.now(timezone.utc).isoformat()
+
+
+class HostLiveService:
+    """Build and stream the live read model for host monitoring."""
+
+    def __init__(self, monitoring_service: Any):
+        self.monitoring_service = monitoring_service
+
+    async def stream_host(
+        self,
+        websocket: WebSocket,
+        history_range: str = "1h",
+    ) -> None:
+        history_range = self._normalize_history_range(history_range)
+        await websocket.accept()
+        logger.info("Host live stream opened", extra={"history_range": history_range})
+        await self._send(
+            websocket,
+            "hello",
+            data={
+                "protocol": "provider-host-live.v1",
+                "capabilities": {
+                    "scopes": ["metrics"],
+                    "client_events": ["set_history_range", "refresh", "ping"],
+                },
+                "server_time": self._now(),
+                "sample_interval_seconds": (
+                    self.monitoring_service.live_sample_interval_seconds()
+                ),
+            },
+        )
+        await self._send_snapshot(websocket, history_range)
+        async with self.monitoring_service.subscribe_host_metrics() as queue:
+            tasks = [
+                asyncio.create_task(
+                    self._receive_loop(websocket, history_range),
+                    name="host-live-recv",
+                ),
+                asyncio.create_task(
+                    self._metrics_loop(websocket, queue),
+                    name="host-live-metrics",
+                ),
+                asyncio.create_task(
+                    self._heartbeat_loop(websocket),
+                    name="host-live-heartbeat",
+                ),
+            ]
+            done, pending = await asyncio.wait(
+                tasks, return_when=asyncio.FIRST_COMPLETED
+            )
+            for task in pending:
+                task.cancel()
+            await asyncio.gather(*pending, return_exceptions=True)
+            for task in done:
+                exc = task.exception()
+                if exc and not isinstance(exc, WebSocketDisconnect):
+                    logger.debug(
+                        "Host live task ended",
+                        exc_info=(type(exc), exc, exc.__traceback__),
+                    )
+        logger.info("Host live stream closed")
+
+    async def _receive_loop(self, websocket: WebSocket, history_range: str) -> None:
+        current_range = history_range
+        while True:
+            message = await websocket.receive_json()
+            event_type = str(message.get("type") or "")
+            if event_type == "ping":
+                await self._send(
+                    websocket, "heartbeat", data={"server_time": self._now()}
+                )
+            elif event_type == "set_history_range":
+                current_range = self._normalize_history_range(
+                    str(message.get("history_range") or current_range)
+                )
+                await self._send_update(
+                    websocket, "metrics", await self._metrics_payload(current_range)
+                )
+            elif event_type == "refresh":
+                scopes = message.get("scopes") or ["metrics"]
+                if "metrics" in {str(scope) for scope in scopes}:
+                    await self._send_update(
+                        websocket,
+                        "metrics",
+                        await self._metrics_payload(current_range),
+                    )
+            else:
+                logger.warning(
+                    "Unsupported host live event", extra={"event_type": event_type}
+                )
+                await self._send(
+                    websocket,
+                    "error",
+                    error=f"unsupported live event: {event_type or 'unknown'}",
+                )
+
+    async def _metrics_loop(
+        self, websocket: WebSocket, queue: asyncio.Queue[dict[str, Any]]
+    ) -> None:
+        while True:
+            payload = await queue.get()
+            await self._send_update(websocket, "metrics", payload)
+
+    async def _heartbeat_loop(self, websocket: WebSocket) -> None:
+        while True:
+            await asyncio.sleep(15)
+            await self._send(websocket, "heartbeat", data={"server_time": self._now()})
+
+    async def _send_snapshot(self, websocket: WebSocket, history_range: str) -> None:
+        await self._send(
+            websocket,
+            "snapshot",
+            data=await self._metrics_payload(history_range),
+        )
+
+    async def _metrics_payload(self, history_range: str) -> dict[str, Any]:
+        last_sample_at = self.monitoring_service.latest_sample_at()
+        return {
+            "metrics_latest": self.monitoring_service.latest().model_dump(mode="json"),
+            "metrics_history": self.monitoring_service.history(
+                scope=MetricScope.HOST,
+                range_name=history_range,
+            ).model_dump(mode="json"),
+            "status": self.monitoring_service.status(),
+            "last_sample_at": ensure_utc(last_sample_at).isoformat()
+            if last_sample_at
+            else None,
+        }
+
+    async def _send_update(
+        self,
+        websocket: WebSocket,
+        scope: str,
+        data: dict[str, Any] | list[dict[str, Any]] | None,
+    ) -> None:
+        await self._send(websocket, "update", scope=scope, data=data)
 
     async def _send(
         self,

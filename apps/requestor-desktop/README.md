@@ -16,14 +16,8 @@ Run the desktop app only when explicitly needed:
 npm --workspace @golem/requestor-desktop run dev
 ```
 
-## Sidecar
+## Runtime Config
 
-The app bundles `golem-port-checker` as a Tauri sidecar. Stage the sidecar
-before running `cargo check` or `tauri build`:
-
-```sh
-poetry -C port-checker-server run python ../scripts/build_port_checker_cli.py --onefile
-```
-
-The staged binary lives under `src-tauri/binaries/` and is intentionally ignored
-by git.
+The desktop shell injects the same discovery and payment runtime config used by
+requestor-web. Provider API traffic goes directly to provider-advertised
+endpoints; the desktop app does not bundle or manage a port-checker sidecar.

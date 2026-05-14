@@ -99,8 +99,13 @@ class RequestorPaymentService:
         vm = self.vm_repo.require(vm_name)
         stream_id = vm.config.get("stream_id")
         if stream_id is None:
-            async with self.provider_client_factory.for_provider_ip(
-                vm.provider_ip
+            endpoint_url = vm.config.get("provider_endpoint_url")
+            if not endpoint_url:
+                raise ExternalServiceError(
+                    "provider endpoint unavailable for VM stream status"
+                )
+            async with self.provider_client_factory.for_provider_endpoint(
+                str(endpoint_url)
             ) as client:
                 status = await client.get_vm_stream_status(vm.vm_id)
                 stream_id = status.get("stream_id")

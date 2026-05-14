@@ -160,12 +160,8 @@ class CentralDiscoveryPublisher(DiscoveryPublisher):
                     platform_str = "x86_64"
                 else:
                     platform_str = raw
-            endpoint_host = ip_address
-            endpoint_port = int(getattr(settings, "PUBLIC_HTTPS_PORT", 443))
-            endpoint_url = (
-                f"https://{endpoint_host}"
-                if endpoint_port == 443
-                else f"https://{endpoint_host}:{endpoint_port}"
+            endpoint_protocol, endpoint_host, endpoint_port, endpoint_url = (
+                _provider_endpoint(settings, ip_address)
             )
             async with self.session.post(
                 f"{self.discovery_url}/api/v1/advertisements",
@@ -178,7 +174,7 @@ class CentralDiscoveryPublisher(DiscoveryPublisher):
                     "ip_address": ip_address,
                     "country": settings.PROVIDER_COUNTRY,
                     "platform": platform_str,
-                    "endpoint_protocol": "https",
+                    "endpoint_protocol": endpoint_protocol,
                     "endpoint_host": endpoint_host,
                     "endpoint_port": endpoint_port,
                     "endpoint_url": endpoint_url,
@@ -243,3 +239,20 @@ def _endpoint_is_advertisable(certificate_service: Any) -> bool:
     if certificate_service is None:
         return True
     return bool(certificate_service.endpoint_is_advertisable())
+
+
+def _provider_endpoint(settings: Any, host: str) -> tuple[str, str, int, str]:
+    if bool(getattr(settings, "DEV_MODE", False)) and not bool(
+        getattr(settings, "SECURE_SETUP_IN_DEVELOPMENT", False)
+    ):
+        port = int(getattr(settings, "PORT", 7466))
+        return "http", host, port, _endpoint_url("http", host, port, 80)
+
+    port = int(getattr(settings, "PUBLIC_HTTPS_PORT", 443))
+    return "https", host, port, _endpoint_url("https", host, port, 443)
+
+
+def _endpoint_url(protocol: str, host: str, port: int, default_port: int) -> str:
+    if int(port) == int(default_port):
+        return f"{protocol}://{host}"
+    return f"{protocol}://{host}:{port}"

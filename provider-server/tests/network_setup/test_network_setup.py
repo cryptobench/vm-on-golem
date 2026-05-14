@@ -1,6 +1,6 @@
 import asyncio
 import socket
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -82,8 +82,8 @@ def _write_ip_cert(tmp_path, ip="127.0.0.1", expires_days=5):
         .issuer_name(subject)
         .public_key(key.public_key())
         .serial_number(x509.random_serial_number())
-        .not_valid_before(datetime.utcnow() - timedelta(minutes=1))
-        .not_valid_after(datetime.utcnow() + timedelta(days=expires_days))
+        .not_valid_before(datetime.now(timezone.utc) - timedelta(minutes=1))
+        .not_valid_after(datetime.now(timezone.utc) + timedelta(days=expires_days))
         .add_extension(
             x509.SubjectAlternativeName([x509.IPAddress(ipaddress.ip_address(ip))]),
             critical=False,

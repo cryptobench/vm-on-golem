@@ -2,6 +2,7 @@ import os
 import sys
 from pathlib import Path
 from typing import Dict, Optional
+from urllib.parse import urlparse
 
 from pydantic import Field, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -539,21 +540,18 @@ class RequestorConfig(BaseSettings):
             self._profile_defaults(self.payments_network).get("faucet_enabled", False)
         )
 
-    def get_provider_url(self, ip_address: str, endpoint_url: str | None = None) -> str:
-        """Get provider API URL.
-
-        Args:
-            ip_address: The IP address of the provider.
-
-        Returns:
-            The complete provider URL with protocol and port.
-        """
-        if endpoint_url and self.environment != "development":
-            return endpoint_url.rstrip("/")
-        if self.environment == "development":
-            # In dev mode, we might still want to use the real IP
-            pass
-        return f"http://{ip_address}:7466"
+    def get_provider_url(self, endpoint_url: str | None = None) -> str:
+        """Get provider API URL from an advertised endpoint."""
+        value = (endpoint_url or "").strip()
+        parsed = urlparse(value)
+        scheme = parsed.scheme.lower()
+        if not value or scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("Provider endpoint URL is required")
+        if scheme == "http" and self.environment != "development":
+            raise ValueError(
+                "Provider HTTP endpoint URL is only allowed in development"
+            )
+        return value.rstrip("/")
 
 
 config = RequestorConfig()

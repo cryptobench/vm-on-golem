@@ -43,7 +43,8 @@ class FakeClientFactory:
     def __init__(self, client: FakeClient):
         self.client = client
 
-    def for_provider_ip(self, provider_ip: str) -> FakeClient:
+    def for_provider_endpoint(self, endpoint_url: str) -> FakeClient:
+        assert endpoint_url == "https://127.0.0.1"
         return self.client
 
 
@@ -63,7 +64,7 @@ def make_service(payment_service):
         name="vm-name",
         provider_ip="127.0.0.1",
         vm_id="vm-id",
-        config={"stream_id": 42},
+        config={"stream_id": 42, "provider_endpoint_url": "https://127.0.0.1"},
         status="running",
     )
     repo = FakeRepo(vm)

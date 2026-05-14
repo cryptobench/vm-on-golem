@@ -4,6 +4,7 @@ import React from "react";
 import { RiArrowDownSLine, RiExternalLinkLine } from "@remixicon/react";
 import type { ChainStream } from "../../../lib/streams";
 import { humanDuration } from "../../../lib/streams";
+import { formatUnixSecondsDateTime } from "../../../lib/time";
 import { Button } from "@golem/ui";
 import {
   CopyInline,
@@ -242,13 +243,5 @@ function streamValues(
 }
 
 function formatStopTime(stopTime: bigint) {
-  const seconds = Number(stopTime);
-  if (!Number.isFinite(seconds) || seconds <= 0) return "-";
-  return new Date(seconds * 1000).toLocaleString([], {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return formatUnixSecondsDateTime(stopTime) ?? "-";
 }

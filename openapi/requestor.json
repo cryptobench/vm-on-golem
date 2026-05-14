@@ -173,6 +173,50 @@
             ],
             "title": "Created At Block"
           },
+          "endpoint_host": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endpoint Host"
+          },
+          "endpoint_port": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endpoint Port"
+          },
+          "endpoint_protocol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endpoint Protocol"
+          },
+          "endpoint_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endpoint Url"
+          },
           "ip_address": {
             "anyOf": [
               {

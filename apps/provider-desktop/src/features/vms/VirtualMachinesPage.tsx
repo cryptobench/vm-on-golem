@@ -1,6 +1,5 @@
 import React from "react";
 import {
-  ActionMenu,
   Card,
   CardBody,
   DataTable,
@@ -10,6 +9,7 @@ import {
   StatusBadge,
   TextInput,
   ToggleSwitch,
+  formatLocalDateTime,
 } from "@golem/ui";
 import {
   RiAlertLine,
@@ -113,18 +113,7 @@ export function VirtualMachinesPage({
               },
               { key: "ip", header: "IP Address", render: (vm) => vm.ip_address ?? EMPTY_VALUE },
               { key: "ssh", header: "SSH Port", render: (vm) => vm.ssh_port ?? EMPTY_VALUE },
-              { key: "updated", header: "Updated", render: (vm) => new Date(vm.updated_at).toLocaleString() },
-              {
-                key: "actions",
-                header: "",
-                render: (vm) => (
-                  <ActionMenu
-                    items={[
-                      { label: "Open details", onSelect: () => onNavigate({ page: "vm-detail", vmId: vm.id }) },
-                    ]}
-                  />
-                ),
-              },
+              { key: "updated", header: "Updated", render: (vm) => formatLocalDateTime(vm.updated_at) ?? EMPTY_VALUE },
             ]}
           />
           <div className="border-t border-border px-4 py-3 text-sm text-text-secondary">

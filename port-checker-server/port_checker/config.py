@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from dotenv import load_dotenv
-from pydantic import AliasChoices, Field, field_validator, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -34,40 +34,6 @@ class Settings(BaseSettings):
         default=3.0, validation_alias="PORT_CHECK_TIMEOUT"
     )
 
-    proxy_enabled: bool = Field(
-        default=True, validation_alias="PORT_CHECKER_PROXY_ENABLED"
-    )
-    proxy_allow_direct_ip: bool = Field(
-        default=False, validation_alias="PORT_CHECKER_PROXY_ALLOW_DIRECT_IP"
-    )
-    proxy_allowed_ports: str = Field(
-        default="80,443,1024-65535",
-        validation_alias="PORT_CHECKER_PROXY_ALLOWED_PORTS",
-    )
-    proxy_max_body_bytes: int = Field(
-        default=2 * 1024 * 1024,
-        validation_alias="PORT_CHECKER_PROXY_MAX_BODY_BYTES",
-    )
-    proxy_connect_timeout: float = Field(
-        default=5.0, validation_alias="PORT_CHECKER_PROXY_CONNECT_TIMEOUT"
-    )
-    proxy_read_timeout: float = Field(
-        default=10.0, validation_alias="PORT_CHECKER_PROXY_READ_TIMEOUT"
-    )
-    proxy_token: str = Field(default="", validation_alias="PORT_CHECKER_PROXY_TOKEN")
-    allow_local_ips: bool = Field(
-        default=False, validation_alias="PORT_CHECKER_ALLOW_LOCAL_IPS"
-    )
-
-    central_discovery_api_url: str = Field(
-        default="http://localhost:9001/api/v1",
-        validation_alias=AliasChoices(
-            "CENTRAL_DISCOVERY_API_URL",
-            "DISCOVERY_API_URL",
-        ),
-    )
-    arkiv_rpc_url: str = Field(default="", validation_alias="ARKIV_RPC_URL")
-    arkiv_ws_url: str = Field(default="", validation_alias="ARKIV_WS_URL")
     expected_network: str = Field(
         default="", validation_alias="PORT_CHECKER_EXPECTED_NETWORK"
     )
@@ -91,7 +57,3 @@ class Settings(BaseSettings):
     @property
     def is_development(self) -> bool:
         return self.environment.lower() == "development"
-
-    @property
-    def effective_allow_local_ips(self) -> bool:
-        return self.allow_local_ips or self.is_development

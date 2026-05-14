@@ -56,7 +56,6 @@ REQUESTOR_API_URL = f"http://{REQUESTOR_HOST}:{REQUESTOR_PORT}/api/v1"
 WEB_URL = f"http://{WEB_HOST}:{WEB_PORT}"
 PROVIDER_DESKTOP_URL = f"http://{PROVIDER_DESKTOP_HOST}:{PROVIDER_DESKTOP_PORT}"
 REQUESTOR_DESKTOP_URL = f"http://{REQUESTOR_DESKTOP_HOST}:{REQUESTOR_DESKTOP_PORT}"
-PORT_CHECKER_TOKEN = "dev-token"
 ARKIV_RPC_URL = "https://kaolin.hoodi.arkiv.network/rpc"
 ARKIV_WS_URL = "wss://kaolin.hoodi.arkiv.network/rpc/ws"
 L2_RPC_URL = "https://ethereum-hoodi-rpc.publicnode.com"
@@ -541,61 +540,6 @@ def rust_target_triple() -> str:
     raise LocalStackError("Could not determine Rust target triple")
 
 
-def ensure_requestor_port_checker_sidecar() -> None:
-    sidecar = requestor_port_checker_sidecar_path()
-    if not requestor_port_checker_sidecar_is_stale(sidecar):
-        return
-
-    log_setup("[setup] staging requestor desktop port-checker sidecar")
-    result = run_quiet(
-        [
-            "poetry",
-            "-C",
-            "port-checker-server",
-            "run",
-            "python",
-            "../scripts/build_port_checker_cli.py",
-            "--onefile",
-        ]
-    )
-    if result.returncode != 0:
-        raise LocalStackError(
-            "Could not stage requestor desktop port-checker sidecar.\n"
-            "Install PyInstaller in the port-checker Poetry env or run:\n"
-            "  poetry -C port-checker-server run pip install pyinstaller\n"
-            "Then retry make local.\n\n" + result.stdout.strip()
-        )
-
-
-def requestor_port_checker_sidecar_path() -> Path:
-    suffix = ".exe" if os.name == "nt" else ""
-    target = rust_target_triple()
-    return (
-        ROOT
-        / "apps"
-        / "requestor-desktop"
-        / "src-tauri"
-        / "binaries"
-        / f"golem-port-checker-{target}{suffix}"
-    )
-
-
-def requestor_port_checker_sidecar_is_stale(sidecar: Path) -> bool:
-    if not sidecar.exists():
-        return True
-    source_paths = [
-        ROOT / "port-checker-server" / "run.py",
-        ROOT / "port-checker-server" / "pyproject.toml",
-        ROOT / "port-checker-server" / "poetry.lock",
-        ROOT / "scripts" / "build_port_checker_cli.py",
-    ]
-    source_paths.extend((ROOT / "port-checker-server" / "port_checker").rglob("*.py"))
-    sidecar_mtime = sidecar.stat().st_mtime
-    return any(
-        path.stat().st_mtime > sidecar_mtime for path in source_paths if path.exists()
-    )
-
-
 def provider_sidecar_path() -> Path:
     suffix = ".exe" if os.name == "nt" else ""
     target = rust_target_triple()
@@ -677,6 +621,24 @@ def ensure_provider_sidecar() -> None:
     sync_existing_provider_tauri_sidecars(sidecar)
 
 
+def stop_existing_provider_daemon() -> None:
+    """Best-effort cleanup for a daemon left behind by provider desktop."""
+
+    sidecar = provider_sidecar_path()
+    command: list[str]
+    if sidecar.exists():
+        command = [str(sidecar), "stop", "--timeout", "5"]
+    else:
+        command = ["poetry", "-C", "provider-server", "run", "golem-provider", "stop"]
+
+    log_setup("[setup] stopping any existing provider daemon")
+    result = run_quiet(command)
+    if result.returncode != 0:
+        log_setup("[setup] provider daemon stop command did not complete cleanly")
+        if result.stdout.strip():
+            log_setup(result.stdout.strip())
+
+
 def ensure_deps(
     skip_install: bool, start_provider_desktop: bool, start_requestor_desktop: bool
 ) -> None:
@@ -685,7 +647,6 @@ def ensure_deps(
     ensure_python_deps()
     if start_requestor_desktop:
         ensure_workspace_node_deps("@golem/requestor-desktop")
-        ensure_requestor_port_checker_sidecar()
     else:
         ensure_node_deps("requestor-web")
     if start_provider_desktop:
@@ -876,7 +837,7 @@ def build_services(
         "GOLEM_PROVIDER_HOST": PROVIDER_BIND_HOST,
         "GOLEM_PROVIDER_PORT": str(PROVIDER_PORT),
         "GOLEM_PROVIDER_PUBLIC_IP": "auto",
-        "GOLEM_PROVIDER_SECURE_SETUP_IN_DEVELOPMENT": "true",
+        "GOLEM_PROVIDER_SECURE_SETUP_IN_DEVELOPMENT": "false",
         "GOLEM_PROVIDER_SHOW_JSON_LOGS": "1",
         "GOLEM_PROVIDER_PORT_CHECK_TLS_URL": PORT_CHECKER_URL,
         "GOLEM_PROVIDER_PORT_CHECK_REQUEST_TIMEOUT": "5",
@@ -909,6 +870,27 @@ def build_services(
                 "GOLEM_CENTRAL_DISCOVERY_DEBUG": "false",
             },
             ready=lambda: http_ok(f"{CENTRAL_URL}/health"),
+        ),
+        Service(
+            name="port-checker",
+            command=[
+                "poetry",
+                "-C",
+                "port-checker-server",
+                "run",
+                "port-checker",
+            ],
+            env={
+                **service_log_env("PORT_CHECKER"),
+                "GOLEM_ENVIRONMENT": "development",
+                "PORT_CHECKER_HOST": PORT_CHECKER_HOST,
+                "PORT_CHECKER_PORT": str(PORT_CHECKER_PORT),
+                "PORT_CHECKER_EXPECTED_NETWORK": "development",
+                "PORT_CHECK_RETRIES": "1",
+                "PORT_CHECK_TIMEOUT": "3",
+                "PORT_CHECK_RETRY_DELAY": "0.25",
+            },
+            ready=lambda: http_ok(f"{PORT_CHECKER_URL}/health"),
         ),
     ]
 
@@ -986,9 +968,6 @@ def build_services(
         "NEXT_PUBLIC_GOLEM_ENVIRONMENT": "development",
         "NEXT_PUBLIC_DISCOVERY_MODE": "central",
         "NEXT_PUBLIC_DISCOVERY_API_URL": CENTRAL_API_URL,
-        "NEXT_PUBLIC_PORT_CHECKER_URL": PORT_CHECKER_URL,
-        "NEXT_PUBLIC_PORT_CHECKER_TOKEN": PORT_CHECKER_TOKEN,
-        "NEXT_PUBLIC_PROVIDER_API_PORT": str(PROVIDER_PORT),
         "NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS": deployment["stream_payment_address"],
         "NEXT_PUBLIC_GLM_TOKEN_ADDRESS": deployment["glm_token_address"],
         "NEXT_PUBLIC_EVM_CHAIN_ID": L2_CHAIN_ID_HEX,
@@ -1015,54 +994,27 @@ def build_services(
             )
         )
     else:
-        services.extend(
-            [
-                Service(
-                    name="port-checker",
-                    command=[
-                        "poetry",
-                        "-C",
-                        "port-checker-server",
-                        "run",
-                        "port-checker",
-                    ],
-                    env={
-                        **service_log_env("PORT_CHECKER"),
-                        "GOLEM_ENVIRONMENT": "development",
-                        "PORT_CHECKER_HOST": PORT_CHECKER_HOST,
-                        "PORT_CHECKER_PORT": str(PORT_CHECKER_PORT),
-                        "PORT_CHECKER_PROXY_TOKEN": PORT_CHECKER_TOKEN,
-                        "CENTRAL_DISCOVERY_API_URL": CENTRAL_API_URL,
-                        "ARKIV_RPC_URL": ARKIV_RPC_URL,
-                        "ARKIV_WS_URL": ARKIV_WS_URL,
-                        "PORT_CHECKER_EXPECTED_NETWORK": "development",
-                        "PORT_CHECK_RETRIES": "1",
-                        "PORT_CHECK_TIMEOUT": "3",
-                        "PORT_CHECK_RETRY_DELAY": "0.25",
-                    },
-                    ready=lambda: http_ok(f"{PORT_CHECKER_URL}/health"),
-                ),
-                Service(
-                    name="requestor-web",
-                    command=[
-                        "npm",
-                        "--prefix",
-                        "requestor-web",
-                        "run",
-                        "dev",
-                        "--",
-                        "--hostname",
-                        WEB_HOST,
-                        "--port",
-                        str(WEB_PORT),
-                    ],
-                    env={
-                        **requestor_ui_env,
-                        **requestor_web_watch_env(),
-                    },
-                    ready=lambda: http_ok(WEB_URL),
-                ),
-            ]
+        services.append(
+            Service(
+                name="requestor-web",
+                command=[
+                    "npm",
+                    "--prefix",
+                    "requestor-web",
+                    "run",
+                    "dev",
+                    "--",
+                    "--hostname",
+                    WEB_HOST,
+                    "--port",
+                    str(WEB_PORT),
+                ],
+                env={
+                    **requestor_ui_env,
+                    **requestor_web_watch_env(),
+                },
+                ready=lambda: http_ok(WEB_URL),
+            )
         )
 
     if start_provider_desktop:
@@ -1102,6 +1054,8 @@ def run_stack(args: argparse.Namespace) -> int:
     try:
         start_provider_desktop = not args.no_provider_desktop
         start_requestor_desktop = not args.requestor_web
+        if start_provider_desktop:
+            stop_existing_provider_daemon()
         preflight(start_provider_desktop, start_requestor_desktop)
         deployment = load_l2_deployment()
         if not args.skip_chain_check:
@@ -1146,10 +1100,7 @@ def run_stack(args: argparse.Namespace) -> int:
             log("  Provider API:       started from provider desktop")
         else:
             log(f"  Provider API:       {PROVIDER_API_URL}")
-        if start_requestor_desktop:
-            log("  Port checker:       bundled in requestor desktop")
-        else:
-            log(f"  Port checker:       {PORT_CHECKER_URL}")
+        log(f"  Port checker:       {PORT_CHECKER_URL}")
         log(f"  Requestor API:      {REQUESTOR_API_URL}")
         log(f"  Payments network:   {PAYMENTS_NETWORK} ({L2_CHAIN_ID_HEX})")
         log(f"  Payments RPC:       {deployment.get('rpc_url', L2_RPC_URL)}")
