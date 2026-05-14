@@ -34,11 +34,39 @@ const DEFAULTS: RequestorRuntimeConfig = {
   arkivDevWsUrl: "",
 };
 
-function envValue(name: string): string {
-  const processLike = globalThis as unknown as {
-    process?: { env?: Record<string, string | undefined> };
+function envValue(name: keyof PublicRuntimeEnv): string {
+  return publicRuntimeEnv()[name] || "";
+}
+
+type PublicRuntimeEnv = {
+  NEXT_PUBLIC_DISCOVERY_API_URL?: string;
+  NEXT_PUBLIC_DISCOVERY_MODE?: string;
+  NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS?: string;
+  NEXT_PUBLIC_GLM_TOKEN_ADDRESS?: string;
+  NEXT_PUBLIC_EVM_CHAIN_ID?: string;
+  NEXT_PUBLIC_EVM_CHAIN_NAME?: string;
+  NEXT_PUBLIC_EVM_RPC_URL?: string;
+  NEXT_PUBLIC_EVM_EXPLORER_URL?: string;
+  NEXT_PUBLIC_GOLEM_ENVIRONMENT?: string;
+  NEXT_PUBLIC_ARKIV_DEV_RPC_URL?: string;
+  NEXT_PUBLIC_ARKIV_DEV_WS_URL?: string;
+};
+
+function publicRuntimeEnv(): PublicRuntimeEnv {
+  return {
+    NEXT_PUBLIC_DISCOVERY_API_URL: process.env.NEXT_PUBLIC_DISCOVERY_API_URL,
+    NEXT_PUBLIC_DISCOVERY_MODE: process.env.NEXT_PUBLIC_DISCOVERY_MODE,
+    NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS:
+      process.env.NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS,
+    NEXT_PUBLIC_GLM_TOKEN_ADDRESS: process.env.NEXT_PUBLIC_GLM_TOKEN_ADDRESS,
+    NEXT_PUBLIC_EVM_CHAIN_ID: process.env.NEXT_PUBLIC_EVM_CHAIN_ID,
+    NEXT_PUBLIC_EVM_CHAIN_NAME: process.env.NEXT_PUBLIC_EVM_CHAIN_NAME,
+    NEXT_PUBLIC_EVM_RPC_URL: process.env.NEXT_PUBLIC_EVM_RPC_URL,
+    NEXT_PUBLIC_EVM_EXPLORER_URL: process.env.NEXT_PUBLIC_EVM_EXPLORER_URL,
+    NEXT_PUBLIC_GOLEM_ENVIRONMENT: process.env.NEXT_PUBLIC_GOLEM_ENVIRONMENT,
+    NEXT_PUBLIC_ARKIV_DEV_RPC_URL: process.env.NEXT_PUBLIC_ARKIV_DEV_RPC_URL,
+    NEXT_PUBLIC_ARKIV_DEV_WS_URL: process.env.NEXT_PUBLIC_ARKIV_DEV_WS_URL,
   };
-  return processLike.process?.env?.[name] || "";
 }
 
 export function setRequestorRuntimeConfig(

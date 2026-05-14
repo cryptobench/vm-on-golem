@@ -39,8 +39,6 @@ WEB_HOST = "127.0.0.1"
 WEB_PORT = 3000
 PROVIDER_DESKTOP_HOST = "127.0.0.1"
 PROVIDER_DESKTOP_PORT = 1420
-REQUESTOR_DESKTOP_HOST = "127.0.0.1"
-REQUESTOR_DESKTOP_PORT = 1430
 WEB_WATCH_ENV_DEFAULTS = {
     "WATCHPACK_POLLING": "true",
     "WATCHPACK_POLLING_INTERVAL": "1000",
@@ -55,7 +53,6 @@ PORT_CHECKER_URL = f"http://{PORT_CHECKER_HOST}:{PORT_CHECKER_PORT}"
 REQUESTOR_API_URL = f"http://{REQUESTOR_HOST}:{REQUESTOR_PORT}/api/v1"
 WEB_URL = f"http://{WEB_HOST}:{WEB_PORT}"
 PROVIDER_DESKTOP_URL = f"http://{PROVIDER_DESKTOP_HOST}:{PROVIDER_DESKTOP_PORT}"
-REQUESTOR_DESKTOP_URL = f"http://{REQUESTOR_DESKTOP_HOST}:{REQUESTOR_DESKTOP_PORT}"
 ARKIV_RPC_URL = "https://kaolin.hoodi.arkiv.network/rpc"
 ARKIV_WS_URL = "wss://kaolin.hoodi.arkiv.network/rpc/ws"
 L2_RPC_URL = "https://ethereum-hoodi-rpc.publicnode.com"
@@ -312,12 +309,12 @@ def ensure_port_free(host: str, port: int) -> None:
             raise LocalStackError(f"Port {host}:{port} is already in use") from exc
 
 
-def preflight(start_provider_desktop: bool, start_requestor_desktop: bool) -> None:
+def preflight(start_provider_desktop: bool) -> None:
     log_setup("[setup] checking required commands")
     for command in ("poetry", "node", "npm", "multipass"):
         log_setup(f"[setup] checking command: {command}")
         ensure_command(command)
-    if start_provider_desktop or start_requestor_desktop:
+    if start_provider_desktop:
         log_setup("[setup] checking command: cargo")
         ensure_command("cargo")
 
@@ -342,14 +339,8 @@ def preflight(start_provider_desktop: bool, start_requestor_desktop: bool) -> No
             f"[setup] checking port: {PROVIDER_DESKTOP_HOST}:{PROVIDER_DESKTOP_PORT}"
         )
         ensure_port_free(PROVIDER_DESKTOP_HOST, PROVIDER_DESKTOP_PORT)
-    if start_requestor_desktop:
-        log_setup(
-            f"[setup] checking port: {REQUESTOR_DESKTOP_HOST}:{REQUESTOR_DESKTOP_PORT}"
-        )
-        ensure_port_free(REQUESTOR_DESKTOP_HOST, REQUESTOR_DESKTOP_PORT)
-    else:
-        log_setup(f"[setup] checking port: {WEB_HOST}:{WEB_PORT}")
-        ensure_port_free(WEB_HOST, WEB_PORT)
+    log_setup(f"[setup] checking port: {WEB_HOST}:{WEB_PORT}")
+    ensure_port_free(WEB_HOST, WEB_PORT)
 
 
 def rpc_call(rpc_url: str, method: str, params: list[object]) -> object:
@@ -639,16 +630,11 @@ def stop_existing_provider_daemon() -> None:
             log_setup(result.stdout.strip())
 
 
-def ensure_deps(
-    skip_install: bool, start_provider_desktop: bool, start_requestor_desktop: bool
-) -> None:
+def ensure_deps(skip_install: bool, start_provider_desktop: bool) -> None:
     if skip_install:
         return
     ensure_python_deps()
-    if start_requestor_desktop:
-        ensure_workspace_node_deps("@golem/requestor-desktop")
-    else:
-        ensure_node_deps("requestor-web")
+    ensure_node_deps("requestor-web")
     if start_provider_desktop:
         ensure_workspace_node_deps("@golem/provider-desktop")
         ensure_provider_sidecar()
@@ -814,7 +800,6 @@ def local_dirs() -> dict[str, Path]:
 def build_services(
     deployment: dict[str, str],
     start_provider_desktop: bool,
-    start_requestor_desktop: bool,
 ) -> list[Service]:
     dirs = local_dirs()
     provider_dir = dirs["provider"]
@@ -978,44 +963,28 @@ def build_services(
         "NEXT_PUBLIC_ARKIV_DEV_WS_URL": ARKIV_WS_URL,
     }
 
-    if start_requestor_desktop:
-        services.append(
-            Service(
-                name="requestor-desktop",
-                command=[
-                    "npm",
-                    "--workspace",
-                    "@golem/requestor-desktop",
-                    "run",
-                    "dev",
-                ],
-                env=requestor_ui_env,
-                ready=lambda: http_ok(REQUESTOR_DESKTOP_URL),
-            )
+    services.append(
+        Service(
+            name="requestor-web",
+            command=[
+                "npm",
+                "--prefix",
+                "requestor-web",
+                "run",
+                "dev",
+                "--",
+                "--hostname",
+                WEB_HOST,
+                "--port",
+                str(WEB_PORT),
+            ],
+            env={
+                **requestor_ui_env,
+                **requestor_web_watch_env(),
+            },
+            ready=lambda: http_ok(WEB_URL),
         )
-    else:
-        services.append(
-            Service(
-                name="requestor-web",
-                command=[
-                    "npm",
-                    "--prefix",
-                    "requestor-web",
-                    "run",
-                    "dev",
-                    "--",
-                    "--hostname",
-                    WEB_HOST,
-                    "--port",
-                    str(WEB_PORT),
-                ],
-                env={
-                    **requestor_ui_env,
-                    **requestor_web_watch_env(),
-                },
-                ready=lambda: http_ok(WEB_URL),
-            )
-        )
+    )
 
     if start_provider_desktop:
         services.append(
@@ -1053,19 +1022,17 @@ def run_stack(args: argparse.Namespace) -> int:
 
     try:
         start_provider_desktop = not args.no_provider_desktop
-        start_requestor_desktop = not args.requestor_web
         if start_provider_desktop:
             stop_existing_provider_daemon()
-        preflight(start_provider_desktop, start_requestor_desktop)
+        preflight(start_provider_desktop)
         deployment = load_l2_deployment()
         if not args.skip_chain_check:
             check_l2_deployment(deployment)
-        ensure_deps(args.skip_install, start_provider_desktop, start_requestor_desktop)
+        ensure_deps(args.skip_install, start_provider_desktop)
 
         services = build_services(
             deployment=deployment,
             start_provider_desktop=start_provider_desktop,
-            start_requestor_desktop=start_requestor_desktop,
         )
 
         def handle_signal(signum: int, _frame) -> None:
@@ -1090,10 +1057,7 @@ def run_stack(args: argparse.Namespace) -> int:
 
         log("")
         log("Local stack is ready:")
-        if start_requestor_desktop:
-            log("  Requestor desktop:  native Tauri app")
-        else:
-            log(f"  Requestor web:      {WEB_URL}")
+        log(f"  Requestor web:      {WEB_URL}")
         log(f"  Central discovery:  {CENTRAL_API_URL}")
         if start_provider_desktop:
             log("  Provider desktop:   native Tauri app")
@@ -1109,7 +1073,7 @@ def run_stack(args: argparse.Namespace) -> int:
         log("")
         log("Press Ctrl+C to stop the stack.")
 
-        if not args.no_open and not start_requestor_desktop:
+        if not args.no_open:
             webbrowser.open(WEB_URL)
 
         while True:
@@ -1164,11 +1128,6 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--no-provider-desktop",
         action="store_true",
         help="Do not start the provider desktop Tauri app",
-    )
-    parser.add_argument(
-        "--requestor-web",
-        action="store_true",
-        help="Start the legacy Next.js requestor web dev server instead of requestor desktop",
     )
     parser.add_argument(
         "--log-dir",

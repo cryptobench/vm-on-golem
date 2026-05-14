@@ -26,7 +26,7 @@ test("runtime config keeps built-in defaults when env values are unset", () => {
   assert.equal(config.evmChainId, "0x88bb0");
 });
 
-test("runtime config prefers desktop overrides", () => {
+test("runtime config prefers window runtime overrides", () => {
   const originalWindow = (globalThis as any).window;
   (globalThis as any).window = {};
   try {
