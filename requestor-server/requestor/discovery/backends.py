@@ -1,5 +1,6 @@
 """Requestor-side provider discovery backends."""
 
+import logging
 from typing import Dict, List, Optional
 
 import aiohttp
@@ -8,6 +9,8 @@ from golem_base_sdk.types import EntityKey, GenericBytes
 from ..config import config
 from ..errors import DiscoveryError
 from .domain import ProviderSearchQuery
+
+logger = logging.getLogger(__name__)
 
 
 def normalize_discovery_backend(value: Optional[str]) -> str:
@@ -46,12 +49,17 @@ class CentralDiscoveryClient:
                 }.items()
                 if v is not None
             }
+            logger.debug("Querying central discovery", extra={"params": params})
 
             async with session.get(
                 f"{config.discovery_url}/api/v1/advertisements",
                 params=params,
             ) as response:
                 if not response.ok:
+                    logger.error(
+                        "Central discovery query failed",
+                        extra={"status_code": response.status},
+                    )
                     raise DiscoveryError(
                         f"Failed to query central discovery: {await response.text()}"
                     )
@@ -64,12 +72,18 @@ class CentralDiscoveryClient:
                     else provider.get("ip_address")
                 )
 
+            logger.debug(
+                "Central discovery returned providers",
+                extra={"result_count": len(providers)},
+            )
             return providers
         except aiohttp.ClientError as e:
+            logger.error("Failed to connect to central discovery", exc_info=True)
             raise DiscoveryError(f"Failed to connect to central discovery: {str(e)}")
         except Exception as e:
             if isinstance(e, DiscoveryError):
                 raise
+            logger.error("Central discovery provider lookup failed", exc_info=True)
             raise DiscoveryError(
                 f"Error finding providers via central discovery: {str(e)}"
             )
@@ -101,6 +115,7 @@ class ArkivDiscoveryClient:
         try:
             client = await self._ensure_client()
             arkiv_query = self._build_query(query)
+            logger.debug("Querying Arkiv discovery", extra={"query": arkiv_query})
             results = await client.query_entities(arkiv_query)
 
             providers = []
@@ -156,9 +171,16 @@ class ArkivDiscoveryClient:
                 }
                 if provider["provider_id"]:
                     providers.append(provider)
+                else:
+                    logger.warning("Skipping Arkiv provider without provider_id")
 
+            logger.debug(
+                "Arkiv discovery returned providers",
+                extra={"result_count": len(providers)},
+            )
             return providers
         except Exception as e:
+            logger.error("Arkiv provider lookup failed", exc_info=True)
             raise DiscoveryError(f"Error finding providers on Arkiv: {str(e)}")
 
     def _build_query(self, query: ProviderSearchQuery) -> str:

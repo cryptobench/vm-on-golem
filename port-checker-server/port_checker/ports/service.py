@@ -66,7 +66,7 @@ class PortCheckService:
         last_error = None
         for attempt in range(self.retries):
             started_at = time.perf_counter()
-            logger.info(
+            logger.debug(
                 "Checking port %s at %s (attempt %s/%s, timeout=%.2fs)",
                 port,
                 ip,
@@ -81,7 +81,7 @@ class PortCheckService:
                 )
                 writer.close()
                 await writer.wait_closed()
-                logger.info(
+                logger.debug(
                     "Port %s is accessible (attempt %s/%s, elapsed=%.2fs)",
                     port,
                     attempt + 1,
@@ -91,7 +91,7 @@ class PortCheckService:
                 return PortStatus(accessible=True, error=None)
             except asyncio.TimeoutError:
                 last_error = "Connection timed out"
-                logger.warning(
+                logger.debug(
                     "Port %s timed out (attempt %s/%s, elapsed=%.2fs)",
                     port,
                     attempt + 1,
@@ -100,7 +100,7 @@ class PortCheckService:
                 )
             except ConnectionRefusedError:
                 last_error = "Connection refused"
-                logger.warning(
+                logger.debug(
                     "Port %s connection refused (attempt %s/%s, elapsed=%.2fs)",
                     port,
                     attempt + 1,
@@ -119,6 +119,7 @@ class PortCheckService:
                 )
             if attempt < self.retries - 1:
                 await self.sleep(self.retry_delay)
+        logger.warning("Port %s is inaccessible at %s: %s", port, ip, last_error)
         return PortStatus(accessible=False, error=last_error)
 
     async def check_tls(self, request: TlsCheckRequest) -> TlsCheckResponse:
@@ -139,6 +140,7 @@ class PortCheckService:
             writer.close()
             await writer.wait_closed()
             if not peer_cert:
+                logger.warning("TLS check failed for %s: no certificate", peer)
                 return TlsCheckResponse(valid=False, peer=peer, error="no certificate")
             not_after_text = peer_cert.get("notAfter")
             not_after = (
@@ -149,12 +151,16 @@ class PortCheckService:
                 else None
             )
             if not_after is None:
+                logger.warning(
+                    "TLS check failed for %s: certificate missing expiry", peer
+                )
                 return TlsCheckResponse(
                     valid=False,
                     peer=peer,
                     error="certificate missing expiry",
                 )
             if not_after <= datetime.now(timezone.utc):
+                logger.warning("TLS check failed for %s: certificate expired", peer)
                 return TlsCheckResponse(
                     valid=False,
                     peer=peer,
@@ -169,6 +175,10 @@ class PortCheckService:
                     if kind == "IP Address"
                 ]
                 if expected not in san_ips:
+                    logger.warning(
+                        "TLS check failed for %s: certificate does not match expected IP",
+                        peer,
+                    )
                     return TlsCheckResponse(
                         valid=False,
                         peer=peer,

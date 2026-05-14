@@ -41,9 +41,16 @@ class ProviderService:
 
             # Setup directories
             self._setup_directories()
+            logger.info("Provider directories ready")
 
             if self.network_setup_service is not None:
+                logger.info("Starting provider network setup")
                 await self.network_setup_service.setup()
+                if hasattr(self.network_setup_service, "start_certificate_maintenance"):
+                    await self.network_setup_service.start_certificate_maintenance()
+                logger.info("Provider network setup complete")
+            else:
+                logger.info("Provider network setup service not configured")
 
             # Display service startup animation only after strict network setup passes.
             await startup_animation()
@@ -52,12 +59,18 @@ class ProviderService:
             port_ok = await self.port_manager.initialize()
             if port_ok is False:
                 raise RuntimeError("No externally reachable VM access ports")
+            logger.info("Provider port manager initialized")
             await self.vm_service.provider.initialize()
+            logger.info("Provider VM backend initialized")
 
             # Before starting advertisement, sync allocated resources with existing VMs
             try:
                 vm_resources = await self.vm_service.get_all_vms_resources()
                 await self.vm_service.resource_tracker.sync_with_multipass(vm_resources)
+                logger.info(
+                    "Provider resources synced with existing VMs",
+                    extra={"vm_count": len(vm_resources)},
+                )
             except Exception as e:
                 logger.warning(f"Failed to sync resources with existing VMs: {e}")
 
@@ -113,8 +126,10 @@ class ProviderService:
                                 logger.warning(f"Failed to delete VM {vm_id}: {e}")
                             try:
                                 await stream_map.remove(vm_id)
-                            except Exception:
-                                pass
+                            except Exception as e:
+                                logger.warning(
+                                    f"Failed to remove stream mapping for VM {vm_id}: {e}"
+                                )
 
                     # Re-sync after any terminations to ensure ads reflect capacity
                     try:
@@ -146,8 +161,10 @@ class ProviderService:
                 logger.info("Arkiv faucet disabled for current discovery backend")
 
             await self.advertisement_service.start()
+            logger.info("Provider discovery publishing started")
             if self.monitoring_service is not None:
                 await self.monitoring_service.start()
+                logger.info("Provider monitoring service started")
             # Start pricing auto-updater; trigger re-advertise after updates
             async def _on_price_updated(platform: str, glm_usd):
                 await self.advertisement_service.trigger_update()
@@ -159,6 +176,7 @@ class ProviderService:
             self._pricing_task = asyncio.create_task(
                 self._pricing_updater.start(), name="pricing-updater"
             )
+            logger.info("Provider pricing updater started")
 
             # Start stream monitor if enabled
             from .config import settings as cfg
@@ -167,11 +185,12 @@ class ProviderService:
             if cfg.STREAM_MONITOR_ENABLED or cfg.STREAM_WITHDRAW_ENABLED:
                 self._stream_monitor = app.container.stream_monitor()
                 self._stream_monitor.start()
+                logger.info("Provider stream monitor started")
 
             await provider_ready_message(int(settings.PORT))
             logger.success("✨ Provider setup complete")
         except Exception as e:
-            logger.error(f"Startup failed: {e}")
+            logger.error(f"Startup failed: {e}", exc_info=True)
             await self.cleanup()
             raise
 
@@ -184,28 +203,35 @@ class ProviderService:
         try:
             if self.network_setup_service is not None:
                 await self.network_setup_service.cleanup()
-        except Exception:
-            pass
+                logger.info("Provider network setup service stopped")
+        except Exception as e:
+            logger.warning(f"Provider network setup cleanup failed: {e}", exc_info=True)
 
         # Stop advertising loop
         try:
             if self.monitoring_service is not None:
                 await self.monitoring_service.stop()
-        except Exception:
-            pass
+                logger.info("Provider monitoring service stopped")
+        except Exception as e:
+            logger.warning(f"Provider monitoring cleanup failed: {e}", exc_info=True)
 
         # Stop advertising loop
         try:
             await self.advertisement_service.stop()
-        except Exception:
-            pass
+            logger.info("Provider discovery publishing stopped")
+        except Exception as e:
+            logger.warning(f"Provider discovery cleanup failed: {e}", exc_info=True)
 
         # Optionally stop all running VMs based on configuration (default: keep running)
         try:
             if bool(getattr(settings, "STOP_VMS_ON_EXIT", False)):
                 try:
                     vms = await self.vm_service.list_vms()
-                except Exception:
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to list VMs during provider cleanup: {e}",
+                        exc_info=True,
+                    )
                     vms = []
                 for vm in vms:
                     try:
@@ -214,31 +240,38 @@ class ProviderService:
                         logger.warning(
                             f"Failed to stop VM {getattr(vm, 'id', '?')}: {e}"
                         )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Provider VM shutdown cleanup failed: {e}", exc_info=True)
 
         # Provider cleanup hook
         try:
             await self.vm_service.provider.cleanup()
-        except Exception:
-            pass
+            logger.info("Provider VM backend cleanup complete")
+        except Exception as e:
+            logger.warning(f"Provider VM backend cleanup failed: {e}", exc_info=True)
 
         # Stop pricing updater promptly (cancel background task and set stop flag)
         if self._pricing_updater:
             try:
                 self._pricing_updater.stop()
-            except Exception:
-                pass
+                logger.info("Provider pricing updater stop requested")
+            except Exception as e:
+                logger.warning(
+                    f"Provider pricing updater stop failed: {e}", exc_info=True
+                )
         if self._pricing_task:
             try:
                 self._pricing_task.cancel()
                 await self._pricing_task
             except asyncio.CancelledError:
                 pass
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(
+                    f"Provider pricing task cleanup failed: {e}", exc_info=True
+                )
         if self._stream_monitor:
             await self._stream_monitor.stop()
+            logger.info("Provider stream monitor stopped")
         logger.success("✨ Provider cleanup complete")
 
     def _setup_directories(self):

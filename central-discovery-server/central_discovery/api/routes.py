@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 from typing import List, Optional
 
@@ -15,6 +16,7 @@ from .models import (
 )
 
 router = APIRouter(prefix="/api/v1")
+logger = logging.getLogger(__name__)
 
 
 async def get_repository(
@@ -61,8 +63,27 @@ async def create_advertisement(
             endpoint_port=advertisement.endpoint_port,
             endpoint_url=advertisement.endpoint_url,
         )
+        resources = advertisement.resources
+        logger.info(
+            "Advertisement upserted",
+            extra={
+                "provider_id": provider_id,
+                "endpoint_host": advertisement.endpoint_host,
+                "endpoint_port": advertisement.endpoint_port,
+                "country": advertisement.country,
+                "platform": advertisement.platform,
+                "cpu": resources.get("cpu"),
+                "memory": resources.get("memory"),
+                "storage": resources.get("storage"),
+            },
+        )
         return db_advertisement
     except Exception as e:
+        logger.error(
+            "Failed to create advertisement",
+            extra={"provider_id": provider_id},
+            exc_info=True,
+        )
         raise HTTPException(
             status_code=400,
             detail={
@@ -89,6 +110,10 @@ async def list_advertisements(
     try:
         # Validate requirements if provided
         if any(v is not None and v < 1 for v in [cpu, memory, storage]):
+            logger.warning(
+                "Invalid advertisement resource filter",
+                extra={"cpu": cpu, "memory": memory, "storage": storage},
+            )
             raise HTTPException(
                 status_code=400,
                 detail={
@@ -104,10 +129,22 @@ async def list_advertisements(
             country=country,
             platform=platform,
         )
+        logger.debug(
+            "Advertisement list query completed",
+            extra={
+                "cpu": cpu,
+                "memory": memory,
+                "storage": storage,
+                "country": country,
+                "platform": platform,
+                "result_count": len(advertisements),
+            },
+        )
         return advertisements
     except HTTPException:
         raise
     except Exception as e:
+        logger.error("Failed to list advertisements", exc_info=True)
         raise HTTPException(
             status_code=400,
             detail={
@@ -148,6 +185,10 @@ async def delete_advertisement(
     """Delete an advertisement."""
     # Verify provider owns the advertisement
     if provider_id != current_provider:
+        logger.warning(
+            "Unauthorized advertisement delete attempt",
+            extra={"provider_id": provider_id, "current_provider": current_provider},
+        )
         raise HTTPException(
             status_code=401,
             detail={
@@ -163,4 +204,5 @@ async def delete_advertisement(
             detail={"code": "ADV_004", "message": "Advertisement not found"},
         )
 
+    logger.info("Advertisement deleted", extra={"provider_id": provider_id})
     return DeleteAdvertisementResponse(status="success")

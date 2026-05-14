@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
+from logging.handlers import RotatingFileHandler
 import os
 import platform
 import shutil
@@ -70,6 +72,11 @@ L2_CHAIN_ID_DEC = "560048"
 L2_CHAIN_ID_HEX = "0x88bb0"
 PAYMENTS_NETWORK = "hoodi"
 ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
+DEFAULT_LOG_MAX_BYTES = 10 * 1024 * 1024
+DEFAULT_LOG_BACKUPS = 5
+LOCAL_STACK_LOG_DIR_ENV = "LOCAL_STACK_LOG_DIR"
+LOCAL_STACK_LOG_MAX_BYTES_ENV = "LOCAL_STACK_LOG_MAX_BYTES"
+LOCAL_STACK_LOG_BACKUPS_ENV = "LOCAL_STACK_LOG_BACKUPS"
 
 
 class LocalStackError(RuntimeError):
@@ -87,8 +94,148 @@ class Service:
     process: subprocess.Popen[str] | None = None
 
 
+@dataclass(frozen=True)
+class LogConfig:
+    log_dir: Path
+    max_bytes: int = DEFAULT_LOG_MAX_BYTES
+    backups: int = DEFAULT_LOG_BACKUPS
+
+    def __post_init__(self) -> None:
+        if self.max_bytes < 0:
+            raise LocalStackError("Log max bytes must be non-negative")
+        if self.backups < 0:
+            raise LocalStackError("Log backups must be non-negative")
+
+
+class StackLogSink:
+    """Write stack output to aggregate and per-source rotating logs."""
+
+    def __init__(self, config: LogConfig) -> None:
+        self.config = config
+        self.config.log_dir.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.Lock()
+        self._handlers: dict[str, RotatingFileHandler] = {}
+        self._formatter = logging.Formatter("%(message)s")
+
+    def path_for(self, name: str) -> Path:
+        return self.config.log_dir / f"{name}.log"
+
+    def write(self, name: str, message: str) -> None:
+        text = message.rstrip("\n")
+        if not text:
+            return
+        with self._lock:
+            self._emit("local-stack", text)
+            if name != "local-stack":
+                self._emit(name, text)
+
+    def close(self) -> None:
+        with self._lock:
+            for handler in self._handlers.values():
+                handler.close()
+            self._handlers.clear()
+
+    def _emit(self, name: str, message: str) -> None:
+        record = logging.LogRecord(
+            name=f"local-stack.{name}",
+            level=logging.INFO,
+            pathname=__file__,
+            lineno=0,
+            msg=message,
+            args=(),
+            exc_info=None,
+        )
+        self._handler(name).handle(record)
+
+    def _handler(self, name: str) -> RotatingFileHandler:
+        handler = self._handlers.get(name)
+        if handler is not None:
+            return handler
+        handler = RotatingFileHandler(
+            self.path_for(name),
+            maxBytes=self.config.max_bytes,
+            backupCount=self.config.backups,
+            encoding="utf-8",
+        )
+        handler.setFormatter(self._formatter)
+        self._handlers[name] = handler
+        return handler
+
+
+_stack_log_config: LogConfig | None = None
+_stack_logs: StackLogSink | None = None
+
+
+def default_log_config() -> LogConfig:
+    return LogConfig(
+        log_dir=Path(os.environ.get(LOCAL_STACK_LOG_DIR_ENV, LOCAL_DIR / "logs")),
+        max_bytes=env_int(LOCAL_STACK_LOG_MAX_BYTES_ENV, DEFAULT_LOG_MAX_BYTES),
+        backups=env_int(LOCAL_STACK_LOG_BACKUPS_ENV, DEFAULT_LOG_BACKUPS),
+    )
+
+
+def env_int(name: str, default: int) -> int:
+    raw = os.environ.get(name)
+    if raw is None or raw == "":
+        return default
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise LocalStackError(f"{name} must be an integer") from exc
+    if value < 0:
+        raise LocalStackError(f"{name} must be non-negative")
+    return value
+
+
+def configure_stack_logging(config: LogConfig) -> StackLogSink:
+    global _stack_log_config, _stack_logs
+    if _stack_logs is not None:
+        _stack_logs.close()
+    _stack_log_config = config
+    _stack_logs = StackLogSink(config)
+    return _stack_logs
+
+
+def current_log_config() -> LogConfig:
+    return _stack_log_config or default_log_config()
+
+
 def log(message: str) -> None:
     print(message, flush=True)
+    if _stack_logs is not None:
+        _stack_logs.write("local-stack", message)
+
+
+def log_setup(message: str) -> None:
+    print(message, flush=True)
+    if _stack_logs is not None:
+        _stack_logs.write("setup", message)
+
+
+def log_service(service_name: str, message: str, *, echo: bool = True) -> None:
+    if echo:
+        print(message, flush=True)
+    if _stack_logs is not None:
+        _stack_logs.write(service_name, message)
+
+
+def stack_log_env() -> dict[str, str]:
+    config = current_log_config()
+    return {
+        "GOLEM_LOCAL_STACK_LOG_DIR": str(config.log_dir),
+        "GOLEM_LOCAL_STACK_LOG_MAX_BYTES": str(config.max_bytes),
+        "GOLEM_LOCAL_STACK_LOG_BACKUPS": str(config.backups),
+    }
+
+
+def service_log_env(prefix: str) -> dict[str, str]:
+    config = current_log_config()
+    return {
+        **stack_log_env(),
+        f"{prefix}_LOG_DIR": str(config.log_dir),
+        f"{prefix}_LOG_MAX_BYTES": str(config.max_bytes),
+        f"{prefix}_LOG_BACKUPS": str(config.backups),
+    }
 
 
 def merged_env(extra: dict[str, str]) -> dict[str, str]:
@@ -110,11 +257,26 @@ def command_exists(command: str) -> bool:
 
 
 def run_checked(command: list[str], cwd: Path = ROOT) -> None:
-    subprocess.run(command, cwd=str(cwd), check=True)
+    log_setup(f"[setup] running: {' '.join(command)}")
+    process = subprocess.Popen(
+        command,
+        cwd=str(cwd),
+        stdin=subprocess.DEVNULL,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        bufsize=1,
+    )
+    assert process.stdout is not None
+    for line in process.stdout:
+        log_service("setup", line.rstrip("\n"))
+    returncode = process.wait()
+    if returncode:
+        raise subprocess.CalledProcessError(returncode, command)
 
 
 def run_quiet(command: list[str], cwd: Path = ROOT) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
+    result = subprocess.run(
         command,
         cwd=str(cwd),
         text=True,
@@ -122,6 +284,13 @@ def run_quiet(command: list[str], cwd: Path = ROOT) -> subprocess.CompletedProce
         stderr=subprocess.STDOUT,
         check=False,
     )
+    if _stack_logs is not None:
+        _stack_logs.write("setup", f"[setup] checked: {' '.join(command)}")
+        output = result.stdout.strip()
+        if output:
+            for line in output.splitlines():
+                _stack_logs.write("setup", line)
+    return result
 
 
 def node_install_command(package_dir: str) -> list[str]:
@@ -146,11 +315,15 @@ def ensure_port_free(host: str, port: int) -> None:
 
 
 def preflight(start_provider_desktop: bool, start_requestor_desktop: bool) -> None:
+    log_setup("[setup] checking required commands")
     for command in ("poetry", "node", "npm", "multipass"):
+        log_setup(f"[setup] checking command: {command}")
         ensure_command(command)
     if start_provider_desktop or start_requestor_desktop:
+        log_setup("[setup] checking command: cargo")
         ensure_command("cargo")
 
+    log_setup("[setup] checking Multipass compatibility")
     multipass = run_quiet(["multipass", "version"])
     if multipass.returncode != 0:
         raise LocalStackError(
@@ -164,12 +337,20 @@ def preflight(start_provider_desktop: bool, start_requestor_desktop: bool) -> No
         (PORT_CHECKER_HOST, PORT_CHECKER_PORT),
         (REQUESTOR_HOST, REQUESTOR_PORT),
     ):
+        log_setup(f"[setup] checking port: {host}:{port}")
         ensure_port_free(host, port)
     if start_provider_desktop:
+        log_setup(
+            f"[setup] checking port: {PROVIDER_DESKTOP_HOST}:{PROVIDER_DESKTOP_PORT}"
+        )
         ensure_port_free(PROVIDER_DESKTOP_HOST, PROVIDER_DESKTOP_PORT)
     if start_requestor_desktop:
+        log_setup(
+            f"[setup] checking port: {REQUESTOR_DESKTOP_HOST}:{REQUESTOR_DESKTOP_PORT}"
+        )
         ensure_port_free(REQUESTOR_DESKTOP_HOST, REQUESTOR_DESKTOP_PORT)
     else:
+        log_setup(f"[setup] checking port: {WEB_HOST}:{WEB_PORT}")
         ensure_port_free(WEB_HOST, WEB_PORT)
 
 
@@ -316,7 +497,7 @@ def ensure_python_deps() -> None:
         "provider-server",
         "requestor-server",
     ):
-        log(f"[setup] poetry install: {service}")
+        log_setup(f"[setup] poetry install: {service}")
         run_checked(["poetry", "-C", service, "install", "--no-interaction"])
 
 
@@ -325,7 +506,7 @@ def ensure_node_deps(package_dir: str) -> None:
     if (path / "node_modules").exists() and node_deps_satisfied(package_dir):
         return
     command = node_install_command(package_dir)
-    log(f"[setup] {' '.join(command)}")
+    log_setup(f"[setup] {' '.join(command)}")
     run_checked(command)
 
 
@@ -340,7 +521,7 @@ def ensure_workspace_node_deps(workspace: str) -> None:
     command = (
         ["npm", "ci"] if (ROOT / "package-lock.json").exists() else ["npm", "install"]
     )
-    log(f"[setup] {' '.join(command)}")
+    log_setup(f"[setup] {' '.join(command)}")
     run_checked(command)
 
 
@@ -362,20 +543,11 @@ def rust_target_triple() -> str:
 
 
 def ensure_requestor_port_checker_sidecar() -> None:
-    suffix = ".exe" if os.name == "nt" else ""
-    target = rust_target_triple()
-    sidecar = (
-        ROOT
-        / "apps"
-        / "requestor-desktop"
-        / "src-tauri"
-        / "binaries"
-        / f"golem-port-checker-{target}{suffix}"
-    )
-    if sidecar.exists():
+    sidecar = requestor_port_checker_sidecar_path()
+    if not requestor_port_checker_sidecar_is_stale(sidecar):
         return
 
-    log("[setup] staging requestor desktop port-checker sidecar")
+    log_setup("[setup] staging requestor desktop port-checker sidecar")
     result = run_quiet(
         [
             "poetry",
@@ -394,6 +566,35 @@ def ensure_requestor_port_checker_sidecar() -> None:
             "  poetry -C port-checker-server run pip install pyinstaller\n"
             "Then retry make local.\n\n" + result.stdout.strip()
         )
+
+
+def requestor_port_checker_sidecar_path() -> Path:
+    suffix = ".exe" if os.name == "nt" else ""
+    target = rust_target_triple()
+    return (
+        ROOT
+        / "apps"
+        / "requestor-desktop"
+        / "src-tauri"
+        / "binaries"
+        / f"golem-port-checker-{target}{suffix}"
+    )
+
+
+def requestor_port_checker_sidecar_is_stale(sidecar: Path) -> bool:
+    if not sidecar.exists():
+        return True
+    source_paths = [
+        ROOT / "port-checker-server" / "run.py",
+        ROOT / "port-checker-server" / "pyproject.toml",
+        ROOT / "port-checker-server" / "poetry.lock",
+        ROOT / "scripts" / "build_port_checker_cli.py",
+    ]
+    source_paths.extend((ROOT / "port-checker-server" / "port_checker").rglob("*.py"))
+    sidecar_mtime = sidecar.stat().st_mtime
+    return any(
+        path.stat().st_mtime > sidecar_mtime for path in source_paths if path.exists()
+    )
 
 
 def provider_sidecar_path() -> Path:
@@ -430,7 +631,7 @@ def ensure_provider_sidecar() -> None:
     if not provider_sidecar_is_stale(sidecar):
         return
 
-    log("[setup] staging provider desktop sidecar")
+    log_setup("[setup] staging provider desktop sidecar")
     result = run_quiet(
         [
             "poetry",
@@ -492,11 +693,12 @@ def stream_output(service: Service) -> None:
     assert service.process is not None
     assert service.process.stdout is not None
     for line in service.process.stdout:
-        print(f"[{service.name}] {line}", end="", flush=True)
+        log_service(service.name, f"[{service.name}] {line.rstrip()}")
 
 
 def start_service(service: Service, timeout: int) -> None:
     log(f"[stack] starting {service.name}")
+    log_service(service.name, f"[stack] starting {service.name}", echo=False)
     popen_kwargs: dict[str, object] = {}
     if os.name == "nt":
         popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
@@ -516,26 +718,50 @@ def start_service(service: Service, timeout: int) -> None:
     )
     threading.Thread(target=stream_output, args=(service,), daemon=True).start()
     wait_ready(service, timeout)
+    log_service(service.name, f"[stack] {service.name} is ready", echo=False)
 
 
 def wait_ready(service: Service, timeout: int) -> None:
     if service.ready is None:
         time.sleep(1)
         if service.fatal and service.process and service.process.poll() is not None:
+            log_service(
+                service.name,
+                f"[stack] {service.name} exited early with code {service.process.returncode}",
+                echo=False,
+            )
             raise LocalStackError(
                 f"{service.name} exited early with code {service.process.returncode}"
             )
         return
 
     deadline = time.monotonic() + timeout
+    log_service(
+        service.name,
+        f"[stack] waiting up to {timeout}s for {service.name} readiness",
+        echo=False,
+    )
     while time.monotonic() < deadline:
         if service.fatal and service.process and service.process.poll() is not None:
+            log_service(
+                service.name,
+                f"[stack] {service.name} exited early with code {service.process.returncode}",
+                echo=False,
+            )
             raise LocalStackError(
                 f"{service.name} exited early with code {service.process.returncode}"
             )
         if service.ready():
+            log_service(
+                service.name, f"[stack] {service.name} readiness passed", echo=False
+            )
             return
         time.sleep(0.5)
+    log_service(
+        service.name,
+        f"[stack] {service.name} did not become ready within {timeout}s",
+        echo=False,
+    )
     raise LocalStackError(f"{service.name} did not become ready within {timeout}s")
 
 
@@ -545,6 +771,7 @@ def stop_services(services: list[Service]) -> None:
         if process is None or process.poll() is not None:
             continue
         log(f"[stack] stopping {service.name}")
+        log_service(service.name, f"[stack] stopping {service.name}", echo=False)
         terminate_process_tree(process)
 
     deadline = time.monotonic() + 10
@@ -557,6 +784,7 @@ def stop_services(services: list[Service]) -> None:
             process.wait(timeout=remaining)
         except subprocess.TimeoutExpired:
             log(f"[stack] killing {service.name}")
+            log_service(service.name, f"[stack] killing {service.name}", echo=False)
             kill_process_tree(process)
             process.wait(timeout=5)
 
@@ -606,6 +834,7 @@ def build_services(
     provider_dir = dirs["provider"]
     requestor_dir = dirs["requestor"]
     provider_env = {
+        **service_log_env("GOLEM_PROVIDER"),
         "GOLEM_PROVIDER_SKIP_BOOTSTRAP": "1",
         "GOLEM_ENVIRONMENT": "development",
         "GOLEM_PROVIDER_NETWORK": "development",
@@ -647,6 +876,7 @@ def build_services(
                 "golem-central-discovery",
             ],
             env={
+                **service_log_env("GOLEM_CENTRAL_DISCOVERY"),
                 "GOLEM_CENTRAL_DISCOVERY_HOST": CENTRAL_HOST,
                 "GOLEM_CENTRAL_DISCOVERY_PORT": str(CENTRAL_PORT),
                 "GOLEM_CENTRAL_DISCOVERY_DATABASE_DIR": str(dirs["central"]),
@@ -680,6 +910,7 @@ def build_services(
                 Service(
                     name="central-advertisement",
                     command=[sys.executable, "-c", "import time; time.sleep(3600)"],
+                    env=stack_log_env(),
                     ready=central_has_provider,
                 ),
             ]
@@ -703,6 +934,7 @@ def build_services(
                 "--reload",
             ],
             env={
+                **service_log_env("GOLEM_REQUESTOR"),
                 "GOLEM_ENVIRONMENT": "development",
                 "GOLEM_REQUESTOR_NETWORK": "development",
                 "GOLEM_REQUESTOR_DISCOVERY_BACKEND": "central",
@@ -724,6 +956,7 @@ def build_services(
     )
 
     requestor_ui_env = {
+        **stack_log_env(),
         "GOLEM_ENVIRONMENT": "development",
         "NEXT_PUBLIC_GOLEM_ENVIRONMENT": "development",
         "NEXT_PUBLIC_DISCOVERY_MODE": "central",
@@ -769,6 +1002,7 @@ def build_services(
                         "port-checker",
                     ],
                     env={
+                        **service_log_env("PORT_CHECKER"),
                         "GOLEM_ENVIRONMENT": "development",
                         "PORT_CHECKER_HOST": PORT_CHECKER_HOST,
                         "PORT_CHECKER_PORT": str(PORT_CHECKER_PORT),
@@ -832,6 +1066,13 @@ def build_services(
 def run_stack(args: argparse.Namespace) -> int:
     running: list[Service] = []
     checkpoint: Service | None = None
+    log_config = LogConfig(
+        log_dir=Path(args.log_dir),
+        max_bytes=args.log_max_bytes,
+        backups=args.log_backups,
+    )
+    configure_stack_logging(log_config)
+    log_setup(f"[stack] logs: {log_config.log_dir}")
 
     try:
         start_provider_desktop = not args.no_provider_desktop
@@ -858,6 +1099,11 @@ def run_stack(args: argparse.Namespace) -> int:
             if service.name == "central-advertisement":
                 checkpoint = service
                 log("[stack] waiting for provider advertisement in central discovery")
+                log_service(
+                    service.name,
+                    "[stack] waiting for provider advertisement in central discovery",
+                    echo=False,
+                )
                 wait_ready(service, args.timeout)
                 continue
             running.append(service)
@@ -883,6 +1129,7 @@ def run_stack(args: argparse.Namespace) -> int:
         log(f"  Payments network:   {PAYMENTS_NETWORK} ({L2_CHAIN_ID_HEX})")
         log(f"  Payments RPC:       {deployment.get('rpc_url', L2_RPC_URL)}")
         log(f"  StreamPayment:      {deployment['stream_payment_address']}")
+        log(f"  Logs:               {log_config.log_dir}")
         log("")
         log("Press Ctrl+C to stop the stack.")
 
@@ -903,17 +1150,22 @@ def run_stack(args: argparse.Namespace) -> int:
         return 0
     except LocalStackError as exc:
         log(f"[stack] error: {exc}")
+        log(f"[stack] logs: {log_config.log_dir}")
         return 1
     except subprocess.CalledProcessError as exc:
         log(f"[stack] command failed with code {exc.returncode}: {' '.join(exc.cmd)}")
+        log(f"[stack] logs: {log_config.log_dir}")
         return 1
     finally:
         if checkpoint and checkpoint.process is not None:
             running.append(checkpoint)
         stop_services(running)
+        if _stack_logs is not None:
+            _stack_logs.close()
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
+    default_logs = default_log_config()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--no-open", action="store_true", help="Do not open the web UI")
     parser.add_argument(
@@ -941,6 +1193,23 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--requestor-web",
         action="store_true",
         help="Start the legacy Next.js requestor web dev server instead of requestor desktop",
+    )
+    parser.add_argument(
+        "--log-dir",
+        default=str(default_logs.log_dir),
+        help="Directory for rotating local stack logs",
+    )
+    parser.add_argument(
+        "--log-max-bytes",
+        type=int,
+        default=default_logs.max_bytes,
+        help="Maximum bytes per log file before rotation",
+    )
+    parser.add_argument(
+        "--log-backups",
+        type=int,
+        default=default_logs.backups,
+        help="Number of rotated log files to retain",
     )
     return parser.parse_args(argv)
 

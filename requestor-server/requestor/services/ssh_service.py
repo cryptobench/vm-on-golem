@@ -1,10 +1,13 @@
 """SSH connection service."""
+import logging
 import subprocess
 from pathlib import Path
 from typing import Dict, List, Optional
 
 from ..errors import SSHError
 from ..ssh.manager import SSHKeyManager
+
+logger = logging.getLogger(__name__)
 
 
 class SSHService:
@@ -16,15 +19,21 @@ class SSHService:
     async def get_key_pair(self):
         """Get or create SSH key pair."""
         try:
-            return await self.ssh_manager.get_key_pair()
+            key_pair = await self.ssh_manager.get_key_pair()
+            logger.info("Requestor SSH key pair ready")
+            return key_pair
         except Exception as e:
+            logger.error("Failed to get requestor SSH key pair", exc_info=True)
             raise SSHError(f"Failed to get SSH key pair: {str(e)}")
 
     def get_key_pair_sync(self):
         """Get or create SSH key pair synchronously."""
         try:
-            return self.ssh_manager.get_key_pair_sync()
+            key_pair = self.ssh_manager.get_key_pair_sync()
+            logger.info("Requestor SSH key pair ready")
+            return key_pair
         except Exception as e:
+            logger.error("Failed to get requestor SSH key pair", exc_info=True)
             raise SSHError(f"Failed to get SSH key pair: {str(e)}")
 
     def connect_to_vm(
@@ -44,8 +53,14 @@ class SSHService:
                 "UserKnownHostsFile=/dev/null",
                 f"{username}@{host}",
             ]
+            logger.info("Opening SSH connection", extra={"host": host, "port": port})
             subprocess.run(cmd, check=True)
         except Exception as e:
+            logger.error(
+                "Failed to establish SSH connection",
+                extra={"host": host, "port": port},
+                exc_info=True,
+            )
             raise SSHError(f"Failed to establish SSH connection: {str(e)}")
 
     def format_ssh_command(
@@ -87,11 +102,24 @@ class SSHService:
                 f"{username}@{host}",
                 "top -b -n 1; df -h /",
             ]
+            logger.debug(
+                "Fetching VM stats over SSH", extra={"host": host, "port": port}
+            )
             result = subprocess.run(cmd, capture_output=True, text=True, check=True)
             return self._parse_stats(result.stdout)
         except subprocess.CalledProcessError as e:
+            logger.error(
+                "Failed to fetch VM stats over SSH",
+                extra={"host": host, "port": port},
+                exc_info=True,
+            )
             raise SSHError(f"Failed to get VM stats: {e.stderr}")
         except Exception as e:
+            logger.error(
+                "Unexpected SSH stats error",
+                extra={"host": host, "port": port},
+                exc_info=True,
+            )
             raise SSHError(f"An unexpected error occurred: {str(e)}")
 
     def _parse_stats(self, stats_output: str) -> Dict:

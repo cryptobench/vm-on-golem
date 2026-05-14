@@ -1,3 +1,5 @@
+import logging
+
 from requestor.config import RequestorConfig
 from requestor.errors import NotFoundError
 
@@ -7,6 +9,8 @@ from .backends import (
     normalize_discovery_backend,
 )
 from .domain import ProviderEstimate, ProviderSearchQuery
+
+logger = logging.getLogger(__name__)
 
 
 class ProviderDiscoveryService:
@@ -27,6 +31,7 @@ class ProviderDiscoveryService:
         central_session = getattr(self.central_client, "session", None)
         if central_session is not None and not central_session.closed:
             await central_session.close()
+        logger.debug("Provider discovery clients closed")
 
     async def find_providers(
         self, query: ProviderSearchQuery, backend: str | None = None
@@ -34,9 +39,16 @@ class ProviderDiscoveryService:
         selected = normalize_discovery_backend(
             backend or self.settings.discovery_backend
         )
+        logger.info("Finding providers", extra={"backend": selected})
         if selected == "arkiv":
-            return await self.arkiv_client.find_providers(query)
-        return await self.central_client.find_providers(query)
+            providers = await self.arkiv_client.find_providers(query)
+        else:
+            providers = await self.central_client.find_providers(query)
+        logger.info(
+            "Provider discovery completed",
+            extra={"backend": selected, "result_count": len(providers)},
+        )
+        return providers
 
     async def require_provider(
         self, provider_id: str, query: ProviderSearchQuery | None = None
@@ -45,6 +57,9 @@ class ProviderDiscoveryService:
         for provider in providers:
             if provider.get("provider_id") == provider_id:
                 return provider
+        logger.warning(
+            "Requested provider not found", extra={"provider_id": provider_id}
+        )
         raise NotFoundError(f"Provider {provider_id} not found")
 
     async def has_resources(

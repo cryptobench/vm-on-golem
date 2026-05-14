@@ -1,8 +1,12 @@
+import logging
+import time
 from typing import Dict, Optional
 
 import aiohttp
 
 from requestor.errors import ProviderError
+
+logger = logging.getLogger(__name__)
 
 
 class ProviderClient:
@@ -11,7 +15,42 @@ class ProviderClient:
         self.session = None
 
     async def __aenter__(self):
-        self.session = aiohttp.ClientSession()
+        trace_config = aiohttp.TraceConfig()
+
+        async def on_request_start(session, trace_config_ctx, params):
+            trace_config_ctx.started_at = time.perf_counter()
+
+        async def on_request_end(session, trace_config_ctx, params):
+            elapsed = time.perf_counter() - trace_config_ctx.started_at
+            log = logger.warning if params.response.status >= 400 else logger.debug
+            log(
+                "Provider HTTP request completed",
+                extra={
+                    "method": params.method,
+                    "url": str(params.url),
+                    "status_code": params.response.status,
+                    "elapsed_seconds": round(elapsed, 3),
+                },
+            )
+
+        async def on_request_exception(session, trace_config_ctx, params):
+            elapsed = time.perf_counter() - getattr(
+                trace_config_ctx, "started_at", time.perf_counter()
+            )
+            logger.warning(
+                "Provider HTTP request failed",
+                extra={
+                    "method": params.method,
+                    "url": str(params.url),
+                    "elapsed_seconds": round(elapsed, 3),
+                    "error": str(params.exception),
+                },
+            )
+
+        trace_config.on_request_start.append(on_request_start)
+        trace_config.on_request_end.append(on_request_end)
+        trace_config.on_request_exception.append(on_request_exception)
+        self.session = aiohttp.ClientSession(trace_configs=[trace_config])
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):

@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -21,8 +22,11 @@ from .payments.errors import (
 from .vm.models import VMNotFoundError
 from .vm.multipass_adapter import MultipassError
 
+logger = logging.getLogger(__name__)
+
 
 def create_app() -> FastAPI:
+    logger.info("Creating provider API app")
     app = FastAPI(
         title="VM on Golem Provider",
         openapi_url="/api/v1/openapi.json",
@@ -125,6 +129,11 @@ def _register_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(Exception)
     async def generic_exception_handler(request: Request, exc: Exception):
+        logger.error(
+            "Unhandled provider API exception",
+            extra={"path": request.url.path},
+            exc_info=True,
+        )
         return JSONResponse(
             status_code=500,
             content={"detail": "An unexpected error occurred"},
@@ -146,14 +155,19 @@ def _register_lifecycle(app: FastAPI, container: Container) -> None:
     async def startup_event():
         from .config import settings
 
+        logger.info("Provider API startup beginning")
         container.config.from_dict(settings.model_dump())
+        logger.info("Provider settings loaded into container")
         provider_service = container.provider_service()
         await provider_service.setup(app)
+        logger.info("Provider API startup complete")
 
     @app.on_event("shutdown")
     async def shutdown_event():
+        logger.info("Provider API shutdown beginning")
         provider_service = container.provider_service()
         await provider_service.cleanup()
+        logger.info("Provider API shutdown complete")
 
 
 app = create_app()

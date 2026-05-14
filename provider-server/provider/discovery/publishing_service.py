@@ -1,7 +1,10 @@
 import asyncio
+import logging
 from typing import Optional
 
 from .publishers import DiscoveryPublisher
+
+logger = logging.getLogger(__name__)
 
 
 class DiscoveryPublishingService:
@@ -13,8 +16,10 @@ class DiscoveryPublishingService:
 
     async def start(self):
         """Initialize and start the publisher."""
+        logger.info("Starting discovery publisher")
         await self.publisher.initialize()
         self._task = asyncio.create_task(self.publisher.start_loop())
+        logger.info("Discovery publisher loop started")
 
     async def stop(self):
         """Stop the publisher."""
@@ -25,7 +30,9 @@ class DiscoveryPublishingService:
             except asyncio.CancelledError:
                 pass
         await self.publisher.stop()
+        logger.info("Discovery publisher stopped")
 
     async def trigger_update(self):
         """Trigger an immediate advertisement update."""
+        logger.debug("Triggering discovery advertisement update")
         await self.publisher.post_advertisement()

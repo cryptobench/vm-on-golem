@@ -190,11 +190,19 @@ class StreamMonitor:
                             >= int(self._get("STREAM_WITHDRAW_INTERVAL_SECONDS", 1800))
                         ):
                             try:
-                                self.client.withdraw(stream_id)
+                                tx_hash = self.client.withdraw(stream_id)
                                 last_withdraw = now
+                                logger.info(
+                                    "Provider stream withdrawal submitted",
+                                    extra={
+                                        "stream_id": stream_id,
+                                        "vm_id": vm_id,
+                                        "transaction_hash": tx_hash,
+                                    },
+                                )
                             except Exception as e:
                                 logger.warning(f"withdraw failed for {stream_id}: {e}")
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error(f"stream monitor error: {e}")
+                logger.error(f"stream monitor error: {e}", exc_info=True)

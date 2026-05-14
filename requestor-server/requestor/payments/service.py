@@ -1,3 +1,5 @@
+import logging
+
 from requestor.config import RequestorConfig
 from requestor.errors import ExternalServiceError
 from requestor.provider_client.factory import ProviderClientFactory
@@ -5,6 +7,8 @@ from requestor.vm.repo import VMRepository
 
 from .blockchain_service import StreamPaymentClient, StreamPaymentConfig
 from .domain import CreateStreamCommand, StreamActionResult, VMStreamStatus
+
+logger = logging.getLogger(__name__)
 
 
 class RequestorPaymentService:
@@ -38,9 +42,11 @@ class RequestorPaymentService:
                 command.rate_per_second_wei,
             )
         except Exception as exc:
+            logger.error("Requestor payment stream creation failed", exc_info=True)
             raise ExternalServiceError(
                 f"failed to create payment stream: {exc}"
             ) from exc
+        logger.info("Requestor payment stream created", extra={"stream_id": stream_id})
         return StreamActionResult(stream_id=stream_id, status="created")
 
     async def top_up_stream(
@@ -49,9 +55,18 @@ class RequestorPaymentService:
         try:
             tx_hash = self._client().top_up(stream_id, amount_wei)
         except Exception as exc:
+            logger.error(
+                "Requestor payment stream top-up failed",
+                extra={"stream_id": stream_id},
+                exc_info=True,
+            )
             raise ExternalServiceError(
                 f"failed to top up stream {stream_id}: {exc}"
             ) from exc
+        logger.info(
+            "Requestor payment stream top-up submitted",
+            extra={"stream_id": stream_id, "transaction_hash": tx_hash},
+        )
         return StreamActionResult(
             stream_id=stream_id,
             transaction_hash=tx_hash,
@@ -62,9 +77,18 @@ class RequestorPaymentService:
         try:
             tx_hash = self._client().terminate(stream_id)
         except Exception as exc:
+            logger.error(
+                "Requestor payment stream termination failed",
+                extra={"stream_id": stream_id},
+                exc_info=True,
+            )
             raise ExternalServiceError(
                 f"failed to terminate stream {stream_id}: {exc}"
             ) from exc
+        logger.info(
+            "Requestor payment stream termination submitted",
+            extra={"stream_id": stream_id, "transaction_hash": tx_hash},
+        )
         return StreamActionResult(
             stream_id=stream_id,
             transaction_hash=tx_hash,

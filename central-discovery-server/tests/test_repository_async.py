@@ -8,7 +8,7 @@ import pytest
 async def test_repository_filters_and_cleanup():
     os.environ["GOLEM_DISCOVERY_DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
 
-    from sqlalchemy import select, update
+    from sqlalchemy import delete, select, update
 
     from discovery.db.models import Advertisement
     from discovery.db.repository import AdvertisementRepository
@@ -17,6 +17,8 @@ async def test_repository_filters_and_cleanup():
     await init_db()
 
     async with AsyncSessionLocal() as session:
+        await session.execute(delete(Advertisement))
+        await session.commit()
         repo = AdvertisementRepository(session)
 
         # Insert two providers

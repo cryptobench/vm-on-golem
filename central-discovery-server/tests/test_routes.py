@@ -1,3 +1,4 @@
+import logging
 import os
 
 import pytest
@@ -43,7 +44,8 @@ def test_list_invalid_requirements_returns_400(app_client: TestClient):
     assert r.json()["detail"]["code"] == "ADV_002"
 
 
-def test_create_list_get_delete_flow_and_filters(app_client: TestClient):
+def test_create_list_get_delete_flow_and_filters(app_client: TestClient, caplog):
+    caplog.set_level(logging.DEBUG)
     # Create two advertisements
     a1 = {
         "ip_address": "1.1.1.1",
@@ -58,6 +60,7 @@ def test_create_list_get_delete_flow_and_filters(app_client: TestClient):
     r1 = app_client.post("/api/v1/advertisements", json=a1, headers=_headers("provA"))
     r2 = app_client.post("/api/v1/advertisements", json=a2, headers=_headers("provB"))
     assert r1.status_code == 200 and r2.status_code == 200
+    assert "Advertisement upserted" in caplog.text
 
     # List with filters - by CPU
     r = app_client.get("/api/v1/advertisements?cpu=3")
@@ -89,6 +92,7 @@ def test_create_list_get_delete_flow_and_filters(app_client: TestClient):
     r = app_client.delete("/api/v1/advertisements/provA", headers=_headers("other"))
     assert r.status_code == 401
     assert r.json()["detail"]["code"] == "AUTH_004"
+    assert "Unauthorized advertisement delete attempt" in caplog.text
 
     # Delete not found
     r = app_client.delete("/api/v1/advertisements/nope", headers=_headers("nope"))
@@ -99,6 +103,7 @@ def test_create_list_get_delete_flow_and_filters(app_client: TestClient):
     r = app_client.delete("/api/v1/advertisements/provA", headers=_headers("provA"))
     assert r.status_code == 200
     assert r.json()["status"] == "success"
+    assert "Advertisement deleted" in caplog.text
 
     # Confirm deleted
     r = app_client.get("/api/v1/advertisements/provA")

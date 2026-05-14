@@ -1,3 +1,4 @@
+import logging
 from collections.abc import Callable
 from typing import Any
 
@@ -10,6 +11,7 @@ from .errors import (
 )
 
 ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
+logger = logging.getLogger(__name__)
 
 
 class StreamStatusService:
@@ -41,13 +43,20 @@ class StreamStatusService:
 
     async def require_valid_stream(self, stream_id: int | None) -> None:
         if stream_id is None:
+            logger.warning("Payment stream validation failed: stream_id missing")
             raise InvalidStreamError("stream_id required when payments are enabled")
 
+        logger.info("Validating payment stream", extra={"stream_id": stream_id})
         reader = self._reader()
         expected_recipient = str(self._setting("PROVIDER_ID", "") or "")
         ok, reason = reader.verify_stream(int(stream_id), expected_recipient)
         if not ok:
+            logger.warning(
+                "Payment stream validation failed",
+                extra={"stream_id": stream_id, "reason": reason},
+            )
             raise InvalidStreamError(f"invalid stream: {reason}")
+        logger.info("Payment stream validated", extra={"stream_id": stream_id})
 
     async def is_payment_required(self) -> bool:
         address = str(self._setting("STREAM_PAYMENT_ADDRESS", "") or "")
@@ -56,9 +65,14 @@ class StreamStatusService:
     async def set_vm_stream(self, vm_id: str, stream_id: int | None) -> None:
         if stream_id is not None:
             await self.stream_map.set(vm_id, int(stream_id))
+            logger.info(
+                "VM stream mapping set",
+                extra={"vm_id": vm_id, "stream_id": int(stream_id)},
+            )
 
     async def remove_vm_stream(self, vm_id: str) -> None:
         await self.stream_map.remove(vm_id)
+        logger.info("VM stream mapping removed", extra={"vm_id": vm_id})
 
     async def get_vm_stream_status(self, vm_id: str) -> StreamStatus:
         reader = self._reader()
@@ -83,6 +97,11 @@ class StreamStatusService:
             )
             now = int(reader.web3.eth.get_block("latest")["timestamp"])
         except Exception as exc:
+            logger.error(
+                "Payment stream lookup failed",
+                extra={"vm_id": vm_id, "stream_id": stream_id},
+                exc_info=True,
+            )
             raise StreamLookupError(f"stream lookup failed: {exc}") from exc
 
         vested = max(

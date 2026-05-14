@@ -47,12 +47,20 @@ def _expected_annotations(resources, ip):
     else:
         platform_str = raw or ""
 
+    endpoint_port = int(getattr(settings, "PUBLIC_HTTPS_PORT", 443))
+    endpoint_url = (
+        f"https://{ip}" if endpoint_port == 443 else f"https://{ip}:{endpoint_port}"
+    )
     string_annotations = [
         _Ann("golem_type", "provider"),
         _Ann("golem_network", settings.NETWORK),
         _Ann("golem_payments_network", settings.PAYMENTS_NETWORK),
         _Ann("golem_provider_id", settings.PROVIDER_ID),
         _Ann("golem_ip_address", ip),
+        _Ann("golem_endpoint_protocol", "https"),
+        _Ann("golem_endpoint_host", ip),
+        _Ann("golem_endpoint_port", str(endpoint_port)),
+        _Ann("golem_endpoint_url", endpoint_url),
         _Ann("golem_country", settings.PROVIDER_COUNTRY),
         _Ann("golem_provider_name", settings.PROVIDER_NAME),
         _Ann("golem_platform", platform_str),

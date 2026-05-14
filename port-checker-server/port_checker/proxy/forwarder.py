@@ -1,4 +1,6 @@
 import asyncio
+import logging
+import time
 
 import aiohttp
 from fastapi import WebSocket
@@ -8,6 +10,8 @@ from port_checker.errors import BadGatewayError, GatewayTimeoutError
 
 from .domain import ProxyResponse
 from .policy import response_headers
+
+logger = logging.getLogger(__name__)
 
 
 class HTTPForwarder:
@@ -28,6 +32,7 @@ class HTTPForwarder:
         )
         async with aiohttp.ClientSession(timeout=timeout) as session:
             try:
+                started_at = time.perf_counter()
                 async with session.request(
                     method=method,
                     url=url,
@@ -37,14 +42,33 @@ class HTTPForwarder:
                 ) as resp:
                     headers_out = response_headers(dict(resp.headers))
                     headers_out["X-Proxy"] = "golem-port-checker"
+                    content = await resp.read()
+                    elapsed = time.perf_counter() - started_at
+                    log = logger.warning if resp.status >= 400 else logger.debug
+                    log(
+                        "Forwarded HTTP proxy request",
+                        extra={
+                            "method": method,
+                            "url": url,
+                            "status_code": resp.status,
+                            "elapsed_seconds": round(elapsed, 3),
+                        },
+                    )
                     return ProxyResponse(
-                        content=await resp.read(),
+                        content=content,
                         status_code=resp.status,
                         headers=headers_out,
                     )
             except asyncio.TimeoutError as exc:
+                logger.error(
+                    "HTTP proxy upstream timeout", extra={"method": method, "url": url}
+                )
                 raise GatewayTimeoutError("Upstream timeout") from exc
             except aiohttp.ClientError as exc:
+                logger.error(
+                    "HTTP proxy upstream client error",
+                    extra={"method": method, "url": url, "error": str(exc)},
+                )
                 raise BadGatewayError(f"Upstream error: {exc}") from exc
 
 
@@ -68,6 +92,7 @@ class WebSocketForwarder:
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.ws_connect(url, headers=headers) as upstream:
                     await websocket.accept()
+                    logger.info("WebSocket proxy opened", extra={"url": url})
                     client_task = asyncio.create_task(
                         self._client_to_upstream(websocket, upstream)
                     )
@@ -83,9 +108,15 @@ class WebSocketForwarder:
                     await asyncio.gather(*pending, return_exceptions=True)
                     for task in done:
                         task.result()
+                    logger.info("WebSocket proxy closed", extra={"url": url})
         except aiohttp.ClientError as exc:
+            logger.warning(
+                "WebSocket proxy upstream error",
+                extra={"url": url, "error": str(exc)},
+            )
             await websocket.close(code=1011, reason=f"Upstream error: {exc}")
         except asyncio.TimeoutError:
+            logger.warning("WebSocket proxy upstream timeout", extra={"url": url})
             await websocket.close(code=1011, reason="Upstream timeout")
 
     async def _client_to_upstream(
@@ -94,6 +125,7 @@ class WebSocketForwarder:
         while True:
             message = await websocket.receive()
             if message["type"] == "websocket.disconnect":
+                logger.debug("WebSocket client disconnected")
                 await upstream.close()
                 return
             if "text" in message and message["text"] is not None:
@@ -114,5 +146,9 @@ class WebSocketForwarder:
                 aiohttp.WSMsgType.CLOSED,
                 aiohttp.WSMsgType.ERROR,
             }:
+                logger.debug(
+                    "WebSocket upstream closed",
+                    extra={"message_type": str(message.type)},
+                )
                 break
         await websocket.close()

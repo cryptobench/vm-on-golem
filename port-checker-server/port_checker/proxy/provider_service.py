@@ -1,3 +1,5 @@
+import logging
+
 from port_checker.config import Settings
 from port_checker.errors import (
     ForbiddenError,
@@ -20,6 +22,8 @@ from .policy import (
     normalize_proxy_source,
     parse_allowed_ports,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class ProviderProxyService:
@@ -58,6 +62,17 @@ class ProviderProxyService:
             body=command.body,
         )
         response.headers["X-Proxy-Provider-Id"] = command.provider_id
+        logger.info(
+            "Proxied provider request",
+            extra={
+                "provider_id": command.provider_id,
+                "source": normalize_proxy_source(command.source),
+                "port": command.port,
+                "method": command.method,
+                "path": command.path,
+                "status_code": response.status_code,
+            },
+        )
         return response
 
     async def build_target(
@@ -77,9 +92,17 @@ class ProviderProxyService:
     ) -> tuple[str, dict[str, str]]:
         self._validate_common(token, b"")
         if not is_allowed_port(port, self.allowed_port_ranges):
+            logger.warning(
+                "Rejected provider proxy request for disallowed port",
+                extra={"provider_id": provider_id, "port": port},
+            )
             raise ForbiddenError("Target port not allowed")
 
         source = normalize_proxy_source(source)
+        logger.debug(
+            "Resolving provider proxy target",
+            extra={"provider_id": provider_id, "source": source, "port": port},
+        )
         if source == "central":
             ip = await self.central_resolver.resolve_ip(provider_id)
         else:
@@ -92,6 +115,10 @@ class ProviderProxyService:
         if not ip or (
             not is_public_ip(ip) and not self.settings.effective_allow_local_ips
         ):
+            logger.warning(
+                "Rejected provider proxy request with invalid resolved IP",
+                extra={"provider_id": provider_id, "source": source},
+            )
             raise ValidationError("Resolved IP invalid or not public")
 
         query = forwarded_query(
@@ -104,12 +131,30 @@ class ProviderProxyService:
             PROVIDER_CONTROL_HEADERS,
             client_host,
         )
+        logger.debug(
+            "Built provider proxy target",
+            extra={
+                "provider_id": provider_id,
+                "source": source,
+                "target_url": url,
+                "header_names": sorted(headers.keys()),
+            },
+        )
         return url, headers
 
     def _validate_common(self, token: str | None, body: bytes) -> None:
         if not self.settings.proxy_enabled:
+            logger.warning("Rejected provider proxy request because proxy is disabled")
             raise ProxyDisabledError("Proxy is disabled")
         if not self.settings.proxy_token or token != self.settings.proxy_token:
+            logger.warning("Rejected provider proxy request with invalid token")
             raise ForbiddenError("Forbidden")
         if len(body) > self.settings.proxy_max_body_bytes:
+            logger.warning(
+                "Rejected provider proxy request with oversized body",
+                extra={
+                    "body_bytes": len(body),
+                    "max_body_bytes": self.settings.proxy_max_body_bytes,
+                },
+            )
             raise PayloadTooLargeError("Request body too large")

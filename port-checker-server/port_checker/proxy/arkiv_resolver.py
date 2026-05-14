@@ -1,4 +1,5 @@
 import importlib
+import logging
 
 from port_checker.config import Settings
 from port_checker.errors import (
@@ -9,6 +10,7 @@ from port_checker.errors import (
 )
 
 _ARKIV_SDK_MODULE = "golem" + "_base_sdk"
+logger = logging.getLogger(__name__)
 
 
 def _patch_web3_provider_symbol() -> None:
@@ -61,10 +63,15 @@ class ArkivResolver:
         rpc = (rpc_url or self.settings.arkiv_rpc_url).strip()
         ws = (ws_url or self.settings.arkiv_ws_url).strip()
         if not rpc or not ws:
+            logger.error("Arkiv resolver missing RPC/WS configuration")
             raise ConfigurationError("Arkiv RPC/WS URLs not configured")
 
         client = None
         try:
+            logger.debug(
+                "Resolving provider through Arkiv",
+                extra={"provider_id": provider_id},
+            )
             client = await _create_arkiv_client(rpc, ws)
             entity = await self._find_entity(client, provider_id)
             metadata = await client.get_entity_metadata(
@@ -76,11 +83,33 @@ class ArkivResolver:
             }
             ip = self._pick_annotation(annotations, "golem_ip_address")
             if not ip:
+                logger.warning(
+                    "Provider advertisement missing Arkiv IP annotation",
+                    extra={"provider_id": provider_id},
+                )
                 raise NotFoundError("Provider IP not found on Arkiv")
+            logger.debug(
+                "Resolved provider through Arkiv",
+                extra={"provider_id": provider_id},
+            )
             return ip
-        except (ConfigurationError, DependencyUnavailableError, NotFoundError):
+        except (ConfigurationError, DependencyUnavailableError) as exc:
+            logger.error(
+                "Arkiv resolver configuration/dependency failure",
+                extra={"provider_id": provider_id, "error": str(exc)},
+            )
+            raise
+        except NotFoundError:
+            logger.warning(
+                "Provider not found on Arkiv",
+                extra={"provider_id": provider_id},
+            )
             raise
         except Exception as exc:
+            logger.error(
+                "Arkiv resolver failed",
+                extra={"provider_id": provider_id, "error": str(exc)},
+            )
             raise BadGatewayError(f"Arkiv error: {exc}") from exc
         finally:
             if client is not None:
@@ -95,6 +124,10 @@ class ArkivResolver:
                 f'dev_golem_provider_id="{provider_id}" && golem_network="{network}"',
             )
         for query in queries:
+            logger.debug(
+                "Querying Arkiv provider advertisements",
+                extra={"provider_id": provider_id, "query": query},
+            )
             results = await client.query_entities(query)
             if results:
                 return results[0]
