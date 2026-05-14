@@ -266,8 +266,11 @@ def _is_running(pid: int) -> bool:
 
 def _spawn_detached(argv: list[str], env: dict | None = None) -> int:
     import subprocess
+    import sys
 
     resolved_env = dict(env or os.environ.copy())
+    if getattr(sys, "frozen", False):
+        resolved_env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
     resolved_env.setdefault("GOLEM_PROVIDER_LOG_DIR", _provider_log_dir(resolved_env))
     resolved_env.setdefault("GOLEM_PROVIDER_LOG_MAX_BYTES", str(10 * 1024 * 1024))
     resolved_env.setdefault("GOLEM_PROVIDER_LOG_BACKUPS", "5")

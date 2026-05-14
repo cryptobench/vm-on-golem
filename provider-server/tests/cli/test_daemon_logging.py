@@ -1,4 +1,5 @@
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -74,3 +75,25 @@ def test_spawn_detached_redirects_stdio_to_rotating_log_file(monkeypatch, tmp_pa
     assert captured["stdout"] is not subprocess.DEVNULL
     assert Path(captured["stdout"].name) == tmp_path / "provider-daemon-stdio.log"
     assert captured["env"]["GOLEM_PROVIDER_LOG_DIR"] == str(tmp_path)
+
+
+def test_spawn_detached_resets_pyinstaller_environment(monkeypatch, tmp_path):
+    captured = {}
+
+    class FakeProcess:
+        pid = 12345
+
+    def fake_popen(argv, **kwargs):
+        captured.update(kwargs)
+        return FakeProcess()
+
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(provider_main._platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+
+    provider_main._spawn_detached(
+        ["golem-provider", "start"],
+        {"GOLEM_PROVIDER_LOG_DIR": str(tmp_path)},
+    )
+
+    assert captured["env"]["PYINSTALLER_RESET_ENVIRONMENT"] == "1"

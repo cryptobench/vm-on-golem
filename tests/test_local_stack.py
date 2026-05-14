@@ -158,3 +158,47 @@ def test_local_stack_binds_provider_for_guest_metrics():
 
     assert provider.env["GOLEM_PROVIDER_HOST"] == "0.0.0.0"
     assert provider.env["GOLEM_PROVIDER_PUBLIC_IP"] == "auto"
+
+
+def test_local_stack_syncs_existing_provider_tauri_sidecars(monkeypatch, tmp_path):
+    local_stack = load_local_stack_module()
+    monkeypatch.setattr(local_stack, "ROOT", tmp_path)
+    monkeypatch.setattr(local_stack.os, "name", "posix")
+
+    sidecar = (
+        tmp_path
+        / "apps"
+        / "provider-desktop"
+        / "src-tauri"
+        / "binaries"
+        / "golem-provider-aarch64-apple-darwin"
+    )
+    debug_sidecar = (
+        tmp_path
+        / "apps"
+        / "provider-desktop"
+        / "src-tauri"
+        / "target"
+        / "debug"
+        / "golem-provider"
+    )
+    release_sidecar = (
+        tmp_path
+        / "apps"
+        / "provider-desktop"
+        / "src-tauri"
+        / "target"
+        / "release"
+        / "golem-provider"
+    )
+    sidecar.parent.mkdir(parents=True)
+    debug_sidecar.parent.mkdir(parents=True)
+    release_sidecar.parent.mkdir(parents=True)
+    sidecar.write_text("fixed")
+    debug_sidecar.write_text("old")
+    release_sidecar.write_text("old")
+
+    local_stack.sync_existing_provider_tauri_sidecars(sidecar)
+
+    assert debug_sidecar.read_text() == "fixed"
+    assert release_sidecar.read_text() == "fixed"

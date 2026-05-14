@@ -11,6 +11,8 @@ Usage:
 """
 
 import argparse
+import importlib.machinery
+import importlib.util
 import os
 import platform
 import shutil
@@ -26,6 +28,16 @@ HIDDEN_IMPORTS = [
     "dependency_injector.providers",
     "dependency_injector.wiring",
     "miniupnpc",
+]
+COLLECT_ALL_MODULES = [
+    # eth-account loads PyCryptodome native modules dynamically. Without the
+    # collected package, the daemon child can crash before opening the API.
+    "Crypto",
+]
+EXTENSION_BINARY_MODULES = [
+    # PyInstaller's collect-all does not pick up PyCryptodome's _*.abi3.so
+    # files as binaries on macOS/Linux because they do not match lib*.so.
+    "Crypto",
 ]
 
 
@@ -62,6 +74,29 @@ def ensure_pyinstaller():
         raise SystemExit("PyInstaller not found. Install with: pip install pyinstaller")
 
 
+def collect_extension_binaries(package: str) -> list[tuple[Path, str]]:
+    spec = importlib.util.find_spec(package)
+    if spec is None or spec.submodule_search_locations is None:
+        raise SystemExit(f"Package not found: {package}")
+
+    suffixes = tuple(importlib.machinery.EXTENSION_SUFFIXES)
+    binaries: list[tuple[Path, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for package_dir_raw in spec.submodule_search_locations:
+        package_dir = Path(package_dir_raw)
+        package_root = package_dir.parent
+        for path in sorted(package_dir.rglob("*")):
+            if not path.is_file() or not path.name.endswith(suffixes):
+                continue
+            dest = str(path.parent.relative_to(package_root))
+            key = (str(path), dest)
+            if key in seen:
+                continue
+            seen.add(key)
+            binaries.append((path, dest))
+    return binaries
+
+
 def build(onefile: bool) -> Path:
     ensure_pyinstaller()
     name = "golem-provider"
@@ -73,6 +108,11 @@ def build(onefile: bool) -> Path:
     ]
     for module in HIDDEN_IMPORTS:
         args.extend(["--hidden-import", module])
+    for module in COLLECT_ALL_MODULES:
+        args.extend(["--collect-all", module])
+    for module in EXTENSION_BINARY_MODULES:
+        for source, dest in collect_extension_binaries(module):
+            args.extend(["--add-binary", f"{source}{os.pathsep}{dest}"])
     if onefile:
         args.append("-F")
     # Reduce console popups on Windows
