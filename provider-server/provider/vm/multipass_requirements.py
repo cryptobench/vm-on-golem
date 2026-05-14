@@ -88,7 +88,10 @@ def check_multipass_requirements(
     blocked_versions: set[str] | None = None,
     run_command: RunCommand = run_subprocess,
     run_daemon_check: bool = True,
+    progress: Callable[[str], None] | None = None,
 ) -> MultipassRequirementResult:
+    if progress:
+        progress("locating Multipass binary")
     path = detect_multipass_binary(explicit_path)
     blocked_versions = blocked_versions or set()
     if not path:
@@ -117,6 +120,8 @@ def check_multipass_requirements(
             error=f"Configured Multipass binary does not exist: {path}",
         )
 
+    if progress:
+        progress("reading Multipass version")
     version_result = _run_checked(run_command, [path, "version"], timeout=5)
     version = _parse_version(version_result.stdout or version_result.stderr)
     if version_result.returncode != 0 or not version:
@@ -134,11 +139,17 @@ def check_multipass_requirements(
             ).strip(),
         )
 
+    if progress:
+        progress("reading Multipass driver")
     driver = _read_driver(path, run_command)
+    if progress and run_daemon_check:
+        progress("checking Multipass daemon response")
     daemon_running = (
         _daemon_is_running(path, run_command) if run_daemon_check else False
     )
 
+    if progress:
+        progress("validating Multipass version compatibility")
     incompatible_reason = _version_incompatibility(
         version=version,
         min_version=min_version,
@@ -158,6 +169,8 @@ def check_multipass_requirements(
             error=incompatible_reason,
         )
 
+    if progress:
+        progress("validating host virtualization compatibility")
     try:
         check_host_virtualization_compatibility(path, run_command=run_command)
     except MultipassCompatibilityError as exc:
@@ -186,6 +199,8 @@ def check_multipass_requirements(
             error="Multipass daemon is not responding",
         )
 
+    if progress:
+        progress("host requirements ready")
     return MultipassRequirementResult(
         installed=True,
         path=path,

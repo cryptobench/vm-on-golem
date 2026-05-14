@@ -276,6 +276,13 @@ GOLEM_PROVIDER_PORT_CHECK_SERVERS=[
 GOLEM_PROVIDER_PORT_RANGE_START={start_port}  # Default: 50800
 GOLEM_PROVIDER_PORT_RANGE_END={end_port}      # Default: 50900
 GOLEM_PROVIDER_PUBLIC_IP="auto"
+GOLEM_PROVIDER_ACME_HTTP_PUBLIC_PORT=80
+GOLEM_PROVIDER_ACME_HTTP_INTERNAL_PORT=80
+GOLEM_PROVIDER_PUBLIC_HTTPS_PORT=443
+GOLEM_PROVIDER_PUBLIC_HTTPS_INTERNAL_PORT=443
+
+# If your router forwards public 80/443 to different local ports, set the
+# matching internal ports above and forward to those exact local ports.
 
 # Central discovery (default)
 # GOLEM_PROVIDER_DISCOVERY_URL="http://discovery.golem.network:9001"

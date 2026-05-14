@@ -135,6 +135,13 @@ class CentralDiscoveryPublisher(DiscoveryPublisher):
                     platform_str = "x86_64"
                 else:
                     platform_str = raw
+            endpoint_host = ip_address
+            endpoint_port = int(getattr(settings, "PUBLIC_HTTPS_PORT", 443))
+            endpoint_url = (
+                f"https://{endpoint_host}"
+                if endpoint_port == 443
+                else f"https://{endpoint_host}:{endpoint_port}"
+            )
             async with self.session.post(
                 f"{self.discovery_url}/api/v1/advertisements",
                 headers={
@@ -146,6 +153,10 @@ class CentralDiscoveryPublisher(DiscoveryPublisher):
                     "ip_address": ip_address,
                     "country": settings.PROVIDER_COUNTRY,
                     "platform": platform_str,
+                    "endpoint_protocol": "https",
+                    "endpoint_host": endpoint_host,
+                    "endpoint_port": endpoint_port,
+                    "endpoint_url": endpoint_url,
                     "resources": resources,
                     "pricing": {
                         "usd_per_core_month": settings.PRICE_USD_PER_CORE_MONTH,

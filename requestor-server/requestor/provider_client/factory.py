@@ -8,3 +8,8 @@ class ProviderClientFactory:
 
     def for_provider_ip(self, provider_ip: str) -> ProviderClient:
         return ProviderClient(self.settings.get_provider_url(provider_ip))
+
+    def for_provider_endpoint(
+        self, provider_ip: str, endpoint_url: str | None = None
+    ) -> ProviderClient:
+        return ProviderClient(self.settings.get_provider_url(provider_ip, endpoint_url))

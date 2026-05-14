@@ -539,7 +539,7 @@ class RequestorConfig(BaseSettings):
             self._profile_defaults(self.payments_network).get("faucet_enabled", False)
         )
 
-    def get_provider_url(self, ip_address: str) -> str:
+    def get_provider_url(self, ip_address: str, endpoint_url: str | None = None) -> str:
         """Get provider API URL.
 
         Args:
@@ -548,6 +548,8 @@ class RequestorConfig(BaseSettings):
         Returns:
             The complete provider URL with protocol and port.
         """
+        if endpoint_url and self.environment != "development":
+            return endpoint_url.rstrip("/")
         if self.environment == "development":
             # In dev mode, we might still want to use the real IP
             pass

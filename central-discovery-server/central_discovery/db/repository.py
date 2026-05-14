@@ -20,6 +20,10 @@ class AdvertisementRepository:
         resources: Dict[str, Any],
         pricing: Optional[Dict[str, Any]] = None,
         platform: Optional[str] = None,
+        endpoint_protocol: Optional[str] = None,
+        endpoint_host: Optional[str] = None,
+        endpoint_port: Optional[int] = None,
+        endpoint_url: Optional[str] = None,
     ) -> Advertisement:
         """Create or update a provider advertisement."""
         stmt = insert(Advertisement).values(
@@ -27,6 +31,10 @@ class AdvertisementRepository:
             ip_address=ip_address,
             country=country,
             platform=platform,
+            endpoint_protocol=endpoint_protocol,
+            endpoint_host=endpoint_host,
+            endpoint_port=endpoint_port,
+            endpoint_url=endpoint_url,
             resources=resources,
             pricing=pricing,
             updated_at=datetime.utcnow(),
@@ -39,6 +47,10 @@ class AdvertisementRepository:
                 "ip_address": stmt.excluded.ip_address,
                 "country": stmt.excluded.country,
                 "platform": stmt.excluded.platform,
+                "endpoint_protocol": stmt.excluded.endpoint_protocol,
+                "endpoint_host": stmt.excluded.endpoint_host,
+                "endpoint_port": stmt.excluded.endpoint_port,
+                "endpoint_url": stmt.excluded.endpoint_url,
                 "resources": stmt.excluded.resources,
                 "pricing": stmt.excluded.pricing,
                 "updated_at": stmt.excluded.updated_at,

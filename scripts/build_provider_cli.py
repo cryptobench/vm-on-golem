@@ -20,6 +20,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 ENTRY = ROOT / "provider-server" / "cli_runner.py"
 TAURI_BINARIES = ROOT / "apps" / "provider-desktop" / "src-tauri" / "binaries"
+HIDDEN_IMPORTS = [
+    "dependency_injector.containers",
+    "dependency_injector.errors",
+    "dependency_injector.providers",
+    "dependency_injector.wiring",
+    "miniupnpc",
+]
 
 
 def detect_target_triple() -> str:
@@ -52,9 +59,7 @@ def ensure_pyinstaller():
     try:
         import PyInstaller  # noqa: F401
     except Exception:
-        raise SystemExit(
-            "PyInstaller not found. Install with: pip install pyinstaller"
-        )
+        raise SystemExit("PyInstaller not found. Install with: pip install pyinstaller")
 
 
 def build(onefile: bool) -> Path:
@@ -66,6 +71,8 @@ def build(onefile: bool) -> Path:
         name,
         "--clean",
     ]
+    for module in HIDDEN_IMPORTS:
+        args.extend(["--hidden-import", module])
     if onefile:
         args.append("-F")
     # Reduce console popups on Windows
@@ -78,7 +85,9 @@ def build(onefile: bool) -> Path:
     if onefile:
         # in onefile, artifact is dist/golem-provider(.exe)
         dist_dir = ROOT / "dist"
-    exe = dist_dir / (name + (".exe" if platform.system().lower().startswith("windows") else ""))
+    exe = dist_dir / (
+        name + (".exe" if platform.system().lower().startswith("windows") else "")
+    )
     if not exe.exists():
         raise SystemExit(f"Build artifact not found: {exe}")
     return exe

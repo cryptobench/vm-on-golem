@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 use std::net::{SocketAddr, TcpStream};
-use std::time::Duration;
+use std::time::{Duration, Instant};
+use tauri::Emitter;
+use tauri_plugin_shell::process::CommandEvent;
 use tauri_plugin_shell::ShellExt;
 
 const PROVIDER_HOST: &str = "127.0.0.1";
@@ -31,6 +34,128 @@ fn provider_api_base_url_value() -> String {
     format!("http://{PROVIDER_HOST}:{PROVIDER_PORT}/api/v1")
 }
 
+fn emit_setup_status(app: &tauri::AppHandle, status: Value) {
+    let _ = app.emit("provider://setup-status", status);
+}
+
+fn set_stage(status: &mut Value, name: &str, state: &str, detail: &str) {
+    if let Some(stages) = status.get_mut("stages").and_then(Value::as_array_mut) {
+        for stage in stages {
+            if stage.get("name").and_then(Value::as_str) == Some(name) {
+                stage["state"] = json!(state);
+                stage["detail"] = json!(detail);
+            }
+        }
+    }
+}
+
+fn parse_setup_status(stdout: &str) -> Option<Value> {
+    let trimmed = stdout.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if let Ok(value) = serde_json::from_str::<Value>(trimmed) {
+        return Some(value);
+    }
+    for (index, ch) in trimmed.char_indices() {
+        if ch == '{' {
+            let mut deserializer = serde_json::Deserializer::from_str(&trimmed[index..]);
+            if let Ok(value) = Value::deserialize(&mut deserializer) {
+                return Some(value);
+            }
+        }
+    }
+    None
+}
+
+fn merge_output(stdout: &str, stderr: &str) -> String {
+    match (stdout.trim().is_empty(), stderr.trim().is_empty()) {
+        (true, true) => String::new(),
+        (true, false) => stderr.trim().to_string(),
+        (false, true) => stdout.trim().to_string(),
+        (false, false) => format!("{}\n{}", stdout.trim(), stderr.trim()),
+    }
+}
+
+fn json_stream_unsupported(output: &str) -> bool {
+    output.contains("No such option: --json-stream")
+}
+
+async fn run_secure_setup_once(app: tauri::AppHandle) -> Result<Value, String> {
+    let setup =
+        run_provider_sidecar_output(app.clone(), &["secure-setup", "check", "--json"]).await?;
+    let stdout = String::from_utf8_lossy(&setup.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&setup.stderr).trim().to_string();
+    let output = merge_output(&stdout, &stderr);
+
+    if let Some(status) = parse_setup_status(&stdout).or_else(|| parse_setup_status(&output)) {
+        emit_setup_status(&app, status.clone());
+        if setup.status.success() {
+            return Ok(status);
+        }
+        return Err(serde_json::to_string(&status).unwrap_or(output));
+    }
+
+    if setup.status.success() {
+        return Err("Secure setup produced no status output".to_string());
+    }
+    Err(if output.is_empty() {
+        "Secure setup failed".to_string()
+    } else {
+        output
+    })
+}
+
+fn mark_provider_start_running(status: &mut Value) {
+    if let Some(stages) = status.get_mut("stages").and_then(Value::as_array_mut) {
+        for stage in stages {
+            if stage.get("name").and_then(Value::as_str) == Some("provider_start") {
+                stage["state"] = json!("running");
+                stage["detail"] = json!("starting");
+            }
+        }
+    }
+    status["message"] = json!("Starting provider service.");
+}
+
+fn setup_status_starting() -> Value {
+    json!({
+        "message": "Setting up SSL before the provider starts.",
+        "api_http_public_port": 80,
+        "api_https_public_port": 443,
+        "vm_port_range_start": 50800,
+        "vm_port_range_end": 50900,
+        "stages": [
+            {"name": "host_requirements", "state": "running", "label": "Checking host requirements", "detail": "starting Multipass checks"},
+            {"name": "public_ip", "state": "pending", "label": "Public IP detected", "detail": ""},
+            {"name": "network_access", "state": "pending", "label": "Ports 80 and 443 available", "detail": ""},
+            {"name": "certificate", "state": "pending", "label": "Checking certificate", "detail": ""},
+            {"name": "https_verification", "state": "pending", "label": "Secure endpoint verified", "detail": ""},
+            {"name": "vm_port_range", "state": "pending", "label": "VM ports 50800-50900 reachable", "detail": ""},
+            {"name": "provider_start", "state": "pending", "label": "Provider start", "detail": ""}
+        ]
+    })
+}
+
+fn setup_status_started() -> Value {
+    json!({
+        "message": "Provider service started.",
+        "api_http_public_port": 80,
+        "api_https_public_port": 443,
+        "vm_port_range_start": 50800,
+        "vm_port_range_end": 50900,
+        "stages": [
+            {"name": "host_requirements", "state": "success", "label": "Checking host requirements", "detail": "ready"},
+            {"name": "public_ip", "state": "success", "label": "Public IP detected", "detail": "ready"},
+            {"name": "network_access", "state": "success", "label": "Ports 80 and 443 available", "detail": "ready"},
+            {"name": "certificate", "state": "success", "label": "Checking certificate", "detail": "ready"},
+            {"name": "https_verification", "state": "success", "label": "Secure endpoint verified", "detail": "ready"},
+            {"name": "vm_port_range", "state": "success", "label": "VM ports 50800-50900 reachable", "detail": "ready"},
+            {"name": "provider_start", "state": "success", "label": "Provider start", "detail": "started"}
+        ]
+    })
+}
+
 fn provider_is_listening() -> bool {
     let addr = SocketAddr::from(([127, 0, 0, 1], PROVIDER_PORT));
     TcpStream::connect_timeout(&addr, Duration::from_millis(300)).is_ok()
@@ -52,8 +177,7 @@ async fn run_provider_sidecar_output(
     app: tauri::AppHandle,
     args: &[&str],
 ) -> Result<tauri_plugin_shell::process::Output, String> {
-    app
-        .shell()
+    app.shell()
         .sidecar("golem-provider")
         .map_err(|err| err.to_string())?
         .args(args)
@@ -62,15 +186,209 @@ async fn run_provider_sidecar_output(
         .map_err(|err| err.to_string())
 }
 
+async fn run_secure_setup_stream(app: tauri::AppHandle) -> Result<Value, String> {
+    let (mut rx, _child) = app
+        .shell()
+        .sidecar("golem-provider")
+        .map_err(|err| err.to_string())?
+        .args(["secure-setup", "check", "--json-stream"])
+        .spawn()
+        .map_err(|err| err.to_string())?;
+
+    let mut last_status: Option<Value> = None;
+    let mut stdout = String::new();
+    let mut stderr = String::new();
+    while let Some(event) = rx.recv().await {
+        match event {
+            CommandEvent::Stdout(line) => {
+                let text = String::from_utf8_lossy(&line).trim().to_string();
+                if text.is_empty() {
+                    continue;
+                }
+                if let Some(mut status) = parse_setup_status(&text) {
+                    ensure_host_requirements_success(&mut status);
+                    emit_setup_status(&app, status.clone());
+                    last_status = Some(status);
+                } else {
+                    if !stdout.is_empty() {
+                        stdout.push('\n');
+                    }
+                    stdout.push_str(&text);
+                }
+            }
+            CommandEvent::Stderr(line) => {
+                let text = String::from_utf8_lossy(&line).trim().to_string();
+                if !text.is_empty() {
+                    eprintln!("[provider-sidecar] {}", text);
+                    if !stderr.is_empty() {
+                        stderr.push('\n');
+                    }
+                    stderr.push_str(&text);
+                }
+            }
+            CommandEvent::Error(err) => return Err(err),
+            CommandEvent::Terminated(payload) => {
+                if payload.code == Some(0) {
+                    return last_status
+                        .ok_or_else(|| "Secure setup produced no status updates".to_string());
+                }
+                let output = merge_output(&stdout, &stderr);
+                if last_status.is_none() && json_stream_unsupported(&output) {
+                    return run_secure_setup_once(app.clone()).await;
+                }
+                return Err(last_status
+                    .as_ref()
+                    .and_then(|status| serde_json::to_string(status).ok())
+                    .unwrap_or_else(|| {
+                        if output.is_empty() {
+                            "Secure setup failed".to_string()
+                        } else {
+                            output
+                        }
+                    }));
+            }
+            _ => {}
+        }
+    }
+
+    Err("Secure setup ended before reporting completion".to_string())
+}
+
+async fn provider_requirements_stream(
+    app: tauri::AppHandle,
+    status: &mut Value,
+) -> Result<ProviderRequirements, String> {
+    let (mut rx, _child) = app
+        .shell()
+        .sidecar("golem-provider")
+        .map_err(|err| err.to_string())?
+        .args(["requirements", "check", "--json-stream"])
+        .spawn()
+        .map_err(|err| err.to_string())?;
+
+    let mut result: Option<ProviderRequirements> = None;
+    let mut stdout = String::new();
+    let mut stderr = String::new();
+    while let Some(event) = rx.recv().await {
+        match event {
+            CommandEvent::Stdout(line) => {
+                let text = String::from_utf8_lossy(&line).trim().to_string();
+                if text.is_empty() {
+                    continue;
+                }
+                match serde_json::from_str::<Value>(&text) {
+                    Ok(value) if value.get("type").and_then(Value::as_str) == Some("progress") => {
+                        if let Some(detail) = value.get("detail").and_then(Value::as_str) {
+                            eprintln!("[provider-sidecar] - {}", detail);
+                            set_stage(status, "host_requirements", "running", detail);
+                            emit_setup_status(&app, status.clone());
+                        }
+                    }
+                    Ok(value) if value.get("type").and_then(Value::as_str) == Some("result") => {
+                        if let Some(raw_result) = value.get("result") {
+                            result = Some(
+                                serde_json::from_value(raw_result.clone())
+                                    .map_err(|err| err.to_string())?,
+                            );
+                        }
+                    }
+                    _ => {
+                        if !stdout.is_empty() {
+                            stdout.push('\n');
+                        }
+                        stdout.push_str(&text);
+                    }
+                }
+            }
+            CommandEvent::Stderr(line) => {
+                let text = String::from_utf8_lossy(&line).trim().to_string();
+                if !text.is_empty() {
+                    eprintln!("[provider-sidecar] {}", text);
+                    if !stderr.is_empty() {
+                        stderr.push('\n');
+                    }
+                    stderr.push_str(&text);
+                }
+            }
+            CommandEvent::Error(err) => return Err(err),
+            CommandEvent::Terminated(payload) => {
+                if let Some(requirements) = result {
+                    if requirements.compatible {
+                        set_stage(status, "host_requirements", "success", "ready");
+                    } else {
+                        set_stage(
+                            status,
+                            "host_requirements",
+                            "failed",
+                            requirements.error.as_deref().unwrap_or("blocked"),
+                        );
+                    }
+                    emit_setup_status(&app, status.clone());
+                    return Ok(requirements);
+                }
+                let output = merge_output(&stdout, &stderr);
+                if payload.code == Some(0) {
+                    return Err("Provider requirements check produced no output".to_string());
+                }
+                return Err(if output.is_empty() {
+                    "Provider requirements check failed".to_string()
+                } else {
+                    output
+                });
+            }
+            _ => {}
+        }
+    }
+
+    Err("Provider requirements check ended before reporting completion".to_string())
+}
+
 #[tauri::command]
 async fn start_provider(app: tauri::AppHandle) -> Result<(), String> {
-    let requirements = provider_requirements(app.clone()).await?;
+    let mut status = setup_status_starting();
+    emit_setup_status(&app, status.clone());
+    eprintln!("[provider-sidecar] Checking provider host requirements");
+    let requirements_started_at = Instant::now();
+    let requirements = provider_requirements_stream(app.clone(), &mut status).await?;
+    eprintln!(
+        "[provider-sidecar] Provider host requirements finished in {:.2}s",
+        requirements_started_at.elapsed().as_secs_f64()
+    );
     if !requirements.compatible {
-        return Err(requirements.error.unwrap_or_else(|| {
-            "Multipass is not installed or is not responding".to_string()
-        }));
+        return Err(requirements
+            .error
+            .unwrap_or_else(|| "Multipass is not installed or is not responding".to_string()));
     }
-    run_provider_sidecar(app, &["start", "--daemon", "--no-verify-port"]).await
+    eprintln!("[provider-sidecar] Starting secure endpoint setup");
+    set_stage(&mut status, "public_ip", "running", "checking");
+    emit_setup_status(&app, status);
+    let mut status = run_secure_setup_stream(app.clone()).await?;
+    ensure_host_requirements_success(&mut status);
+    eprintln!("[provider-sidecar] Secure endpoint setup finished");
+    mark_provider_start_running(&mut status);
+    emit_setup_status(&app, status);
+    eprintln!("[provider-sidecar] Starting provider daemon");
+    run_provider_sidecar(app.clone(), &["start", "--daemon"]).await?;
+    emit_setup_status(&app, setup_status_started());
+    Ok(())
+}
+
+fn ensure_host_requirements_success(status: &mut Value) {
+    let Some(stages) = status.get_mut("stages").and_then(Value::as_array_mut) else {
+        return;
+    };
+    if let Some(stage) = stages
+        .iter_mut()
+        .find(|stage| stage.get("name").and_then(Value::as_str) == Some("host_requirements"))
+    {
+        stage["state"] = json!("success");
+        stage["detail"] = json!("ready");
+        return;
+    }
+    stages.insert(
+        0,
+        json!({"name": "host_requirements", "state": "success", "label": "Checking host requirements", "detail": "ready"}),
+    );
 }
 
 #[tauri::command]
@@ -93,8 +411,7 @@ fn provider_api_base_url() -> String {
 
 #[tauri::command]
 async fn provider_requirements(app: tauri::AppHandle) -> Result<ProviderRequirements, String> {
-    let output =
-        run_provider_sidecar_output(app, &["requirements", "check", "--json"]).await?;
+    let output = run_provider_sidecar_output(app, &["requirements", "check", "--json"]).await?;
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
     if !stdout.is_empty() {
         return serde_json::from_str(&stdout).map_err(|err| err.to_string());

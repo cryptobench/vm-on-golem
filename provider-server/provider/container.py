@@ -3,6 +3,7 @@ from pathlib import Path
 
 from dependency_injector import containers, providers
 
+from .config import settings as provider_settings
 from .discovery.arkiv_publisher import ArkivDiscoveryPublisher
 from .discovery.composite_publisher import CompositeDiscoveryPublisher
 from .discovery.publishers import CentralDiscoveryPublisher
@@ -12,6 +13,7 @@ from .jobs.store import JobStore
 from .live.service import VMLiveService
 from .monitoring.repo import MonitoringRepository
 from .monitoring.services import MonitoringService
+from .network_setup.service import NetworkSetupService
 from .payments.blockchain_service import StreamPaymentClient
 from .payments.blockchain_service import StreamPaymentConfig as _SPC
 from .payments.blockchain_service import StreamPaymentReader
@@ -155,12 +157,18 @@ class Container(containers.DeclarativeContainer):
         settings=config,
     )
 
+    network_setup_service = providers.Singleton(
+        NetworkSetupService,
+        settings=provider_settings,
+    )
+
     provider_service = providers.Singleton(
         ProviderService,
         vm_service=vm_service,
         advertisement_service=advertisement_service,
         port_manager=port_manager,
         monitoring_service=monitoring_service,
+        network_setup_service=network_setup_service,
     )
 
     # Async job store for VM creations

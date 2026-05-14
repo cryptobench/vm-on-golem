@@ -19,11 +19,13 @@ class ProviderService:
         advertisement_service: DiscoveryPublishingService,
         port_manager,
         monitoring_service=None,
+        network_setup_service=None,
     ):
         self.vm_service = vm_service
         self.advertisement_service = advertisement_service
         self.port_manager = port_manager
         self.monitoring_service = monitoring_service
+        self.network_setup_service = network_setup_service
         self._pricing_updater: PricingAutoUpdater | None = None
         self._pricing_task: asyncio.Task | None = None
         self._stream_monitor = None
@@ -32,19 +34,24 @@ class ProviderService:
         """Setup and initialize the provider components."""
         from .config import settings
         from .security.faucet import FaucetClient
-        from .utils.ascii_art import startup_animation
+        from .utils.ascii_art import provider_ready_message, startup_animation
 
         try:
-            # Display startup animation
-            await startup_animation()
-
             logger.process("🔄 Initializing provider...")
 
             # Setup directories
             self._setup_directories()
 
+            if self.network_setup_service is not None:
+                await self.network_setup_service.setup()
+
+            # Display service startup animation only after strict network setup passes.
+            await startup_animation()
+
             # Initialize services
-            await self.port_manager.initialize()
+            port_ok = await self.port_manager.initialize()
+            if port_ok is False:
+                raise RuntimeError("No externally reachable VM access ports")
             await self.vm_service.provider.initialize()
 
             # Before starting advertisement, sync allocated resources with existing VMs
@@ -161,6 +168,7 @@ class ProviderService:
                 self._stream_monitor = app.container.stream_monitor()
                 self._stream_monitor.start()
 
+            await provider_ready_message(int(settings.PORT))
             logger.success("✨ Provider setup complete")
         except Exception as e:
             logger.error(f"Startup failed: {e}")
@@ -171,6 +179,13 @@ class ProviderService:
         """Cleanup provider components."""
         logger.process("🔄 Cleaning up provider...")
         from .config import settings
+
+        # Stop advertising loop
+        try:
+            if self.network_setup_service is not None:
+                await self.network_setup_service.cleanup()
+        except Exception:
+            pass
 
         # Stop advertising loop
         try:

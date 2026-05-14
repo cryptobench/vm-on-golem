@@ -60,14 +60,16 @@ async def startup_animation():
                 f"[bold green]✓[/bold green] {component} [dim]complete[/dim]"
             )
 
-        # Final ready message
-        live.console.print(
-            "\n[bold green]✨ VM on Golem Provider is ready![/bold green]"
-        )
-        live.console.print(
-            "[bold cyan]🌐 Listening for incoming requests on port 7466[/bold cyan]"
-        )
-        live.console.print("[dim]Press Ctrl+C to stop the server[/dim]")
+        live.console.print("\n[bold cyan]Provider services are starting...[/bold cyan]")
+
+
+async def provider_ready_message(port: int):
+    """Display the final provider ready message."""
+    console.print("\n[bold green]✨ VM on Golem Provider is ready![/bold green]")
+    console.print(
+        f"[bold cyan]🌐 Listening for incoming requests on port {port}[/bold cyan]"
+    )
+    console.print("[dim]Press Ctrl+C to stop the server[/dim]")
 
 
 async def vm_creation_animation(vm_name: str):

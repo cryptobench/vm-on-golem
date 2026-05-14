@@ -31,3 +31,18 @@ class PortCheckResponse(BaseModel):
 
 class HealthResponse(BaseModel):
     status: str
+
+
+class TlsCheckRequest(BaseModel):
+    host: str = Field(..., description="Provider host or IP to check")
+    port: int = Field(..., ge=1, le=65535, description="TLS port to check")
+    expected_ip: str | None = Field(
+        None, description="IP address expected in the certificate SAN"
+    )
+
+
+class TlsCheckResponse(BaseModel):
+    valid: bool
+    error: str | None = None
+    peer: str
+    not_after: str | None = None

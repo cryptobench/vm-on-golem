@@ -4,8 +4,14 @@ import socket
 import sys as _sys
 from typing import Optional
 
-# If the invocation includes --json, mute logs as early as possible
-if "--json" in _sys.argv:
+# If the invocation includes machine-readable output, mute logs as early as possible.
+# Local desktop startup can opt back into stderr diagnostics while keeping stdout JSON-only.
+_show_json_logs = os.getenv("GOLEM_PROVIDER_SHOW_JSON_LOGS", "").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+if ("--json" in _sys.argv or "--json-stream" in _sys.argv) and not _show_json_logs:
     os.environ["GOLEM_SILENCE_LOGS"] = "1"
 
 from .app import app
@@ -85,6 +91,8 @@ config_app = typer.Typer(help="Configure stream monitoring and withdrawals")
 cli.add_typer(config_app, name="config")
 requirements_app = typer.Typer(help="Check host requirements")
 cli.add_typer(requirements_app, name="requirements")
+secure_setup_app = typer.Typer(help="Prepare the public secure provider endpoint")
+cli.add_typer(secure_setup_app, name="secure-setup")
 
 
 @cli.callback()
@@ -116,12 +124,13 @@ def _get_latest_version_from_pypi(pkg_name: str) -> Optional[str]:
         return None
 
 
-def _multipass_requirement_result():
+def _multipass_requirement_result(progress=None):
     from .config import settings as _settings
     from .vm.multipass_requirements import check_multipass_requirements
 
     return check_multipass_requirements(
-        explicit_path=_settings.MULTIPASS_BINARY_PATH or None
+        explicit_path=_settings.MULTIPASS_BINARY_PATH or None,
+        progress=progress,
     )
 
 
@@ -225,10 +234,43 @@ def _self_command(base_args: list[str]) -> list[str]:
 
 @requirements_app.command("check")
 def requirements_check(
-    json_out: bool = typer.Option(False, "--json", help="Output machine-readable JSON")
+    json_out: bool = typer.Option(False, "--json", help="Output machine-readable JSON"),
+    json_stream: bool = typer.Option(
+        False,
+        "--json-stream",
+        help="Output line-delimited JSON progress events",
+    ),
 ):
     """Check whether host dependencies needed by the provider are available."""
-    result = _multipass_requirement_result()
+    import json as _json
+
+    def emit_progress(detail: str) -> None:
+        if json_stream:
+            print(
+                _json.dumps(
+                    {
+                        "type": "progress",
+                        "stage": "host_requirements",
+                        "detail": detail,
+                    },
+                    separators=(",", ":"),
+                ),
+                flush=True,
+            )
+
+    result = _multipass_requirement_result(emit_progress if json_stream else None)
+    if json_stream:
+        print(
+            _json.dumps(
+                {"type": "result", "result": result.to_dict()},
+                separators=(",", ":"),
+            ),
+            flush=True,
+        )
+        if not result.compatible:
+            raise typer.Exit(code=1)
+        return
+
     if json_out:
         typer.echo(result.to_json())
     else:
@@ -253,6 +295,68 @@ def requirements_check(
         console.print(table)
 
     if not result.compatible:
+        raise typer.Exit(code=1)
+
+
+async def _run_secure_setup_preflight(status_callback=None) -> dict:
+    from .config import settings
+    from .network_setup.service import NetworkSetupService
+
+    service = NetworkSetupService(settings, status_callback=status_callback)
+    try:
+        status = await service.setup()
+        return status.model_dump(mode="json")
+    finally:
+        await service.cleanup()
+
+
+@secure_setup_app.command("check")
+def secure_setup_check(
+    json_out: bool = typer.Option(False, "--json", help="Output machine-readable JSON"),
+    json_stream: bool = typer.Option(
+        False,
+        "--json-stream",
+        help="Output line-delimited JSON status updates",
+    ),
+):
+    """Prepare and verify the public HTTPS endpoint without starting the provider."""
+    import json as _json
+
+    def emit_status(status) -> None:
+        print(
+            _json.dumps(status.model_dump(mode="json"), separators=(",", ":")),
+            flush=True,
+        )
+
+    try:
+        status = asyncio.run(
+            _run_secure_setup_preflight(emit_status if json_stream else None)
+        )
+        if json_stream:
+            return
+        if json_out:
+            print(_json.dumps(status, indent=2))
+        else:
+            from .network_setup.domain import StartupSetupStatus
+            from .network_setup.render import render_startup_panel
+
+            print(render_startup_panel(StartupSetupStatus.model_validate(status)))
+    except Exception as exc:
+        if json_stream:
+            status = getattr(exc, "status", None)
+            if status is None:
+                print(
+                    _json.dumps({"error": str(exc)}, separators=(",", ":")),
+                    flush=True,
+                )
+            raise typer.Exit(code=1)
+        if json_out:
+            status = getattr(exc, "status", None)
+            payload = status.model_dump(mode="json") if status is not None else {}
+            payload["error"] = str(exc)
+            print(_json.dumps(payload, indent=2))
+        else:
+            print(f"Secure connection setup failed: {exc}")
         raise typer.Exit(code=1)
 
 
@@ -1355,6 +1459,12 @@ def start(
         if pid and _is_running(pid):
             print(f"Provider already running (pid={pid})")
             raise typer.Exit(code=0)
+        if not no_verify_port:
+            try:
+                asyncio.run(_run_secure_setup_preflight())
+            except Exception as exc:
+                print(f"Secure connection setup failed: {exc}")
+                raise typer.Exit(code=1)
         # Build child command and detach
         args = ["start"]
         if no_verify_port:
@@ -1614,6 +1724,8 @@ def run_server(
     # Apply shutdown behavior override early so it is reflected in settings
     if stop_vms_on_exit is not None:
         os.environ["GOLEM_PROVIDER_STOP_VMS_ON_EXIT"] = "1" if stop_vms_on_exit else "0"
+    if no_verify_port:
+        os.environ["GOLEM_PROVIDER_SKIP_PORT_VERIFICATION"] = "1"
 
     # The logic for setting the public IP in dev mode is now handled in config.py
     # The following lines are no longer needed and have been removed.
@@ -1624,6 +1736,11 @@ def run_server(
     if network:
         try:
             settings.NETWORK = network
+        except Exception:
+            pass
+    if no_verify_port:
+        try:
+            settings.SKIP_PORT_VERIFICATION = True
         except Exception:
             pass
 

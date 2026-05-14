@@ -26,12 +26,12 @@ class Settings(BaseSettings):
         default_factory=lambda: ["*"], validation_alias="PORT_CHECKER_CORS_ORIGINS"
     )
 
-    port_check_retries: int = Field(default=3, validation_alias="PORT_CHECK_RETRIES")
+    port_check_retries: int = Field(default=1, validation_alias="PORT_CHECK_RETRIES")
     port_check_retry_delay: float = Field(
-        default=1.0, validation_alias="PORT_CHECK_RETRY_DELAY"
+        default=0.25, validation_alias="PORT_CHECK_RETRY_DELAY"
     )
     port_check_timeout: float = Field(
-        default=5.0, validation_alias="PORT_CHECK_TIMEOUT"
+        default=3.0, validation_alias="PORT_CHECK_TIMEOUT"
     )
 
     proxy_enabled: bool = Field(

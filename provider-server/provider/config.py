@@ -64,7 +64,7 @@ class Settings(BaseSettings):
     """Provider configuration settings."""
 
     # API Settings
-    DEBUG: bool = True
+    DEBUG: bool = False
     HOST: str = "0.0.0.0"
     PORT: int = 7466
     SKIP_PORT_VERIFICATION: bool = False
@@ -699,6 +699,36 @@ class Settings(BaseSettings):
     PORT_RANGE_END: int = 50900
     PROXY_STATE_DIR: str = ""
     PUBLIC_IP: Optional[str] = None
+    PUBLIC_ENDPOINT_MODE: str = Field(
+        default="auto_ip_https",
+        description="Public provider endpoint mode: auto_ip_https or disabled",
+    )
+    SECURE_SETUP_IN_DEVELOPMENT: bool = False
+    PUBLIC_ENDPOINT_IP: str = "auto"
+    PUBLIC_HTTPS_PORT: int = 443
+    PUBLIC_HTTPS_INTERNAL_PORT: int = 443
+    ACME_CHALLENGE_TYPE: str = "http-01"
+    ACME_HTTP_PUBLIC_PORT: int = 80
+    ACME_HTTP_INTERNAL_PORT: int = 80
+    ACME_ENV: str = "production"
+    ACME_DIRECTORY_URL: str = "https://acme-v02.api.letsencrypt.org/directory"
+    ACME_PROFILE: str = "shortlived"
+    ACME_ACCOUNT_EMAIL: str = ""
+    CERT_DIR: str = ""
+    CERT_RENEW_BEFORE_HOURS: int = 48
+    NAT_AUTO_MAPPING_ENABLED: bool = False
+    PORT_CHECK_TLS_URL: str = "http://195.201.39.101:9000"
+    PORT_CHECK_REQUEST_TIMEOUT: float = 8.0
+
+    @field_validator("ACME_DIRECTORY_URL", mode="before")
+    @classmethod
+    def resolve_acme_directory_url(cls, v: str, values: dict) -> str:
+        if os.environ.get("GOLEM_PROVIDER_ACME_DIRECTORY_URL"):
+            return v
+        env = str(values.data.get("ACME_ENV") or "production").lower()
+        if env == "staging":
+            return "https://acme-staging-v02.api.letsencrypt.org/directory"
+        return v or "https://acme-v02.api.letsencrypt.org/directory"
 
     @field_validator("PROXY_STATE_DIR", mode="before")
     def resolve_proxy_state_dir(cls, v: str) -> str:
@@ -716,6 +746,26 @@ class Settings(BaseSettings):
         except Exception as e:
             logger.error(f"Failed to create proxy state directory at {path}: {e}")
             raise ValueError(f"Failed to create proxy state directory: {e}")
+
+        return str(path)
+
+    @field_validator("CERT_DIR", mode="before")
+    def resolve_cert_dir(cls, v: str) -> str:
+        """Resolve and create certificate storage directory."""
+        if not v:
+            path = Path.home() / ".golem" / "provider" / "certs"
+        else:
+            path = Path(v)
+            if not path.is_absolute():
+                path = Path.home() / path
+
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+            if os.name != "nt":
+                path.chmod(0o700)
+        except Exception as e:
+            logger.error(f"Failed to create certificate directory at {path}: {e}")
+            raise ValueError(f"Failed to create certificate directory: {e}")
 
         return str(path)
 

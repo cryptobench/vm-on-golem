@@ -54,9 +54,7 @@ PORT_CHECKER_URL = f"http://{PORT_CHECKER_HOST}:{PORT_CHECKER_PORT}"
 REQUESTOR_API_URL = f"http://{REQUESTOR_HOST}:{REQUESTOR_PORT}/api/v1"
 WEB_URL = f"http://{WEB_HOST}:{WEB_PORT}"
 PROVIDER_DESKTOP_URL = f"http://{PROVIDER_DESKTOP_HOST}:{PROVIDER_DESKTOP_PORT}"
-REQUESTOR_DESKTOP_URL = (
-    f"http://{REQUESTOR_DESKTOP_HOST}:{REQUESTOR_DESKTOP_PORT}"
-)
+REQUESTOR_DESKTOP_URL = f"http://{REQUESTOR_DESKTOP_HOST}:{REQUESTOR_DESKTOP_PORT}"
 PORT_CHECKER_TOKEN = "dev-token"
 ARKIV_RPC_URL = "https://kaolin.hoodi.arkiv.network/rpc"
 ARKIV_WS_URL = "wss://kaolin.hoodi.arkiv.network/rpc/ws"
@@ -339,7 +337,9 @@ def node_deps_satisfied(package_dir: str) -> bool:
 def ensure_workspace_node_deps(workspace: str) -> None:
     if (ROOT / "node_modules").exists() and workspace_node_deps_satisfied(workspace):
         return
-    command = ["npm", "ci"] if (ROOT / "package-lock.json").exists() else ["npm", "install"]
+    command = (
+        ["npm", "ci"] if (ROOT / "package-lock.json").exists() else ["npm", "install"]
+    )
     log(f"[setup] {' '.join(command)}")
     run_checked(command)
 
@@ -392,8 +392,62 @@ def ensure_requestor_port_checker_sidecar() -> None:
             "Could not stage requestor desktop port-checker sidecar.\n"
             "Install PyInstaller in the port-checker Poetry env or run:\n"
             "  poetry -C port-checker-server run pip install pyinstaller\n"
-            "Then retry make local.\n\n"
-            + result.stdout.strip()
+            "Then retry make local.\n\n" + result.stdout.strip()
+        )
+
+
+def provider_sidecar_path() -> Path:
+    suffix = ".exe" if os.name == "nt" else ""
+    target = rust_target_triple()
+    return (
+        ROOT
+        / "apps"
+        / "provider-desktop"
+        / "src-tauri"
+        / "binaries"
+        / f"golem-provider-{target}{suffix}"
+    )
+
+
+def provider_sidecar_is_stale(sidecar: Path) -> bool:
+    if not sidecar.exists():
+        return True
+    source_paths = [
+        ROOT / "provider-server" / "cli_runner.py",
+        ROOT / "provider-server" / "pyproject.toml",
+        ROOT / "provider-server" / "poetry.lock",
+        ROOT / "scripts" / "build_provider_cli.py",
+    ]
+    source_paths.extend((ROOT / "provider-server" / "provider").rglob("*.py"))
+    sidecar_mtime = sidecar.stat().st_mtime
+    return any(
+        path.stat().st_mtime > sidecar_mtime for path in source_paths if path.exists()
+    )
+
+
+def ensure_provider_sidecar() -> None:
+    sidecar = provider_sidecar_path()
+    if not provider_sidecar_is_stale(sidecar):
+        return
+
+    log("[setup] staging provider desktop sidecar")
+    result = run_quiet(
+        [
+            "poetry",
+            "-C",
+            "provider-server",
+            "run",
+            "python",
+            "../scripts/build_provider_cli.py",
+            "--onefile",
+        ]
+    )
+    if result.returncode != 0:
+        raise LocalStackError(
+            "Could not stage provider desktop sidecar.\n"
+            "Install PyInstaller in the provider Poetry env or run:\n"
+            "  poetry -C provider-server run pip install pyinstaller\n"
+            "Then retry make local.\n\n" + result.stdout.strip()
         )
 
 
@@ -410,6 +464,7 @@ def ensure_deps(
         ensure_node_deps("requestor-web")
     if start_provider_desktop:
         ensure_workspace_node_deps("@golem/provider-desktop")
+        ensure_provider_sidecar()
 
 
 def http_ok(url: str) -> bool:
@@ -550,6 +605,36 @@ def build_services(
     dirs = local_dirs()
     provider_dir = dirs["provider"]
     requestor_dir = dirs["requestor"]
+    provider_env = {
+        "GOLEM_PROVIDER_SKIP_BOOTSTRAP": "1",
+        "GOLEM_ENVIRONMENT": "development",
+        "GOLEM_PROVIDER_NETWORK": "development",
+        "GOLEM_PROVIDER_DISCOVERY_BACKEND": "central",
+        "GOLEM_PROVIDER_DISCOVERY_URL": CENTRAL_URL,
+        "GOLEM_PROVIDER_PAYMENTS_NETWORK": PAYMENTS_NETWORK,
+        "GOLEM_PROVIDER_L2_RPC_URL": deployment.get("rpc_url", L2_RPC_URL),
+        "GOLEM_PROVIDER_L2_FAUCET_URL": L2_FAUCET_URL,
+        "GOLEM_PROVIDER_STREAM_PAYMENT_ADDRESS": deployment["stream_payment_address"],
+        "GOLEM_PROVIDER_GLM_TOKEN_ADDRESS": deployment["glm_token_address"],
+        "GOLEM_PROVIDER_ARKIV_FAUCET_ENABLED": "false",
+        "GOLEM_PROVIDER_ARKIV_RPC_URL": ARKIV_RPC_URL,
+        "GOLEM_PROVIDER_ARKIV_WS_URL": ARKIV_WS_URL,
+        "GOLEM_PROVIDER_HOST": PROVIDER_BIND_HOST,
+        "GOLEM_PROVIDER_PORT": str(PROVIDER_PORT),
+        "GOLEM_PROVIDER_PUBLIC_IP": "auto",
+        "GOLEM_PROVIDER_SECURE_SETUP_IN_DEVELOPMENT": "true",
+        "GOLEM_PROVIDER_SHOW_JSON_LOGS": "1",
+        "GOLEM_PROVIDER_PORT_CHECK_TLS_URL": PORT_CHECKER_URL,
+        "GOLEM_PROVIDER_PORT_CHECK_REQUEST_TIMEOUT": "5",
+        "GOLEM_PROVIDER_ACME_ENV": "staging",
+        "GOLEM_PROVIDER_ETHEREUM_KEY_DIR": str(provider_dir / "keys"),
+        "GOLEM_PROVIDER_SSH_KEY_DIR": str(provider_dir / "ssh"),
+        "GOLEM_PROVIDER_VM_DATA_DIR": str(provider_dir / "vms"),
+        "GOLEM_PROVIDER_CLOUD_INIT_DIR": str(provider_dir / "cloud-init"),
+        "GOLEM_PROVIDER_PROXY_STATE_DIR": str(provider_dir / "proxy"),
+        "GOLEM_PROVIDER_CERT_DIR": str(provider_dir / "certs"),
+        "GOLEM_PROVIDER_STOP_VMS_ON_EXIT": "0",
+    }
 
     services = [
         Service(
@@ -570,53 +655,37 @@ def build_services(
             },
             ready=lambda: http_ok(f"{CENTRAL_URL}/health"),
         ),
-        Service(
-            name="provider",
-            command=[
-                "poetry",
-                "-C",
-                "provider-server",
-                "run",
-                "golem-provider",
-                "start",
-                "--network",
-                "development",
-                "--no-verify-port",
-                "--keep-vms-on-exit",
-            ],
-            env={
-                "GOLEM_PROVIDER_SKIP_BOOTSTRAP": "1",
-                "GOLEM_ENVIRONMENT": "development",
-                "GOLEM_PROVIDER_NETWORK": "development",
-                "GOLEM_PROVIDER_DISCOVERY_BACKEND": "central",
-                "GOLEM_PROVIDER_DISCOVERY_URL": CENTRAL_URL,
-                "GOLEM_PROVIDER_PAYMENTS_NETWORK": PAYMENTS_NETWORK,
-                "GOLEM_PROVIDER_L2_RPC_URL": deployment.get("rpc_url", L2_RPC_URL),
-                "GOLEM_PROVIDER_L2_FAUCET_URL": L2_FAUCET_URL,
-                "GOLEM_PROVIDER_STREAM_PAYMENT_ADDRESS": deployment[
-                    "stream_payment_address"
-                ],
-                "GOLEM_PROVIDER_GLM_TOKEN_ADDRESS": deployment["glm_token_address"],
-                "GOLEM_PROVIDER_ARKIV_FAUCET_ENABLED": "false",
-                "GOLEM_PROVIDER_ARKIV_RPC_URL": ARKIV_RPC_URL,
-                "GOLEM_PROVIDER_ARKIV_WS_URL": ARKIV_WS_URL,
-                "GOLEM_PROVIDER_HOST": PROVIDER_BIND_HOST,
-                "GOLEM_PROVIDER_PORT": str(PROVIDER_PORT),
-                "GOLEM_PROVIDER_PUBLIC_IP": PROVIDER_HOST,
-                "GOLEM_PROVIDER_ETHEREUM_KEY_DIR": str(provider_dir / "keys"),
-                "GOLEM_PROVIDER_SSH_KEY_DIR": str(provider_dir / "ssh"),
-                "GOLEM_PROVIDER_VM_DATA_DIR": str(provider_dir / "vms"),
-                "GOLEM_PROVIDER_CLOUD_INIT_DIR": str(provider_dir / "cloud-init"),
-                "GOLEM_PROVIDER_PROXY_STATE_DIR": str(provider_dir / "proxy"),
-                "GOLEM_PROVIDER_STOP_VMS_ON_EXIT": "0",
-            },
-            ready=lambda: http_ok(f"{PROVIDER_API_URL}/provider/info"),
-        ),
-        Service(
-            name="central-advertisement",
-            command=[sys.executable, "-c", "import time; time.sleep(3600)"],
-            ready=central_has_provider,
-        ),
+    ]
+
+    if not start_provider_desktop:
+        services.extend(
+            [
+                Service(
+                    name="provider",
+                    command=[
+                        "poetry",
+                        "-C",
+                        "provider-server",
+                        "run",
+                        "golem-provider",
+                        "start",
+                        "--network",
+                        "development",
+                        "--no-verify-port",
+                        "--keep-vms-on-exit",
+                    ],
+                    env=provider_env,
+                    ready=lambda: http_ok(f"{PROVIDER_API_URL}/provider/info"),
+                ),
+                Service(
+                    name="central-advertisement",
+                    command=[sys.executable, "-c", "import time; time.sleep(3600)"],
+                    ready=central_has_provider,
+                ),
+            ]
+        )
+
+    services.append(
         Service(
             name="requestor-api",
             command=[
@@ -651,8 +720,8 @@ def build_services(
                 "GOLEM_REQUESTOR_DB_PATH": str(requestor_dir / "vms.db"),
             },
             ready=lambda: http_ok(f"{REQUESTOR_API_URL}/settings"),
-        ),
-    ]
+        )
+    )
 
     requestor_ui_env = {
         "GOLEM_ENVIRONMENT": "development",
@@ -708,6 +777,9 @@ def build_services(
                         "ARKIV_RPC_URL": ARKIV_RPC_URL,
                         "ARKIV_WS_URL": ARKIV_WS_URL,
                         "PORT_CHECKER_EXPECTED_NETWORK": "development",
+                        "PORT_CHECK_RETRIES": "1",
+                        "PORT_CHECK_TIMEOUT": "3",
+                        "PORT_CHECK_RETRY_DELAY": "0.25",
                     },
                     ready=lambda: http_ok(f"{PORT_CHECKER_URL}/health"),
                 ),
@@ -746,6 +818,7 @@ def build_services(
                     "dev",
                 ],
                 env={
+                    **provider_env,
                     "GOLEM_ENVIRONMENT": "development",
                     "TAURI_PROVIDER_API_URL": PROVIDER_API_URL,
                 },
@@ -767,9 +840,7 @@ def run_stack(args: argparse.Namespace) -> int:
         deployment = load_l2_deployment()
         if not args.skip_chain_check:
             check_l2_deployment(deployment)
-        ensure_deps(
-            args.skip_install, start_provider_desktop, start_requestor_desktop
-        )
+        ensure_deps(args.skip_install, start_provider_desktop, start_requestor_desktop)
 
         services = build_services(
             deployment=deployment,
@@ -799,9 +870,11 @@ def run_stack(args: argparse.Namespace) -> int:
         else:
             log(f"  Requestor web:      {WEB_URL}")
         log(f"  Central discovery:  {CENTRAL_API_URL}")
-        log(f"  Provider API:       {PROVIDER_API_URL}")
         if start_provider_desktop:
             log("  Provider desktop:   native Tauri app")
+            log("  Provider API:       started from provider desktop")
+        else:
+            log(f"  Provider API:       {PROVIDER_API_URL}")
         if start_requestor_desktop:
             log("  Port checker:       bundled in requestor desktop")
         else:
