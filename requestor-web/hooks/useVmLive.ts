@@ -7,6 +7,7 @@ import {
   type VmLiveSnapshot,
   type VmMonitoringHistory,
   type VmMonitoringLatest,
+  type VmMonitoringLive,
   type VmMonitoringSample,
 } from "../lib/api";
 import { getProviderVmSession } from "../lib/providerSession";
@@ -22,6 +23,7 @@ export type VmLiveState = {
   snapshots: Array<Record<string, unknown>> | null;
   stream: Record<string, unknown> | null;
   metricsLatest: VmMonitoringLatest | null;
+  metricsLiveSamples: VmMonitoringSample[];
   metricsHistory: VmMonitoringHistory | null;
   errors: Record<string, string>;
 };
@@ -43,6 +45,7 @@ const initialState: VmLiveState = {
   snapshots: null,
   stream: null,
   metricsLatest: null,
+  metricsLiveSamples: [],
   metricsHistory: null,
   errors: {},
 };
@@ -82,7 +85,11 @@ export function vmLiveReducer(
       job: action.data.job || null,
       snapshots: action.data.snapshots || null,
       stream: action.data.stream || null,
-      metricsLatest: action.data.metrics_latest || null,
+      metricsLatest: action.data.metrics_live?.latest || null,
+      metricsLiveSamples: mergeMetricSamples(
+        [],
+        action.data.metrics_live?.samples || [],
+      ),
       metricsHistory: action.data.metrics_history || null,
       errors: action.data.errors || {},
     };
@@ -111,21 +118,24 @@ export function vmLiveReducer(
     if (action.scope === "stream") {
       return { ...state, stream: asRecord(action.data) };
     }
-    if (action.scope === "metrics") {
-      const data = asRecord(action.data);
-      const history = data?.history as VmMonitoringHistory | undefined;
+    if (action.scope === "metrics_live") {
+      const data = asRecord(action.data) as VmMonitoringLive | null;
       const samples = Array.isArray(data?.samples)
         ? (data.samples as VmMonitoringSample[])
         : [];
       return {
         ...state,
-        metricsLatest:
-          (data?.latest as VmMonitoringLatest | undefined) || state.metricsLatest,
-        metricsHistory: mergeMetricHistory(
-          state.metricsHistory,
-          history,
+        metricsLatest: data?.latest || state.metricsLatest,
+        metricsLiveSamples: mergeMetricSamples(
+          state.metricsLiveSamples,
           samples,
         ),
+      };
+    }
+    if (action.scope === "metrics_history") {
+      return {
+        ...state,
+        metricsHistory: (action.data as VmMonitoringHistory | null) || null,
       };
     }
   }
@@ -140,6 +150,9 @@ export function useVmLive(
 ) {
   const [state, dispatch] = React.useReducer(vmLiveReducer, initialState);
   const socketRef = React.useRef<WebSocket | null>(null);
+  const historyRangeRef = React.useRef(historyRange);
+  const sentHistoryRangeRef = React.useRef<string | null>(null);
+  historyRangeRef.current = historyRange;
 
   React.useEffect(() => {
     if (!providerEndpointUrl || !vmId || typeof window === "undefined") return;
@@ -149,8 +162,13 @@ export function useVmLive(
     dispatch({ type: "connecting" });
 
     const connect = () => {
+      const initialHistoryRange = historyRangeRef.current;
+      sentHistoryRangeRef.current = initialHistoryRange;
       const socket = new WebSocket(
-        vmLiveUrl(providerEndpointUrl, vmId, { jobId, historyRange }),
+        vmLiveUrl(providerEndpointUrl, vmId, {
+          jobId,
+          historyRange: initialHistoryRange,
+        }),
       );
       socketRef.current = socket;
       socket.onopen = async () => {
@@ -158,6 +176,16 @@ export function useVmLive(
           const token = await getProviderVmSession(providerEndpointUrl, vmId);
           if (socket.readyState !== WebSocket.OPEN) return;
           socket.send(JSON.stringify({ type: "auth", token }));
+          const currentHistoryRange = historyRangeRef.current;
+          if (currentHistoryRange !== initialHistoryRange) {
+            socket.send(
+              JSON.stringify({
+                type: "set_history_range",
+                history_range: currentHistoryRange,
+              }),
+            );
+            sentHistoryRangeRef.current = currentHistoryRange;
+          }
         } catch (error) {
           dispatch({ type: "degraded", error: String(error) });
           socket.close();
@@ -213,7 +241,7 @@ export function useVmLive(
       socketRef.current?.close();
       socketRef.current = null;
     };
-  }, [providerEndpointUrl, vmId, jobId, historyRange]);
+  }, [providerEndpointUrl, vmId, jobId]);
 
   const send = React.useCallback((payload: Record<string, unknown>) => {
     const socket = socketRef.current;
@@ -226,6 +254,18 @@ export function useVmLive(
     (scopes?: string[]) => send({ type: "refresh", scopes }),
     [send],
   );
+
+  React.useEffect(() => {
+    if (!providerEndpointUrl || !vmId) return;
+    if (sentHistoryRangeRef.current === historyRange) return;
+    const sent = send({
+      type: "set_history_range",
+      history_range: historyRange,
+    });
+    if (sent) {
+      sentHistoryRangeRef.current = historyRange;
+    }
+  }, [historyRange, providerEndpointUrl, send, vmId]);
 
   return {
     state,
@@ -242,48 +282,23 @@ function asRecord(value: unknown) {
 }
 
 function mergeMetricSamples(
-  history: VmMonitoringHistory | null,
+  current: VmMonitoringSample[],
   samples: VmMonitoringSample[],
-): VmMonitoringHistory | null {
-  if (!samples.length) return history;
+): VmMonitoringSample[] {
+  if (!samples.length) return current;
 
-  const existing = history?.samples || [];
   const byKey = new Map<string, VmMonitoringSample>();
-  [...existing, ...samples].forEach((sample) => {
+  [...current, ...samples].forEach((sample) => {
     byKey.set(metricSampleKey(sample), sample);
   });
 
-  return {
-    ...history,
-    samples: Array.from(byKey.values())
-      .sort(
-        (a, b) =>
-          a.timestamp.localeCompare(b.timestamp) ||
-          a.metric.localeCompare(b.metric),
-      )
-      .slice(-10_000),
-  };
-}
-
-function mergeMetricHistory(
-  current: VmMonitoringHistory | null,
-  incoming: VmMonitoringHistory | undefined,
-  samples: VmMonitoringSample[],
-): VmMonitoringHistory | null {
-  if (!incoming) {
-    return mergeMetricSamples(current, samples);
-  }
-
-  const mergedSamples = [
-    ...(current?.samples || []),
-    ...(incoming.samples || []),
-    ...samples,
-  ];
-  const mergedBase: VmMonitoringHistory = {
-    ...incoming,
-    samples: mergedSamples.length ? [] : undefined,
-  };
-  return mergeMetricSamples(mergedBase, mergedSamples);
+  return Array.from(byKey.values())
+    .sort(
+      (a, b) =>
+        a.timestamp.localeCompare(b.timestamp) ||
+        a.metric.localeCompare(b.metric),
+    )
+    .slice(-10_000);
 }
 
 function metricSampleKey(sample: VmMonitoringSample) {

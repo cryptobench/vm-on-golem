@@ -206,16 +206,104 @@ def test_vm_live_stream_sends_hello_snapshot_and_metric_update(tmp_path: Path):
         assert websocket.accepted is True
         assert hello["type"] == "hello"
         assert snapshot["type"] == "snapshot"
+        assert "latest" in snapshot["data"]["metrics_live"]
         assert "points" in snapshot["data"]["metrics_history"]
         assert snapshot["data"]["metrics_history"]["resolution_seconds"] == 10
         assert update["type"] == "update"
-        assert update["scope"] == "metrics"
+        assert update["scope"] == "metrics_live"
         assert (
             update["data"]["latest"]["vms"]["vm-a"]["guest_agent"]["cpu_percent"][
                 "value"
             ]
             == 42
         )
+
+    asyncio.run(run())
+
+
+def test_vm_live_guest_sample_update_does_not_fetch_history(tmp_path: Path):
+    async def run():
+        repo = MonitoringRepository(str(tmp_path / "monitoring.sqlite"))
+        repo.init_schema()
+        token = repo.issue_guest_token("vm-a")
+        monitoring = MonitoringService(
+            {"MONITORING_LIVE_ACTIVE_INTERVAL_SECONDS": 1},
+            repo,
+            MagicMock(),
+            MagicMock(),
+        )
+        service = VMLiveService(
+            ProviderEventBroadcaster(),
+            monitoring,
+            FakeVmApp(),
+            FakeProviderInfo(),
+            FakeStreamStatus(),
+            FakeAuth(),
+        )
+        websocket = FakeWebSocket()
+        task = asyncio.create_task(service.stream_vm(websocket, "vm-a"))
+        try:
+            await asyncio.wait_for(websocket.sent.get(), timeout=1)
+            snapshot = await asyncio.wait_for(websocket.sent.get(), timeout=1)
+            assert snapshot["type"] == "snapshot"
+            monitoring.history = MagicMock(
+                side_effect=AssertionError("live sample update fetched history")
+            )
+
+            await monitoring.record_guest_sample(
+                "vm-a", GuestMetricPayload(token=token, cpu_percent=42)
+            )
+            update = await asyncio.wait_for(websocket.sent.get(), timeout=1)
+        finally:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+        assert update["type"] == "update"
+        assert update["scope"] == "metrics_live"
+        assert {
+            sample["metric"] for sample in update["data"]["samples"]
+        } >= {"cpu_percent"}
+        monitoring.history.assert_not_called()
+
+    asyncio.run(run())
+
+
+def test_vm_live_history_range_event_sends_history_only(tmp_path: Path):
+    async def run():
+        repo = MonitoringRepository(str(tmp_path / "monitoring.sqlite"))
+        repo.init_schema()
+        monitoring = MonitoringService(
+            {"MONITORING_LIVE_ACTIVE_INTERVAL_SECONDS": 1},
+            repo,
+            MagicMock(),
+            MagicMock(),
+        )
+        service = VMLiveService(
+            ProviderEventBroadcaster(),
+            monitoring,
+            FakeVmApp(),
+            FakeProviderInfo(),
+            FakeStreamStatus(),
+            FakeAuth(),
+        )
+        websocket = FakeWebSocket()
+        task = asyncio.create_task(service.stream_vm(websocket, "vm-a"))
+        try:
+            await asyncio.wait_for(websocket.sent.get(), timeout=1)
+            await asyncio.wait_for(websocket.sent.get(), timeout=1)
+            await websocket.received.put(
+                {"type": "set_history_range", "history_range": "6h"}
+            )
+            update = await asyncio.wait_for(websocket.sent.get(), timeout=1)
+        finally:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+        assert update["type"] == "update"
+        assert update["scope"] == "metrics_history"
+        assert update["data"]["range"] == "6h"
+        assert "latest" not in update["data"]
+        assert "samples" not in update["data"]
 
     asyncio.run(run())
 
@@ -287,7 +375,7 @@ def test_vm_live_stream_rejects_invalid_initial_history_range():
         event = await asyncio.wait_for(websocket.sent.get(), timeout=1)
         assert websocket.accepted is True
         assert event["type"] == "error"
-        assert event["scope"] == "metrics"
+        assert event["scope"] == "metrics_history"
         assert "invalid metrics history range" in event["error"]
         assert websocket.closed_code == 1008
         assert websocket.sent.empty()
@@ -333,18 +421,20 @@ def test_vm_live_invalid_history_range_event_keeps_current_range(tmp_path: Path)
             )
             error = await asyncio.wait_for(websocket.sent.get(), timeout=1)
             assert error["type"] == "error"
-            assert error["scope"] == "metrics"
+            assert error["scope"] == "metrics_history"
             assert "invalid metrics history range" in error["error"]
             assert history_ranges == ["1h"]
 
-            await websocket.received.put({"type": "refresh", "scopes": ["metrics"]})
+            await websocket.received.put(
+                {"type": "refresh", "scopes": ["metrics_history"]}
+            )
             update = await asyncio.wait_for(websocket.sent.get(), timeout=1)
         finally:
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
 
         assert update["type"] == "update"
-        assert update["scope"] == "metrics"
+        assert update["scope"] == "metrics_history"
         assert history_ranges == ["1h", "1h"]
 
     asyncio.run(run())
@@ -425,10 +515,11 @@ def test_host_live_stream_sends_hello_snapshot_and_metric_update(tmp_path: Path)
         assert hello["type"] == "hello"
         assert hello["data"]["protocol"] == "provider-host-live.v1"
         assert snapshot["type"] == "snapshot"
+        assert "latest" in snapshot["data"]["metrics_live"]
         assert "points" in snapshot["data"]["metrics_history"]
         assert snapshot["data"]["metrics_history"]["resolution_seconds"] == 10
         assert update["type"] == "update"
-        assert update["scope"] == "metrics"
+        assert update["scope"] == "metrics_live"
         assert update["data"]["latest"]["host"]["cpu_percent"]["value"] == 42
         assert has_explicit_timezone(update["data"]["samples"][0]["timestamp"])
 

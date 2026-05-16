@@ -2,7 +2,6 @@ import React from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type {
   HistoryRange,
-  MetricHistoryPoint,
   MetricSample,
   MetricsHistoryResponse,
   MetricsLatestResponse,
@@ -13,11 +12,15 @@ type ConnectionState = "idle" | "connecting" | "connected" | "degraded";
 
 type HostMetricsLivePayload = {
   latest?: MetricsLatestResponse | null;
-  metrics_latest?: MetricsLatestResponse | null;
-  metrics_history?: MetricsHistoryResponse | null;
   samples?: MetricSample[];
   status?: string | null;
   last_sample_at?: string | null;
+  errors?: Record<string, string>;
+};
+
+type HostMetricsSnapshotPayload = {
+  metrics_live?: HostMetricsLivePayload | null;
+  metrics_history?: MetricsHistoryResponse | null;
   errors?: Record<string, string>;
 };
 
@@ -25,13 +28,14 @@ type HostMetricsLiveEvent = {
   type: "hello" | "snapshot" | "update" | "error" | "heartbeat";
   generated_at: string;
   scope?: string | null;
-  data?: HostMetricsLivePayload | null;
+  data?: unknown;
   error?: string | null;
 };
 
 type HostMonitoringLiveState = {
   connection: ConnectionState;
   metricsLatest: MetricsLatestResponse | null;
+  metricsLiveSamples: MetricSample[];
   metricsHistory: MetricsHistoryResponse | null;
   status: string | null;
   lastSampleAt: string | null;
@@ -43,14 +47,15 @@ type Action =
   | { type: "connecting" }
   | { type: "connected" }
   | { type: "degraded"; error?: string }
-  | { type: "snapshot"; data: HostMetricsLivePayload }
-  | { type: "history"; data: HostMetricsLivePayload }
-  | { type: "update"; data: HostMetricsLivePayload }
+  | { type: "snapshot"; data: HostMetricsSnapshotPayload }
+  | { type: "metricsLive"; data: HostMetricsLivePayload }
+  | { type: "metricsHistory"; data: MetricsHistoryResponse }
   | { type: "error"; error: string };
 
 const initialState: HostMonitoringLiveState = {
   connection: "idle",
   metricsLatest: null,
+  metricsLiveSamples: [],
   metricsHistory: null,
   status: null,
   lastSampleAt: null,
@@ -82,13 +87,17 @@ function hostLiveReducer(
     };
   }
   if (action.type === "snapshot") {
-    return mergePayload(state, action.data, true);
+    return {
+      ...mergeLivePayload(state, action.data.metrics_live ?? {}),
+      metricsHistory: action.data.metrics_history ?? state.metricsHistory,
+      errors: action.data.errors ?? state.errors,
+    };
   }
-  if (action.type === "history") {
+  if (action.type === "metricsHistory") {
     return mergeHistoryPayload(state, action.data);
   }
-  if (action.type === "update") {
-    return mergePayload(state, action.data, false);
+  if (action.type === "metricsLive") {
+    return mergeLivePayload(state, action.data);
   }
   return state;
 }
@@ -97,14 +106,12 @@ export function useHostMonitoringLive() {
   const [state, dispatch] = React.useReducer(hostLiveReducer, initialState);
   const socketRef = React.useRef<WebSocket | null>(null);
   const historyRangeRef = React.useRef<HistoryRange>("1h");
-  const historyRangeUpdatePendingRef = React.useRef(false);
 
   const setHistoryRange = React.useCallback((range: HistoryRange) => {
     if (historyRangeRef.current === range) return;
     historyRangeRef.current = range;
     const socket = socketRef.current;
     if (socket?.readyState === WebSocket.OPEN) {
-      historyRangeUpdatePendingRef.current = true;
       socket.send(JSON.stringify({ type: "set_history_range", history_range: range }));
     }
   }, []);
@@ -123,7 +130,6 @@ export function useHostMonitoringLive() {
         socket.onopen = () => {
           socket?.send(JSON.stringify({ type: "auth", token }));
           if (historyRangeRef.current !== "1h") {
-            historyRangeUpdatePendingRef.current = true;
             socket?.send(
               JSON.stringify({
                 type: "set_history_range",
@@ -137,20 +143,29 @@ export function useHostMonitoringLive() {
           try {
             const event = JSON.parse(String(message.data)) as HostMetricsLiveEvent;
             if (event.type === "snapshot" && event.data) {
-              dispatch({ type: "snapshot", data: event.data });
+              dispatch({
+                type: "snapshot",
+                data: event.data as HostMetricsSnapshotPayload,
+              });
             } else if (
               event.type === "update" &&
-              event.scope === "metrics" &&
+              event.scope === "metrics_live" &&
               event.data
             ) {
-              if (historyRangeUpdatePendingRef.current && hasHistory(event.data)) {
-                historyRangeUpdatePendingRef.current = false;
-                dispatch({ type: "history", data: event.data });
-              } else {
-                dispatch({ type: "update", data: event.data });
-              }
+              dispatch({
+                type: "metricsLive",
+                data: event.data as HostMetricsLivePayload,
+              });
+            } else if (
+              event.type === "update" &&
+              event.scope === "metrics_history" &&
+              event.data
+            ) {
+              dispatch({
+                type: "metricsHistory",
+                data: event.data as MetricsHistoryResponse,
+              });
             } else if (event.type === "error") {
-              historyRangeUpdatePendingRef.current = false;
               dispatch({ type: "error", error: event.error || "Live stream error" });
             }
           } catch (error) {
@@ -219,31 +234,24 @@ async function hostMetricsLiveUrl(range: HistoryRange) {
 
 function mergeHistoryPayload(
   state: HostMonitoringLiveState,
-  payload: HostMetricsLivePayload,
+  history: MetricsHistoryResponse,
 ): HostMonitoringLiveState {
   return {
     ...state,
-    metricsHistory: payload.metrics_history ?? state.metricsHistory,
+    metricsHistory: history,
     lastEventAt: Date.now(),
-    errors: payload.errors ?? state.errors,
   };
 }
 
-function mergePayload(
+function mergeLivePayload(
   state: HostMonitoringLiveState,
   payload: HostMetricsLivePayload,
-  replaceHistory: boolean,
 ): HostMonitoringLiveState {
-  const latest = payload.metrics_latest ?? payload.latest ?? state.metricsLatest;
   const samples = Array.isArray(payload.samples) ? payload.samples : [];
   return {
     ...state,
-    metricsLatest: latest ?? null,
-    metricsHistory:
-      payload.metrics_history ??
-      (replaceHistory
-        ? state.metricsHistory
-        : mergeMetricSamples(state.metricsHistory, samples)),
+    metricsLatest: payload.latest ?? state.metricsLatest,
+    metricsLiveSamples: mergeMetricSamples(state.metricsLiveSamples, samples),
     status: payload.status ?? state.status,
     lastSampleAt: payload.last_sample_at ?? state.lastSampleAt,
     lastEventAt: Date.now(),
@@ -251,88 +259,30 @@ function mergePayload(
   };
 }
 
-function hasHistory(payload: HostMetricsLivePayload) {
-  return Boolean(payload.metrics_history);
-}
-
 function mergeMetricSamples(
-  history: MetricsHistoryResponse | null,
+  current: MetricSample[],
   samples: MetricSample[],
-): MetricsHistoryResponse | null {
-  if (!samples.length || !history) return history;
-  const byKey = new Map<string, MetricHistoryPoint>();
-  history.points.forEach((point) => {
-    byKey.set(metricPointKey(point), point);
+): MetricSample[] {
+  if (!samples.length) return current;
+  const byKey = new Map<string, MetricSample>();
+  [...current, ...samples].forEach((sample) => {
+    byKey.set(metricSampleKey(sample), sample);
   });
-  samples.forEach((sample) => {
-    const point = metricSamplePoint(sample, history.resolution_seconds);
-    const existing = byKey.get(metricPointKey(point));
-    byKey.set(
-      metricPointKey(point),
-      existing ? mergeMetricPoint(existing, sample.value) : point,
-    );
-  });
-  return {
-    ...history,
-    points: Array.from(byKey.values())
-      .sort(
-        (a, b) =>
-          a.bucket_start.localeCompare(b.bucket_start) ||
-          a.metric.localeCompare(b.metric),
-      )
-      .slice(-10_000),
-    generated_at: new Date().toISOString(),
-  };
+  return Array.from(byKey.values())
+    .sort(
+      (a, b) =>
+        a.timestamp.localeCompare(b.timestamp) ||
+        a.metric.localeCompare(b.metric),
+    )
+    .slice(-10_000);
 }
 
-function metricSamplePoint(
-  sample: MetricSample,
-  resolutionSeconds: number,
-): MetricHistoryPoint {
-  const timestamp = Date.parse(sample.timestamp);
-  if (!Number.isFinite(timestamp)) {
-    throw new Error(`Metric timestamp must be absolute: ${sample.timestamp}`);
-  }
-  const bucketStartMs =
-    Math.floor(timestamp / (resolutionSeconds * 1000)) *
-    resolutionSeconds *
-    1000;
-  return {
-    scope: sample.scope,
-    source: sample.source,
-    vm_id: sample.vm_id,
-    metric: sample.metric,
-    unit: sample.unit,
-    bucket_start: new Date(bucketStartMs).toISOString(),
-    bucket_end: new Date(bucketStartMs + resolutionSeconds * 1000).toISOString(),
-    avg: sample.value,
-    min: sample.value,
-    max: sample.value,
-    count: 1,
-  };
-}
-
-function mergeMetricPoint(
-  point: MetricHistoryPoint,
-  sampleValue: number,
-): MetricHistoryPoint {
-  const count = point.count + 1;
-  return {
-    ...point,
-    avg: (point.avg * point.count + sampleValue) / count,
-    min: Math.min(point.min, sampleValue),
-    max: Math.max(point.max, sampleValue),
-    count,
-  };
-}
-
-function metricPointKey(point: MetricHistoryPoint) {
+function metricSampleKey(sample: MetricSample) {
   return [
-    point.scope,
-    point.source,
-    point.vm_id || "",
-    point.metric,
-    point.unit,
-    point.bucket_start,
+    sample.scope,
+    sample.source,
+    sample.vm_id || "",
+    sample.metric,
+    sample.timestamp,
   ].join(":");
 }

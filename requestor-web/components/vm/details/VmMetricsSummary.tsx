@@ -3,10 +3,14 @@
 import React from "react";
 import { RiArrowDownLine, RiArrowUpLine } from "@remixicon/react";
 import { Skeleton, SlidingSparkline } from "@golem/ui";
-import type { VmMonitoringHistory } from "../../../lib/api";
+import type {
+  VmMonitoringLatest,
+  VmMonitoringSample,
+} from "../../../lib/api";
 import { DetailPanel, PanelTitle } from "./VmDetailPrimitives";
 import {
-  buildMetricChartRowsFromHistory,
+  buildMetricChartRows,
+  buildRoundedSparklineRows,
   buildSparklineRows,
   formatMbps,
   formatPercent,
@@ -27,26 +31,27 @@ const sparklineColors = {
 } as const;
 
 export function VmMetricsSummary({
-  guestMetrics,
-  history,
+  vmId,
+  metricsLatest,
+  liveSamples,
   loading,
 }: {
-  guestMetrics: GuestMetrics;
-  history?: VmMonitoringHistory | null;
+  vmId: string;
+  metricsLatest?: VmMonitoringLatest | null;
+  liveSamples: VmMonitoringSample[];
   loading?: boolean;
 }) {
-  const rows = React.useMemo(
-    () => buildMetricChartRowsFromHistory(history),
-    [history],
-  );
+  const guestMetrics = React.useMemo(() => {
+    const byVm = metricsLatest?.vms || {};
+    return byVm[vmId]?.guest_agent || null;
+  }, [metricsLatest, vmId]);
+  const rows = React.useMemo(() => buildMetricChartRows(liveSamples), [liveSamples]);
   const network = latestNetworkRates(rows);
-  const hasCompleteMetrics =
+  const hasGuestMetrics =
     guestMetrics != null &&
     metricPercent(guestMetrics, "cpu_percent") != null &&
     metricPercent(guestMetrics, "memory_percent") != null &&
-    metricPercent(guestMetrics, "disk_percent") != null &&
-    network.rx != null &&
-    network.tx != null;
+    metricPercent(guestMetrics, "disk_percent") != null;
 
   return (
     <DetailPanel className="vm-page-enter">
@@ -55,7 +60,7 @@ export function VmMetricsSummary({
         hint="Metrics are reported by the guest agent inside the VM."
       />
 
-      {loading || !hasCompleteMetrics ? (
+      {loading || !hasGuestMetrics ? (
         <MetricsSummarySkeleton />
       ) : (
         <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
@@ -80,13 +85,13 @@ export function VmMetricsSummary({
           <NetworkRateTile
             label="Network In"
             value={network.rx}
-            values={buildSparklineRows(rows, "Network RX")}
+            values={buildRoundedSparklineRows(rows, "Network RX", 1)}
             direction="in"
           />
           <NetworkRateTile
             label="Network Out"
             value={network.tx}
-            values={buildSparklineRows(rows, "Network TX")}
+            values={buildRoundedSparklineRows(rows, "Network TX", 1)}
             direction="out"
           />
         </div>

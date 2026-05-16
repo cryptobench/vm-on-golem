@@ -550,7 +550,7 @@ class VMApplicationService:
             await self._publish_live(
                 ["vms", "summary", "monitoring", "metrics"],
                 vm_id=vm_id,
-                vm_scopes=["lifecycle", "access", "metrics"],
+                vm_scopes=["lifecycle", "access", "metrics_live"],
             )
             await self._emit_webhook(
                 "vm.stopped",
@@ -596,7 +596,7 @@ class VMApplicationService:
             await self._publish_live(
                 ["vms", "summary", "monitoring", "metrics"],
                 vm_id=vm_id,
-                vm_scopes=["lifecycle", "access", "metrics"],
+                vm_scopes=["lifecycle", "access", "metrics_live"],
             )
             return vm
         except VMNotFoundError:
@@ -615,7 +615,7 @@ class VMApplicationService:
             await self._publish_live(
                 ["vms", "summary", "monitoring", "metrics"],
                 vm_id=vm_id,
-                vm_scopes=["lifecycle", "access", "metrics"],
+                vm_scopes=["lifecycle", "access", "metrics_live"],
             )
             return vm
         except VMNotFoundError:
@@ -636,7 +636,7 @@ class VMApplicationService:
             await self._publish_live(
                 ["vms", "summary", "monitoring", "metrics"],
                 vm_id=vm_id,
-                vm_scopes=["lifecycle", "access", "metrics"],
+                vm_scopes=["lifecycle", "access", "metrics_live"],
             )
             return vm
         except VMNotFoundError:
@@ -677,7 +677,7 @@ class VMApplicationService:
             await self._publish_live(
                 ["vms", "summary", "monitoring", "metrics", "streams"],
                 vm_id=vm_id,
-                vm_scopes=["lifecycle", "access", "metrics", "stream"],
+                vm_scopes=["lifecycle", "access", "metrics_live", "stream"],
             )
             return vm
         except VMNotFoundError:
@@ -747,7 +747,7 @@ class VMApplicationService:
             await self._publish_live(
                 ["vms", "summary", "monitoring", "metrics"],
                 vm_id=vm_id,
-                vm_scopes=["lifecycle", "access", "snapshots", "metrics"],
+                vm_scopes=["lifecycle", "access", "snapshots", "metrics_live"],
             )
             return vm
         except VMNotFoundError:
@@ -801,7 +801,7 @@ class VMApplicationService:
             await self._publish_live(
                 ["vms", "summary", "monitoring", "metrics"],
                 vm_id=destination_vm_id,
-                vm_scopes=["lifecycle", "access", "metrics"],
+                vm_scopes=["lifecycle", "access", "metrics_live"],
             )
             return vm
         except VMNotFoundError:
@@ -822,7 +822,7 @@ class VMApplicationService:
             await self._publish_live(
                 ["vms", "summary", "streams", "monitoring", "metrics"],
                 vm_id=vm_id,
-                vm_scopes=["lifecycle", "access", "stream", "metrics"],
+                vm_scopes=["lifecycle", "access", "stream", "metrics_live"],
             )
             await self._emit_webhook(
                 "vm.deleted",
@@ -839,7 +839,7 @@ class VMApplicationService:
             await self._publish_live(
                 ["vms", "summary", "streams", "monitoring", "metrics"],
                 vm_id=vm_id,
-                vm_scopes=["lifecycle", "access", "stream", "metrics"],
+                vm_scopes=["lifecycle", "access", "stream", "metrics_live"],
             )
             raise
         except Exception as exc:

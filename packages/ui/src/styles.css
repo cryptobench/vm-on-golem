@@ -39,13 +39,15 @@
 }
 
 .golem-sliding-chart .recharts-line-curve,
-.golem-sliding-chart .golem-chart-line-curve {
+.golem-sliding-chart .golem-chart-line-curve,
+.golem-sliding-chart .golem-chart-append-curve {
   transform: translateX(var(--golem-chart-slide-x, 0));
   transition: none;
 }
 
 .golem-sliding-chart[data-slide-active="true"] .recharts-line-curve,
-.golem-sliding-chart[data-slide-active="true"] .golem-chart-line-curve {
+.golem-sliding-chart[data-slide-active="true"] .golem-chart-line-curve,
+.golem-sliding-chart[data-slide-active="true"] .golem-chart-append-curve {
   transition: transform 360ms ease-out;
 }
 
@@ -55,9 +57,24 @@
     animation: golem-line-draw 560ms cubic-bezier(0.22, 1, 0.36, 1) both;
     stroke-dasharray: 12000;
   }
+
+  .golem-sliding-chart .golem-chart-append-curve {
+    animation: golem-line-segment-draw 340ms ease-out both;
+    stroke-dasharray: 12000;
+    stroke-dashoffset: 12000;
+  }
 }
 
 @keyframes golem-line-draw {
+  from {
+    stroke-dashoffset: 12000;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes golem-line-segment-draw {
   from {
     stroke-dashoffset: 12000;
   }

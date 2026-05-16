@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   buildMetricChartRows,
   buildMetricChartRowsFromHistory,
+  buildRoundedSparklineRows,
   getAppendOnlySlideChange,
   latestNetworkRates,
   networkTransferTotals,
@@ -62,6 +63,32 @@ test("builds metric rows from provider history points", () => {
   assert.equal(rows[0].Memory, 34);
   assert.equal(rows[1].CPU, 14);
   assert.equal(rows[1]["Network RX"], 0.032);
+});
+
+test("builds live summary rows from raw live samples only", () => {
+  const rows = buildMetricChartRows([
+    metricSample("cpu_percent", 12, "percent", "2026-05-12T21:00:00+00:00"),
+    metricSample("memory_percent", 34, "percent", "2026-05-12T21:00:00+00:00"),
+    metricSample("network_rx_bytes", 100_000_000, "bytes", "2026-05-12T21:00:00+00:00"),
+    metricSample("network_rx_bytes", 100_040_000, "bytes", "2026-05-12T21:00:10+00:00"),
+  ]);
+
+  assert.equal(rows[0].CPU, 12);
+  assert.equal(rows[0].Memory, 34);
+  assert.equal(rows[1]["Network RX"], 0.032);
+});
+
+test("rounds network sparklines to match displayed Mbps precision", () => {
+  const rows = buildMetricChartRows([
+    metricSample("network_rx_bytes", 100_000_000, "bytes", "2026-05-12T21:00:00+00:00"),
+    metricSample("network_rx_bytes", 100_040_000, "bytes", "2026-05-12T21:00:10+00:00"),
+    metricSample("network_rx_bytes", 100_100_000, "bytes", "2026-05-12T21:00:20+00:00"),
+  ]);
+
+  assert.deepEqual(
+    buildRoundedSparklineRows(rows, "Network RX", 1).map((row) => row.value),
+    [0, 0],
+  );
 });
 
 test("detects appended metric timestamps for chart slides", () => {
@@ -127,12 +154,21 @@ test("does not slide on metric range replacement", () => {
 });
 
 function networkSample(metric: string, value: number, timestamp: string) {
+  return metricSample(metric, value, "bytes", timestamp);
+}
+
+function metricSample(
+  metric: string,
+  value: number,
+  unit: string,
+  timestamp: string,
+) {
   return {
     scope: "vm",
     source: "guest_agent",
     metric,
     value,
-    unit: "bytes",
+    unit,
     timestamp,
     vm_id: "vm-ed1d",
   } as const;

@@ -98,6 +98,13 @@ export type VmMonitoringHistory = Partial<MetricsHistoryResponse> & {
   samples?: VmMonitoringSample[];
 };
 
+export type VmMonitoringLive = {
+  latest?: VmMonitoringLatest | null;
+  samples?: VmMonitoringSample[];
+  guest_interval_seconds?: number | null;
+  live_mode?: boolean | null;
+};
+
 export type VmLiveSnapshot = {
   provider_info?: Record<string, unknown> | null;
   lifecycle?: Record<string, unknown> | null;
@@ -105,7 +112,7 @@ export type VmLiveSnapshot = {
   job?: Record<string, unknown> | null;
   snapshots?: Array<Record<string, unknown>>;
   stream?: Record<string, unknown> | null;
-  metrics_latest?: VmMonitoringLatest | null;
+  metrics_live?: VmMonitoringLive | null;
   metrics_history?: VmMonitoringHistory | null;
   errors?: Record<string, string>;
 };

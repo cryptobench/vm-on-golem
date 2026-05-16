@@ -509,7 +509,7 @@ export default function VmDetailsClient({ vmId: vmIdProp }: VmDetailsClientProps
       setBusy(true);
       updateVmStatus("stopping");
       await vmStop(requireProviderEndpoint(vm), vm.vm_id);
-      live.refresh(["lifecycle", "access", "metrics"]);
+      live.refresh(["lifecycle", "access", "metrics_live"]);
       show("Stop requested");
     } catch (e) {
       show("Stop failed");
@@ -530,7 +530,7 @@ export default function VmDetailsClient({ vmId: vmIdProp }: VmDetailsClientProps
       });
       updateVmStatus("starting");
       await vmStart(requireProviderEndpoint(vm), vm.vm_id);
-      live.refresh(["lifecycle", "access", "metrics"]);
+      live.refresh(["lifecycle", "access", "metrics_live"]);
       show("Start requested");
     } catch (e) {
       show("Start failed");
@@ -547,7 +547,7 @@ export default function VmDetailsClient({ vmId: vmIdProp }: VmDetailsClientProps
       setBusy(true);
       updateVmStatus("restarting");
       await vmRestart(requireProviderEndpoint(vm), vm.vm_id);
-      live.refresh(["lifecycle", "access", "metrics"]);
+      live.refresh(["lifecycle", "access", "metrics_live"]);
       show("Restart requested");
     } catch (e) {
       show("Restart failed");
@@ -564,7 +564,7 @@ export default function VmDetailsClient({ vmId: vmIdProp }: VmDetailsClientProps
       setBusy(true);
       updateVmStatus("suspending");
       await vmSuspend(requireProviderEndpoint(vm), vm.vm_id);
-      live.refresh(["lifecycle", "access", "metrics"]);
+      live.refresh(["lifecycle", "access", "metrics_live"]);
       show("Suspend requested");
     } catch (e) {
       show("Suspend failed");
@@ -585,7 +585,7 @@ export default function VmDetailsClient({ vmId: vmIdProp }: VmDetailsClientProps
       });
       updateVmStatus("starting");
       await vmResume(requireProviderEndpoint(vm), vm.vm_id);
-      live.refresh(["lifecycle", "access", "metrics"]);
+      live.refresh(["lifecycle", "access", "metrics_live"]);
       show("Resume requested");
     } catch (e) {
       show("Resume failed");
@@ -747,7 +747,7 @@ export default function VmDetailsClient({ vmId: vmIdProp }: VmDetailsClientProps
         saveRentals(out);
       }
       setVm(next as any);
-      live.refresh(["lifecycle", "metrics"]);
+      live.refresh(["lifecycle", "metrics_live"]);
 
       if (
         previousStreamId != null &&
@@ -768,7 +768,7 @@ export default function VmDetailsClient({ vmId: vmIdProp }: VmDetailsClientProps
         }
       }
 
-      live.refresh(["lifecycle", "metrics", "stream"]);
+      live.refresh(["lifecycle", "metrics_live", "stream"]);
       show("Resize applied");
     } catch (resizeError) {
       if (replacementStream) {
@@ -878,10 +878,6 @@ export default function VmDetailsClient({ vmId: vmIdProp }: VmDetailsClientProps
     setResizeOpen(true);
   };
 
-  const guestMetrics = (() => {
-    const byVm = (metricsData as any)?.vms || {};
-    return byVm[vm.vm_id]?.guest_agent || null;
-  })();
   const explorerUrl = buildExplorerUrl(
     loadSettings().evm_explorer_url ||
       getRequestorRuntimeConfig().evmExplorerUrl ||
@@ -973,8 +969,9 @@ export default function VmDetailsClient({ vmId: vmIdProp }: VmDetailsClientProps
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_23rem]">
         <div className="space-y-5">
           <VmMetricsSummary
-            guestMetrics={guestMetrics}
-            history={metricsHistoryData}
+            vmId={vm.vm_id}
+            metricsLatest={metricsData}
+            liveSamples={live.state.metricsLiveSamples}
             loading={live.state.connection === "connecting"}
           />
           <VmMetricsCharts
