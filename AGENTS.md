@@ -272,6 +272,17 @@ DISCOVERY_URL = "http://discovery.golem.network:9001"
 - Tauri commands own provider sidecar lifecycle and expose small command surfaces such as start, stop, status, and API base URL.
 - Keep modules small and pure where possible.
 
+#### Provider Live Data Architecture
+
+- Provider desktop screens MUST consume one shared live dashboard read model. Do not add screen-local polling loops for VMs, summary, streams, monitoring, alerts, alert rules, webhooks, or provider info.
+- `/api/v1/provider/live` is the canonical provider desktop data stream. WebSocket events use `hello`, `snapshot`, `update`, `error`, and `heartbeat`.
+- Supported provider live scopes are `provider_info`, `summary`, `vms`, `streams`, `monitoring`, `metrics`, `alerts`, `alert_rules`, and `webhooks`.
+- Backend provider actions MUST emit or invalidate live scopes when they change VM lifecycle, VM creation jobs, stream mappings, stream status, monitoring state, alerts, alert rules, or webhooks.
+- The canonical provider VM list read model MUST include queued, provisioning, and failed async VM creation jobs. It must not depend only on Multipass-visible VMs.
+- Provider summary MUST derive VM counts and resource usage from the same canonical VM list used by `/vms`.
+- UI fallback polling is allowed only as a degraded reconnect/backoff path or an explicit user refresh. It must not be the primary provider desktop data model.
+- Backend monitors may poll true external systems such as Multipass or blockchain, but they must publish resulting state changes to provider live subscribers.
+
 ## Testing Guidelines
 
 - Framework: `pytest` (+ `pytest-asyncio`, `pytest-cov`).

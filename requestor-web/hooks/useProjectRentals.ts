@@ -48,6 +48,20 @@ export function useProjectRentals(projectId: string) {
     }
   );
 
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+    const syncRentals = (event?: Event) => {
+      const detail = (event as CustomEvent | undefined)?.detail;
+      mutate(Array.isArray(detail) ? detail : loadRentals(), { revalidate: false });
+    };
+    window.addEventListener("requestor_rentals_changed", syncRentals);
+    window.addEventListener("storage", syncRentals);
+    return () => {
+      window.removeEventListener("requestor_rentals_changed", syncRentals);
+      window.removeEventListener("storage", syncRentals);
+    };
+  }, [mutate]);
+
   const items = (data as any[]) || [];
   React.useEffect(() => {
     if (data !== undefined && !isValidating) setValidatedKey(rentalsKey);

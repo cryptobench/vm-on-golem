@@ -1,34 +1,34 @@
 {
   "abi": [
     {
-      "inputs": [
-        {"internalType": "address", "name": "_oracle", "type": "address"},
-        {"internalType": "address", "name": "_glmToken", "type": "address"}
-      ],
+      "inputs": [{ "internalType": "address", "name": "_glmToken", "type": "address" }],
       "stateMutability": "nonpayable",
       "type": "constructor"
     },
     {
       "inputs": [
-        {"internalType": "address", "name": "token", "type": "address"},
-        {"internalType": "address", "name": "recipient", "type": "address"},
-        {"internalType": "uint256", "name": "deposit", "type": "uint256"},
-        {"internalType": "uint128", "name": "ratePerSecond", "type": "uint128"}
+        { "internalType": "address", "name": "recipient", "type": "address" },
+        { "internalType": "uint256", "name": "deposit", "type": "uint256" },
+        { "internalType": "uint128", "name": "ratePerSecond", "type": "uint128" },
+        { "internalType": "bytes32", "name": "leaseId", "type": "bytes32" },
+        { "internalType": "bytes32", "name": "termsHash", "type": "bytes32" },
+        { "internalType": "uint128", "name": "quoteExpiresAt", "type": "uint128" },
+        { "internalType": "bytes", "name": "providerSignature", "type": "bytes" }
       ],
       "name": "createStream",
-      "outputs": [{"internalType": "uint256", "name": "streamId", "type": "uint256"}],
+      "outputs": [{ "internalType": "uint256", "name": "streamId", "type": "uint256" }],
       "stateMutability": "nonpayable",
       "type": "function"
     },
     {
       "inputs": [],
       "name": "glmToken",
-      "outputs": [{"internalType": "address", "name": "", "type": "address"}],
+      "outputs": [{ "internalType": "address", "name": "", "type": "address" }],
       "stateMutability": "view",
       "type": "function"
     },
     {
-      "inputs": [{"internalType": "uint256", "name": "streamId", "type": "uint256"}],
+      "inputs": [{ "internalType": "uint256", "name": "streamId", "type": "uint256" }],
       "name": "withdraw",
       "outputs": [],
       "stateMutability": "nonpayable",
@@ -36,8 +36,8 @@
     },
     {
       "inputs": [
-        {"internalType": "uint256", "name": "streamId", "type": "uint256"},
-        {"internalType": "uint256", "name": "amount", "type": "uint256"}
+        { "internalType": "uint256", "name": "streamId", "type": "uint256" },
+        { "internalType": "uint256", "name": "amount", "type": "uint256" }
       ],
       "name": "topUp",
       "outputs": [],
@@ -45,40 +45,50 @@
       "type": "function"
     },
     {
-      "inputs": [{"internalType": "uint256", "name": "streamId", "type": "uint256"}],
+      "inputs": [{ "internalType": "uint256", "name": "streamId", "type": "uint256" }],
       "name": "terminate",
       "outputs": [],
       "stateMutability": "nonpayable",
       "type": "function"
     },
     {
-      "inputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+      "inputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
       "name": "streams",
       "outputs": [
-        {"internalType": "address", "name": "token", "type": "address"},
-        {"internalType": "address", "name": "sender", "type": "address"},
-        {"internalType": "address", "name": "recipient", "type": "address"},
-        {"internalType": "uint128", "name": "startTime", "type": "uint128"},
-        {"internalType": "uint128", "name": "stopTime", "type": "uint128"},
-        {"internalType": "uint128", "name": "ratePerSecond", "type": "uint128"},
-        {"internalType": "uint256", "name": "deposit", "type": "uint256"},
-        {"internalType": "uint256", "name": "withdrawn", "type": "uint256"},
-        {"internalType": "bool", "name": "halted", "type": "bool"}
+        { "internalType": "address", "name": "token", "type": "address" },
+        { "internalType": "address", "name": "sender", "type": "address" },
+        { "internalType": "address", "name": "recipient", "type": "address" },
+        { "internalType": "uint128", "name": "startTime", "type": "uint128" },
+        { "internalType": "uint128", "name": "stopTime", "type": "uint128" },
+        { "internalType": "uint128", "name": "ratePerSecond", "type": "uint128" },
+        { "internalType": "uint256", "name": "deposit", "type": "uint256" },
+        { "internalType": "uint256", "name": "withdrawn", "type": "uint256" },
+        { "internalType": "bytes32", "name": "leaseId", "type": "bytes32" },
+        { "internalType": "bytes32", "name": "termsHash", "type": "bytes32" }
       ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [{ "internalType": "bytes32", "name": "", "type": "bytes32" }],
+      "name": "usedLeaseIds",
+      "outputs": [{ "internalType": "bool", "name": "", "type": "bool" }],
       "stateMutability": "view",
       "type": "function"
     },
     {
       "anonymous": false,
       "inputs": [
-        {"indexed": true, "internalType": "uint256", "name": "streamId", "type": "uint256"},
-        {"indexed": true, "internalType": "address", "name": "sender", "type": "address"},
-        {"indexed": true, "internalType": "address", "name": "recipient", "type": "address"},
-        {"indexed": false, "internalType": "address", "name": "token", "type": "address"},
-        {"indexed": false, "internalType": "uint256", "name": "deposit", "type": "uint256"},
-        {"indexed": false, "internalType": "uint256", "name": "ratePerSecond", "type": "uint256"},
-        {"indexed": false, "internalType": "uint256", "name": "startTime", "type": "uint256"},
-        {"indexed": false, "internalType": "uint256", "name": "stopTime", "type": "uint256"}
+        { "indexed": true, "internalType": "uint256", "name": "streamId", "type": "uint256" },
+        { "indexed": true, "internalType": "address", "name": "sender", "type": "address" },
+        { "indexed": true, "internalType": "address", "name": "recipient", "type": "address" },
+        { "indexed": false, "internalType": "address", "name": "token", "type": "address" },
+        { "indexed": false, "internalType": "uint256", "name": "deposit", "type": "uint256" },
+        { "indexed": false, "internalType": "uint256", "name": "ratePerSecond", "type": "uint256" },
+        { "indexed": false, "internalType": "uint256", "name": "startTime", "type": "uint256" },
+        { "indexed": false, "internalType": "uint256", "name": "stopTime", "type": "uint256" },
+        { "indexed": false, "internalType": "bytes32", "name": "leaseId", "type": "bytes32" },
+        { "indexed": false, "internalType": "bytes32", "name": "termsHash", "type": "bytes32" }
       ],
       "name": "StreamCreated",
       "type": "event"

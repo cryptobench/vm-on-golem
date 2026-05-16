@@ -1,11 +1,12 @@
 "use client";
 
-import { loadSettings, type Settings } from "./api";
+import { loadSettings, type Settings } from "./settings";
 import { getRequestorRuntimeConfig } from "./runtimeConfig";
+import { walletDebug, walletWarn } from "./walletDebug";
 
 const DEFAULT_CHAIN_ID = "0x88bb0";
 const DEFAULT_CHAIN_NAME = "Ethereum Hoodi";
-const DEFAULT_RPC_URL = "https://ethereum-hoodi-rpc.publicnode.com";
+const DEFAULT_RPC_URL = "https://rpc.hoodi.ethpandaops.io";
 const DEFAULT_EXPLORER_URL = "https://hoodi.etherscan.io";
 
 export type PaymentsChain = {
@@ -122,45 +123,25 @@ export async function switchToPaymentsNetwork(
     throw new PaymentNetworkError("missing_wallet", "MetaMask is not available.");
   }
 
-  let current: string;
-  try {
-    current = await readWalletChainId(ethereum);
-  } catch (error) {
-    await addOrUpdatePaymentsNetwork(ethereum, chain, error);
-    const next = await readWalletChainId(ethereum);
-    if (isExpectedPaymentsChain(next, chain)) return;
-    throw new PaymentNetworkError(
-      "rpc_unhealthy",
-      "MetaMask cannot reach the payments RPC endpoint.",
-      error,
-    );
-  }
-  if (isExpectedPaymentsChain(current, chain)) return;
-
-  try {
-    await ethereum.request({
-      method: "wallet_switchEthereumChain",
-      params: [{ chainId: chain.chainId }],
-    });
-  } catch (error: any) {
-    if (error?.code === 4001) {
-      throw new PaymentNetworkError(
-        "user_rejected",
-        `Switch to ${chain.chainName} was rejected.`,
-        error,
-      );
-    }
-    if (error?.code !== 4902) {
-      throw new PaymentNetworkError(
-        "switch_failed",
-        `Could not switch MetaMask to ${chain.chainName}.`,
-        error,
-      );
-    }
-    await addOrUpdatePaymentsNetwork(ethereum, chain, error);
+  walletDebug("network:switch:start", {
+    expectedChainId: chain.chainId,
+    chainName: chain.chainName,
+    rpcUrl: chain.rpcUrls[0],
+  });
+  let current = await readWalletChainIdOrNull(ethereum);
+  walletDebug("network:current-chain", {
+    currentChainId: current,
+    expectedChainId: chain.chainId,
+  });
+  if (!isExpectedPaymentsChain(current, chain)) {
+    await requestPaymentsNetworkSwitch(ethereum, chain);
   }
 
   const next = await readWalletChainId(ethereum);
+  walletDebug("network:post-switch-chain", {
+    currentChainId: next,
+    expectedChainId: chain.chainId,
+  });
   if (!isExpectedPaymentsChain(next, chain)) {
     throw new PaymentNetworkError(
       "wrong_network",
@@ -175,11 +156,17 @@ async function addOrUpdatePaymentsNetwork(
   cause?: unknown,
 ): Promise<void> {
   try {
+    walletDebug("network:add:start", {
+      chainId: chain.chainId,
+      rpcUrl: chain.rpcUrls[0],
+    });
     await ethereum.request({
       method: "wallet_addEthereumChain",
       params: [chain],
     });
+    walletDebug("network:add:done", { chainId: chain.chainId });
   } catch (error: any) {
+    walletWarn("network:add:failed", error, { chainId: chain.chainId });
     if (error?.code === 4001) {
       throw new PaymentNetworkError(
         "user_rejected",
@@ -195,11 +182,60 @@ async function addOrUpdatePaymentsNetwork(
   }
 }
 
+async function requestPaymentsNetworkSwitch(
+  ethereum: any,
+  chain: PaymentsChain,
+): Promise<void> {
+  try {
+    walletDebug("network:switch-request:start", { chainId: chain.chainId });
+    await ethereum.request({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: chain.chainId }],
+    });
+    walletDebug("network:switch-request:done", { chainId: chain.chainId });
+  } catch (error: any) {
+    walletWarn("network:switch-request:failed", error, {
+      chainId: chain.chainId,
+    });
+    if (error?.code === 4001) {
+      throw new PaymentNetworkError(
+        "user_rejected",
+        `Switch to ${chain.chainName} was rejected.`,
+        error,
+      );
+    }
+    if (error?.code !== 4902) {
+      throw new PaymentNetworkError(
+        "switch_failed",
+        `Could not switch MetaMask to ${chain.chainName}.`,
+        error,
+      );
+    }
+    await addOrUpdatePaymentsNetwork(ethereum, chain, error);
+    walletDebug("network:switch-after-add:start", { chainId: chain.chainId });
+    await ethereum.request({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: chain.chainId }],
+    });
+    walletDebug("network:switch-after-add:done", { chainId: chain.chainId });
+  }
+}
+
+async function readWalletChainIdOrNull(ethereum: any): Promise<string | null> {
+  try {
+    return await readWalletChainId(ethereum);
+  } catch {
+    return null;
+  }
+}
+
 export async function readWalletChainId(ethereum: any): Promise<string> {
   try {
     const chainId = await ethereum.request({ method: "eth_chainId" });
+    walletDebug("network:read-chain:done", { chainId });
     return normalizeChainId(chainId);
   } catch (error) {
+    walletWarn("network:read-chain:failed", error);
     throw new PaymentNetworkError(
       "rpc_unhealthy",
       "MetaMask cannot reach the payments RPC endpoint.",
@@ -213,6 +249,11 @@ export function getPaymentNetworkErrorMessage(
   chain: PaymentsChain = getPaymentsChain(),
 ): string {
   const paymentError = toPaymentNetworkError(error);
+  walletDebug("network:error-message", {
+    code: paymentError?.code || null,
+    chainName: chain.chainName,
+    rpcUrl: chain.rpcUrls[0],
+  });
   if (paymentError?.code === "missing_wallet") {
     return "MetaMask is required for payment streams.";
   }
@@ -222,11 +263,23 @@ export function getPaymentNetworkErrorMessage(
   if (paymentError?.code === "wrong_network") {
     return `Switch MetaMask to ${chain.chainName} before continuing.`;
   }
-  if (paymentError?.code === "rpc_unhealthy" || looksLikeRpcFailure(error)) {
+  if (paymentError?.code === "rpc_unhealthy") {
     return `MetaMask cannot reach ${chain.chainName}. Use MetaMask's Update RPC option or set the RPC URL to ${chain.rpcUrls[0]}.`;
   }
   if (paymentError?.code === "switch_failed") {
     return `Could not switch MetaMask to ${chain.chainName}. Check the network settings and retry.`;
+  }
+
+  if (typeof error === "object" && error !== null) {
+    const value = error as {
+      message?: unknown;
+      reason?: unknown;
+      shortMessage?: unknown;
+      code?: unknown;
+    };
+    const message =
+      value.shortMessage || value.reason || value.message || value.code;
+    if (message) return String(message);
   }
 
   return error instanceof Error ? error.message : String(error);
@@ -244,7 +297,7 @@ export function toPaymentNetworkError(error: unknown): PaymentNetworkError | nul
       );
     }
   }
-  if (looksLikeRpcFailure(error)) {
+  if (looksLikeWalletRpcFailure(error)) {
     return new PaymentNetworkError(
       "rpc_unhealthy",
       "MetaMask cannot reach the payments RPC endpoint.",
@@ -254,16 +307,11 @@ export function toPaymentNetworkError(error: unknown): PaymentNetworkError | nul
   return null;
 }
 
-function looksLikeRpcFailure(error: unknown): boolean {
+function looksLikeWalletRpcFailure(error: unknown): boolean {
   const text = collectErrorText(error).toLowerCase();
   return (
     text.includes("rpc endpoint returned too many errors") ||
-    text.includes("could not coalesce error") ||
-    text.includes("failed to fetch") ||
-    text.includes("network error") ||
-    text.includes("server error") ||
-    text.includes("connection") ||
-    text.includes("-32002")
+    text.includes("could not coalesce error")
   );
 }
 

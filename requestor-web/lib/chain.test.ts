@@ -5,6 +5,7 @@ import {
   getPaymentsChain,
   normalizeChainId,
   PaymentNetworkError,
+  switchToPaymentsNetwork,
 } from "./chain";
 
 describe("payments chain helpers", () => {
@@ -28,7 +29,7 @@ describe("payments chain helpers", () => {
     assert.deepEqual(chain.blockExplorerUrls, ["https://payments.example/explorer"]);
   });
 
-  it("formats wrong-network and rpc failures as actionable messages", () => {
+  it("formats wrong-network and explicit rpc failures as actionable messages", () => {
     const chain = getPaymentsChain({
       evm_chain_name: "Golem Payments",
       evm_rpc_url: "https://payments.example/rpc",
@@ -43,10 +44,94 @@ describe("payments chain helpers", () => {
     );
     assert.match(
       getPaymentNetworkErrorMessage(
-        new Error("could not coalesce error: RPC endpoint returned too many errors"),
+        new PaymentNetworkError(
+          "rpc_unhealthy",
+          "MetaMask cannot reach the payments RPC endpoint.",
+        ),
         chain,
       ),
       /https:\/\/payments\.example\/rpc/,
     );
+  });
+
+  it("does not misclassify provider fetch failures as wallet rpc failures", () => {
+    const chain = getPaymentsChain({
+      evm_chain_name: "Golem Payments",
+      evm_rpc_url: "https://payments.example/rpc",
+    });
+
+    assert.equal(
+      getPaymentNetworkErrorMessage(
+        new Error("Provider http://192.168.2.1:7466 is unreachable while loading the lease quote."),
+        chain,
+      ),
+      "Provider http://192.168.2.1:7466 is unreachable while loading the lease quote.",
+    );
+  });
+
+  it("prompts a wallet network switch before continuing on the wrong chain", async () => {
+    const chain = getPaymentsChain({
+      evm_chain_id: "0x88bb0",
+      evm_chain_name: "Golem Payments",
+      evm_rpc_url: "https://payments.example/rpc",
+    });
+    const calls: string[] = [];
+    let currentChainId = "0x1";
+    const ethereum = {
+      request: async ({ method, params }: { method: string; params?: any[] }) => {
+        calls.push(method);
+        if (method === "eth_chainId") return currentChainId;
+        if (method === "wallet_switchEthereumChain") {
+          currentChainId = params?.[0]?.chainId;
+          return null;
+        }
+        throw new Error(`unexpected method ${method}`);
+      },
+    };
+
+    await switchToPaymentsNetwork(ethereum, chain);
+
+    assert.deepEqual(calls, [
+      "eth_chainId",
+      "wallet_switchEthereumChain",
+      "eth_chainId",
+    ]);
+  });
+
+  it("adds the payments network only when the wallet does not know it", async () => {
+    const chain = getPaymentsChain({
+      evm_chain_id: "0x88bb0",
+      evm_chain_name: "Golem Payments",
+      evm_rpc_url: "https://payments.example/rpc",
+    });
+    const calls: string[] = [];
+    let currentChainId = "0x1";
+    const ethereum = {
+      request: async ({ method, params }: { method: string; params?: any[] }) => {
+        calls.push(method);
+        if (method === "eth_chainId") return currentChainId;
+        if (method === "wallet_switchEthereumChain") {
+          if (params?.[0]?.chainId === chain.chainId && calls.length === 2) {
+            const error = new Error("unknown chain") as Error & { code: number };
+            error.code = 4902;
+            throw error;
+          }
+          currentChainId = params?.[0]?.chainId;
+          return null;
+        }
+        if (method === "wallet_addEthereumChain") return null;
+        throw new Error(`unexpected method ${method}`);
+      },
+    };
+
+    await switchToPaymentsNetwork(ethereum, chain);
+
+    assert.deepEqual(calls, [
+      "eth_chainId",
+      "wallet_switchEthereumChain",
+      "wallet_addEthereumChain",
+      "wallet_switchEthereumChain",
+      "eth_chainId",
+    ]);
   });
 });

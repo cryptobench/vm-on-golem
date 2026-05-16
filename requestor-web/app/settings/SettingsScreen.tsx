@@ -40,7 +40,7 @@ export default function SettingsPage() {
   const [ws, setWs] = React.useState<string>(ads.arkiv_ws_url);
   const [evmChainIdText, setEvmChainIdText] = React.useState<string>(runtimeConfig.evmChainId || "0x88bb0");
   const [evmChainName, setEvmChainName] = React.useState<string>(runtimeConfig.evmChainName || "Ethereum Hoodi");
-  const [evmRpcUrl, setEvmRpcUrl] = React.useState<string>(runtimeConfig.evmRpcUrl || "https://ethereum-hoodi-rpc.publicnode.com");
+  const [evmRpcUrl, setEvmRpcUrl] = React.useState<string>(runtimeConfig.evmRpcUrl || "https://rpc.hoodi.ethpandaops.io");
   const [evmExplorerUrl, setEvmExplorerUrl] = React.useState<string>(runtimeConfig.evmExplorerUrl || "https://hoodi.etherscan.io");
   const [profileName, setProfileName] = React.useState<string>(profiles.find(p => p.id === activeId)?.name || "");
   const [pendingProvider, setPendingProvider] = React.useState<string | null>(null);
@@ -67,7 +67,7 @@ export default function SettingsPage() {
     setDisplayCurrency(initial.display_currency === 'token' ? 'token' : 'fiat');
     setEvmChainIdText(initial.evm_chain_id || (runtimeConfig.evmChainId || "0x88bb0"));
     setEvmChainName(initial.evm_chain_name || (runtimeConfig.evmChainName || "Ethereum Hoodi"));
-    setEvmRpcUrl(initial.evm_rpc_url || (runtimeConfig.evmRpcUrl || "https://ethereum-hoodi-rpc.publicnode.com"));
+    setEvmRpcUrl(initial.evm_rpc_url || (runtimeConfig.evmRpcUrl || "https://rpc.hoodi.ethpandaops.io"));
     setEvmExplorerUrl(initial.evm_explorer_url || (runtimeConfig.evmExplorerUrl || "https://hoodi.etherscan.io"));
     // Sync ads-derived fields (profiles/context already mounted)
     setMode(ads.mode);

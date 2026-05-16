@@ -10,6 +10,8 @@ import {
   toPaymentNetworkError,
   type PaymentsChain,
 } from "../lib/chain";
+import { getInjectedEthereum } from "../lib/walletClient";
+import { walletDebug, walletWarn } from "../lib/walletDebug";
 
 export type WalletNetworkStatus =
   | "not_installed"
@@ -75,7 +77,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
   const syncFromEth = React.useCallback(async () => {
     if (typeof window === "undefined") return;
-    const { ethereum } = window as any;
+    walletDebug("context:sync:start");
+    const ethereum = getInjectedEthereum();
     if (!ethereum?.request) {
       setState({
         isInstalled: false,
@@ -85,6 +88,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         networkStatus: "not_installed",
         networkError: null,
       });
+      walletDebug("context:sync:not-installed");
       return;
     }
 
@@ -92,6 +96,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       .request({ method: "eth_accounts" })
       .catch(() => []);
     const connected = Array.isArray(accounts) && accounts.length > 0;
+    walletDebug("context:sync:accounts", {
+      connected,
+      accountCount: Array.isArray(accounts) ? accounts.length : 0,
+    });
 
     let chainId: string | null = null;
     let networkStatus: WalletNetworkStatus = connected ? "wrong_network" : "disconnected";
@@ -106,10 +114,17 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         networkStatus = "wrong_network";
       }
     } catch (error) {
+      walletWarn("context:sync:chain-read-failed", error);
       networkStatus = connected ? "rpc_error" : "disconnected";
       networkError = connected ? getPaymentNetworkErrorMessage(error, expectedChain) : null;
     }
 
+    walletDebug("context:sync:done", {
+      connected,
+      chainId,
+      networkStatus,
+      hasNetworkError: Boolean(networkError),
+    });
     setState({
       isInstalled: true,
       isConnected: connected,
@@ -134,7 +149,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
   React.useEffect(() => {
     if (typeof window === "undefined") return;
-    const { ethereum } = window as any;
+    const ethereum = getInjectedEthereum();
     if (!ethereum?.on) return;
     const onAccounts = () => syncFromEth();
     const onChain = () => syncFromEth();
@@ -148,7 +163,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
   const switchWallet = React.useCallback(async () => {
     if (typeof window === "undefined") return;
-    const { ethereum } = window as any;
+    const ethereum = getInjectedEthereum();
+    walletDebug("context:switch:start", { chainId: expectedChain.chainId });
     setState((current) => ({
       ...current,
       networkStatus: "switching",
@@ -157,7 +173,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     try {
       await switchToPaymentsNetwork(ethereum, expectedChain);
       await syncFromEth();
+      walletDebug("context:switch:done", { chainId: expectedChain.chainId });
     } catch (error) {
+      walletWarn("context:switch:failed", error, {
+        chainId: expectedChain.chainId,
+      });
       const paymentError = toPaymentNetworkError(error);
       setState((current) => ({
         ...current,
@@ -170,7 +190,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
   const connect = React.useCallback(async () => {
     if (typeof window === "undefined") return;
-    const { ethereum } = window as any;
+    const ethereum = getInjectedEthereum();
+    walletDebug("context:connect:start");
     if (!ethereum?.request) {
       const error = new PaymentNetworkError(
         "missing_wallet",
@@ -186,8 +207,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     }
     try {
       await ethereum.request({ method: "eth_requestAccounts" });
+      walletDebug("context:connect:accounts-approved");
       await switchWallet();
+      walletDebug("context:connect:done");
     } catch (error) {
+      walletWarn("context:connect:failed", error);
       await syncFromEth();
       setState((current) => ({
         ...current,
@@ -198,6 +222,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   }, [expectedChain, switchWallet, syncFromEth]);
 
   const ensurePaymentsNetwork = React.useCallback(async () => {
+    walletDebug("context:ensure:start", {
+      isInstalled: state.isInstalled,
+      isConnected: state.isConnected,
+      networkStatus: state.networkStatus,
+    });
     if (!state.isInstalled) {
       throw new PaymentNetworkError(
         "missing_wallet",

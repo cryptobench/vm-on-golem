@@ -3,7 +3,7 @@
 import React from "react";
 import { loadSettings, type Rental } from "../../lib/api";
 import { getRequestorRuntimeConfig } from "../../lib/runtimeConfig";
-import { fetchStreamWithMeta } from "../../lib/streams";
+import { fetchStreamWithMeta, isTerminatedStream } from "../../lib/streams";
 import type { DashboardStreamRow } from "./DashboardTables";
 
 function tokenAmount(value: bigint, decimals: number) {
@@ -94,7 +94,7 @@ async function loadStreamRow(rental: Rental, spAddr: string) {
         remainingBalance: remainingTokens.toFixed(2),
         hourlyRate: hourlyTokens.toFixed(2),
         tokenSymbol: data.tokenSymbol,
-        status: data.chain.halted ? "Halted" : "Active",
+        status: isTerminatedStream(data.chain) ? "Terminated" : "Active",
       } satisfies DashboardStreamRow,
       spent,
       spentUsd: data.usdPrice == null ? 0 : spent * data.usdPrice,

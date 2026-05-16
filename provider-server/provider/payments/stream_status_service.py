@@ -1,14 +1,16 @@
+import inspect
 import logging
 from collections.abc import Callable
 from typing import Any
 
-from .domain import StreamComputed, StreamOnChain, StreamStatus
+from .domain import LeasePayment, StreamComputed, StreamOnChain, StreamStatus
 from .errors import (
     InvalidStreamError,
     PaymentsDisabledError,
     StreamLookupError,
     StreamNotFoundError,
 )
+from .lease_quote_service import LeaseQuoteService
 
 ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 logger = logging.getLogger(__name__)
@@ -58,13 +60,143 @@ class StreamStatusService:
             raise InvalidStreamError(f"invalid stream: {reason}")
         logger.info("Payment stream validated", extra={"stream_id": stream_id})
 
+    async def require_valid_lease(
+        self,
+        payment: LeasePayment | None,
+        *,
+        requestor_address: str | None,
+        current_vm_id: str | None = None,
+        vm_name: str | None = None,
+        image: str | None = None,
+        resources: Any | None = None,
+    ) -> None:
+        if payment is None:
+            raise InvalidStreamError("payment proof required when payments are enabled")
+        if not requestor_address:
+            raise InvalidStreamError("requestor action signature required")
+
+        reader = self._reader()
+        try:
+            stream = reader.get_stream(payment.stream_id)
+            now = int(reader.web3.eth.get_block("latest")["timestamp"])
+        except Exception as exc:
+            raise StreamLookupError(f"stream lookup failed: {exc}") from exc
+
+        expected_recipient = str(self._setting("PROVIDER_ID", "") or "")
+        expected_token = str(self._setting("GLM_TOKEN_ADDRESS", "") or "")
+        expected_rate = None
+        expected_terms_hash = None
+        if resources is not None:
+            if payment.duration_seconds is None or int(payment.duration_seconds) <= 0:
+                raise InvalidStreamError("payment duration required")
+            quote_service = LeaseQuoteService(self.settings)
+            expected_rate = quote_service._rate_per_second_wei(resources)
+            chain_id = getattr(reader.web3.eth, "chain_id", None)
+            if chain_id is None:
+                chain_id = int(reader.web3.eth.get_block("latest").get("chainId", 0))
+            if not chain_id:
+                raise InvalidStreamError("chain id unavailable")
+            expected_terms_hash = LeaseQuoteService._terms_hash(
+                provider_address=expected_recipient,
+                requestor_address=requestor_address,
+                vm_name=vm_name or "",
+                image=image or "",
+                cpu=int(resources.cpu),
+                memory=int(resources.memory),
+                storage=int(resources.storage),
+                rate_per_second=int(expected_rate),
+                duration_seconds=int(payment.duration_seconds),
+                contract_address=self._stream_contract_address(),
+                glm_token_address=expected_token,
+                chain_id=int(chain_id),
+                lease_id=payment.lease_id,
+            )
+        checks = [
+            (
+                stream["recipient"].lower() != "0x0000000000000000000000000000000000000000",
+                "stream terminated",
+            ),
+            (stream["recipient"].lower() == expected_recipient.lower(), "recipient mismatch"),
+            (stream["sender"].lower() == requestor_address.lower(), "sender mismatch"),
+            (stream["token"].lower() == expected_token.lower(), "token mismatch"),
+            (int(stream["stopTime"]) > now, "stream expired"),
+            (
+                int(stream["ratePerSecond"])
+                >= int(expected_rate or payment.rate_per_second_wei),
+                "stream rate too low",
+            ),
+            (
+                _normalize_bytes32(stream["leaseId"])
+                == _normalize_bytes32(payment.lease_id),
+                "lease mismatch",
+            ),
+            (
+                _normalize_bytes32(stream["termsHash"])
+                == _normalize_bytes32(payment.terms_hash),
+                "terms hash mismatch",
+            ),
+        ]
+        if expected_terms_hash is not None:
+            checks.append(
+                (
+                    _normalize_bytes32(payment.terms_hash)
+                    == _normalize_bytes32(expected_terms_hash),
+                    "quoted terms do not match VM request",
+                )
+            )
+        for ok, reason in checks:
+            if not ok:
+                raise InvalidStreamError(f"invalid stream: {reason}")
+
+        mapped = await self.stream_map.all_items()
+        for vm_id, mapped_stream_id in mapped.items():
+            if int(mapped_stream_id) == int(payment.stream_id) and vm_id != current_vm_id:
+                raise InvalidStreamError("stream already mapped to another VM")
+
+    async def require_vm_action_authorized(
+        self, vm_id: str, requestor_address: str | None
+    ) -> None:
+        if not await self.is_payment_required():
+            return
+        if not requestor_address:
+            raise InvalidStreamError("requestor action signature required")
+
+        owner = None
+        get_owner = getattr(self.stream_map, "get_owner", None)
+        if get_owner is not None:
+            owner = await get_owner(vm_id)
+        if owner:
+            if owner.lower() != requestor_address.lower():
+                raise InvalidStreamError("requestor signer mismatch")
+            return
+
+        stream_id = await self.stream_map.get(vm_id)
+        if stream_id is None:
+            raise InvalidStreamError("no payment stream mapped for VM")
+        reader = self._reader()
+        try:
+            stream = reader.get_stream(int(stream_id))
+        except Exception as exc:
+            raise StreamLookupError(f"stream lookup failed: {exc}") from exc
+        sender = str(stream.get("sender") or "")
+        if sender.lower() != requestor_address.lower():
+            raise InvalidStreamError("requestor signer mismatch")
+
     async def is_payment_required(self) -> bool:
         address = str(self._setting("STREAM_PAYMENT_ADDRESS", "") or "")
         return bool(address and address != ZERO_ADDRESS)
 
-    async def set_vm_stream(self, vm_id: str, stream_id: int | None) -> None:
+    async def set_vm_stream(
+        self,
+        vm_id: str,
+        stream_id: int | None,
+        requestor_address: str | None = None,
+    ) -> None:
         if stream_id is not None:
-            await self.stream_map.set(vm_id, int(stream_id))
+            if len(inspect.signature(self.stream_map.set).parameters) >= 3:
+                await self.stream_map.set(vm_id, int(stream_id), requestor_address)
+            else:
+                await self.stream_map.set(vm_id, int(stream_id))
             logger.info(
                 "VM stream mapping set",
                 extra={"vm_id": vm_id, "stream_id": int(stream_id)},
@@ -92,10 +224,10 @@ class StreamStatusService:
     def _build_status(self, reader: Any, vm_id: str, stream_id: int) -> StreamStatus:
         try:
             stream = reader.get_stream(stream_id)
+            now = int(reader.web3.eth.get_block("latest")["timestamp"])
             ok, reason = reader.verify_stream(
                 stream_id, str(self._setting("PROVIDER_ID", "") or "")
             )
-            now = int(reader.web3.eth.get_block("latest")["timestamp"])
         except Exception as exc:
             logger.error(
                 "Payment stream lookup failed",
@@ -122,4 +254,20 @@ class StreamStatusService:
             ),
             verified=bool(ok),
             reason=str(reason),
+            payment_state=_payment_state(stream, now, ok),
         )
+
+
+def _normalize_bytes32(value: str) -> str:
+    raw = str(value)
+    return raw.lower() if raw.startswith("0x") else f"0x{raw.lower()}"
+
+
+def _payment_state(stream: dict, now: int, verified: bool) -> str:
+    if stream["recipient"].lower() == "0x0000000000000000000000000000000000000000":
+        return "terminated"
+    if int(stream["stopTime"]) <= now:
+        return "expired"
+    if verified:
+        return "active"
+    return "invalid"

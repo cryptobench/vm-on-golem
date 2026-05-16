@@ -1,7 +1,7 @@
 import asyncio
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -213,6 +213,59 @@ class JobStore:
                     "created_at": row[9],
                     "updated_at": row[10],
                 }
+            finally:
+                conn.close()
+
+        return await asyncio.to_thread(_op)
+
+    async def active_recent_jobs(
+        self, recent_seconds: int = 3600
+    ) -> list[Dict[str, Any]]:
+        cutoff = (
+            datetime.now(timezone.utc) - timedelta(seconds=recent_seconds)
+        ).isoformat()
+
+        def _op():
+            conn = sqlite3.connect(self._db_path, check_same_thread=False)
+            try:
+                cur = conn.execute(
+                    """
+                    SELECT
+                        job_id,
+                        vm_id,
+                        status,
+                        lifecycle_stage,
+                        status_message,
+                        progress,
+                        transitioning,
+                        next_poll_seconds,
+                        error,
+                        created_at,
+                        updated_at
+                    FROM jobs
+                    WHERE transitioning = 1
+                       OR status IN ('queued', 'creating', 'starting')
+                       OR (status = 'failed' AND updated_at >= ?)
+                    ORDER BY created_at DESC
+                    """,
+                    (cutoff,),
+                )
+                return [
+                    {
+                        "job_id": row[0],
+                        "vm_id": row[1],
+                        "status": row[2],
+                        "lifecycle_stage": row[3],
+                        "status_message": row[4],
+                        "progress": row[5],
+                        "transitioning": bool(row[6]),
+                        "next_poll_seconds": row[7],
+                        "error": row[8],
+                        "created_at": row[9],
+                        "updated_at": row[10],
+                    }
+                    for row in cur.fetchall()
+                ]
             finally:
                 conn.close()
 

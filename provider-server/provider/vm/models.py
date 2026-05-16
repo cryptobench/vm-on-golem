@@ -116,7 +116,7 @@ class VMResources(BaseModel):
 
     cpu: int = Field(..., ge=1, description="Number of CPU cores")
     memory: int = Field(..., ge=1, description="Memory in GB")
-    storage: int = Field(..., ge=1, description="Storage in GB")
+    storage: int = Field(..., ge=10, description="Storage in GB")
 
     @classmethod
     def from_size(cls, size: VMSize) -> "VMResources":

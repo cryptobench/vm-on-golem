@@ -5,6 +5,7 @@ import pytest
 from requestor.payments.blockchain_service import (
     StreamPaymentClient,
     StreamPaymentConfig,
+    parse_stream_tuple,
 )
 
 
@@ -79,6 +80,83 @@ class DummyWeb3:
         return addr
 
 
+def test_parse_stream_tuple_supports_current_shape():
+    stream = parse_stream_tuple(
+        (
+            "0xtoken",
+            "0xsender",
+            "0xrecipient",
+            100,
+            200,
+            3,
+            300,
+            30,
+            "0x" + "11" * 32,
+            "0x" + "22" * 32,
+        )
+    )
+
+    assert stream == {
+        "token": "0xtoken",
+        "sender": "0xsender",
+        "recipient": "0xrecipient",
+        "startTime": 100,
+        "stopTime": 200,
+        "ratePerSecond": 3,
+        "deposit": 300,
+        "withdrawn": 30,
+        "leaseId": "0x" + "11" * 32,
+        "termsHash": "0x" + "22" * 32,
+        "halted": False,
+    }
+
+
+def test_parse_stream_tuple_supports_transitional_shape_without_token():
+    stream = parse_stream_tuple(
+        (
+            "0xsender",
+            "0xrecipient",
+            100,
+            200,
+            3,
+            300,
+            30,
+            "0x" + "11" * 32,
+            "0x" + "22" * 32,
+        )
+    )
+
+    assert stream["token"] is None
+    assert stream["sender"] == "0xsender"
+    assert stream["recipient"] == "0xrecipient"
+    assert stream["ratePerSecond"] == 3
+    assert stream["leaseId"] == "0x" + "11" * 32
+    assert stream["termsHash"] == "0x" + "22" * 32
+
+
+def test_parse_stream_tuple_supports_legacy_shape_with_token_and_halted():
+    stream = parse_stream_tuple(
+        ("0xtoken", "0xsender", "0xrecipient", 100, 200, 3, 300, 30, True)
+    )
+
+    assert stream["token"] == "0xtoken"
+    assert stream["sender"] == "0xsender"
+    assert stream["recipient"] == "0xrecipient"
+    assert stream["ratePerSecond"] == 3
+    assert stream["halted"] is True
+    assert stream["leaseId"] is None
+    assert stream["termsHash"] is None
+
+
+def test_parse_stream_tuple_supports_legacy_halted_shape():
+    stream = parse_stream_tuple(("0xsender", "0xrecipient", 100, 200, 3, 300, 30, True))
+
+    assert stream["token"] is None
+    assert stream["halted"] is True
+    assert stream["leaseId"] is None
+    assert stream["termsHash"] is None
+
+
 def test_create_stream_parses_event(monkeypatch):
     # Patch Web3 in module namespace
     from requestor.payments import blockchain_service as bs
@@ -97,7 +175,9 @@ def test_create_stream_parses_event(monkeypatch):
         private_key="0x01",
     )
     client = StreamPaymentClient(cfg)
-    stream_id = client.create_stream("0xprov", 1000, 1)
+    stream_id = client.create_stream(
+        "0xprov", 1000, 1, "0x" + "11" * 32, "0x" + "22" * 32, 9999999999, "0xsig"
+    )
     assert stream_id == 123
 
 
@@ -149,7 +229,9 @@ def test_create_stream_raises_when_no_event(monkeypatch):
     )
     client = StreamPaymentClient(cfg)
     with pytest.raises(RuntimeError):
-        client.create_stream("0xprov", 1000, 1)
+        client.create_stream(
+            "0xprov", 1000, 1, "0x" + "11" * 32, "0x" + "22" * 32, 9999999999, "0xsig"
+        )
 
 
 def test_top_up_happy_path(monkeypatch):

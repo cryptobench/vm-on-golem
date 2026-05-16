@@ -20,6 +20,7 @@ class CreateVMCommand(BaseModel):
     storage: int = Field(..., ge=1)
     ssh_key: str = Field(..., min_length=1)
     stream_id: int | None = None
+    payment: dict[str, Any] | None = None
 
 
 class ResizeVMCommand(BaseModel):

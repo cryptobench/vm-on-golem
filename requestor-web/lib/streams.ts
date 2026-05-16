@@ -1,10 +1,13 @@
 "use client";
 
-import { BrowserProvider, Contract } from "ethers";
+import { Contract } from "ethers";
 import streamPayment from "../public/abi/StreamPayment.json";
 import erc20 from "../public/abi/ERC20.json";
-import { requirePaymentsNetwork } from "./chain";
 import { getPriceUSD } from "./prices";
+import {
+  getPaymentsBrowserProvider,
+  getPaymentsSigner,
+} from "./walletClient";
 
 export type ChainStream = {
   token: string;
@@ -15,8 +18,16 @@ export type ChainStream = {
   ratePerSecond: bigint;
   deposit: bigint;
   withdrawn: bigint;
-  halted: boolean;
+  halted?: boolean;
+  leaseId?: string;
+  termsHash?: string;
 };
+
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+
+export function isTerminatedStream(chain: Pick<ChainStream, "recipient">) {
+  return chain.recipient.toLowerCase() === ZERO_ADDRESS;
+}
 
 export function humanDuration(totalSec: number | bigint): string {
   const seconds = Math.max(0, Number(totalSec));
@@ -33,19 +44,16 @@ export function humanDuration(totalSec: number | bigint): string {
 }
 
 export async function fetchStreamWithMeta(spAddr: string, streamId: bigint) {
-  const { ethereum } = window as any;
-  if (!ethereum) throw new Error("wallet unavailable");
-  await requirePaymentsNetwork(ethereum);
-  const provider = new BrowserProvider(ethereum);
+  const provider = await getPaymentsBrowserProvider();
   const contract = new Contract(spAddr, (streamPayment as any).abi, provider);
   const chain = (await contract.streams(streamId)) as ChainStream;
   const block = await provider.getBlock("latest");
   const now = BigInt(block?.timestamp || Math.floor(Date.now() / 1000));
-  const remaining = chain.stopTime > now && !chain.halted ? chain.stopTime - now : 0n;
-  const zero = "0x0000000000000000000000000000000000000000";
-  let tokenSymbol = chain.token.toLowerCase() === zero ? "ETH" : "GLM";
+  const remaining =
+    chain.stopTime > now && !chain.halted ? chain.stopTime - now : 0n;
+  let tokenSymbol = chain.token.toLowerCase() === ZERO_ADDRESS ? "ETH" : "GLM";
   let tokenDecimals = 18;
-  if (chain.token.toLowerCase() !== zero) {
+  if (chain.token.toLowerCase() !== ZERO_ADDRESS) {
     try {
       const token = new Contract(chain.token, (erc20 as any).abi, provider);
       tokenSymbol = await token.symbol();
@@ -64,11 +72,7 @@ export async function fetchStreamWithMeta(spAddr: string, streamId: bigint) {
 }
 
 export async function terminateStreamWithWallet(spAddr: string, streamId: bigint) {
-  const { ethereum } = window as any;
-  if (!ethereum) throw new Error("wallet unavailable");
-  await requirePaymentsNetwork(ethereum);
-  const provider = new BrowserProvider(ethereum);
-  const signer = await provider.getSigner();
+  const signer = await getPaymentsSigner();
   const contract = new Contract(spAddr, (streamPayment as any).abi, signer);
   const tx = await contract.terminate(streamId, { gasLimit: 180000n });
   await tx.wait();

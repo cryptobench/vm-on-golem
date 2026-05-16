@@ -208,18 +208,19 @@ async def test_monitor_accepts_dict_settings_and_does_not_stop_until_empty(monke
 
 
 @pytest.mark.asyncio
-async def test_monitor_deletes_when_stream_halted(monkeypatch):
+async def test_monitor_deletes_when_stream_terminated(monkeypatch):
     now = 4_000_000
     stream = {
         "token": "0xglm",
         "sender": "0xreq",
-        "recipient": "0xprov",
+        "recipient": "0x0000000000000000000000000000000000000000",
         "startTime": now - 10_000,
         "stopTime": now + 10_000,
         "ratePerSecond": 10,
         "deposit": 200_000,
         "withdrawn": 0,
-        "halted": True,
+        "leaseId": "0x" + "11" * 32,
+        "termsHash": "0x" + "22" * 32,
     }
     stream_map = DummyStreamMap({"vm-del": 11})
     vm_service = DummyVMService()
@@ -244,7 +245,7 @@ async def test_monitor_deletes_when_stream_halted(monkeypatch):
     monkeypatch.setattr(asyncio, "sleep", fake_sleep)
 
     await mon._run()
-    # VM deleted due to halted stream, not just stopped
+    # VM deleted due to terminated stream, not just stopped
     assert vm_service.deleted == ["vm-del"]
     # No withdraw attempt for inactive stream path
     assert client.withdrawn == []

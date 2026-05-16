@@ -1460,15 +1460,17 @@ httpx = ">=0.23,<1"
 
 [[package]]
 name = "golem-streaming-abi"
-version = "0.1.1"
-description = "Shared StreamPayment and ERC20 ABI definitions for VM on Golem"
+version = "0.1.0"
+description = "Shared native-ETH StreamPayment ABI definitions for VM on Golem"
 optional = false
-python-versions = "<4.0,>=3.9"
+python-versions = "^3.9"
 groups = ["main"]
-files = [
-    {file = "golem_streaming_abi-0.1.1-py3-none-any.whl", hash = "sha256:cc4b36d32eca37b13e8801c462397525b982daf1a88779c59278e3e8d992b1ba"},
-    {file = "golem_streaming_abi-0.1.1.tar.gz", hash = "sha256:833cb9f523e5c5d65dffe4300e287abe1c0b26cce7486c268446a8d081e03998"},
-]
+files = []
+develop = true
+
+[package.source]
+type = "directory"
+url = "../streaming-abi"
 
 [[package]]
 name = "h11"
@@ -3401,4 +3403,4 @@ propcache = ">=0.2.1"
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.11"
-content-hash = "1c8f88933eaf9d92b1259d5e50b4f1a1ff1d4e3d3f9ec06f5e70d726ea579d71"
+content-hash = "5b326520180e0bb14c16732e9ae102c68bc55dd91102a7d4e09ddd04eccabc41"

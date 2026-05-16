@@ -212,7 +212,8 @@ def test_get_vm_stream_status_happy_path(monkeypatch, client: TestClient):
                     "ratePerSecond": 2,
                     "deposit": 400,
                     "withdrawn": 50,
-                    "halted": False,
+                    "leaseId": "0x" + "11" * 32,
+                    "termsHash": "0x" + "22" * 32,
                 }
 
             def verify_stream(self, sid, expected_recipient):
@@ -281,7 +282,8 @@ def test_list_stream_statuses_happy_and_errors(monkeypatch, client: TestClient):
                     "ratePerSecond": 1,
                     "deposit": 600,
                     "withdrawn": 10,
-                    "halted": False,
+                    "leaseId": "0x" + "11" * 32,
+                    "termsHash": "0x" + "22" * 32,
                 }
 
             def verify_stream(self, sid, expected_recipient):

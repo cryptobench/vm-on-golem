@@ -13,7 +13,7 @@ ARKIV_DEV_WS_URL ?=
 # Central discovery API used by requestor-web in local development.
 CENTRAL_DISCOVERY_API_URL ?= http://127.0.0.1:9001/api/v1
 # Payments chain used by MetaMask/requestor-web.
-L2_RPC_URL ?= https://ethereum-hoodi-rpc.publicnode.com
+L2_RPC_URL ?= https://rpc.hoodi.ethpandaops.io
 L2_EXPLORER_URL ?= https://hoodi.etherscan.io
 L2_CHAIN_ID_HEX ?= 0x88bb0
 L2_CHAIN_NAME ?= Ethereum Hoodi

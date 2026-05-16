@@ -1,5 +1,7 @@
 from pydantic import BaseModel
 
+from provider.payments.domain import LeasePayment
+
 from .models import VMResources
 
 
@@ -8,7 +10,8 @@ class CreateVMCommand(BaseModel):
     image: str
     resources: VMResources
     ssh_key: str
-    stream_id: int | None = None
+    payment: LeasePayment | None = None
+    action_signer: str | None = None
     async_mode: bool = False
 
 

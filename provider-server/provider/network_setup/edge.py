@@ -1,3 +1,4 @@
+import asyncio
 import ssl
 from pathlib import Path
 
@@ -54,6 +55,8 @@ class HttpsEdgeServer:
         target = f"{self.upstream_base_url}/api/v1/{tail}"
         if request.query_string:
             target = f"{target}?{request.query_string}"
+        if _is_websocket_upgrade(request):
+            return await self._proxy_websocket(request, target)
         headers = {
             key: value
             for key, value in request.headers.items()
@@ -76,7 +79,102 @@ class HttpsEdgeServer:
                     proxied.headers[key] = value
             return proxied
 
+    async def _proxy_websocket(
+        self, request: web.Request, target: str
+    ) -> web.WebSocketResponse | web.Response:
+        if self._session is None:
+            return web.Response(status=503, text="HTTPS edge is not ready")
+        headers = {
+            key: value
+            for key, value in request.headers.items()
+            if key.lower()
+            not in {
+                "host",
+                "connection",
+                "content-length",
+                "upgrade",
+                "sec-websocket-extensions",
+                "sec-websocket-key",
+                "sec-websocket-protocol",
+                "sec-websocket-version",
+            }
+        }
+        protocols = _websocket_protocols(request)
+        try:
+            upstream = await self._session.ws_connect(
+                _websocket_target(target),
+                headers=headers,
+                protocols=protocols,
+                autoping=True,
+                autoclose=True,
+            )
+        except aiohttp.ClientError as exc:
+            return web.Response(status=502, text=f"WebSocket upstream failed: {exc}")
+
+        downstream = web.WebSocketResponse(
+            protocols=protocols,
+            autoping=True,
+            autoclose=True,
+        )
+        await downstream.prepare(request)
+        try:
+            await _bridge_websockets(downstream, upstream)
+        finally:
+            await upstream.close()
+        return downstream
+
 
 def _is_public_route(tail: str) -> bool:
-    allowed = ("provider/info", "vms", "images")
+    allowed = ("provider/info", "summary", "vms", "images", "payments/lease-quotes")
     return any(tail == prefix or tail.startswith(f"{prefix}/") for prefix in allowed)
+
+
+def _is_websocket_upgrade(request: web.Request) -> bool:
+    return request.headers.get("upgrade", "").lower() == "websocket"
+
+
+def _websocket_target(target: str) -> str:
+    if target.startswith("https://"):
+        return f"wss://{target[len('https://'):]}"
+    if target.startswith("http://"):
+        return f"ws://{target[len('http://'):]}"
+    return target
+
+
+def _websocket_protocols(request: web.Request) -> tuple[str, ...]:
+    header = request.headers.get("Sec-WebSocket-Protocol", "")
+    return tuple(protocol.strip() for protocol in header.split(",") if protocol.strip())
+
+
+async def _bridge_websockets(
+    downstream: web.WebSocketResponse,
+    upstream: aiohttp.ClientWebSocketResponse,
+) -> None:
+    async def downstream_to_upstream() -> None:
+        async for message in downstream:
+            if message.type == aiohttp.WSMsgType.TEXT:
+                await upstream.send_str(message.data)
+            elif message.type == aiohttp.WSMsgType.BINARY:
+                await upstream.send_bytes(message.data)
+            elif message.type == aiohttp.WSMsgType.CLOSE:
+                await upstream.close()
+                break
+
+    async def upstream_to_downstream() -> None:
+        async for message in upstream:
+            if message.type == aiohttp.WSMsgType.TEXT:
+                await downstream.send_str(message.data)
+            elif message.type == aiohttp.WSMsgType.BINARY:
+                await downstream.send_bytes(message.data)
+            elif message.type == aiohttp.WSMsgType.CLOSE:
+                await downstream.close()
+                break
+
+    tasks = [
+        asyncio.create_task(downstream_to_upstream()),
+        asyncio.create_task(upstream_to_downstream()),
+    ]
+    done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+    for task in pending:
+        task.cancel()
+    await asyncio.gather(*done, *pending, return_exceptions=True)

@@ -7,8 +7,11 @@ import type {
   MonitoringOverview,
   ProviderInfo,
   ProviderServiceStatus,
+  ProviderSettings,
   ProviderSummary,
   StreamStatus,
+  UpdateProviderPricing,
+  UpdateProviderResources,
   VMAccessInfo,
   VMInfo,
   WebhookConfig,
@@ -17,6 +20,13 @@ import type {
 
 async function serviceBaseUrl() {
   return invoke<string>("provider_api_base_url");
+}
+
+async function serviceWebSocketUrl(path: string) {
+  const baseUrl = await serviceBaseUrl();
+  const url = new URL(`${baseUrl}${path}`);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  return url.toString();
 }
 
 async function parseError(response: Response) {
@@ -54,11 +64,24 @@ function post<T>(path: string, body?: unknown) {
   });
 }
 
+function patch<T>(path: string, body?: unknown) {
+  return request<T>(path, {
+    method: "PATCH",
+    body: body == null ? undefined : JSON.stringify(body),
+  });
+}
+
 export const providerApi = {
   getServiceStatus: () => invoke<ProviderServiceStatus>("provider_status"),
+  providerLiveUrl: () => serviceWebSocketUrl("/provider/live"),
   startProvider: () => invoke<void>("start_provider"),
   stopProvider: () => invoke<void>("stop_provider"),
   info: () => request<ProviderInfo>("/provider/info"),
+  providerSettings: () => request<ProviderSettings>("/provider/settings"),
+  updateProviderResources: (resources: UpdateProviderResources) =>
+    patch<ProviderSettings>("/provider/settings/resources", resources),
+  updateProviderPricing: (pricing: UpdateProviderPricing) =>
+    patch<ProviderSettings>("/provider/settings/pricing", pricing),
   summary: () => request<ProviderSummary>("/summary"),
   vms: () => request<VMInfo[]>("/vms"),
   vm: (id: string) => request<VMInfo>(`/vms/${encodeURIComponent(id)}`),

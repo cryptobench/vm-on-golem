@@ -36,6 +36,16 @@ class ProviderSummaryService:
                 resources={
                     "total": self.resource_tracker.total_resources,
                     "available": self.resource_tracker.get_available_resources(),
+                    "detected": getattr(
+                        self.resource_tracker,
+                        "detected_resources",
+                        self.resource_tracker.total_resources,
+                    ),
+                    "allocated": getattr(
+                        self.resource_tracker,
+                        "allocated_resources",
+                        {"cpu": 0, "memory": 0, "storage": 0},
+                    ),
                 },
                 pricing={
                     "usd_per_core_month": float(

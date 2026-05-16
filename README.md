@@ -179,7 +179,7 @@ product discovery backend outside this deterministic local workflow.
 Streaming payments use the Ethereum Hoodi profile by default. `make local`
 loads `contracts/deployments/hoodi.json`, injects the StreamPayment address into
 provider, requestor, and frontend processes, and verifies the contract has bytecode
-on `https://ethereum-hoodi-rpc.publicnode.com` before startup. For offline UI-only
+on `https://rpc.hoodi.ethpandaops.io` before startup. For offline UI-only
 smoke checks, use `make local LOCAL_STACK_ARGS="--no-open --skip-chain-check"`.
 
 Requestor wallets need Hoodi ETH for gas and Hoodi tGLM for stream deposits.

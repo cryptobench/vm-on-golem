@@ -202,6 +202,7 @@ function stripAnsi(value: string): string {
 export function useDashboardData(serviceRunning: boolean | undefined) {
   const [data, setData] = React.useState<DashboardData | null>(null);
   const [loading, setLoading] = React.useState(false);
+  const socketRef = React.useRef<WebSocket | null>(null);
 
   const refresh = React.useCallback(async () => {
     if (!serviceRunning) {
@@ -209,71 +210,196 @@ export function useDashboardData(serviceRunning: boolean | undefined) {
       setLoading(false);
       return;
     }
+    const socket = socketRef.current;
+    if (socket?.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({ type: "refresh" }));
+      return;
+    }
     setLoading(true);
-    const [
-      info,
-      summary,
-      vms,
-      streams,
-      monitoring,
-      latestMetrics,
-      hostCpuHistory,
-      hostMemoryHistory,
-      alerts,
-      alertRules,
-      webhooks,
-    ] = await Promise.all([
-      capture(providerApi.info),
-      capture(providerApi.summary),
-      capture(providerApi.vms),
-      capture(providerApi.streams),
-      capture(providerApi.monitoringOverview),
-      capture(providerApi.metricsLatest),
-      capture(() => providerApi.metricsHistory("1h")),
-      capture(() => providerApi.metricsHistory("1h")),
-      capture(providerApi.alerts),
-      capture(providerApi.alertRules),
-      capture(providerApi.webhooks),
-    ]);
-
-    const errors = Object.fromEntries(
-      Object.entries({
-        info: info.error,
-        summary: summary.error,
-        vms: vms.error,
-        streams: streams.error,
-        monitoring: monitoring.error,
-        latestMetrics: latestMetrics.error,
-        hostCpuHistory: hostCpuHistory.error,
-        hostMemoryHistory: hostMemoryHistory.error,
-        alerts: alerts.error,
-        alertRules: alertRules.error,
-        webhooks: webhooks.error,
-      }).filter(([, error]) => error != null),
-    ) as Record<string, string>;
-
-    setData({
-      info: info.value,
-      summary: summary.value,
-      vms: vms.value ?? [],
-      streams: streams.value ?? [],
-      monitoring: monitoring.value,
-      latestMetrics: latestMetrics.value,
-      hostCpuHistory: hostCpuHistory.value,
-      hostMemoryHistory: hostMemoryHistory.value,
-      alerts: alerts.value ?? monitoring.value?.active_alerts ?? [],
-      alertRules: alertRules.value ?? [],
-      webhooks: webhooks.value ?? [],
-      errors,
-    });
+    setData(await loadDashboardSnapshot());
     setLoading(false);
   }, [serviceRunning]);
 
   React.useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    if (!serviceRunning) {
+      socketRef.current?.close();
+      socketRef.current = null;
+      setData(null);
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    let retryTimer: number | null = null;
+    let retryDelay = 1000;
+
+    const connect = async () => {
+      setLoading((current) => current || data == null);
+      try {
+        const socket = new WebSocket(await providerApi.providerLiveUrl());
+        socketRef.current = socket;
+        socket.onopen = () => {
+          retryDelay = 1000;
+        };
+        socket.onmessage = (message) => {
+          const event = JSON.parse(String(message.data)) as ProviderLiveEvent;
+          if (event.type === "snapshot" && event.data) {
+            setData(normalizeDashboardData(event.data));
+            setLoading(false);
+          } else if (event.type === "update" && event.data) {
+            setData((current) =>
+              mergeDashboardPatch(current, event.data as Partial<DashboardData>),
+            );
+            setLoading(false);
+          } else if (event.type === "error") {
+            setData((current) =>
+              mergeDashboardPatch(current, {
+                errors: {
+                  ...(current?.errors ?? {}),
+                  [event.scope || "providerLive"]:
+                    event.error || "Provider live stream error",
+                },
+              }),
+            );
+            setLoading(false);
+          }
+        };
+        socket.onerror = () => {
+          setData((current) =>
+            mergeDashboardPatch(current, {
+              errors: {
+                ...(current?.errors ?? {}),
+                providerLive: "Provider live stream unavailable",
+              },
+            }),
+          );
+        };
+        socket.onclose = () => {
+          if (socketRef.current === socket) socketRef.current = null;
+          if (cancelled) return;
+          retryTimer = window.setTimeout(connect, retryDelay);
+          retryDelay = Math.min(retryDelay * 2, 10000);
+        };
+      } catch (error) {
+        if (cancelled) return;
+        setData((current) =>
+          mergeDashboardPatch(current, {
+            errors: {
+              ...(current?.errors ?? {}),
+              providerLive: error instanceof Error ? error.message : String(error),
+            },
+          }),
+        );
+        retryTimer = window.setTimeout(connect, retryDelay);
+        retryDelay = Math.min(retryDelay * 2, 10000);
+      }
+    };
+
+    void connect();
+    return () => {
+      cancelled = true;
+      if (retryTimer != null) window.clearTimeout(retryTimer);
+      socketRef.current?.close();
+      socketRef.current = null;
+    };
+  }, [serviceRunning]);
 
   return { data, loading, refresh };
+}
+
+type ProviderLiveEvent = {
+  type: "hello" | "snapshot" | "update" | "error" | "heartbeat";
+  scope?: string | null;
+  data?: Partial<DashboardData> | null;
+  error?: string | null;
+};
+
+async function loadDashboardSnapshot(): Promise<DashboardData> {
+  const [
+    info,
+    summary,
+    vms,
+    streams,
+    monitoring,
+    latestMetrics,
+    hostCpuHistory,
+    hostMemoryHistory,
+    alerts,
+    alertRules,
+    webhooks,
+  ] = await Promise.all([
+    capture(providerApi.info),
+    capture(providerApi.summary),
+    capture(providerApi.vms),
+    capture(providerApi.streams),
+    capture(providerApi.monitoringOverview),
+    capture(providerApi.metricsLatest),
+    capture(() => providerApi.metricsHistory("1h")),
+    capture(() => providerApi.metricsHistory("1h")),
+    capture(providerApi.alerts),
+    capture(providerApi.alertRules),
+    capture(providerApi.webhooks),
+  ]);
+
+  const errors = Object.fromEntries(
+    Object.entries({
+      info: info.error,
+      summary: summary.error,
+      vms: vms.error,
+      streams: streams.error,
+      monitoring: monitoring.error,
+      latestMetrics: latestMetrics.error,
+      hostCpuHistory: hostCpuHistory.error,
+      hostMemoryHistory: hostMemoryHistory.error,
+      alerts: alerts.error,
+      alertRules: alertRules.error,
+      webhooks: webhooks.error,
+    }).filter(([, error]) => error != null),
+  ) as Record<string, string>;
+
+  return {
+    info: info.value,
+    summary: summary.value,
+    vms: vms.value ?? [],
+    streams: streams.value ?? [],
+    monitoring: monitoring.value,
+    latestMetrics: latestMetrics.value,
+    hostCpuHistory: hostCpuHistory.value,
+    hostMemoryHistory: hostMemoryHistory.value,
+    alerts: alerts.value ?? monitoring.value?.active_alerts ?? [],
+    alertRules: alertRules.value ?? [],
+    webhooks: webhooks.value ?? [],
+    errors,
+  };
+}
+
+function normalizeDashboardData(patch: Partial<DashboardData>): DashboardData {
+  return mergeDashboardPatch(null, patch);
+}
+
+export function mergeDashboardPatch(
+  current: DashboardData | null,
+  patch: Partial<DashboardData>,
+): DashboardData {
+  return {
+    info: patch.info ?? current?.info ?? null,
+    summary: patch.summary ?? current?.summary ?? null,
+    vms: patch.vms ?? current?.vms ?? [],
+    streams: patch.streams ?? current?.streams ?? [],
+    monitoring: patch.monitoring ?? current?.monitoring ?? null,
+    latestMetrics: patch.latestMetrics ?? current?.latestMetrics ?? null,
+    hostCpuHistory: patch.hostCpuHistory ?? current?.hostCpuHistory ?? null,
+    hostMemoryHistory:
+      patch.hostMemoryHistory ?? current?.hostMemoryHistory ?? null,
+    alerts:
+      patch.alerts ??
+      current?.alerts ??
+      patch.monitoring?.active_alerts ??
+      current?.monitoring?.active_alerts ??
+      [],
+    alertRules: patch.alertRules ?? current?.alertRules ?? [],
+    webhooks: patch.webhooks ?? current?.webhooks ?? [],
+    errors: patch.errors ?? current?.errors ?? {},
+  };
 }
 
 export type VmDetailData = {

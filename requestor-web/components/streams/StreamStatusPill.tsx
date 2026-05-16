@@ -8,14 +8,14 @@ const STATUS_LABELS: Record<StreamStatusKind, string> = {
   active: "Active",
   "needs-top-up": "Needs top-up",
   "out-of-funds": "Out of funds",
-  halted: "Halted",
+  terminated: "Terminated",
 };
 
 const STATUS_STYLES: Record<StreamStatusKind, string> = {
   active: "bg-success-soft text-success",
   "needs-top-up": "bg-warning-soft text-warning",
   "out-of-funds": "bg-danger-soft text-danger",
-  halted: "bg-danger-soft text-danger",
+  terminated: "bg-danger-soft text-danger",
 };
 
 export function StreamStatusPill({ status }: { status: StreamStatusKind }) {

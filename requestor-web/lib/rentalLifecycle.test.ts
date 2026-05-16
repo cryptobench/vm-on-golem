@@ -90,7 +90,6 @@ test("start guard rejects settled or empty paid streams", async () => {
           ratePerSecond: 1n,
           deposit: 100n,
           withdrawn: 0n,
-          halted: false,
         },
         remaining: 10n,
         tokenSymbol: "GLM",

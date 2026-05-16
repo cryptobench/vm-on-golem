@@ -1639,44 +1639,15 @@ def stop(
 
 
 def _env_path_for(dev_mode: Optional[bool]) -> str:
-    from pathlib import Path
+    from .config_persistence import provider_env_path_for
 
-    env_file = ".env.dev" if dev_mode else ".env"
-    return str(Path(__file__).parent.parent / env_file)
+    return provider_env_path_for(dev_mode)
 
 
 def _write_env_vars(path: str, updates: dict):
-    # Simple .env updater: preserves other lines, replaces/append updated keys
-    import io
-    import re
+    from .config_persistence import write_env_vars
 
-    try:
-        with open(path, "r") as f:
-            lines = f.readlines()
-    except FileNotFoundError:
-        lines = []
-
-    kv = {**updates}
-    pattern = re.compile(r"^(?P<k>[A-Z0-9_]+)=.*$")
-    out = []
-    seen = set()
-    for line in lines:
-        m = pattern.match(line.strip())
-        if not m:
-            out.append(line)
-            continue
-        k = m.group("k")
-        if k in kv:
-            out.append(f"{k}={kv[k]}\n")
-            seen.add(k)
-        else:
-            out.append(line)
-    for k, v in kv.items():
-        if k not in seen:
-            out.append(f"{k}={v}\n")
-
-    with open(path, "w") as f:
-        f.writelines(out)
+    write_env_vars(path, updates)
 
 
 @config_app.command("withdraw")

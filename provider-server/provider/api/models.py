@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from ..utils.logging import setup_logger
 from ..utils.time import ensure_utc, utc_now
+from ..payments.domain import LeasePayment
 from ..vm.models import MULTIPASS_SSH_USER, VMResources, VMSize, VMStatus
 
 logger = setup_logger(__name__)
@@ -24,9 +25,9 @@ class CreateVMRequest(BaseModel):
         pattern="^(ssh-rsa|ssh-ed25519) ",
         description="SSH public key for VM access",
     )
-    stream_id: Optional[int] = Field(
+    payment: Optional[LeasePayment] = Field(
         default=None,
-        description="On-chain StreamPayment stream id used to fund this VM",
+        description="V2 lease-bound on-chain StreamPayment proof used to fund this VM",
     )
 
     @field_validator("name")
@@ -148,7 +149,8 @@ class StreamOnChain(BaseModel):
     ratePerSecond: int
     deposit: int
     withdrawn: int
-    halted: bool
+    leaseId: str
+    termsHash: str
 
 
 class StreamComputed(BaseModel):

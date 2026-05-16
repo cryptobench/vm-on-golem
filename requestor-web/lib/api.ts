@@ -6,10 +6,7 @@ import {
   type ListAdvertisementsApiV1AdvertisementsGetParams,
 } from "./generated/api/central-discovery";
 import {
-  createSnapshotApiV1VmsRequestorNameSnapshotsPost,
   createVmApiV1VmsPost,
-  deleteSnapshotApiV1VmsRequestorNameSnapshotsSnapshotNameDelete,
-  deleteVmApiV1VmsRequestorNameDelete,
   getCreateJobApiV1VmsJobsJobIdGet,
   getVmAccessApiV1VmsRequestorNameAccessGet,
   getVmStatusApiV1VmsRequestorNameGet,
@@ -17,13 +14,6 @@ import {
   listSnapshotsApiV1VmsRequestorNameSnapshotsGet,
   providerInfoApiV1ProviderInfoGet,
   providerSummaryApiV1SummaryGet,
-  resizeVmApiV1VmsRequestorNameResizePost,
-  restartVmApiV1VmsRequestorNameRestartPost,
-  restoreSnapshotApiV1VmsRequestorNameSnapshotsSnapshotNameRestorePost,
-  resumeVmApiV1VmsRequestorNameResumePost,
-  startVmApiV1VmsRequestorNameStartPost,
-  stopVmApiV1VmsRequestorNameStopPost,
-  suspendVmApiV1VmsRequestorNameSuspendPost,
   type CreateSnapshotRequest,
   type CreateVMJobResponse,
   type CreateVMRequest,
@@ -41,32 +31,12 @@ import {
 import type { AdsConfig } from "../context/AdsContext";
 import type { ApiRequestOptions } from "./api/orval-fetch";
 import { getRequestorRuntimeConfig } from "./runtimeConfig";
+import { getPaymentsSigner } from "./walletClient";
 
 export type { AdsConfig } from "../context/AdsContext";
 export type ProviderAd = AdvertisementResponse;
 export type { CreateVMRequest, VMResources, ProviderSummary };
-
-export type SSHKey = {
-  id: string;
-  name: string;
-  value: string;
-  public_key?: string;
-};
-
-export type Settings = {
-  ssh_public_key?: string;
-  ssh_keys?: SSHKey[];
-  default_ssh_key_id?: string;
-  stream_payment_address?: string;
-  glm_token_address?: string;
-  evm_chain_id?: string;
-  evm_chain_name?: string;
-  evm_rpc_url?: string;
-  evm_explorer_url?: string;
-  display_currency?: "fiat" | "token";
-  show_terminated?: boolean;
-  show_ended_streams?: boolean;
-};
+export { loadSettings, saveSettings, type Settings, type SSHKey } from "./settings";
 
 export type Rental = {
   name: string;
@@ -144,46 +114,7 @@ export type VmLiveEvent = {
   error?: string | null;
 };
 
-const SETTINGS_KEY = "requestor_settings_v1";
 const RENTALS_KEY = "requestor_rentals_v1";
-const STALE_STREAM_PAYMENT_ADDRESSES = new Set([
-  "0x0281b792b5491e3548c8fc17c24a2e0cb99fbec2",
-]);
-
-export function loadSettings(): Settings {
-  if (typeof window === "undefined") return {};
-  try {
-    const settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
-    const defaultStreamPayment =
-      getRequestorRuntimeConfig().streamPaymentAddress || "";
-    const currentStreamPayment = String(
-      settings.stream_payment_address || "",
-    ).toLowerCase();
-    if (
-      defaultStreamPayment &&
-      STALE_STREAM_PAYMENT_ADDRESSES.has(currentStreamPayment)
-    ) {
-      const migrated = {
-        ...settings,
-        stream_payment_address: defaultStreamPayment,
-      };
-      localStorage.setItem(SETTINGS_KEY, JSON.stringify(migrated));
-      return migrated;
-    }
-    return settings;
-  } catch {
-    return {};
-  }
-}
-
-export function saveSettings(next: Partial<Settings>) {
-  if (typeof window === "undefined") return;
-  const settings = { ...loadSettings(), ...next };
-  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-  window.dispatchEvent(
-    new CustomEvent("requestor_settings_changed", { detail: settings }),
-  );
-}
 
 export function loadRentals(): Rental[] {
   if (typeof window === "undefined") return [];
@@ -332,6 +263,21 @@ export async function createVm(
   providerEndpointUrl: string,
   payload: CreateVMRequest,
 ): Promise<VMInfo | CreateVMJobResponse> {
+  if ((payload as any).payment) {
+    const path = "/api/v1/vms";
+    const body = JSON.stringify(payload);
+    const headers = await signedProviderActionHeaders("POST", path, body);
+    const response = await fetch(providerUrl(providerEndpointUrl, `${path}?async=true`), {
+      method: "POST",
+      headers: { "content-type": "application/json", ...headers },
+      body,
+    });
+    const data = await response.json().catch(() => null);
+    if (!response.ok) {
+      throw apiError(response.status, data);
+    }
+    return data as VMInfo | CreateVMJobResponse;
+  }
   return unwrapAs<VMInfo | CreateVMJobResponse>(
     await createVmApiV1VmsPost(
       payload,
@@ -341,6 +287,42 @@ export async function createVm(
     200,
     202,
   );
+}
+
+async function signedProviderActionHeaders(method: string, path: string, body: string) {
+  const signer = await getPaymentsSigner();
+  const requestor = await signer.getAddress();
+  const deadline = Math.floor(Date.now() / 1000) + 300;
+  const nonce = String(Date.now()) + "-" + Math.random().toString(16).slice(2);
+  const bodyHash = await sha256Hex(body);
+  const signature = await signer.signTypedData(
+    { name: "GolemProviderAction", version: "2" },
+    {
+      ProviderAction: [
+        { name: "requestor", type: "address" },
+        { name: "method", type: "string" },
+        { name: "path", type: "string" },
+        { name: "bodyHash", type: "bytes32" },
+        { name: "nonce", type: "string" },
+        { name: "deadline", type: "uint256" },
+      ],
+    },
+    { requestor, method: method.toUpperCase(), path, bodyHash, nonce, deadline },
+  );
+  return {
+    "x-golem-requestor": requestor,
+    "x-golem-signature": signature,
+    "x-golem-nonce": nonce,
+    "x-golem-deadline": String(deadline),
+  };
+}
+
+async function sha256Hex(text: string) {
+  const data = new TextEncoder().encode(text);
+  const digest = await crypto.subtle.digest("SHA-256", data);
+  return `0x${Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("")}`;
 }
 
 export async function vmJobStatus(
@@ -450,52 +432,46 @@ export function vmLiveUrl(
 }
 
 export const vmStart = (providerEndpointUrl: string, vmId: string) =>
-  unwrapAs<VMInfo>(
-    startVmApiV1VmsRequestorNameStartPost(
-      vmId,
-      providerOptions(providerEndpointUrl),
-    ),
-    200,
+  signedProviderRequest<VMInfo>(
+    providerEndpointUrl,
+    "POST",
+    `/api/v1/vms/${encodeURIComponent(vmId)}/start`,
+    {},
   );
 export const vmStop = (providerEndpointUrl: string, vmId: string) =>
-  unwrapAs<VMInfo>(
-    stopVmApiV1VmsRequestorNameStopPost(
-      vmId,
-      providerOptions(providerEndpointUrl),
-    ),
-    200,
+  signedProviderRequest<VMInfo>(
+    providerEndpointUrl,
+    "POST",
+    `/api/v1/vms/${encodeURIComponent(vmId)}/stop`,
+    {},
   );
 export const vmRestart = (providerEndpointUrl: string, vmId: string) =>
-  unwrapAs<VMInfo>(
-    restartVmApiV1VmsRequestorNameRestartPost(
-      vmId,
-      providerOptions(providerEndpointUrl),
-    ),
-    200,
+  signedProviderRequest<VMInfo>(
+    providerEndpointUrl,
+    "POST",
+    `/api/v1/vms/${encodeURIComponent(vmId)}/restart`,
+    {},
   );
 export const vmSuspend = (providerEndpointUrl: string, vmId: string) =>
-  unwrapAs<VMInfo>(
-    suspendVmApiV1VmsRequestorNameSuspendPost(
-      vmId,
-      providerOptions(providerEndpointUrl),
-    ),
-    200,
+  signedProviderRequest<VMInfo>(
+    providerEndpointUrl,
+    "POST",
+    `/api/v1/vms/${encodeURIComponent(vmId)}/suspend`,
+    {},
   );
 export const vmResume = (providerEndpointUrl: string, vmId: string) =>
-  unwrapAs<VMInfo>(
-    resumeVmApiV1VmsRequestorNameResumePost(
-      vmId,
-      providerOptions(providerEndpointUrl),
-    ),
-    200,
+  signedProviderRequest<VMInfo>(
+    providerEndpointUrl,
+    "POST",
+    `/api/v1/vms/${encodeURIComponent(vmId)}/resume`,
+    {},
   );
 export const vmDestroy = (providerEndpointUrl: string, vmId: string) =>
-  unwrapAs<null>(
-    deleteVmApiV1VmsRequestorNameDelete(
-      vmId,
-      providerOptions(providerEndpointUrl),
-    ),
-    200,
+  signedProviderRequest<null>(
+    providerEndpointUrl,
+    "DELETE",
+    `/api/v1/vms/${encodeURIComponent(vmId)}`,
+    null,
   );
 
 export function vmResize(
@@ -504,13 +480,11 @@ export function vmResize(
   resources: VMResources,
 ) {
   const payload: ResizeVMRequest = { resources };
-  return unwrapAs<VMInfo>(
-    resizeVmApiV1VmsRequestorNameResizePost(
-      vmId,
-      payload,
-      providerOptions(providerEndpointUrl),
-    ),
-    200,
+  return signedProviderRequest<VMInfo>(
+    providerEndpointUrl,
+    "POST",
+    `/api/v1/vms/${encodeURIComponent(vmId)}/resize`,
+    payload,
   );
 }
 
@@ -531,13 +505,11 @@ export const createSnapshot = (
   vmId: string,
   payload: CreateSnapshotRequest,
 ) =>
-  unwrapAs<VMSnapshot>(
-    createSnapshotApiV1VmsRequestorNameSnapshotsPost(
-      vmId,
-      payload,
-      providerOptions(providerEndpointUrl),
-    ),
-    200,
+  signedProviderRequest<VMSnapshot>(
+    providerEndpointUrl,
+    "POST",
+    `/api/v1/vms/${encodeURIComponent(vmId)}/snapshots`,
+    payload,
   );
 
 export const restoreSnapshot = (
@@ -545,13 +517,11 @@ export const restoreSnapshot = (
   vmId: string,
   snapshot: string,
 ) =>
-  unwrapAs<VMInfo>(
-    restoreSnapshotApiV1VmsRequestorNameSnapshotsSnapshotNameRestorePost(
-      vmId,
-      snapshot,
-      providerOptions(providerEndpointUrl),
-    ),
-    200,
+  signedProviderRequest<VMInfo>(
+    providerEndpointUrl,
+    "POST",
+    `/api/v1/vms/${encodeURIComponent(vmId)}/snapshots/${encodeURIComponent(snapshot)}/restore`,
+    {},
   );
 
 export const deleteSnapshot = (
@@ -559,14 +529,35 @@ export const deleteSnapshot = (
   vmId: string,
   snapshot: string,
 ) =>
-  unwrapAs<null>(
-    deleteSnapshotApiV1VmsRequestorNameSnapshotsSnapshotNameDelete(
-      vmId,
-      snapshot,
-      providerOptions(providerEndpointUrl),
-    ),
-    200,
+  signedProviderRequest<null>(
+    providerEndpointUrl,
+    "DELETE",
+    `/api/v1/vms/${encodeURIComponent(vmId)}/snapshots/${encodeURIComponent(snapshot)}`,
+    null,
   );
+
+async function signedProviderRequest<T>(
+  providerEndpointUrl: string,
+  method: "POST" | "DELETE",
+  path: string,
+  payload: unknown,
+): Promise<T> {
+  const body = payload === null ? "" : JSON.stringify(payload);
+  const headers = await signedProviderActionHeaders(method, path, body);
+  const response = await fetch(providerUrl(providerEndpointUrl, path), {
+    method,
+    headers:
+      payload === null
+        ? headers
+        : { "content-type": "application/json", ...headers },
+    body: payload === null ? undefined : body,
+  });
+  const data = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw apiError(response.status, data);
+  }
+  return data as T;
+}
 
 type ApiResponse<TData, TStatus extends number = number> = {
   data: TData;

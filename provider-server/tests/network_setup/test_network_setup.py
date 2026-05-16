@@ -3,6 +3,7 @@ import socket
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
+import aiohttp
 import pytest
 from aiohttp import web
 from cryptography import x509
@@ -12,6 +13,7 @@ from cryptography.x509.oid import NameOID
 
 import provider.network_setup.certificate_service as certificate_service
 from provider.network_setup.certs import cert_is_valid_for_ip
+from provider.network_setup.edge import HttpsEdgeServer, _is_public_route
 from provider.network_setup.nat import (
     NatMappingResult,
     _mapping_conflict_detail,
@@ -188,6 +190,69 @@ def test_cert_validation_accepts_ip_san(tmp_path):
 
     assert valid is True
     assert "valid" in detail
+
+
+def test_https_edge_public_routes_cover_requestor_web_paths():
+    assert _is_public_route("provider/info")
+    assert _is_public_route("summary")
+    assert _is_public_route("images")
+    assert _is_public_route("vms")
+    assert _is_public_route("vms/vm-a/live")
+    assert _is_public_route("payments/lease-quotes")
+    assert not _is_public_route("payments/streams")
+    assert not _is_public_route("provider/settings")
+
+
+@pytest.mark.asyncio
+async def test_https_edge_proxies_websocket_live_route(tmp_path):
+    _write_ip_cert(tmp_path)
+    upstream_app = web.Application()
+
+    async def live_route(request):
+        websocket = web.WebSocketResponse()
+        await websocket.prepare(request)
+        await websocket.send_json({"type": "hello", "path": str(request.rel_url)})
+        async for message in websocket:
+            if message.type == aiohttp.WSMsgType.TEXT:
+                await websocket.send_str(f"echo:{message.data}")
+        return websocket
+
+    upstream_app.router.add_get("/api/v1/vms/{vm_id}/live", live_route)
+    upstream_runner = web.AppRunner(upstream_app)
+    await upstream_runner.setup()
+    upstream_port = _free_port()
+    upstream_site = web.TCPSite(upstream_runner, "127.0.0.1", upstream_port)
+    await upstream_site.start()
+
+    edge_port = _free_port()
+    edge = HttpsEdgeServer(
+        host="127.0.0.1",
+        port=edge_port,
+        cert_path=tmp_path / "provider-ip.crt",
+        key_path=tmp_path / "provider-ip.key",
+        upstream_base_url=f"http://127.0.0.1:{upstream_port}",
+    )
+    await edge.start()
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.ws_connect(
+                f"https://127.0.0.1:{edge_port}/api/v1/vms/vm-a/live?history_range=6h",
+                ssl=False,
+            ) as websocket:
+                hello = await websocket.receive_json()
+                await websocket.send_str("refresh")
+                echo = await websocket.receive()
+    finally:
+        await edge.stop()
+        await upstream_runner.cleanup()
+
+    assert hello == {
+        "type": "hello",
+        "path": "/api/v1/vms/vm-a/live?history_range=6h",
+    }
+    assert echo.type == aiohttp.WSMsgType.TEXT
+    assert echo.data == "echo:refresh"
 
 
 def test_upnp_error_detail_preserves_raw_error():

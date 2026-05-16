@@ -7,6 +7,7 @@ import type { NavigateTarget, PageId } from "./components/types";
 import { AlertsPage } from "./features/alerts/AlertsPage";
 import { MonitoringPage } from "./features/monitoring/MonitoringPage";
 import { OverviewPage } from "./features/overview/OverviewPage";
+import { SettingsPage } from "./features/settings/SettingsPage";
 import { StreamsPage } from "./features/streams/StreamsPage";
 import { VirtualMachinesPage } from "./features/vms/VirtualMachinesPage";
 import { VmDetailsPage } from "./features/vm-detail/VmDetailsPage";
@@ -81,19 +82,12 @@ export function App() {
     );
   }
 
-  const serviceStatus = service.status
-    ? { ...service.status, running: service.status.running || dashboardEnabled }
-    : service.status;
-
   return (
     <div className={startupHandoffComplete ? "provider-dashboard-screen" : undefined}>
       <AppShell
         activePage={route.page}
         data={dashboard.data}
-        serviceStatus={serviceStatus}
-        busyAction={service.busyAction}
         onNavigate={navigate}
-        onStopProvider={() => void service.runAction("stop")}
       >
         {route.page === "overview" ? (
           <OverviewPage
@@ -136,7 +130,12 @@ export function App() {
         {route.page === "vm-detail" ? (
           <VmDetailsPage vmId={route.vmId} onNavigate={navigate} />
         ) : null}
-        {route.page === "settings" || route.page === "health" ? (
+        {route.page === "settings" ? (
+          <SettingsPage
+            onRefresh={dashboard.refresh}
+          />
+        ) : null}
+        {route.page === "health" ? (
           <PlaceholderPage page={route.page} />
         ) : null}
       </AppShell>
@@ -144,11 +143,11 @@ export function App() {
   );
 }
 
-function PlaceholderPage({ page }: { page: "settings" | "health" }) {
+function PlaceholderPage({ page }: { page: "health" }) {
   return (
     <div className="space-y-6">
       <PageHeader
-        title={page === "settings" ? "Settings" : "Health"}
+        title="Health"
         description="This provider endpoint is not exposed to the desktop app yet."
       />
       <Card>

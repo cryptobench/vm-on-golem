@@ -1,19 +1,18 @@
 "use client";
 
-import { BrowserProvider, Contract, parseUnits } from "ethers";
+import { Contract } from "ethers";
 import streamPayment from "../public/abi/StreamPayment.json";
 import erc20 from "../public/abi/ERC20.json";
 import {
-  computeEstimate,
   loadSettings,
-  providerInfo,
   providerEndpointUrl,
   type AdsConfig,
   type ProviderAd,
   type VMResources,
 } from "./api";
-import { PAYMENT_PRICE_MAX_AGE_MS, usdToTokenAsync } from "./prices";
 import { getRequestorRuntimeConfig } from "./runtimeConfig";
+import { getPaymentsSigner, getWalletName } from "./walletClient";
+import { walletDebug, walletWarn } from "./walletDebug";
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
@@ -30,6 +29,13 @@ export type OpenPaymentStreamOptions = {
 export type OpenedPaymentStream = {
   id: string;
   contractAddress: string;
+  payment: {
+    stream_id: number;
+    lease_id: string;
+    terms_hash: string;
+    rate_per_second_wei: number;
+    duration_seconds: number;
+  };
 };
 
 export async function openPaymentStream({
@@ -45,18 +51,43 @@ export async function openPaymentStream({
   onPhase?.(
     `Waiting for your approval in ${walletName} to confirm the payment network`,
   );
-  await ensurePaymentsNetwork();
-  const { ethereum } = window as any;
-  if (!ethereum) throw new Error("MetaMask not detected");
 
-  onPhase?.("Loading provider payment settings");
-  const providerPayment = await loadProviderPaymentMetadata(
-    provider as ProviderAd,
-  );
+  onPhase?.("Loading provider lease quote");
+  walletDebug("payment-stream:signer:start", {
+    providerId: provider.provider_id,
+    durationSeconds,
+    resources,
+  });
+  const signer = await getPaymentsSigner({ account, ensurePaymentsNetwork });
+  const owner = await signer.getAddress();
+  const providerUrl = providerEndpointUrl(provider as ProviderAd);
+  walletDebug("payment-stream:quote:start", {
+    providerId: provider.provider_id,
+    providerUrl,
+    requestor: owner,
+  });
+  const quote = await createLeaseQuote(providerUrl, {
+    vm_name: "web-rental",
+    image: "24.04",
+    cpu: resources.cpu,
+    memory: resources.memory,
+    storage: resources.storage,
+    duration_seconds: durationSeconds,
+    requestor_address: owner,
+  });
+  walletDebug("payment-stream:quote:done", {
+    providerId: provider.provider_id,
+    hasContractAddress: Boolean(quote.contract_address),
+    hasGlmTokenAddress: Boolean(quote.glm_token_address),
+    hasProviderAddress: Boolean(quote.provider_address),
+    hasSignature: Boolean(quote.signature),
+    ratePerSecondWei: quote.rate_per_second_wei,
+    minDepositWei: quote.min_deposit_wei,
+  });
   const cfg = loadSettings();
   const runtimeConfig = getRequestorRuntimeConfig();
   const spAddr = (
-    providerPayment?.stream_payment_address ||
+    quote.contract_address ||
     cfg.stream_payment_address ||
     runtimeConfig.streamPaymentAddress ||
     ""
@@ -68,7 +99,7 @@ export async function openPaymentStream({
   }
 
   const token = [
-    providerPayment?.glm_token_address,
+    quote.glm_token_address,
     cfg.glm_token_address,
     runtimeConfig.glmTokenAddress,
   ]
@@ -80,97 +111,112 @@ export async function openPaymentStream({
     );
   }
 
-  const browserProvider = new BrowserProvider(ethereum);
-  const signer = await browserProvider.getSigner(account ?? undefined);
   const glm = new Contract(token, (erc20 as any).abi, signer);
-  onPhase?.("Calculating replacement stream rate");
-  const decimals = Number(await glm.decimals().catch(() => 18));
-  const ratePerSecondWei = await computeRatePerSecondWei(
-    provider,
-    resources,
-    decimals,
-  );
-  const depositWei = ratePerSecondWei * BigInt(Math.max(1, durationSeconds));
+  const ratePerSecondWei = BigInt(quote.rate_per_second_wei);
+  const depositWei = BigInt(quote.min_deposit_wei);
 
-  const owner = await signer.getAddress();
   onPhase?.("Checking GLM allowance");
+  walletDebug("payment-stream:allowance:start", {
+    token,
+    streamPayment: spAddr,
+    owner,
+  });
   const allowance = await glm.allowance(owner, spAddr);
+  walletDebug("payment-stream:allowance:done", {
+    hasEnoughAllowance: allowance >= depositWei,
+    allowance: String(allowance),
+    depositWei: String(depositWei),
+  });
   if (allowance < depositWei) {
     onPhase?.(
       `Waiting for your approval in ${walletName} to approve GLM spending`,
     );
+    walletDebug("payment-stream:approve:start", {
+      token,
+      streamPayment: spAddr,
+      depositWei: String(depositWei),
+    });
     const approveTx = await glm.approve(spAddr, depositWei);
     onPhase?.("Waiting for GLM approval confirmation on the blockchain");
     await approveTx.wait();
+    walletDebug("payment-stream:approve:done", { txHash: approveTx.hash });
   }
 
   const contract = new Contract(spAddr, (streamPayment as any).abi, signer);
   onPhase?.(
     `Waiting for your approval in ${walletName} to create the replacement stream`,
   );
+  walletDebug("payment-stream:create:start", {
+    streamPayment: spAddr,
+    providerAddress: quote.provider_address,
+    depositWei: String(depositWei),
+    ratePerSecondWei: String(ratePerSecondWei),
+  });
   const tx = await contract.createStream(
-    token,
-    provider.provider_id,
+    quote.provider_address,
     depositWei,
     ratePerSecondWei,
+    quote.lease_id,
+    quote.terms_hash,
+    BigInt(quote.quote_expires_at),
+    quote.signature,
     { gasLimit: 350000n },
   );
   onPhase?.("Waiting for replacement stream confirmation on the blockchain");
   const receipt = await tx.wait();
+  walletDebug("payment-stream:create:confirmed", {
+    txHash: tx.hash,
+    logCount: Array.isArray(receipt?.logs) ? receipt.logs.length : null,
+  });
   const event = receipt?.logs?.find?.(
     (log: any) => String(log?.fragment?.name) === "StreamCreated",
   );
   const streamId = event?.args?.[0] ?? null;
   if (!streamId) throw new Error("Stream id not found");
+  walletDebug("payment-stream:create:done", { streamId: String(streamId) });
 
-  return { id: String(streamId), contractAddress: spAddr };
+  return {
+    id: String(streamId),
+    contractAddress: spAddr,
+    payment: {
+      stream_id: Number(streamId),
+      lease_id: quote.lease_id,
+      terms_hash: quote.terms_hash,
+      rate_per_second_wei: Number(quote.rate_per_second_wei),
+      duration_seconds: Number(quote.min_runway_seconds || durationSeconds),
+    },
+  };
 }
 
-function getWalletName() {
-  const ethereum = (window as any)?.ethereum;
-  if (ethereum?.isMetaMask) return "MetaMask";
-  if (ethereum?.isRabby) return "Rabby";
-  if (ethereum?.isBraveWallet) return "Brave Wallet";
-  return "your wallet";
-}
-
-async function loadProviderPaymentMetadata(provider: ProviderAd) {
+async function createLeaseQuote(providerEndpointUrl: string, payload: any) {
+  let response: Response;
   try {
-    return await providerInfo(providerEndpointUrl(provider));
-  } catch (error) {
-    console.warn(
-      "Provider payment metadata unavailable, using local payment settings",
-      error,
-    );
-    return null;
-  }
-}
-
-async function computeRatePerSecondWei(
-  provider: Pick<ProviderAd, "pricing">,
-  resources: VMResources,
-  decimals: number,
-) {
-  const estimate = computeEstimate(
-    provider as ProviderAd,
-    resources.cpu,
-    resources.memory,
-    resources.storage,
-  );
-  let glmPerMonth: number | null = estimate.glm_per_month ?? null;
-  if (glmPerMonth == null) {
-    glmPerMonth = await usdToTokenAsync("GLM", estimate.usd_per_month, {
-      maxAgeMs: PAYMENT_PRICE_MAX_AGE_MS,
+    response = await fetch(`${providerEndpointUrl}/api/v1/payments/lease-quotes`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
     });
-    if (glmPerMonth == null) {
-      throw new Error("GLM/USD price unavailable to compute rate");
-    }
+  } catch (error) {
+    walletWarn("payment-stream:quote:fetch-failed", error, {
+      providerEndpointUrl,
+    });
+    throw new Error(
+      `Provider ${providerEndpointUrl} is unreachable while loading the lease quote.`,
+      { cause: error },
+    );
   }
-
-  const glmPerSecond = glmPerMonth / (30.4167 * 24 * 3600);
-  const ratePerSecondWei = parseUnits(glmPerSecond.toFixed(decimals), decimals);
-  if (ratePerSecondWei <= 0n) {
-    throw new Error("Computed GLM rate is too small");
+  walletDebug("payment-stream:quote:response", {
+    providerEndpointUrl,
+    status: response.status,
+    ok: response.ok,
+  });
+  if (!response.ok) {
+    const body = await response.text();
+    walletDebug("payment-stream:quote:error-body", {
+      status: response.status,
+      body: body.slice(0, 500),
+    });
+    throw new Error(body || `Lease quote request failed with HTTP ${response.status}`);
   }
-  return ratePerSecondWei;
+  return response.json();
 }

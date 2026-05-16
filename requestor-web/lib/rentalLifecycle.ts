@@ -1,8 +1,6 @@
 import type { Rental } from "./api";
 import { vmDestroy } from "./api";
-import { fetchStreamWithMeta } from "./streams";
-
-const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+import { fetchStreamWithMeta, isTerminatedStream } from "./streams";
 
 export type TerminateRentalOptions = {
   rental: Rental;
@@ -64,11 +62,8 @@ export async function ensurePaidStreamCanStart({
   }
 
   const stream = await fetchStream(streamPaymentAddress, BigInt(rental.stream_id));
-  if (stream.chain.recipient.toLowerCase() === ZERO_ADDRESS) {
+  if (isTerminatedStream(stream.chain)) {
     throw new Error("Payment stream is already settled. Terminate this VM or create a new rental.");
-  }
-  if (stream.chain.halted) {
-    throw new Error("Payment stream is halted. Terminate this VM or create a new rental.");
   }
   const remaining = Number(stream.remaining);
   if (!Number.isFinite(remaining) || remaining <= 0 || Number(stream.chain.stopTime) <= now()) {

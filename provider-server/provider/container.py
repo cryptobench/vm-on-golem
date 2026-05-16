@@ -10,7 +10,8 @@ from .discovery.publishers import CentralDiscoveryPublisher
 from .discovery.publishing_service import DiscoveryPublishingService
 from .discovery.resource_tracker import ResourceTracker
 from .jobs.store import JobStore
-from .live.service import HostLiveService, VMLiveService
+from .live.events import ProviderEventBroadcaster
+from .live.service import HostLiveService, ProviderLiveService, VMLiveService
 from .monitoring.repo import MonitoringRepository
 from .monitoring.services import MonitoringService
 from .network_setup.certificate_service import CertificateMaintenanceService
@@ -18,11 +19,13 @@ from .network_setup.service import NetworkSetupService
 from .payments.blockchain_service import StreamPaymentClient
 from .payments.blockchain_service import StreamPaymentConfig as _SPC
 from .payments.blockchain_service import StreamPaymentReader
+from .payments.lease_quote_service import LeaseQuoteService
 from .payments.monitor import StreamMonitor
 from .payments.stream_map import StreamMap
 from .payments.stream_status_service import StreamStatusService
 from .provider_info.service import ProviderInfoService
 from .service import ProviderService
+from .settings.service import ProviderSettingsService
 from .summary.service import ProviderSummaryService
 from .vm.application_service import VMApplicationService
 from .vm.multipass_adapter import MultipassAdapter
@@ -38,6 +41,8 @@ class Container(containers.DeclarativeContainer):
     config = providers.Configuration()
 
     resource_tracker = providers.Singleton(ResourceTracker)
+
+    provider_event_broadcaster = providers.Singleton(ProviderEventBroadcaster)
 
     certificate_maintenance_service = providers.Singleton(
         CertificateMaintenanceService,
@@ -145,6 +150,11 @@ class Container(containers.DeclarativeContainer):
         reader_factory=stream_reader.provider,
     )
 
+    lease_quote_service = providers.Factory(
+        LeaseQuoteService,
+        settings=config,
+    )
+
     stream_client = providers.Factory(
         StreamPaymentClient,
         cfg=providers.Callable(
@@ -195,6 +205,7 @@ class Container(containers.DeclarativeContainer):
         settings=config,
         stream_status_service=stream_status_service,
         job_store=job_store,
+        event_broadcaster=provider_event_broadcaster,
     )
 
     provider_info_service = providers.Factory(
@@ -219,6 +230,23 @@ class Container(containers.DeclarativeContainer):
         ProviderSummaryService,
         settings=config,
         resource_tracker=resource_tracker,
-        vm_service=vm_service,
+        vm_service=vm_application_service,
         certificate_service=certificate_maintenance_service,
+    )
+
+    provider_settings_service = providers.Factory(
+        ProviderSettingsService,
+        settings=config,
+        resource_tracker=resource_tracker,
+        broadcaster=provider_event_broadcaster,
+    )
+
+    provider_live_service = providers.Singleton(
+        ProviderLiveService,
+        broadcaster=provider_event_broadcaster,
+        provider_info_service=provider_info_service,
+        summary_service=summary_service,
+        vm_application_service=vm_application_service,
+        stream_status_service=stream_status_service,
+        monitoring_service=monitoring_service,
     )

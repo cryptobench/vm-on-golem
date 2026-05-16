@@ -12,6 +12,104 @@ ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 logger = logging.getLogger(__name__)
 
 
+def _bytes32_hex(value: Any) -> str | None:
+    if value is None:
+        return None
+    if hasattr(value, "hex"):
+        raw = value.hex()
+        return raw if raw.startswith("0x") else f"0x{raw}"
+    raw = str(value)
+    return raw if raw.startswith("0x") else f"0x{raw}"
+
+
+def _is_int_like(value: Any) -> bool:
+    try:
+        int(value)
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
+def parse_stream_tuple(value: Any) -> dict[str, Any]:
+    """Normalize known StreamPayment stream tuple shapes.
+
+    The current contract returns 10 fields including token. Some deployed
+    transitional contracts return the same stream data without token.
+    Older local/test contracts returned a halted flag instead of lease fields.
+    """
+    values = tuple(value)
+    token = None
+    halted = False
+    lease_id = None
+    terms_hash = None
+
+    if len(values) == 10:
+        (
+            token,
+            sender,
+            recipient,
+            start_time,
+            stop_time,
+            rate_per_second,
+            deposit,
+            withdrawn,
+            lease_id,
+            terms_hash,
+        ) = values
+    elif len(values) == 9:
+        if _is_int_like(values[2]):
+            (
+                sender,
+                recipient,
+                start_time,
+                stop_time,
+                rate_per_second,
+                deposit,
+                withdrawn,
+                lease_id,
+                terms_hash,
+            ) = values
+        else:
+            (
+                token,
+                sender,
+                recipient,
+                start_time,
+                stop_time,
+                rate_per_second,
+                deposit,
+                withdrawn,
+                halted,
+            ) = values
+    elif len(values) == 8:
+        (
+            sender,
+            recipient,
+            start_time,
+            stop_time,
+            rate_per_second,
+            deposit,
+            withdrawn,
+            halted,
+        ) = values
+    else:
+        raise ValueError(f"unexpected stream tuple length: {len(values)}")
+
+    return {
+        "token": token,
+        "sender": sender,
+        "recipient": recipient,
+        "startTime": int(start_time),
+        "stopTime": int(stop_time),
+        "ratePerSecond": int(rate_per_second),
+        "deposit": int(deposit),
+        "withdrawn": int(withdrawn),
+        "leaseId": _bytes32_hex(lease_id),
+        "termsHash": _bytes32_hex(terms_hash),
+        "halted": bool(halted),
+    }
+
+
 @dataclass
 class StreamPaymentConfig:
     rpc_url: str
@@ -119,14 +217,24 @@ class StreamPaymentClient:
         }
 
     def create_stream(
-        self, provider_address: str, deposit_wei: int, rate_per_second_wei: int
+        self,
+        provider_address: str,
+        deposit_wei: int,
+        rate_per_second_wei: int,
+        lease_id: str,
+        terms_hash: str,
+        quote_expires_at: int,
+        provider_signature: str,
     ) -> int:
         self._approve_if_needed(int(deposit_wei))
         fn = self.contract.functions.createStream(
-            self.token_address,
             Web3.to_checksum_address(provider_address),
             int(deposit_wei),
             int(rate_per_second_wei),
+            lease_id,
+            terms_hash,
+            int(quote_expires_at),
+            provider_signature,
         )
         tx_receipt = self._send(fn)
 

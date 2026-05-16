@@ -36,7 +36,8 @@ export function StreamsPage({
   const streams = data?.streams ?? [];
   const totals = streamsTotals(streams);
   const totalEarnedUsd = glmToUsd(totals.vested, glmUsd);
-  const visible = tab === "active" ? streams.filter((stream) => !stream.chain.halted) : streams;
+  const activeStreams = streams.filter((stream) => (stream.payment_state ?? "active") === "active");
+  const visible = tab === "active" ? activeStreams : streams;
   const points = streamEarningsPoints(streams);
 
   return (
@@ -50,7 +51,7 @@ export function StreamsPage({
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Total Earned (USD)" value={formatCurrency(totalEarnedUsd)} detail={glmUsd == null ? "Waiting for GLM/USD quote" : "Converted from stream GLM"} icon={<RiMoneyDollarCircleLine className="h-5 w-5" />} tone="success" />
         <StatCard label="Total Earned (GLM)" value={formatGlm(totals.vested)} detail="From stream vested values" icon={<RiStackLine className="h-5 w-5" />} tone="primary" />
-        <StatCard label="Active Streams" value={streams.filter((stream) => !stream.chain.halted).length} detail={`${streams.length} mapped`} icon={<RiLineChartLine className="h-5 w-5" />} tone="primary" />
+        <StatCard label="Active Streams" value={activeStreams.length} detail={`${streams.length} mapped`} icon={<RiLineChartLine className="h-5 w-5" />} tone="primary" />
         <StatCard label="Withdrawable (GLM)" value={formatGlm(totals.withdrawable)} icon={<RiAddLine className="h-5 w-5" />} tone="success" />
       </div>
 
