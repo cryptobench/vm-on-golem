@@ -202,7 +202,9 @@ class MultipassAdapter(VMProvider):
         """
         multipass_name = config.multipass_name or f"golem-{uuid.uuid4()}"
         self._creating_multipass_names.add(multipass_name)
-        await self.name_mapper.add_mapping(config.name, multipass_name)
+        mapped_name = await self.name_mapper.get_multipass_name(config.name)
+        if mapped_name != multipass_name:
+            await self.name_mapper.add_mapping(config.name, multipass_name)
 
         launch_image = self._launch_image(config.image)
         if launch_image != config.image:

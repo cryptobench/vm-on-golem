@@ -48,15 +48,6 @@ import {
 import { getPriceUSD, onPricesUpdated } from "../../lib/prices";
 import { openPaymentStream } from "../../lib/paymentStreams";
 import { clampResizeResources, computeResizeLimits } from "../../lib/vmResize";
-import {
-  useProviderInfo,
-  useVmAccess,
-  useVmCreateJobStatus,
-  useVmStatusSafe,
-  useVmStatus,
-  useVmMetricsLatest,
-  useVmMetricsHistory,
-} from "../../hooks/useApiSWR";
 import { ConfirmDialog } from "@golem/ui";
 import { VmMetricsCharts } from "../../components/vm/VmMetricsCharts";
 import {
@@ -139,7 +130,6 @@ export default function VmDetailsClient({ vmId: vmIdProp }: VmDetailsClientProps
     vm?.creation_job_id,
     metricsRange,
   );
-  const liveConnected = live.connected;
 
   // Destroy confirmation state (must be before any early returns)
   const [confirmDestroyOpen, setConfirmDestroyOpen] = React.useState(false);
@@ -189,51 +179,14 @@ export default function VmDetailsClient({ vmId: vmIdProp }: VmDetailsClientProps
     }
   }, [vmId]);
 
-  // SWR-backed provider info, access, and VM existence polling
-  const { data: swrProvider } = useProviderInfo(vm?.provider_endpoint_url, {
-    refreshInterval: liveConnected ? 0 : 30000,
-  });
-  const { data: swrAccess, error: swrAccessError } = useVmAccess(
-    vm?.provider_endpoint_url,
-    vm?.vm_id,
-    {
-      refreshInterval: liveConnected ? 0 : 2000,
-    },
-  );
-  const { data: swrJob } = useVmCreateJobStatus(
-    vm?.provider_endpoint_url,
-    vm?.creation_job_id,
-    vm?.vm_id,
-    { refreshInterval: liveConnected ? 0 : 2000 },
-  );
-  const { data: swrStatus, isValidating: swrStatusValidating } =
-    useVmStatusSafe(vm?.provider_endpoint_url, vm?.vm_id, {
-      refreshInterval: liveConnected ? 0 : 2000,
-    });
-  const {
-    data: swrVm,
-    error: swrVmError,
-    isValidating: swrVmValidating,
-  } = useVmStatus(vm?.provider_endpoint_url, vm?.vm_id, {
-    refreshInterval: liveConnected ? 0 : 2000,
-  });
-  const { data: swrMetrics, isLoading: metricsLoading } = useVmMetricsLatest(
-    vm?.provider_endpoint_url,
-    vm?.vm_id,
-    { refreshInterval: liveConnected ? 0 : 10000 },
-  );
-  const { data: swrMetricsHistory, isLoading: metricsHistoryLoading } =
-    useVmMetricsHistory(vm?.provider_endpoint_url, vm?.vm_id, metricsRange, {
-      refreshInterval: liveConnected ? 0 : 30000,
-    });
   const { topUp: topUpAction, terminate } = useStreamActions(spAddr);
-  const providerData = live.state.providerInfo || swrProvider;
-  const accessData = live.state.access || swrAccess;
-  const jobData = live.state.job || swrJob;
-  const statusData = live.state.lifecycle || swrStatus;
-  const vmData = live.state.lifecycle || swrVm;
-  const metricsData = live.state.metricsLatest || swrMetrics;
-  const metricsHistoryData = live.state.metricsHistory || swrMetricsHistory;
+  const providerData = live.state.providerInfo;
+  const accessData = live.state.access;
+  const jobData = live.state.job;
+  const statusData = live.state.lifecycle;
+  const vmData = live.state.lifecycle;
+  const metricsData = live.state.metricsLatest;
+  const metricsHistoryData = live.state.metricsHistory;
   const providerCapacity = React.useMemo(
     () =>
       vm?.provider_available_resources
@@ -254,22 +207,10 @@ export default function VmDetailsClient({ vmId: vmIdProp }: VmDetailsClientProps
 
   React.useEffect(() => {
     if (!authoritativeStatusKey) return;
-    const swrSettled =
-      Boolean(swrVm || swrStatus || swrVmError) &&
-      !swrStatusValidating &&
-      !swrVmValidating;
-    if (live.state.lifecycle || swrSettled) {
+    if (live.state.lifecycle) {
       setAuthoritativeStatusReadyKey(authoritativeStatusKey);
     }
-  }, [
-    authoritativeStatusKey,
-    live.state.lifecycle,
-    swrStatus,
-    swrStatusValidating,
-    swrVm,
-    swrVmError,
-    swrVmValidating,
-  ]);
+  }, [authoritativeStatusKey, live.state.lifecycle]);
 
   React.useEffect(() => {
     if (providerData)
@@ -306,69 +247,26 @@ export default function VmDetailsClient({ vmId: vmIdProp }: VmDetailsClientProps
     }
   }, [vmData, vm?.vm_id, vm?.provider_id]);
 
-  // Safe status endpoint: handle 404 termination and enrich provider resources.
-  // Also reconcile status when full endpoint data is unavailable.
+  // Reconcile local VM record from the websocket lifecycle read model.
   React.useEffect(() => {
     if (!vm || !statusData) return;
-    const safe = statusData as any;
-    if (!safe.exists && safe.code === 404) {
-      setAccess(null);
-      setProvider((prev) => (prev ? { ...prev } : prev));
-      const createdAt = (vm as any).created_at
-        ? Number((vm as any).created_at)
-        : 0;
-      const ageSec = createdAt
-        ? Math.floor(Date.now() / 1000) - createdAt
-        : Infinity;
-      const isCreating = (vm.status || "").toLowerCase() === "creating";
-      const withinGrace = isCreating && ageSec < 180; // 3 minutes
-      if (!withinGrace) {
-        try {
-          const list = loadRentals();
-          const idx = list.findIndex(
-            (x) => x.vm_id === vm.vm_id && x.provider_id === vm.provider_id,
-          );
-          if (idx >= 0) {
-            const next: Rental = {
-              ...list[idx],
-              status: "terminated",
-              ssh_port: null,
-              ended_at: Math.floor(Date.now() / 1000),
-            };
-            const out = [...list];
-            out[idx] = next;
-            saveRentals(out);
-            setVm(next);
-          }
-        } catch {}
-      }
-    } else {
-      const s = (safe as any).data || {};
-      // Update provider resources if present
-      if (s?.resources) {
-        setProvider(
-          (prev) => ({ ...(prev || {}), resources: s.resources }) as any,
+    const status = statusData as any;
+    if (status?.resources) {
+      setProvider((prev) => ({ ...(prev || {}), resources: status.resources }) as any);
+    }
+    if (status?.status) {
+      const next = mergeVmStatus(vm, status);
+      if (next) {
+        const list = loadRentals();
+        const idx = list.findIndex(
+          (x) => x.vm_id === vm.vm_id && x.provider_id === vm.provider_id,
         );
-      }
-      // If we have status in the safe payload and it differs locally, reconcile.
-      if (s && s.status) {
-        const next = mergeVmStatus(vm, s);
-        if (next) {
-          try {
-            const list = loadRentals();
-            const idx = list.findIndex(
-              (x) => x.vm_id === vm.vm_id && x.provider_id === vm.provider_id,
-            );
-            if (idx >= 0) {
-              const out = [...list];
-              out[idx] = next as any;
-              saveRentals(out);
-            }
-            setVm(next);
-          } catch {
-            setVm(next);
-          }
+        if (idx >= 0) {
+          const out = [...list];
+          out[idx] = next as any;
+          saveRentals(out);
         }
+        setVm(next);
       }
     }
   }, [statusData, vm?.vm_id, vm?.provider_id]);
@@ -471,12 +369,10 @@ export default function VmDetailsClient({ vmId: vmIdProp }: VmDetailsClientProps
   }, [live.state.stream]);
 
   React.useEffect(() => {
-    if (liveConnected) return;
-    if (!vm?.provider_endpoint_url) return;
-    listSnapshots(vm.provider_endpoint_url, vm.vm_id)
-      .then((rows) => setSnapshots(Array.isArray(rows) ? rows : []))
-      .catch(() => setSnapshots([]));
-  }, [vm?.provider_endpoint_url, vm?.vm_id, vm?.status, liveConnected]);
+    if (Array.isArray(live.state.snapshots)) {
+      setSnapshots(live.state.snapshots as any);
+    }
+  }, [live.state.snapshots]);
 
   React.useEffect(() => {
     const resources = getEffectiveResources(vmData, vm);
@@ -555,18 +451,13 @@ export default function VmDetailsClient({ vmId: vmIdProp }: VmDetailsClientProps
     transitioning: vm.transitioning,
     next_poll_seconds: vm.next_poll_seconds,
   };
-  const providerReachability =
-    liveConnected || live.state.connection === "connecting"
-      ? {}
-      : {
-          safeStatus: swrStatus,
-          statusError: swrVmError,
-          accessError: swrAccessError,
-        };
   const lifecycle = deriveVmDisplayLifecycle({
     lifecycle: lifecycleSource,
     fallback: lifecycleFallback,
-    ...providerReachability,
+    statusError:
+      live.state.connection === "degraded"
+        ? live.state.errors.connection || "VM live stream unavailable"
+        : undefined,
   });
   const effectiveStatus = lifecycle.status;
   const isOffline = effectiveStatus === "offline";
@@ -1084,11 +975,11 @@ export default function VmDetailsClient({ vmId: vmIdProp }: VmDetailsClientProps
           <VmMetricsSummary
             guestMetrics={guestMetrics}
             history={metricsHistoryData}
-            loading={!liveConnected && metricsLoading}
+            loading={live.state.connection === "connecting"}
           />
           <VmMetricsCharts
             history={metricsHistoryData}
-            loading={!liveConnected && metricsHistoryLoading}
+            loading={live.state.connection === "connecting"}
             range={metricsRange}
             onRangeChange={setMetricsRange}
           />
@@ -1174,8 +1065,8 @@ export default function VmDetailsClient({ vmId: vmIdProp }: VmDetailsClientProps
   );
 }
 
-function getEffectiveResources(swrVm: unknown, vm: Rental | null) {
-  const status = (swrVm as any) || {};
+function getEffectiveResources(liveVm: unknown, vm: Rental | null) {
+  const status = (liveVm as any) || {};
   const source =
     status?.resources && typeof status.resources === "object"
       ? status.resources

@@ -20,6 +20,8 @@ import {
   type VMSnapshot,
   type CreateVMJobStatus,
   type ProviderInfo,
+  type MetricsHistoryResponse,
+  type MetricsLatestResponse,
 } from "./generated/api/provider";
 import type { AdsConfig } from "../context/AdsContext";
 import type { ApiRequestOptions } from "./api/orval-fetch";
@@ -71,23 +73,18 @@ export type Rental = {
   settlement_status?: "pending" | "settled" | "failed" | "not_required";
 };
 
-export type VmMonitoringLatest = {
-  host: Record<string, unknown>;
-  vms: Record<
-    string,
-    Record<
-      string,
-      Record<
-        string,
-        { value: number; unit: string; timestamp: string; source: string }
-      >
-    >
-  >;
-  generated_at: string;
+export type VmMonitoringMetric = {
+  value: number;
+  unit: string;
+  timestamp: string;
+  source: string;
 };
 
-export type VmMonitoringHistory = {
-  samples: Array<{
+export type VmMonitoringLatest = Omit<MetricsLatestResponse, "vms"> & {
+  vms: Record<string, Record<string, Record<string, VmMonitoringMetric>>>;
+};
+
+export type VmMonitoringSample = {
     scope: "host" | "vm";
     source: "infrastructure" | "guest_agent";
     metric: string;
@@ -95,7 +92,10 @@ export type VmMonitoringHistory = {
     unit: string;
     timestamp: string;
     vm_id?: string | null;
-  }>;
+};
+
+export type VmMonitoringHistory = Partial<MetricsHistoryResponse> & {
+  samples?: VmMonitoringSample[];
 };
 
 export type VmLiveSnapshot = {

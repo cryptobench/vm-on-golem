@@ -206,7 +206,7 @@ class VMAccessPendingResponse(BaseModel):
     """Response returned while VM access details are not ready yet."""
 
     vm_id: str
-    multipass_name: str
+    multipass_name: Optional[str] = None
     ssh_user: str = Field(
         ...,
         description=f"SSH login user for this VM, currently {MULTIPASS_SSH_USER}",

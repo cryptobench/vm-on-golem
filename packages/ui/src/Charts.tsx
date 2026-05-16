@@ -324,6 +324,7 @@ export function SlidingSparkline<TData extends ChartDatum>({
   dataKey = "value",
   xKey = "point",
   animationKey,
+  windowSize,
 }: {
   className?: string;
   data: TData[];
@@ -331,12 +332,19 @@ export function SlidingSparkline<TData extends ChartDatum>({
   dataKey?: keyof TData & string;
   xKey?: keyof TData & string;
   animationKey?: (row: TData) => string;
+  windowSize?: number;
 }) {
-  const slide = useAppendSlide(
-    data.map((row, index) =>
-      animationKey ? animationKey(row) : String(row[xKey] ?? index),
-    ),
-    2,
+  const keys = data.map((row, index) =>
+    animationKey ? animationKey(row) : String(row[xKey] ?? index),
+  );
+  const slide = useAppendSlide(keys, 2, { initialDraw: false });
+  const values = data
+    .map((row) => Number(row[dataKey]))
+    .filter((value) => Number.isFinite(value));
+  const domain = useStableValueDomain(values, keys);
+  const path = React.useMemo(
+    () => buildSparklinePath(data, dataKey, domain, windowSize),
+    [data, dataKey, domain, windowSize],
   );
 
   return (
@@ -351,29 +359,108 @@ export function SlidingSparkline<TData extends ChartDatum>({
         } as React.CSSProperties
       }
     >
-      <ResponsiveContainer width="100%" height="100%">
-        <LineChart
-          data={data}
-          margin={{ top: 2, right: 1, bottom: 2, left: 1 }}
-        >
-          <YAxis hide domain={["auto", "auto"]} />
-          <XAxis hide dataKey={xKey} />
-          <Line
-            className={colorClassName}
-            type="linear"
-            dataKey={dataKey}
-            stroke="currentColor"
-            strokeWidth={2}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            dot={false}
-            activeDot={false}
-            isAnimationActive={false}
-          />
-        </LineChart>
-      </ResponsiveContainer>
+      <svg
+        className="h-full w-full overflow-visible"
+        viewBox="0 0 100 36"
+        preserveAspectRatio="none"
+        aria-hidden
+      >
+        <path
+          className={cn("golem-chart-line-curve", colorClassName)}
+          d={path}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          vectorEffect="non-scaling-stroke"
+        />
+      </svg>
     </div>
   );
+}
+
+function buildSparklinePath<TData extends ChartDatum>(
+  data: TData[],
+  dataKey: keyof TData & string,
+  domain: NumericDomain,
+  windowSize?: number,
+) {
+  const numericValues = data
+    .map((row) => Number(row[dataKey]))
+    .filter((value) => Number.isFinite(value));
+  if (numericValues.length < 2) return "";
+
+  const pointCount = Math.max(windowSize ?? data.length, data.length, 2);
+  const visibleStart = Math.max(0, pointCount - data.length);
+  const range = Math.max(domain.max - domain.min, Number.EPSILON);
+
+  let pathIndex = 0;
+  return data
+    .map((row, index) => {
+      const value = Number(row[dataKey]);
+      if (!Number.isFinite(value)) return null;
+      const x = ((visibleStart + index) / Math.max(pointCount - 1, 1)) * 100;
+      const normalized = (value - domain.min) / range;
+      const y = 34 - Math.max(0, Math.min(1, normalized)) * 32;
+      const command = pathIndex === 0 ? "M" : "L";
+      pathIndex += 1;
+      return `${command}${formatPathNumber(x)},${formatPathNumber(y)}`;
+    })
+    .filter((segment): segment is string => Boolean(segment))
+    .join(" ");
+}
+
+type NumericDomain = { min: number; max: number };
+
+function useStableValueDomain(values: number[], keys: string[]): NumericDomain {
+  const previousRef = React.useRef<{
+    keys: string[];
+    domain: NumericDomain;
+  } | null>(null);
+  const rawDomain = paddedDomain(values);
+  const previous = previousRef.current;
+  const change = previous
+    ? getAppendOnlySlideChange(previous.keys, keys)
+    : null;
+  const domain =
+    previous && change
+      ? {
+          min: Math.min(previous.domain.min, rawDomain.min),
+          max: Math.max(previous.domain.max, rawDomain.max),
+        }
+      : rawDomain;
+
+  previousRef.current = {
+    keys,
+    domain,
+  };
+  return domain;
+}
+
+function paddedDomain(values: number[]): NumericDomain {
+  if (!values.length) {
+    return { min: 0, max: 1 };
+  }
+
+  let min = Math.min(...values);
+  let max = Math.max(...values);
+  if (min === max) {
+    const padding = Math.max(Math.abs(min) * 0.1, 1);
+    min -= padding;
+    max += padding;
+    return { min, max };
+  }
+
+  const padding = (max - min) * 0.12;
+  return {
+    min: min - padding,
+    max: max + padding,
+  };
+}
+
+function formatPathNumber(value: number) {
+  return Number(value.toFixed(3));
 }
 
 function ChartLegend({ series }: { series: ChartSeries[] }) {
@@ -525,7 +612,11 @@ export function getAppendOnlySlideChange(
   return null;
 }
 
-function useAppendSlide(keys: string[], horizontalInset: number) {
+function useAppendSlide(
+  keys: string[],
+  horizontalInset: number,
+  options: { initialDraw?: boolean } = {},
+) {
   const ref = React.useRef<HTMLDivElement | null>(null);
   const previousKeysRef = React.useRef<string[]>([]);
   const keysRef = React.useRef<string[]>(keys);
@@ -548,7 +639,8 @@ function useAppendSlide(keys: string[], horizontalInset: number) {
     const previousKeys = previousKeysRef.current;
     previousKeysRef.current = nextKeys;
 
-    const canDraw = !reducedMotion && nextKeys.length >= 2;
+    const canDraw =
+      options.initialDraw !== false && !reducedMotion && nextKeys.length >= 2;
     if (canDraw && previousKeys.length === 0) {
       setSlide({ active: false, drawActive: true, offset: 0 });
       timeoutRef.current = window.setTimeout(() => {
@@ -590,7 +682,7 @@ function useAppendSlide(keys: string[], horizontalInset: number) {
       if (frameRef.current != null)
         window.cancelAnimationFrame(frameRef.current);
     };
-  }, [horizontalInset, keySignature, reducedMotion]);
+  }, [horizontalInset, keySignature, options.initialDraw, reducedMotion]);
 
   return {
     ...slide,

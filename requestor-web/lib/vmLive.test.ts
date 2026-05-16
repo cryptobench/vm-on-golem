@@ -106,7 +106,41 @@ test("live reducer appends metric samples from streaming updates", () => {
   });
 
   assert.deepEqual(
-    updated.metricsHistory?.samples.map((sample) => sample.value),
+    updated.metricsHistory?.samples?.map((sample) => sample.value),
+    [12, 14],
+  );
+});
+
+test("live reducer keeps live metric samples when history refreshes", () => {
+  const withLiveSamples = vmLiveReducer(baseState, {
+    type: "snapshot",
+    data: {
+      metrics_history: {
+        points: [metricPoint("cpu_percent", 10, "2026-05-12T21:00:00")],
+        samples: [
+          metricSample("cpu_percent", 12, "2026-05-12T21:00:01"),
+          metricSample("cpu_percent", 14, "2026-05-12T21:00:02"),
+        ],
+      },
+    },
+  });
+
+  const refreshed = vmLiveReducer(withLiveSamples, {
+    type: "update",
+    scope: "metrics",
+    data: {
+      history: {
+        points: [metricPoint("cpu_percent", 16, "2026-05-12T21:00:10")],
+      },
+    },
+  });
+
+  assert.deepEqual(
+    refreshed.metricsHistory?.points?.map((point) => point.avg),
+    [16],
+  );
+  assert.deepEqual(
+    refreshed.metricsHistory?.samples?.map((sample) => sample.value),
     [12, 14],
   );
 });
@@ -129,6 +163,22 @@ function metricSample(metric: string, value: number, timestamp: string) {
     value,
     unit: "percent",
     timestamp,
+    vm_id: "vm-a",
+  } as const;
+}
+
+function metricPoint(metric: string, avg: number, bucketEnd: string) {
+  return {
+    scope: "vm",
+    source: "guest_agent",
+    metric,
+    avg,
+    min: avg,
+    max: avg,
+    count: 1,
+    unit: "percent",
+    bucket_start: bucketEnd,
+    bucket_end: bucketEnd,
     vm_id: "vm-a",
   } as const;
 }

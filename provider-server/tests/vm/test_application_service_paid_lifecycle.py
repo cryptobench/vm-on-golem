@@ -2,6 +2,7 @@ import asyncio
 
 import pytest
 
+from provider.errors import ConflictError
 from provider.payments.domain import LeasePayment
 from provider.summary.service import ProviderSummaryService
 from provider.vm.application_service import VMApplicationService
@@ -33,6 +34,7 @@ class FakeResourceTracker:
 class FakeStreamStatusService:
     def __init__(self):
         self.removed = []
+        self.stream_map = FakeStreamMap()
 
     async def require_vm_action_authorized(self, vm_id, action_signer):
         return None
@@ -47,6 +49,14 @@ class FakeStreamStatusService:
         return None
 
     async def set_vm_stream(self, *args, **kwargs):
+        return None
+
+
+class FakeStreamMap:
+    async def get(self, vm_id):
+        return None
+
+    async def get_owner(self, vm_id):
         return None
 
 
@@ -249,11 +259,78 @@ class RecordingJobStore(FakeJobStore):
         self.created = []
         self.updated = []
 
+    async def active_recent_jobs(self):
+        return []
+
     async def create_job(self, *args, **kwargs):
         self.created.append((args, kwargs))
 
     async def update_job(self, *args, **kwargs):
         self.updated.append((args, kwargs))
+
+
+class FailedCreateJobStore(RecordingJobStore):
+    async def active_recent_jobs(self):
+        return [
+            {
+                "job_id": "job-failed",
+                "vm_id": "vm-a",
+                "status": "failed",
+                "lifecycle_stage": "failed",
+                "status_message": "VM creation failed",
+                "progress": 100,
+                "transitioning": False,
+                "next_poll_seconds": 8,
+                "error": "boom",
+                "requestor_address": "0x3333333333333333333333333333333333333333",
+                "stream_id": 123,
+                "created_at": "2026-05-14T12:00:00+00:00",
+                "updated_at": "2026-05-14T12:00:01+00:00",
+            }
+        ]
+
+
+class ExistingStreamMap:
+    def __init__(
+        self, stream_id=123, owner="0x3333333333333333333333333333333333333333"
+    ):
+        self.stream_id = stream_id
+        self.owner = owner
+
+    async def get(self, vm_id):
+        return self.stream_id
+
+    async def get_owner(self, vm_id):
+        return self.owner
+
+
+class ExistingStreamStatusService(RecordingStreamStatusService):
+    def __init__(self, stream_id=123):
+        super().__init__()
+        self.stream_map = ExistingStreamMap(stream_id=stream_id)
+
+
+class ExistingVMService(LifecycleVMService):
+    def __init__(self):
+        super().__init__()
+        self.create_calls = 0
+
+    async def create_vm(self, config):
+        self.create_calls += 1
+        return await super().create_vm(config)
+
+    async def get_vm_status(self, vm_id):
+        return VMInfo(
+            id=vm_id,
+            name=vm_id,
+            status=VMStatus.RUNNING,
+            resources=VMResources(cpu=1, memory=1, storage=10),
+        )
+
+
+class MissingExistingVMService(ExistingVMService):
+    async def get_vm_status(self, vm_id):
+        raise VMNotFoundError(f"VM {vm_id} not found")
 
 
 @pytest.mark.asyncio
@@ -296,6 +373,141 @@ async def test_async_create_rechecks_stream_without_recomputing_terms():
         storage=10,
     )
     assert "resources" not in stream_status.valid_lease_calls[1][1]
+
+
+@pytest.mark.asyncio
+async def test_duplicate_create_returns_existing_vm_without_launching():
+    vm_service = ExistingVMService()
+    stream_status = ExistingStreamStatusService(stream_id=123)
+    service = VMApplicationService(
+        vm_service=vm_service,
+        settings={"DEFAULT_VM_IMAGE": "24.04"},
+        stream_status_service=stream_status,
+        job_store=RecordingJobStore(),
+    )
+    payment = LeasePayment(
+        stream_id=123,
+        lease_id="0x" + "11" * 32,
+        terms_hash="0x" + "22" * 32,
+        rate_per_second_wei=7,
+        duration_seconds=3600,
+    )
+
+    result = await service.create_vm(
+        CreateVMCommand(
+            name="vm-a",
+            image=None,
+            resources=VMResources(cpu=1, memory=1, storage=10),
+            ssh_key="ssh-rsa test",
+            payment=payment,
+            action_signer="0x3333333333333333333333333333333333333333",
+            async_mode=True,
+        )
+    )
+
+    assert isinstance(result, VMInfo)
+    assert result.id == "vm-a"
+    assert vm_service.create_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_duplicate_create_rejects_different_stream():
+    service = VMApplicationService(
+        vm_service=ExistingVMService(),
+        settings={"DEFAULT_VM_IMAGE": "24.04"},
+        stream_status_service=ExistingStreamStatusService(stream_id=123),
+        job_store=RecordingJobStore(),
+    )
+    payment = LeasePayment(
+        stream_id=456,
+        lease_id="0x" + "11" * 32,
+        terms_hash="0x" + "22" * 32,
+        rate_per_second_wei=7,
+        duration_seconds=3600,
+    )
+
+    with pytest.raises(ConflictError, match="another stream"):
+        await service.create_vm(
+            CreateVMCommand(
+                name="vm-a",
+                image=None,
+                resources=VMResources(cpu=1, memory=1, storage=10),
+                ssh_key="ssh-rsa test",
+                payment=payment,
+                action_signer="0x3333333333333333333333333333333333333333",
+                async_mode=True,
+            )
+        )
+
+
+@pytest.mark.asyncio
+async def test_stale_stream_mapping_does_not_block_new_stream_create():
+    vm_service = MissingExistingVMService()
+    stream_status = ExistingStreamStatusService(stream_id=123)
+    service = VMApplicationService(
+        vm_service=vm_service,
+        settings={"DEFAULT_VM_IMAGE": "24.04"},
+        stream_status_service=stream_status,
+        job_store=RecordingJobStore(),
+    )
+    payment = LeasePayment(
+        stream_id=456,
+        lease_id="0x" + "11" * 32,
+        terms_hash="0x" + "22" * 32,
+        rate_per_second_wei=7,
+        duration_seconds=3600,
+    )
+
+    result = await service.create_vm(
+        CreateVMCommand(
+            name="vm-a",
+            image=None,
+            resources=VMResources(cpu=1, memory=1, storage=10),
+            ssh_key="ssh-rsa test",
+            payment=payment,
+            action_signer="0x3333333333333333333333333333333333333333",
+            async_mode=False,
+        )
+    )
+
+    assert isinstance(result, VMInfo)
+    assert result.id == "vm-a"
+    assert vm_service.create_calls == 1
+    assert stream_status.removed == ["vm-a"]
+
+
+@pytest.mark.asyncio
+async def test_failed_create_job_does_not_block_new_stream_create():
+    vm_service = ExistingVMService()
+    service = VMApplicationService(
+        vm_service=vm_service,
+        settings={"DEFAULT_VM_IMAGE": "24.04"},
+        stream_status_service=FakeStreamStatusService(),
+        job_store=FailedCreateJobStore(),
+    )
+    payment = LeasePayment(
+        stream_id=456,
+        lease_id="0x" + "11" * 32,
+        terms_hash="0x" + "22" * 32,
+        rate_per_second_wei=7,
+        duration_seconds=3600,
+    )
+
+    result = await service.create_vm(
+        CreateVMCommand(
+            name="vm-a",
+            image=None,
+            resources=VMResources(cpu=1, memory=1, storage=10),
+            ssh_key="ssh-rsa test",
+            payment=payment,
+            action_signer="0x3333333333333333333333333333333333333333",
+            async_mode=False,
+        )
+    )
+
+    assert isinstance(result, VMInfo)
+    assert result.id == "vm-a"
+    assert vm_service.create_calls == 1
 
 
 @pytest.mark.asyncio

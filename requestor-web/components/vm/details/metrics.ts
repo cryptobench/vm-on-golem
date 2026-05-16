@@ -1,4 +1,4 @@
-import type { VmMonitoringHistory } from "../../../lib/api";
+import type { VmMonitoringHistory, VmMonitoringSample } from "../../../lib/api";
 import { formatLocalTime, parseAbsoluteTimestamp } from "../../../lib/time";
 export { getAppendOnlySlideChange } from "@golem/ui";
 
@@ -42,9 +42,29 @@ const networkMetricLabels: Record<string, MetricValueKey> = {
   network_tx_bytes: "Network TX",
 };
 
-export function buildMetricChartRows(
-  samples: VmMonitoringHistory["samples"] = [],
+export function buildMetricChartRowsFromHistory(
+  history?: VmMonitoringHistory | null,
 ) {
+  return buildMetricChartRows(metricSamplesFromHistory(history));
+}
+
+export function metricSamplesFromHistory(
+  history?: VmMonitoringHistory | null,
+): VmMonitoringSample[] {
+  const samples = history?.samples || [];
+  const pointSamples = (history?.points || []).map((point) => ({
+    scope: point.scope,
+    source: point.source,
+    metric: point.metric,
+    value: point.avg,
+    unit: point.unit,
+    timestamp: point.bucket_end,
+    vm_id: point.vm_id,
+  }));
+  return [...pointSamples, ...samples];
+}
+
+export function buildMetricChartRows(samples: VmMonitoringSample[] = []) {
   const rows = new Map<string, MetricChartRow>();
   const previousCounters = new Map<
     string,
@@ -129,7 +149,7 @@ export function latestNetworkRates(rows: MetricChartRow[]) {
 }
 
 export function networkTransferTotals(
-  samples: VmMonitoringHistory["samples"] = [],
+  samples: VmMonitoringSample[] = [],
 ) {
   const previousCounters = new Map<string, number>();
   const totals = {
@@ -197,7 +217,7 @@ export function clampPercent(value: number) {
   return Math.max(0, Math.min(100, value));
 }
 
-function sortedGuestSamples(samples: VmMonitoringHistory["samples"]) {
+function sortedGuestSamples(samples: VmMonitoringSample[]) {
   return samples
     .filter((sample) => sample.source === "guest_agent")
     .sort(
