@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   buildMetricChartRows,
+  buildMetricChartRowsFromHistory,
   getAppendOnlySlideChange,
   latestNetworkRates,
   networkTransferTotals,
@@ -29,6 +30,38 @@ test("reports latest network rates separately from transfer totals", () => {
     rx: 70_080_000,
     tx: 120_000,
   });
+});
+
+test("builds metric rows from provider history points", () => {
+  const rows = buildMetricChartRowsFromHistory({
+    points: [
+      historyPoint("cpu_percent", 12, "percent", "2026-05-12T21:00:00+00:00"),
+      historyPoint(
+        "memory_percent",
+        34,
+        "percent",
+        "2026-05-12T21:00:00+00:00",
+      ),
+      historyPoint(
+        "network_rx_bytes",
+        100_000_000,
+        "bytes",
+        "2026-05-12T21:00:00+00:00",
+      ),
+      historyPoint("cpu_percent", 14, "percent", "2026-05-12T21:00:10+00:00"),
+      historyPoint(
+        "network_rx_bytes",
+        100_040_000,
+        "bytes",
+        "2026-05-12T21:00:10+00:00",
+      ),
+    ],
+  });
+
+  assert.equal(rows[0].CPU, 12);
+  assert.equal(rows[0].Memory, 34);
+  assert.equal(rows[1].CPU, 14);
+  assert.equal(rows[1]["Network RX"], 0.032);
 });
 
 test("detects appended metric timestamps for chart slides", () => {
@@ -101,6 +134,27 @@ function networkSample(metric: string, value: number, timestamp: string) {
     value,
     unit: "bytes",
     timestamp,
+    vm_id: "vm-ed1d",
+  } as const;
+}
+
+function historyPoint(
+  metric: string,
+  avg: number,
+  unit: string,
+  bucketEnd: string,
+) {
+  return {
+    scope: "vm",
+    source: "guest_agent",
+    metric,
+    unit,
+    avg,
+    min: avg,
+    max: avg,
+    count: 1,
+    bucket_start: bucketEnd,
+    bucket_end: bucketEnd,
     vm_id: "vm-ed1d",
   } as const;
 }

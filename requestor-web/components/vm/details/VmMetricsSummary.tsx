@@ -6,7 +6,7 @@ import { Skeleton, SlidingSparkline } from "@golem/ui";
 import type { VmMonitoringHistory } from "../../../lib/api";
 import { DetailPanel, PanelTitle } from "./VmDetailPrimitives";
 import {
-  buildMetricChartRows,
+  buildMetricChartRowsFromHistory,
   buildSparklineRows,
   formatMbps,
   formatPercent,
@@ -32,14 +32,21 @@ export function VmMetricsSummary({
   loading,
 }: {
   guestMetrics: GuestMetrics;
-  history?: VmMonitoringHistory;
+  history?: VmMonitoringHistory | null;
   loading?: boolean;
 }) {
   const rows = React.useMemo(
-    () => buildMetricChartRows(history?.samples || []),
+    () => buildMetricChartRowsFromHistory(history),
     [history],
   );
   const network = latestNetworkRates(rows);
+  const hasCompleteMetrics =
+    guestMetrics != null &&
+    metricPercent(guestMetrics, "cpu_percent") != null &&
+    metricPercent(guestMetrics, "memory_percent") != null &&
+    metricPercent(guestMetrics, "disk_percent") != null &&
+    network.rx != null &&
+    network.tx != null;
 
   return (
     <DetailPanel className="vm-page-enter">
@@ -48,13 +55,9 @@ export function VmMetricsSummary({
         hint="Metrics are reported by the guest agent inside the VM."
       />
 
-      {loading ? (
-        <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-          {Array.from({ length: 5 }).map((_, index) => (
-            <Skeleton key={index} className="h-24 w-full" />
-          ))}
-        </div>
-      ) : guestMetrics ? (
+      {loading || !hasCompleteMetrics ? (
+        <MetricsSummarySkeleton />
+      ) : (
         <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
           <MetricTile
             label="CPU"
@@ -87,13 +90,18 @@ export function VmMetricsSummary({
             direction="out"
           />
         </div>
-      ) : (
-        <div className="mt-4 rounded-md border border-warning bg-warning-soft p-4 text-sm text-text-primary">
-          Guest metrics are not available yet. The default VM agent only
-          publishes metrics and does not give providers shell or file access.
-        </div>
       )}
     </DetailPanel>
+  );
+}
+
+function MetricsSummarySkeleton() {
+  return (
+    <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+      {Array.from({ length: 5 }).map((_, index) => (
+        <Skeleton key={index} className="h-24 w-full" />
+      ))}
+    </div>
   );
 }
 
@@ -168,6 +176,7 @@ function MiniMetricChart({
       xKey="point"
       dataKey="value"
       animationKey={(row) => row.timestamp}
+      windowSize={24}
     />
   );
 }

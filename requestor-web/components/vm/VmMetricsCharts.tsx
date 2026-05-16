@@ -5,14 +5,14 @@ import { Skeleton, SlidingLineChart, cn, type ChartSeries } from "@golem/ui";
 import type { VmMonitoringHistory } from "../../lib/api";
 import { DetailPanel, PanelTitle } from "./details/VmDetailPrimitives";
 import {
-  buildMetricChartRows,
+  buildMetricChartRowsFromHistory,
   formatChartPercent,
   metricRanges,
   type MetricRange,
 } from "./details/metrics";
 
 type VmMetricsChartsProps = {
-  history?: VmMonitoringHistory;
+  history?: VmMonitoringHistory | null;
   loading?: boolean;
   range: MetricRange;
   onRangeChange: (range: MetricRange) => void;
@@ -50,6 +50,13 @@ const metricSeries: ChartSeries[] = [
     dotClassName: "bg-orange-500",
   },
 ];
+const metricKeys = [
+  "CPU",
+  "Memory",
+  "Disk",
+  "Network RX",
+  "Network TX",
+] as const;
 
 export function VmMetricsCharts({
   history,
@@ -58,14 +65,12 @@ export function VmMetricsCharts({
   onRangeChange,
 }: VmMetricsChartsProps) {
   const chartRows = React.useMemo(
-    () => buildMetricChartRows(history?.samples || []),
+    () => buildMetricChartRowsFromHistory(history),
     [history],
   );
-  const hasData = chartRows.some((row) =>
-    ["CPU", "Memory", "Disk", "Network RX", "Network TX"].some(
-      (key) => typeof row[key as keyof typeof row] === "number",
-    ),
-  );
+  const hasEnoughData = chartRows.filter((row) =>
+    metricKeys.some((key) => typeof row[key] === "number"),
+  ).length >= 2;
 
   return (
     <DetailPanel className="vm-page-enter">
@@ -93,9 +98,9 @@ export function VmMetricsCharts({
         }
       />
 
-      {loading ? (
+      {loading || !hasEnoughData ? (
         <Skeleton className="mt-5 h-80 w-full" />
-      ) : hasData ? (
+      ) : (
         <div className="mt-5 h-80">
           <SlidingLineChart
             className="h-80"
@@ -107,10 +112,6 @@ export function VmMetricsCharts({
             yAxisWidth={56}
             minValue={0}
           />
-        </div>
-      ) : (
-        <div className="mt-5 flex h-80 items-center justify-center rounded-lg border border-dashed border-border bg-surface-muted text-sm text-text-secondary">
-          Waiting for enough metric samples.
         </div>
       )}
     </DetailPanel>

@@ -88,7 +88,8 @@ async def record_guest_sample(
     ),
 ) -> GuestMetricAccepted:
     result = await monitoring_service.record_guest_sample(vm_id, payload)
-    await event_broadcaster.publish(["monitoring", "metrics"])
+    await event_broadcaster.publish_provider(["monitoring", "metrics"])
+    await event_broadcaster.publish_vm(vm_id, ["metrics"])
     return result
 
 

@@ -10,8 +10,6 @@ import {
   providerEndpointUrl,
   saveRentals,
   saveSettings,
-  vmAccess,
-  vmJobStatus,
   type AdsConfig,
   type CreateVMRequest,
   type Rental,
@@ -28,6 +26,7 @@ import { vmDetailsHref } from "../../lib/routes";
 import { getRequestorRuntimeConfig } from "../../lib/runtimeConfig";
 import { terminateStreamWithWallet } from "../../lib/streams";
 import { parseHumanDuration } from "../../lib/time";
+import { generateVmName } from "../../lib/vmNames";
 import { walletDebug, walletWarn } from "../../lib/walletDebug";
 import { useWallet } from "../../context/WalletContext";
 import { useProjects } from "../../context/ProjectsContext";
@@ -87,7 +86,7 @@ export function RentDialog({
     clampSpec(defaultSpec, provider),
   );
   const [name, setName] = React.useState(
-    () => `vm-${provider.provider_id.slice(-4).toLowerCase()}`,
+    () => generateVmName(provider.provider_id),
   );
   const [sshKey, setSshKey] = React.useState(
     defaultKey?.value || settings.ssh_public_key || "",
@@ -112,7 +111,7 @@ export function RentDialog({
 
   React.useEffect(() => {
     setSpec(clampSpec(defaultSpec, provider));
-    setName(`vm-${provider.provider_id.slice(-4).toLowerCase()}`);
+    setName(generateVmName(provider.provider_id));
     setStreamId(null);
     setOpenedStreamPaymentAddress("");
     setOpenedPayment(null);
@@ -273,24 +272,7 @@ export function RentDialog({
         vmId: (vm as any)?.vm_id || (vm as any)?.id || null,
       });
       const jobId = (vm as any)?.job_id || null;
-      let vmId = (vm as any)?.vm_id || (vm as any)?.id || null;
-      if (!vmId && jobId) {
-        setPhase("Waiting for VM creation job");
-        for (let attempt = 0; attempt < 40; attempt += 1) {
-          await new Promise((resolve) => setTimeout(resolve, 2000));
-          try {
-            const status = await vmJobStatus(
-              endpointUrl,
-              jobId,
-              payload.name,
-            );
-            vmId = status?.vm_id || null;
-            if (vmId) break;
-          } catch (pollError) {
-            console.warn("VM creation status poll failed", pollError);
-          }
-        }
-      }
+      const vmId = (vm as any)?.vm_id || (vm as any)?.id || null;
       if (!vmId) throw new Error("VM id not available");
 
       const entry = {
@@ -318,32 +300,6 @@ export function RentDialog({
         settlement_status: undefined,
       };
       upsertRental(entry as Rental);
-      try {
-        setPhase("Loading VM access details");
-        const access = await vmAccess(endpointUrl, vmId);
-        if (access?.ssh_port) {
-          const current = loadRentals();
-          const index = current.findIndex(
-            (rental) =>
-              rental.vm_id === vmId &&
-              rental.provider_id === provider.provider_id,
-          );
-          if (index >= 0) {
-            current[index] = {
-              ...current[index],
-              ssh_port: access.ssh_port,
-              ssh_user: access.ssh_user,
-              status: "running",
-            };
-            saveRentals(current);
-          }
-        }
-      } catch (accessError) {
-        console.warn(
-          "VM access details unavailable after creation",
-          accessError,
-        );
-      }
       onClose();
       router.push(vmDetailsHref(vmId));
     } catch (createError: any) {

@@ -243,6 +243,7 @@ class Container(containers.DeclarativeContainer):
 
     vm_live_service = providers.Singleton(
         VMLiveService,
+        broadcaster=provider_event_broadcaster,
         monitoring_service=monitoring_service,
         vm_application_service=vm_application_service,
         provider_info_service=provider_info_service,

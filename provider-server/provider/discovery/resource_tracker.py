@@ -59,6 +59,9 @@ class ResourceTracker:
     ) -> bool:
         """Allocate resources for a VM."""
         async with self._lock:
+            if vm_id and vm_id in self._allocated_vms:
+                logger.warning("VM resources already allocated", extra={"vm_id": vm_id})
+                return False
             if not self._can_allocate(resources):
                 return False
 

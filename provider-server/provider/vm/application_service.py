@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from provider.errors import ExternalServiceError, NotFoundError
+from provider.errors import ConflictError, ExternalServiceError, NotFoundError
 from provider.payments.domain import LeasePayment
 from provider.payments.errors import InvalidStreamError
 from provider.payments.stream_status_service import StreamStatusService
@@ -67,6 +67,9 @@ class VMApplicationService:
             image=command.image or str(self._setting("DEFAULT_VM_IMAGE", "24.04")),
             resources=command.resources,
         )
+        existing = await self._existing_create_result(command)
+        if existing is not None:
+            return existing
 
         config = VMConfig(
             name=command.name,
@@ -122,7 +125,11 @@ class VMApplicationService:
             "Provider VM create completed",
             extra={"vm_id": vm_info.id, "status": str(vm_info.status)},
         )
-        await self._publish_live(["vms", "summary", "streams"])
+        await self._publish_live(
+            ["vms", "summary", "streams"],
+            vm_id=vm_info.id,
+            vm_scopes=["lifecycle", "access", "stream"],
+        )
         await self._emit_webhook(
             "vm.ready",
             vm_info.id,
@@ -131,6 +138,124 @@ class VMApplicationService:
             {"status": str(vm_info.status)},
         )
         return vm_info
+
+    async def _existing_create_result(
+        self, command: CreateVMCommand
+    ) -> VMInfo | CreateVMJobResult | None:
+        if command.payment is None:
+            return None
+        payment_stream_id = command.payment.stream_id if command.payment else None
+        stream_map = self.stream_status_service.stream_map
+        mapped_stream_id = await stream_map.get(command.name)
+        job = await self._latest_create_job_for_vm(command.name)
+        if mapped_stream_id is not None:
+            if int(mapped_stream_id) != int(payment_stream_id):
+                if job is not None and self._is_active_create_job(job):
+                    raise ConflictError(
+                        "VM creation job already exists for this VM name"
+                    )
+                try:
+                    await self.vm_service.get_vm_status(command.name)
+                except VMNotFoundError:
+                    await self._remove_stale_stream_mapping(
+                        command.name,
+                        mapped_stream_id,
+                        "mapped stream has no VM or active creation job",
+                    )
+                    return None
+                raise ConflictError("VM name is already backed by another stream")
+            owner = await self._mapped_owner(command.name)
+            if owner and owner.lower() != str(command.action_signer or "").lower():
+                raise ConflictError("VM name is already owned by another requestor")
+            try:
+                return await self.get_vm_status(command.name)
+            except VMNotFoundError:
+                if job and self._job_matches_create(job, command):
+                    return self._job_result(job)
+                await self._remove_stale_stream_mapping(
+                    command.name,
+                    mapped_stream_id,
+                    "mapped stream has no VM or matching creation job",
+                )
+                return None
+
+        if (
+            job is not None
+            and self._job_has_create_owner(job)
+            and self._is_active_create_job(job)
+        ):
+            if not self._job_matches_create(job, command):
+                raise ConflictError("VM creation job already exists for this VM name")
+            return self._job_result(job)
+
+        if hasattr(self.vm_service, "name_mapper"):
+            multipass_name = await self.vm_service.name_mapper.get_multipass_name(
+                command.name
+            )
+            if multipass_name:
+                raise ConflictError("VM name already exists without a stream mapping")
+        return None
+
+    async def _mapped_owner(self, vm_id: str) -> str | None:
+        get_owner = getattr(self.stream_status_service.stream_map, "get_owner", None)
+        if get_owner is None:
+            return None
+        owner = await get_owner(vm_id)
+        return str(owner) if owner else None
+
+    async def _remove_stale_stream_mapping(
+        self, vm_id: str, stream_id: int | str, reason: str
+    ) -> None:
+        logger.warning(
+            "Removing stale VM stream mapping",
+            extra={"vm_id": vm_id, "stream_id": int(stream_id), "reason": reason},
+        )
+        await self.stream_status_service.remove_vm_stream(vm_id)
+        await self._publish_live(
+            ["vms", "summary", "streams"],
+            vm_id=vm_id,
+            vm_scopes=["lifecycle", "access", "stream"],
+        )
+
+    async def _latest_create_job_for_vm(self, vm_id: str) -> dict[str, Any] | None:
+        for job in await self.job_store.active_recent_jobs():
+            if str(job.get("vm_id") or "") == vm_id:
+                return job
+        return None
+
+    @staticmethod
+    def _job_has_create_owner(job: dict[str, Any]) -> bool:
+        return bool(job.get("requestor_address")) or job.get("stream_id") is not None
+
+    @staticmethod
+    def _is_active_create_job(job: dict[str, Any]) -> bool:
+        if bool(job.get("transitioning")):
+            return True
+        return str(job.get("status") or "") in {"queued", "creating", "starting"}
+
+    @staticmethod
+    def _job_matches_create(job: dict[str, Any], command: CreateVMCommand) -> bool:
+        owner = str(job.get("requestor_address") or "")
+        if owner and owner.lower() != str(command.action_signer or "").lower():
+            return False
+        job_stream_id = job.get("stream_id")
+        payment_stream_id = command.payment.stream_id if command.payment else None
+        if job_stream_id is None or payment_stream_id is None:
+            return job_stream_id == payment_stream_id
+        return int(job_stream_id) == int(payment_stream_id)
+
+    @staticmethod
+    def _job_result(job: dict[str, Any]) -> CreateVMJobResult:
+        return CreateVMJobResult(
+            job_id=str(job["job_id"]),
+            vm_id=str(job["vm_id"]),
+            status=str(job["status"]),
+            lifecycle_stage=str(job["lifecycle_stage"]),
+            status_message=str(job["status_message"]),
+            progress=int(job["progress"]),
+            transitioning=bool(job["transitioning"]),
+            next_poll_seconds=int(job["next_poll_seconds"]),
+        )
 
     async def _schedule_create_vm(
         self, command: CreateVMCommand, config: VMConfig
@@ -153,7 +278,11 @@ class VMApplicationService:
             requestor_address=command.action_signer,
             stream_id=command.payment.stream_id if command.payment else None,
         )
-        await self._publish_live(["vms", "summary"])
+        await self._publish_live(
+            ["vms", "summary"],
+            vm_id=command.name,
+            vm_scopes=["lifecycle", "job", "access"],
+        )
         logger.info(
             "Scheduled VM creation job",
             extra={"job_id": job_id, "vm_id": command.name},
@@ -169,7 +298,11 @@ class VMApplicationService:
                 transitioning=progress.transitioning,
                 next_poll_seconds=progress.next_poll_seconds,
             )
-            await self._publish_live(["vms", "summary"])
+            await self._publish_live(
+                ["vms", "summary"],
+                vm_id=command.name,
+                vm_scopes=["lifecycle", "job", "access"],
+            )
 
         async def _run_creation() -> None:
             try:
@@ -186,7 +319,11 @@ class VMApplicationService:
                 await self.stream_status_service.set_vm_stream(
                     vm_info.id, stream_id, command.action_signer
                 )
-                await self._publish_live(["vms", "summary", "streams"])
+                await self._publish_live(
+                    ["vms", "summary", "streams"],
+                    vm_id=vm_info.id,
+                    vm_scopes=["lifecycle", "access", "job", "stream"],
+                )
                 ready = lifecycle_for_status(
                     VMStatus.RUNNING,
                     stage="ready",
@@ -202,7 +339,11 @@ class VMApplicationService:
                     transitioning=False,
                     next_poll_seconds=ready.next_poll_seconds,
                 )
-                await self._publish_live(["vms", "summary", "streams"])
+                await self._publish_live(
+                    ["vms", "summary", "streams"],
+                    vm_id=vm_info.id,
+                    vm_scopes=["lifecycle", "access", "job", "stream"],
+                )
                 logger.info(
                     "Create VM job completed",
                     extra={"job_id": job_id, "vm_id": vm_info.id},
@@ -230,7 +371,11 @@ class VMApplicationService:
                     next_poll_seconds=8,
                     error=str(exc),
                 )
-                await self._publish_live(["vms", "summary"])
+                await self._publish_live(
+                    ["vms", "summary"],
+                    vm_id=command.name,
+                    vm_scopes=["lifecycle", "access", "job"],
+                )
                 await self._emit_webhook(
                     "vm.failed",
                     command.name,
@@ -318,6 +463,10 @@ class VMApplicationService:
     async def _synthetic_creating_status(
         self, vm_id: str, original_error: VMNotFoundError
     ) -> VMInfo:
+        job = await self._latest_create_job_for_vm(vm_id)
+        if job is not None:
+            return self._vm_from_create_job(job)
+
         if not hasattr(self.vm_service, "name_mapper") or not hasattr(
             self.vm_service, "resource_tracker"
         ):
@@ -349,7 +498,7 @@ class VMApplicationService:
     async def get_vm_access(self, vm_id: str) -> VMAccessInfo | dict[str, Any]:
         try:
             logger.debug("Fetching provider VM access", extra={"vm_id": vm_id})
-            vm = await self.vm_service.get_vm_status(vm_id)
+            vm = await self.get_vm_status(vm_id)
         except VMNotFoundError:
             raise
         except Exception as exc:
@@ -359,11 +508,11 @@ class VMApplicationService:
         if vm is None:
             raise VMNotFoundError(f"VM {vm_id} not found")
 
-        multipass_name = await self.vm_service.name_mapper.get_multipass_name(vm_id)
-        if not multipass_name:
-            raise VMNotFoundError(f"VM {vm_id} mapping not found")
+        multipass_name = None
+        if hasattr(self.vm_service, "name_mapper"):
+            multipass_name = await self.vm_service.name_mapper.get_multipass_name(vm_id)
 
-        if vm.ssh_port is None:
+        if vm.ssh_port is None or not multipass_name:
             lifecycle = lifecycle_for_status(
                 vm.status,
                 stage=vm.lifecycle_stage or "configuring_access",
@@ -398,7 +547,11 @@ class VMApplicationService:
             )
             vm = await self.vm_service.stop_vm(vm_id)
             logger.info("Provider VM stopped", extra={"vm_id": vm_id})
-            await self._publish_live(["vms", "summary", "monitoring", "metrics"])
+            await self._publish_live(
+                ["vms", "summary", "monitoring", "metrics"],
+                vm_id=vm_id,
+                vm_scopes=["lifecycle", "access", "metrics"],
+            )
             await self._emit_webhook(
                 "vm.stopped",
                 vm_id,
@@ -440,7 +593,11 @@ class VMApplicationService:
             await self._require_active_vm_payment(vm_id, action_signer)
             vm = await self.vm_service.start_vm(vm_id)
             logger.info("Provider VM started", extra={"vm_id": vm_id})
-            await self._publish_live(["vms", "summary", "monitoring", "metrics"])
+            await self._publish_live(
+                ["vms", "summary", "monitoring", "metrics"],
+                vm_id=vm_id,
+                vm_scopes=["lifecycle", "access", "metrics"],
+            )
             return vm
         except VMNotFoundError:
             raise
@@ -455,7 +612,11 @@ class VMApplicationService:
             await self._require_active_vm_payment(vm_id, action_signer)
             vm = await self.vm_service.restart_vm(vm_id)
             logger.info("Provider VM restarted", extra={"vm_id": vm_id})
-            await self._publish_live(["vms", "summary", "monitoring", "metrics"])
+            await self._publish_live(
+                ["vms", "summary", "monitoring", "metrics"],
+                vm_id=vm_id,
+                vm_scopes=["lifecycle", "access", "metrics"],
+            )
             return vm
         except VMNotFoundError:
             raise
@@ -472,7 +633,11 @@ class VMApplicationService:
             )
             vm = await self.vm_service.suspend_vm(vm_id)
             logger.info("Provider VM suspended", extra={"vm_id": vm_id})
-            await self._publish_live(["vms", "summary", "monitoring", "metrics"])
+            await self._publish_live(
+                ["vms", "summary", "monitoring", "metrics"],
+                vm_id=vm_id,
+                vm_scopes=["lifecycle", "access", "metrics"],
+            )
             return vm
         except VMNotFoundError:
             raise
@@ -510,7 +675,9 @@ class VMApplicationService:
                 )
             logger.info("Provider VM resized", extra={"vm_id": vm_id})
             await self._publish_live(
-                ["vms", "summary", "monitoring", "metrics", "streams"]
+                ["vms", "summary", "monitoring", "metrics", "streams"],
+                vm_id=vm_id,
+                vm_scopes=["lifecycle", "access", "metrics", "stream"],
             )
             return vm
         except VMNotFoundError:
@@ -553,6 +720,7 @@ class VMApplicationService:
                 "Provider VM snapshot created",
                 extra={"vm_id": vm_id, "snapshot_name": snapshot.name},
             )
+            await self._publish_live([], vm_id=vm_id, vm_scopes=["snapshots"])
             return snapshot
         except VMNotFoundError:
             raise
@@ -575,6 +743,11 @@ class VMApplicationService:
             logger.info(
                 "Provider VM snapshot restored",
                 extra={"vm_id": vm_id, "snapshot_name": snapshot_name},
+            )
+            await self._publish_live(
+                ["vms", "summary", "monitoring", "metrics"],
+                vm_id=vm_id,
+                vm_scopes=["lifecycle", "access", "snapshots", "metrics"],
             )
             return vm
         except VMNotFoundError:
@@ -599,6 +772,7 @@ class VMApplicationService:
                 "Provider VM snapshot deleted",
                 extra={"vm_id": vm_id, "snapshot_name": snapshot_name},
             )
+            await self._publish_live([], vm_id=vm_id, vm_scopes=["snapshots"])
         except VMNotFoundError:
             raise
         except Exception as exc:
@@ -624,7 +798,11 @@ class VMApplicationService:
                     "destination_vm_id": destination_vm_id,
                 },
             )
-            await self._publish_live(["vms", "summary", "monitoring", "metrics"])
+            await self._publish_live(
+                ["vms", "summary", "monitoring", "metrics"],
+                vm_id=destination_vm_id,
+                vm_scopes=["lifecycle", "access", "metrics"],
+            )
             return vm
         except VMNotFoundError:
             raise
@@ -642,7 +820,9 @@ class VMApplicationService:
             await self.stream_status_service.remove_vm_stream(vm_id)
             logger.info("Provider VM deleted", extra={"vm_id": vm_id})
             await self._publish_live(
-                ["vms", "summary", "streams", "monitoring", "metrics"]
+                ["vms", "summary", "streams", "monitoring", "metrics"],
+                vm_id=vm_id,
+                vm_scopes=["lifecycle", "access", "stream", "metrics"],
             )
             await self._emit_webhook(
                 "vm.deleted",
@@ -657,7 +837,9 @@ class VMApplicationService:
                 "Provider VM delete target not found", extra={"vm_id": vm_id}
             )
             await self._publish_live(
-                ["vms", "summary", "streams", "monitoring", "metrics"]
+                ["vms", "summary", "streams", "monitoring", "metrics"],
+                vm_id=vm_id,
+                vm_scopes=["lifecycle", "access", "stream", "metrics"],
             )
             raise
         except Exception as exc:
@@ -666,10 +848,18 @@ class VMApplicationService:
             )
             raise ExternalServiceError(f"failed to delete VM {vm_id}: {exc}") from exc
 
-    async def _publish_live(self, scopes: list[str]) -> None:
+    async def _publish_live(
+        self,
+        scopes: list[str],
+        *,
+        vm_id: str | None = None,
+        vm_scopes: list[str] | None = None,
+    ) -> None:
         if self.event_broadcaster is None:
             return
-        await self.event_broadcaster.publish(scopes)
+        await self.event_broadcaster.publish_provider(scopes)
+        if vm_id:
+            await self.event_broadcaster.publish_vm(vm_id, vm_scopes or scopes)
 
     async def _emit_webhook(
         self,

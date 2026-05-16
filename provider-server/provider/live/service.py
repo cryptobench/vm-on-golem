@@ -79,12 +79,14 @@ class VMLiveService:
 
     def __init__(
         self,
+        broadcaster: ProviderEventBroadcaster,
         monitoring_service: Any,
         vm_application_service: Any,
         provider_info_service: Any,
         stream_status_service: Any,
         auth_service: Any,
     ):
+        self.broadcaster = broadcaster
         self.monitoring_service = monitoring_service
         self.vm_application_service = vm_application_service
         self.provider_info_service = provider_info_service
@@ -112,6 +114,7 @@ class VMLiveService:
             extra={"vm_id": vm_id, "history_range": history_range, "job_id": job_id},
         )
         try:
+            history_state = {"value": history_range}
             async with self.monitoring_service.watch_vm(vm_id):
                 await self._send(
                     websocket,
@@ -133,7 +136,7 @@ class VMLiveService:
                 async with self.monitoring_service.subscribe_vm_metrics(vm_id) as queue:
                     tasks = [
                         asyncio.create_task(
-                            self._receive_loop(websocket, vm_id, history_range, job_id),
+                            self._receive_loop(websocket, vm_id, history_state, job_id),
                             name=f"vm-live-recv:{vm_id}",
                         ),
                         asyncio.create_task(
@@ -141,8 +144,10 @@ class VMLiveService:
                             name=f"vm-live-metrics:{vm_id}",
                         ),
                         asyncio.create_task(
-                            self._poll_loop(websocket, vm_id, job_id),
-                            name=f"vm-live-poll:{vm_id}",
+                            self._invalidation_loop(
+                                websocket, vm_id, job_id, history_state
+                            ),
+                            name=f"vm-live-invalidations:{vm_id}",
                         ),
                         asyncio.create_task(
                             self._heartbeat_loop(websocket),
@@ -189,10 +194,9 @@ class VMLiveService:
         self,
         websocket: WebSocket,
         vm_id: str,
-        history_range: str,
+        history_state: dict[str, str],
         job_id: str | None,
     ) -> None:
-        current_range = history_range
         while True:
             message = await websocket.receive_json()
             event_type = str(message.get("type") or "")
@@ -202,8 +206,8 @@ class VMLiveService:
                 )
             elif event_type == "set_history_range":
                 try:
-                    current_range = _validate_history_range(
-                        str(message.get("history_range") or current_range)
+                    history_state["value"] = _validate_history_range(
+                        str(message.get("history_range") or history_state["value"])
                     )
                 except ValidationError as exc:
                     await self._send_error(websocket, "metrics", exc)
@@ -211,12 +215,12 @@ class VMLiveService:
                 await self._send_update(
                     websocket,
                     "metrics",
-                    await self._metrics_payload(vm_id, current_range),
+                    await self._metrics_payload(vm_id, history_state["value"]),
                 )
             elif event_type == "refresh":
                 scopes = message.get("scopes") or list(SNAPSHOT_SCOPES)
                 await self._refresh_scopes(
-                    websocket, vm_id, current_range, job_id, scopes
+                    websocket, vm_id, history_state["value"], job_id, scopes
                 )
             else:
                 logger.warning(
@@ -236,33 +240,19 @@ class VMLiveService:
             payload = await queue.get()
             await self._send_update(websocket, "metrics", payload)
 
-    async def _poll_loop(
-        self, websocket: WebSocket, vm_id: str, job_id: str | None
+    async def _invalidation_loop(
+        self,
+        websocket: WebSocket,
+        vm_id: str,
+        job_id: str | None,
+        history_state: dict[str, str],
     ) -> None:
-        previous: dict[str, str] = {}
-        while True:
-            await asyncio.sleep(2)
-            for scope in (
-                "provider_info",
-                "lifecycle",
-                "access",
-                "job",
-                "snapshots",
-                "stream",
-            ):
-                if scope == "job" and not job_id:
-                    continue
-                try:
-                    data = await self._scope_data(scope, vm_id, job_id)
-                    fingerprint = json.dumps(data, sort_keys=True, default=str)
-                    if previous.get(scope) != fingerprint:
-                        previous[scope] = fingerprint
-                        await self._send_update(websocket, scope, data)
-                except Exception as exc:
-                    fingerprint = f"error:{exc}"
-                    if previous.get(scope) != fingerprint:
-                        previous[scope] = fingerprint
-                        await self._send_error(websocket, scope, exc)
+        async with self.broadcaster.subscribe_vm(vm_id) as queue:
+            while True:
+                scopes = await queue.get()
+                await self._refresh_scopes(
+                    websocket, vm_id, history_state["value"], job_id, sorted(scopes)
+                )
 
     async def _heartbeat_loop(self, websocket: WebSocket) -> None:
         while True:
@@ -456,7 +446,7 @@ class ProviderLiveService:
                 },
             )
             await self._send_snapshot(websocket)
-            async with self.broadcaster.subscribe() as queue:
+            async with self.broadcaster.subscribe_provider() as queue:
                 tasks = [
                     asyncio.create_task(
                         self._receive_loop(websocket), name="provider-live-recv"

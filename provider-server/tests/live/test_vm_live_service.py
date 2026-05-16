@@ -183,6 +183,7 @@ def test_vm_live_stream_sends_hello_snapshot_and_metric_update(tmp_path: Path):
             MagicMock(),
         )
         service = VMLiveService(
+            ProviderEventBroadcaster(),
             monitoring,
             FakeVmApp(),
             FakeProviderInfo(),
@@ -222,6 +223,7 @@ def test_vm_live_stream_sends_hello_snapshot_and_metric_update(tmp_path: Path):
 def test_vm_live_stream_sends_no_snapshot_before_auth():
     async def run():
         service = VMLiveService(
+            ProviderEventBroadcaster(),
             MagicMock(),
             FakeVmApp(),
             FakeProviderInfo(),
@@ -252,6 +254,7 @@ def test_vm_live_stream_treats_early_disconnect_as_normal_close(tmp_path: Path):
             MagicMock(),
         )
         service = VMLiveService(
+            ProviderEventBroadcaster(),
             monitoring,
             FakeVmApp(),
             FakeProviderInfo(),
@@ -270,6 +273,7 @@ def test_vm_live_stream_treats_early_disconnect_as_normal_close(tmp_path: Path):
 def test_vm_live_stream_rejects_invalid_initial_history_range():
     async def run():
         service = VMLiveService(
+            ProviderEventBroadcaster(),
             MagicMock(),
             FakeVmApp(),
             FakeProviderInfo(),
@@ -309,6 +313,7 @@ def test_vm_live_invalid_history_range_event_keeps_current_range(tmp_path: Path)
 
         monitoring.history = MagicMock(side_effect=history)
         service = VMLiveService(
+            ProviderEventBroadcaster(),
             monitoring,
             FakeVmApp(),
             FakeProviderInfo(),
@@ -341,6 +346,44 @@ def test_vm_live_invalid_history_range_event_keeps_current_range(tmp_path: Path)
         assert update["type"] == "update"
         assert update["scope"] == "metrics"
         assert history_ranges == ["1h", "1h"]
+
+    asyncio.run(run())
+
+
+def test_vm_live_stream_uses_vm_invalidation_without_polling(tmp_path: Path):
+    async def run():
+        repo = MonitoringRepository(str(tmp_path / "monitoring.sqlite"))
+        repo.init_schema()
+        monitoring = MonitoringService(
+            {"MONITORING_LIVE_ACTIVE_INTERVAL_SECONDS": 1},
+            repo,
+            MagicMock(),
+            MagicMock(),
+        )
+        broadcaster = ProviderEventBroadcaster()
+        service = VMLiveService(
+            broadcaster,
+            monitoring,
+            FakeVmApp(),
+            FakeProviderInfo(),
+            FakeStreamStatus(),
+            FakeAuth(),
+        )
+        websocket = FakeWebSocket()
+        task = asyncio.create_task(service.stream_vm(websocket, "vm-a"))
+        try:
+            await asyncio.wait_for(websocket.sent.get(), timeout=1)
+            await asyncio.wait_for(websocket.sent.get(), timeout=1)
+            await asyncio.sleep(0)
+            await broadcaster.publish_vm("vm-a", ["lifecycle"])
+            update = await asyncio.wait_for(websocket.sent.get(), timeout=1)
+        finally:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+        assert update["type"] == "update"
+        assert update["scope"] == "lifecycle"
+        assert update["data"]["id"] == "vm-a"
 
     asyncio.run(run())
 

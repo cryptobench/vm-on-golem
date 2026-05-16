@@ -29,7 +29,7 @@ renamed, removed, or materially changes purpose.
 - `SidebarLayout` - Two-column app shell layout with persistent sidebar.
 - `Skeleton` - Placeholder loading primitives, including table skeletons.
 - `SlidingLineChart` - Shared multi-series line chart with append-aware animation.
-- `SlidingSparkline` - Shared compact line chart with append-aware animation.
+- `SlidingSparkline` - Shared compact SVG line chart with append-aware animation and optional fixed point windowing.
 - `Sparkline` - Tiny trend line chart built on the shared sliding chart primitive.
 - `Spinner` - Compact inline progress indicator for controls.
 - `StatusBadge` - Generic status label with tone and optional busy indicator.

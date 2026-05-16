@@ -7,6 +7,7 @@ import {
   type VmLiveSnapshot,
   type VmMonitoringHistory,
   type VmMonitoringLatest,
+  type VmMonitoringSample,
 } from "../lib/api";
 import { getProviderVmSession } from "../lib/providerSession";
 
@@ -114,13 +115,17 @@ export function vmLiveReducer(
       const data = asRecord(action.data);
       const history = data?.history as VmMonitoringHistory | undefined;
       const samples = Array.isArray(data?.samples)
-        ? (data.samples as VmMonitoringHistory["samples"])
+        ? (data.samples as VmMonitoringSample[])
         : [];
       return {
         ...state,
         metricsLatest:
           (data?.latest as VmMonitoringLatest | undefined) || state.metricsLatest,
-        metricsHistory: history || mergeMetricSamples(state.metricsHistory, samples),
+        metricsHistory: mergeMetricHistory(
+          state.metricsHistory,
+          history,
+          samples,
+        ),
       };
     }
   }
@@ -138,53 +143,75 @@ export function useVmLive(
 
   React.useEffect(() => {
     if (!providerEndpointUrl || !vmId || typeof window === "undefined") return;
-    const socket = new WebSocket(
-      vmLiveUrl(providerEndpointUrl, vmId, { jobId, historyRange }),
-    );
-    socketRef.current = socket;
+    let cancelled = false;
+    let retryTimer: number | null = null;
+    let retryDelay = 1000;
     dispatch({ type: "connecting" });
 
-    socket.onopen = async () => {
-      try {
-        const token = await getProviderVmSession(providerEndpointUrl, vmId);
-        if (socket.readyState !== WebSocket.OPEN) return;
-        socket.send(JSON.stringify({ type: "auth", token }));
-        dispatch({ type: "connected" });
-      } catch (error) {
-        dispatch({ type: "degraded", error: String(error) });
-        socket.close();
-      }
-    };
-    socket.onmessage = (message) => {
-      try {
-        const event = JSON.parse(String(message.data)) as VmLiveEvent;
-        if (event.type === "snapshot") {
-          dispatch({ type: "snapshot", data: event.data as VmLiveSnapshot });
-        } else if (event.type === "update" && event.scope) {
-          dispatch({ type: "update", scope: event.scope, data: event.data });
-        } else if (event.type === "error") {
-          dispatch({
-            type: "error",
-            scope: event.scope,
-            error: event.error || "Live stream error",
-          });
+    const connect = () => {
+      const socket = new WebSocket(
+        vmLiveUrl(providerEndpointUrl, vmId, { jobId, historyRange }),
+      );
+      socketRef.current = socket;
+      socket.onopen = async () => {
+        try {
+          const token = await getProviderVmSession(providerEndpointUrl, vmId);
+          if (socket.readyState !== WebSocket.OPEN) return;
+          socket.send(JSON.stringify({ type: "auth", token }));
+        } catch (error) {
+          dispatch({ type: "degraded", error: String(error) });
+          socket.close();
         }
-      } catch (error) {
-        dispatch({ type: "error", error: String(error) });
-      }
-    };
-    socket.onerror = () => {
-      dispatch({ type: "degraded", error: "Live stream unavailable" });
-    };
-    socket.onclose = () => {
-      if (socketRef.current === socket) {
+      };
+      socket.onmessage = (message) => {
+        try {
+          const event = JSON.parse(String(message.data)) as VmLiveEvent;
+          if (event.type === "hello") {
+            retryDelay = 1000;
+            dispatch({ type: "connected" });
+          } else if (event.type === "snapshot") {
+            retryDelay = 1000;
+            dispatch({ type: "snapshot", data: event.data as VmLiveSnapshot });
+            dispatch({ type: "connected" });
+          } else if (event.type === "update" && event.scope) {
+            dispatch({ type: "update", scope: event.scope, data: event.data });
+          } else if (event.type === "error") {
+            dispatch({
+              type: "error",
+              scope: event.scope,
+              error: event.error || "Live stream error",
+            });
+          }
+        } catch (error) {
+          dispatch({ type: "error", error: String(error) });
+        }
+      };
+      socket.onerror = () => {
+        dispatch({ type: "degraded", error: "Live stream unavailable" });
+      };
+      socket.onclose = () => {
+        if (socketRef.current === socket) {
+          socketRef.current = null;
+        }
+        if (cancelled) return;
         dispatch({ type: "degraded" });
-      }
+        retryTimer = window.setTimeout(connect, retryDelay);
+        retryDelay = Math.min(retryDelay * 2, 10000);
+      };
     };
 
+    try {
+      connect();
+    } catch (error) {
+      dispatch({ type: "degraded", error: String(error) });
+      retryTimer = window.setTimeout(connect, retryDelay);
+    }
+
     return () => {
+      cancelled = true;
+      if (retryTimer != null) window.clearTimeout(retryTimer);
+      socketRef.current?.close();
       socketRef.current = null;
-      socket.close();
     };
   }, [providerEndpointUrl, vmId, jobId, historyRange]);
 
@@ -216,17 +243,18 @@ function asRecord(value: unknown) {
 
 function mergeMetricSamples(
   history: VmMonitoringHistory | null,
-  samples: VmMonitoringHistory["samples"],
+  samples: VmMonitoringSample[],
 ): VmMonitoringHistory | null {
   if (!samples.length) return history;
 
   const existing = history?.samples || [];
-  const byKey = new Map<string, VmMonitoringHistory["samples"][number]>();
+  const byKey = new Map<string, VmMonitoringSample>();
   [...existing, ...samples].forEach((sample) => {
     byKey.set(metricSampleKey(sample), sample);
   });
 
   return {
+    ...history,
     samples: Array.from(byKey.values())
       .sort(
         (a, b) =>
@@ -237,7 +265,28 @@ function mergeMetricSamples(
   };
 }
 
-function metricSampleKey(sample: VmMonitoringHistory["samples"][number]) {
+function mergeMetricHistory(
+  current: VmMonitoringHistory | null,
+  incoming: VmMonitoringHistory | undefined,
+  samples: VmMonitoringSample[],
+): VmMonitoringHistory | null {
+  if (!incoming) {
+    return mergeMetricSamples(current, samples);
+  }
+
+  const mergedSamples = [
+    ...(current?.samples || []),
+    ...(incoming.samples || []),
+    ...samples,
+  ];
+  const mergedBase: VmMonitoringHistory = {
+    ...incoming,
+    samples: mergedSamples.length ? [] : undefined,
+  };
+  return mergeMetricSamples(mergedBase, mergedSamples);
+}
+
+function metricSampleKey(sample: VmMonitoringSample) {
   return [
     sample.scope,
     sample.source,
