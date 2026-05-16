@@ -8,10 +8,6 @@ test("resize limits include current allocation plus provider availability", () =
   const limits = computeResizeLimits(
     { cpu: 2, memory: 4, storage: 20 },
     {
-      status: "running",
-      pricing: {},
-      vms: [],
-      env: {},
       resources: {
         available: { cpu: 3, memory: 9, storage: 25 },
         total: { cpu: 8, memory: 16, storage: 100 },

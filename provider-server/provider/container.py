@@ -3,6 +3,7 @@ from pathlib import Path
 
 from dependency_injector import containers, providers
 
+from .auth.services import ProviderAuthService
 from .config import settings as provider_settings
 from .discovery.arkiv_publisher import ArkivDiscoveryPublisher
 from .discovery.composite_publisher import CompositeDiscoveryPublisher
@@ -199,6 +200,14 @@ class Container(containers.DeclarativeContainer):
         ),
     )
 
+    provider_auth_service = providers.Singleton(
+        ProviderAuthService,
+        settings=config,
+        stream_map=stream_map,
+        job_store=job_store,
+        reader_factory=stream_reader.provider,
+    )
+
     vm_application_service = providers.Factory(
         VMApplicationService,
         vm_service=vm_service,
@@ -219,11 +228,13 @@ class Container(containers.DeclarativeContainer):
         vm_application_service=vm_application_service,
         provider_info_service=provider_info_service,
         stream_status_service=stream_status_service,
+        auth_service=provider_auth_service,
     )
 
     host_live_service = providers.Singleton(
         HostLiveService,
         monitoring_service=monitoring_service,
+        auth_service=provider_auth_service,
     )
 
     summary_service = providers.Factory(
@@ -249,4 +260,5 @@ class Container(containers.DeclarativeContainer):
         vm_application_service=vm_application_service,
         stream_status_service=stream_status_service,
         monitoring_service=monitoring_service,
+        auth_service=provider_auth_service,
     )

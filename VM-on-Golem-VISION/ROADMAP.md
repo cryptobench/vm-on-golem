@@ -25,7 +25,7 @@ gantt
 ```mermaid
 graph TB
     subgraph "Phase 1: Core Infrastructure ✅"
-        R[Requestor CLI]
+        R[Requestor web app]
         P[Provider Node]
         D[Discovery Service]
         R -->|Find Providers| D
@@ -69,7 +69,7 @@ graph TB
 ### Phase 1: Core Infrastructure (✅ Completed Feb 20, 2025)
 - **Achievement**: Built in 24 hours
 - **Components**:
-  - Requestor CLI with intuitive commands
+  - Requestor web app with intuitive flows
   - Provider Node with VM management
   - Discovery Service for matchmaking
   - SSH key management system

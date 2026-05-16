@@ -54,15 +54,16 @@ class VMApplicationService:
             "Provider VM create requested",
             extra={"vm_id": command.name, "async_mode": command.async_mode},
         )
-        if await self.stream_status_service.is_payment_required():
-            await self.stream_status_service.require_valid_lease(
-                command.payment,
-                requestor_address=command.action_signer,
-                current_vm_id=command.name,
-                vm_name=command.name,
-                image=command.image or str(self._setting("DEFAULT_VM_IMAGE", "")),
-                resources=command.resources,
-            )
+        if not await self.stream_status_service.is_payment_required():
+            raise InvalidStreamError("streaming payments required to create a VM")
+        await self.stream_status_service.require_valid_lease(
+            command.payment,
+            requestor_address=command.action_signer,
+            current_vm_id=command.name,
+            vm_name=command.name,
+            image=command.image or str(self._setting("DEFAULT_VM_IMAGE", "")),
+            resources=command.resources,
+        )
 
         config = VMConfig(
             name=command.name,
@@ -132,6 +133,8 @@ class VMApplicationService:
             progress=initial.progress,
             transitioning=initial.transitioning,
             next_poll_seconds=initial.next_poll_seconds,
+            requestor_address=command.action_signer,
+            stream_id=command.payment.stream_id if command.payment else None,
         )
         await self._publish_live(["vms", "summary"])
         logger.info(
@@ -153,17 +156,14 @@ class VMApplicationService:
 
         async def _run_creation() -> None:
             try:
-                if await self.stream_status_service.is_payment_required():
-                    await self.stream_status_service.require_valid_lease(
-                        command.payment,
-                        requestor_address=command.action_signer,
-                        current_vm_id=command.name,
-                        vm_name=command.name,
-                        image=command.image or str(
-                            self._setting("DEFAULT_VM_IMAGE", "")
-                        ),
-                        resources=command.resources,
-                    )
+                await self.stream_status_service.require_valid_lease(
+                    command.payment,
+                    requestor_address=command.action_signer,
+                    current_vm_id=command.name,
+                    vm_name=command.name,
+                    image=command.image or str(self._setting("DEFAULT_VM_IMAGE", "")),
+                    resources=command.resources,
+                )
                 vm_info = await self.vm_service.create_vm_with_progress(
                     config,
                     _update_progress,

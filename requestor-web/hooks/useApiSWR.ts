@@ -3,7 +3,6 @@ import useSWR, { SWRConfiguration, mutate as globalMutate } from "swr";
 import { useMemo } from "react";
 import {
   providerInfo as apiProviderInfo,
-  providerSummary as apiProviderSummary,
   vmAccess as apiVmAccess,
   vmJobStatus as apiVmJobStatus,
   vmStatusSafe as apiVmStatusSafe,
@@ -39,22 +38,6 @@ export function useProviderInfo(
   });
 }
 
-export function useProviderSummary(
-  providerEndpointUrl?: string | null,
-  config?: SWRConfiguration,
-) {
-  const key = useMemo(
-    () => providerKey("provider-summary", providerEndpointUrl),
-    [providerEndpointUrl],
-  );
-  return useSWR(key, () => apiProviderSummary(providerEndpointUrl!), {
-    revalidateOnFocus: true,
-    revalidateOnReconnect: true,
-    revalidateIfStale: true,
-    ...config,
-  });
-}
-
 export function useVmAccess(
   providerEndpointUrl?: string | null,
   vmId?: string | null,
@@ -78,16 +61,17 @@ export function useVmAccess(
 export function useVmCreateJobStatus(
   providerEndpointUrl?: string | null,
   jobId?: string | null,
+  vmId?: string | null,
   config?: SWRConfiguration,
 ) {
   const key = useMemo(
     () =>
-      providerEndpointUrl && jobId
-        ? providerKey("vm-create-job", providerEndpointUrl, jobId)
+      providerEndpointUrl && jobId && vmId
+        ? providerKey("vm-create-job", providerEndpointUrl, jobId, vmId)
         : null,
-    [providerEndpointUrl, jobId],
+    [providerEndpointUrl, jobId, vmId],
   );
-  return useSWR(key, () => apiVmJobStatus(providerEndpointUrl!, jobId!), {
+  return useSWR(key, () => apiVmJobStatus(providerEndpointUrl!, jobId!, vmId!), {
     revalidateOnFocus: true,
     revalidateOnReconnect: true,
     revalidateIfStale: true,

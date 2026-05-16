@@ -4,12 +4,18 @@ from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import PlainTextResponse
 
+from provider.auth.dependencies import (
+    require_provider_admin,
+    require_requestor_vm_access,
+)
+from provider.auth.domain import AdminIdentity, RequestorIdentity
 from provider.container import Container
 from provider.live.events import ProviderEventBroadcaster
 from provider.monitoring.domain import (
     AlertRule,
     GuestMetricAccepted,
     GuestMetricPayload,
+    MetricHistoryRange,
     MetricScope,
     MetricsHistoryResponse,
     MetricsLatestResponse,
@@ -26,6 +32,7 @@ router = APIRouter()
 @router.get("/monitoring/overview", response_model=MonitoringOverview)
 @inject
 async def monitoring_overview(
+    _admin: AdminIdentity = Depends(require_provider_admin),
     monitoring_service: MonitoringService = Depends(
         Provide[Container.monitoring_service]
     ),
@@ -36,6 +43,7 @@ async def monitoring_overview(
 @router.get("/monitoring/metrics/latest", response_model=MetricsLatestResponse)
 @inject
 async def monitoring_latest(
+    _admin: AdminIdentity = Depends(require_provider_admin),
     monitoring_service: MonitoringService = Depends(
         Provide[Container.monitoring_service]
     ),
@@ -47,9 +55,10 @@ async def monitoring_latest(
 @inject
 async def monitoring_history(
     scope: MetricScope = Query(default=MetricScope.HOST),
-    range: str = Query(default="1h"),
+    range: MetricHistoryRange = Query(default=MetricHistoryRange.ONE_HOUR),
     vm_id: Optional[str] = Query(default=None),
     source: Optional[MetricSource] = Query(default=None),
+    _admin: AdminIdentity = Depends(require_provider_admin),
     monitoring_service: MonitoringService = Depends(
         Provide[Container.monitoring_service]
     ),
@@ -85,6 +94,7 @@ async def record_guest_sample(
 @inject
 async def vm_metrics_latest(
     requestor_name: str,
+    _identity: RequestorIdentity = Depends(require_requestor_vm_access),
     monitoring_service: MonitoringService = Depends(
         Provide[Container.monitoring_service]
     ),
@@ -100,8 +110,9 @@ async def vm_metrics_latest(
 @inject
 async def vm_metrics_history(
     requestor_name: str,
-    range: str = Query(default="1h"),
+    range: MetricHistoryRange = Query(default=MetricHistoryRange.ONE_HOUR),
     source: Optional[MetricSource] = Query(default=None),
+    _identity: RequestorIdentity = Depends(require_requestor_vm_access),
     monitoring_service: MonitoringService = Depends(
         Provide[Container.monitoring_service]
     ),
@@ -114,6 +125,7 @@ async def vm_metrics_history(
 @router.get("/monitoring/alerts")
 @inject
 async def active_alerts(
+    _admin: AdminIdentity = Depends(require_provider_admin),
     monitoring_service: MonitoringService = Depends(
         Provide[Container.monitoring_service]
     ),
@@ -124,6 +136,7 @@ async def active_alerts(
 @router.get("/monitoring/alert-rules", response_model=list[AlertRule])
 @inject
 async def list_alert_rules(
+    _admin: AdminIdentity = Depends(require_provider_admin),
     monitoring_service: MonitoringService = Depends(
         Provide[Container.monitoring_service]
     ),
@@ -135,6 +148,7 @@ async def list_alert_rules(
 @inject
 async def create_alert_rule(
     rule: AlertRule,
+    _admin: AdminIdentity = Depends(require_provider_admin),
     monitoring_service: MonitoringService = Depends(
         Provide[Container.monitoring_service]
     ),
@@ -150,6 +164,7 @@ async def create_alert_rule(
 @router.get("/monitoring/webhooks", response_model=list[WebhookConfig])
 @inject
 async def list_webhooks(
+    _admin: AdminIdentity = Depends(require_provider_admin),
     monitoring_service: MonitoringService = Depends(
         Provide[Container.monitoring_service]
     ),
@@ -161,6 +176,7 @@ async def list_webhooks(
 @inject
 async def create_webhook(
     webhook: WebhookConfig,
+    _admin: AdminIdentity = Depends(require_provider_admin),
     monitoring_service: MonitoringService = Depends(
         Provide[Container.monitoring_service]
     ),
@@ -179,6 +195,7 @@ async def create_webhook(
 @inject
 async def test_webhook(
     webhook_id: int,
+    _admin: AdminIdentity = Depends(require_provider_admin),
     monitoring_service: MonitoringService = Depends(
         Provide[Container.monitoring_service]
     ),
@@ -197,6 +214,7 @@ async def test_webhook(
 @router.get("/metrics")
 @inject
 async def prometheus_metrics(
+    _admin: AdminIdentity = Depends(require_provider_admin),
     monitoring_service: MonitoringService = Depends(
         Provide[Container.monitoring_service]
     ),

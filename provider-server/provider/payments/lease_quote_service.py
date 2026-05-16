@@ -1,6 +1,6 @@
 import secrets
 import time
-from decimal import Decimal, ROUND_CEILING
+from decimal import ROUND_CEILING, Decimal
 from typing import Any
 
 from eth_account import Account
@@ -12,7 +12,6 @@ from provider.utils.logging import setup_logger
 from provider.vm.models import VMResources
 
 from .domain import LeaseQuote, LeaseQuoteCommand
-
 
 SECONDS_PER_MONTH = Decimal("730") * Decimal("3600")
 QUOTE_TTL_SECONDS = 900

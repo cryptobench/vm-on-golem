@@ -8,7 +8,6 @@ This document is the **architectural baseline** for the repo. Some sections desc
 
 - `central-discovery-server/` (Python 3.9): centralized FastAPI discovery backend (`central_discovery`, entries: `golem-central-discovery`, legacy `golem-discovery`).
 - `provider-server/` (Python 3.11): Provider API/CLI (`provider`, entry: `golem-provider`).
-- `requestor-server/` (Python 3.11): Requestor API/CLI (`requestor`, entry: `golem`).
 - `port-checker-server/` (Python 3.10+): FastAPI utility (`port_checker`, entry: `port-checker`).
 - `requestor-web/`: Next.js + Tailwind + ethers.js web app for requestors.
 - `apps/provider-desktop/`: Tauri + Vite + React desktop shell for providers.
@@ -21,14 +20,35 @@ This document is the **architectural baseline** for the repo. Some sections desc
 
 - `make install` - Install Poetry dependencies for central discovery, port-checker, provider, requestor, and shared packages.
 - `make test` - Run pytest for the four core Python services.
-- `make local` - Preferred full-stack local workflow on ARM macOS: starts local central discovery, provider, port-checker proxy, requestor API, and requestor web with one supervisor process. This intentionally uses local central discovery for deterministic development; Arkiv remains the canonical product default outside this local workflow.
+- `make local` - Preferred full-stack local workflow on ARM macOS: starts local central discovery, provider, port-checker proxy, and requestor web with one supervisor process. This intentionally uses local central discovery for deterministic development; Arkiv remains the canonical product default outside this local workflow.
 - `make start` - Start provider CLI, port-checker proxy, and requestor web (development mode).
-- Per-service: `poetry -C <svc> run pytest`, `GOLEM_ENVIRONMENT=development poetry -C provider-server run golem-provider start`, `poetry -C central-discovery-server run golem-central-discovery`, `poetry -C requestor-server run golem server api --reload`.
+- Per-service: `poetry -C <svc> run pytest`, `GOLEM_ENVIRONMENT=development poetry -C provider-server run golem-provider start`, `poetry -C central-discovery-server run golem-central-discovery`.
 - Provider desktop: `npm install && npm --workspace @golem/provider-desktop run dev` for local desktop development; `npm --workspace @golem/provider-desktop run tauri:build` for installers.
 
 ## Agent Server Policy
 
-Codex agents MUST NOT start long-running local servers or GUI processes in this repository unless the user explicitly asks for it in the current turn. This includes `make local`, `make start`, `npm run dev`, `npm start`, `next dev`, Tauri apps, Uvicorn/FastAPI servers, provider/requestor CLIs, central discovery, and port-checker. For UI work, prefer static checks, unit/type tests, code inspection, or ask the user to run the app and provide a URL/screenshot.
+Codex agents MUST NOT start long-running local servers or GUI processes in this repository unless the user explicitly asks for it in the current turn. This includes `make local`, `make start`, `npm run dev`, `npm start`, `next dev`, Tauri apps, Uvicorn/FastAPI servers, provider CLI commands, central discovery, and port-checker. For UI work, prefer static checks, unit/type tests, code inspection, or ask the user to run the app and provide a URL/screenshot.
+
+## Provider API Authorization
+
+The provider API is publicly reachable by requestor web clients, so authorization is mandatory and centralized.
+
+- Shared backend auth code lives in `provider-server/provider/auth/`.
+- Requestor VM routes MUST use `require_requestor_vm_access` from `provider-server/provider/auth/dependencies.py`.
+- Provider-owner/admin routes MUST use `require_provider_admin` from `provider-server/provider/auth/dependencies.py`.
+- Routes MUST NOT parse bearer tokens, wallet signatures, admin tokens, or ownership manually.
+- VM ownership MUST be resolved through `ProviderAuthService`; do not read `StreamMap`, jobs, or chain streams directly from route handlers for authorization.
+- Payment validation remains in `provider-server/provider/payments/`; payment checks MUST NOT be used as a replacement for requestor authorization.
+- Public provider endpoints are limited to `GET /api/v1/provider/info`, `GET /api/v1/images`, and `POST /api/v1/payments/lease-quotes` unless this section is intentionally updated with a new public endpoint rationale.
+- VM creation MUST require a valid payment stream and authenticated requestor identity; providers MUST NOT create public requestor VMs for free.
+- Requestor-web protected provider calls MUST go through `requestor-web/lib/providerSession.ts` and the shared provider API helper in `requestor-web/lib/api.ts`.
+- Requestor-web components/hooks MUST NOT use raw `fetch` for protected provider VM endpoints.
+- Browser websocket auth MUST use the shared VM live helper and must authenticate before any VM data is consumed.
+- Provider desktop admin calls MUST use `providerAdminToken` and the shared request helper in `apps/provider-desktop/src/lib/providerApi.ts`; renderer code MUST NOT read provider admin token files directly.
+- Provider desktop live websockets MUST send the admin auth message before consuming provider-wide or host metrics data.
+- Any new provider endpoint exposing VM-scoped state MUST include tests for unauthenticated, wrong-owner, and authorized access.
+- Any new provider-wide/admin endpoint MUST include tests for missing admin token, requestor token rejected, and valid admin token accepted.
+- No silent auth fallback: missing owner, missing token, expired token, disabled payments, failed stream lookup, or unknown legacy owner must fail visibly.
 
 ## Discovery Naming & Backends
 
@@ -42,10 +62,10 @@ Naming rules:
 - Use `discovery` for the capability or package area, not as a synonym for the centralized server.
 - Use `central-discovery-server/`, `central_discovery`, `CentralDiscovery*`, and `central` for the centralized backend. Do not add new `discovery-server` paths or names.
 - Use `Arkiv*`, `arkiv`, and `ARKIV_*` for the decentralized backend. Do not use "Golem Base" in new user-facing docs/UI/config except when referring to legacy compatibility or the current SDK/package name.
-- Keep existing `golem-base`, `GOLEM_BASE_*`, `GolemBase*`, and `golem_base_*` aliases working where they are already part of persisted config, public CLI flags, tests, or SDK imports. Treat them as compatibility shims, not canonical names.
+- Keep existing `golem-base`, `GOLEM_BASE_*`, `GolemBase*`, and `golem_base_*` aliases working where they are already part of persisted config, public config fields, tests, or SDK imports. Treat them as compatibility shims, not canonical names.
 - Provider-side publishing uses publisher terminology: `DiscoveryPublisher`, `CentralDiscoveryPublisher`, `ArkivDiscoveryPublisher`, `CompositeDiscoveryPublisher`, and `DiscoveryPublishingService`.
 - Requestor-side provider lookup uses backend/client terminology: `CentralDiscoveryClient`, `ArkivDiscoveryClient`, and pure DTOs in `requestor/discovery/domain.py`.
-- Cross-backend selection is config-driven: providers use `DISCOVERY_BACKEND=arkiv|central|both`; requestors use `GOLEM_REQUESTOR_DISCOVERY_BACKEND=arkiv|central`; the web profile mode is `arkiv|central`.
+- Cross-backend selection is config-driven: providers use `DISCOVERY_BACKEND=arkiv|central|both`; the requestor web profile mode is `arkiv|central`.
 - If a new discovery backend is added, add it as an adapter implementing the same service-facing boundary. Do not branch backend-specific RPC/HTTP logic through routes, UI components, or business services.
 
 Documentation rules:
@@ -240,7 +260,7 @@ DISCOVERY_URL = "http://discovery.golem.network:9001"
 - `packages/ui/COMPONENTS.md` is the source-of-truth shared component inventory. Update it in the same change whenever a shared component is added, renamed, removed, or materially changes purpose.
 - Feature-specific flows are not shared components, even when implemented as React components. For example, `Dialog` is a reusable component; `RentVmDialog` is a requestor feature composition that uses `Dialog`.
 - If a feature needs a new visual pattern, create or extend a generalized component in `packages/ui`, then compose it inside the feature.
-- Shared components must not import Next.js, Tauri, provider APIs, requestor APIs, wallet logic, generated clients, or feature/domain modules.
+- Shared components must not import Next.js, Tauri, provider APIs, wallet logic, generated clients, or feature/domain modules.
 - Shared styling comes from `packages/design-system` tokens and the shared Tailwind preset. Do not add app-local styling tokens when a shared token should exist.
 - When moving existing UI into shared packages, use `mv` for file relocation and then apply small patches for imports/package boundaries.
 

@@ -29,6 +29,10 @@ async function serviceWebSocketUrl(path: string) {
   return url.toString();
 }
 
+export async function providerAdminToken() {
+  return invoke<string>("provider_admin_token");
+}
+
 async function parseError(response: Response) {
   const text = await response.text();
   if (!text) return `${response.status} ${response.statusText}`;
@@ -42,10 +46,12 @@ async function parseError(response: Response) {
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const baseUrl = await serviceBaseUrl();
+  const token = await providerAdminToken();
   const response = await fetch(`${baseUrl}${path}`, {
     ...init,
     headers: {
       Accept: "application/json",
+      Authorization: `Bearer ${token}`,
       ...(init?.body ? { "Content-Type": "application/json" } : {}),
       ...init?.headers,
     },
@@ -73,6 +79,7 @@ function patch<T>(path: string, body?: unknown) {
 
 export const providerApi = {
   getServiceStatus: () => invoke<ProviderServiceStatus>("provider_status"),
+  adminToken: providerAdminToken,
   providerLiveUrl: () => serviceWebSocketUrl("/provider/live"),
   startProvider: () => invoke<void>("start_provider"),
   stopProvider: () => invoke<void>("stop_provider"),

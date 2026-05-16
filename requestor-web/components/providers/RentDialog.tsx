@@ -243,6 +243,8 @@ export function RentDialog({
         provider_endpoint_url: endpointUrl,
         provider_ip: provider.ip_address || null,
         platform: provider.platform || null,
+        provider_pricing: provider.pricing || null,
+        provider_available_resources: provider.resources || null,
         resources: spec,
         vm_id: payload.name,
         creation_job_id: null,
@@ -281,6 +283,7 @@ export function RentDialog({
             const status = await vmJobStatus(
               endpointUrl,
               jobId,
+              payload.name,
             );
             vmId = status?.vm_id || null;
             if (vmId) break;
@@ -297,6 +300,8 @@ export function RentDialog({
         provider_endpoint_url: endpointUrl,
         provider_ip: provider.ip_address || null,
         platform: provider.platform || null,
+        provider_pricing: provider.pricing || null,
+        provider_available_resources: provider.resources || null,
         resources: spec,
         vm_id: vmId,
         creation_job_id: jobId,

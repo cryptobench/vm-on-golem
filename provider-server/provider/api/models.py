@@ -3,9 +3,9 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
+from ..payments.domain import LeasePayment
 from ..utils.logging import setup_logger
 from ..utils.time import ensure_utc, utc_now
-from ..payments.domain import LeasePayment
 from ..vm.models import MULTIPASS_SSH_USER, VMResources, VMSize, VMStatus
 
 logger = setup_logger(__name__)

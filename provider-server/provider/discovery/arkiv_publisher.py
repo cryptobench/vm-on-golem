@@ -109,9 +109,12 @@ class ArkivDiscoveryPublisher(DiscoveryPublisher):
                     platform_str = "x86_64"
                 else:
                     platform_str = raw
-            endpoint_protocol, endpoint_host, endpoint_port, endpoint_url = (
-                _provider_endpoint(settings, ip_address)
-            )
+            (
+                endpoint_protocol,
+                endpoint_host,
+                endpoint_port,
+                endpoint_url,
+            ) = _provider_endpoint(settings, ip_address)
             string_annotations = [
                 Annotation(key="golem_type", value="provider"),
                 Annotation(key="golem_network", value=settings.NETWORK),

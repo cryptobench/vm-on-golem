@@ -24,14 +24,12 @@ install: lock
 	poetry -C central-discovery-server install
 	poetry -C port-checker-server install
 	poetry -C provider-server install
-	poetry -C requestor-server install
 	poetry -C shared-faucet install
 
 lock:
 	poetry -C central-discovery-server lock
 	poetry -C port-checker-server lock
 	poetry -C provider-server lock
-	poetry -C requestor-server lock
 
 test:
 	# Ensure dev deps (e.g., requests for TestClient) are installed per service
@@ -45,10 +43,6 @@ test:
 	poetry -C provider-server install --with dev --no-interaction
 	# Provider uses service-local pytest.ini to scope coverage sources
 	poetry -C provider-server run pytest provider-server/tests --cov-fail-under=100 || [ $$? -eq 5 ]
-	poetry -C requestor-server lock
-	poetry -C requestor-server install --with dev --no-interaction
-	# Requestor uses service-local pytest.ini to scope coverage sources
-	poetry -C requestor-server run pytest requestor-server/tests || [ $$? -eq 5 ]
 
 local:
 	python3 scripts/local_stack.py $(LOCAL_STACK_ARGS)
@@ -57,7 +51,6 @@ openapi:
 	poetry -C central-discovery-server run python ../scripts/export_openapi.py central-discovery ../openapi/central-discovery.json
 	poetry -C port-checker-server run python ../scripts/export_openapi.py port-checker ../openapi/port-checker.json
 	poetry -C provider-server run python ../scripts/export_openapi.py provider ../openapi/provider.json
-	poetry -C requestor-server run python ../scripts/export_openapi.py requestor ../openapi/requestor.json
 
 api-generate: openapi
 	npm --prefix requestor-web run api:generate
@@ -95,14 +88,12 @@ start-testnet:
 	@set -e; \
 	GOLEM_PROVIDER_NETWORK=testnet GOLEM_ENVIRONMENT=development poetry -C central-discovery-server run golem-central-discovery & \
 	GOLEM_PROVIDER_NETWORK=testnet GOLEM_ENVIRONMENT=development poetry -C provider-server run golem-provider start --network testnet & \
-	GOLEM_REQUESTOR_NETWORK=testnet GOLEM_ENVIRONMENT=development poetry -C requestor-server run golem server api --reload & \
 	wait
 
 start-mainnet:
 	@set -e; \
 	GOLEM_PROVIDER_NETWORK=mainnet GOLEM_ENVIRONMENT=production poetry -C central-discovery-server run golem-central-discovery & \
 	GOLEM_PROVIDER_NETWORK=mainnet GOLEM_ENVIRONMENT=production poetry -C provider-server run golem-provider start & \
-	GOLEM_REQUESTOR_NETWORK=mainnet GOLEM_ENVIRONMENT=production poetry -C requestor-server run golem server api --reload & \
 	wait
 
 # --- Dev helpers: Port-checker + Discovery + Web UI ---

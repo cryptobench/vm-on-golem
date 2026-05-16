@@ -10,12 +10,14 @@ from typing import Any, Optional
 import aiohttp
 import psutil
 
+from provider.errors import ValidationError
 from provider.utils.time import ensure_utc, utc_now
 
 from .domain import (
     AlertRule,
     GuestMetricAccepted,
     GuestMetricPayload,
+    MetricHistoryRange,
     MetricSample,
     MetricScope,
     MetricsHistoryResponse,
@@ -209,7 +211,7 @@ class MonitoringService:
     def history(
         self,
         scope: MetricScope,
-        range_name: str,
+        range_name: str | MetricHistoryRange,
         vm_id: Optional[str] = None,
         source: Optional[MetricSource] = None,
     ) -> MetricsHistoryResponse:
@@ -762,15 +764,31 @@ class MonitoringService:
         return value > threshold
 
     @staticmethod
-    def _range_delta(range_name: str) -> timedelta:
+    def _validate_history_range(
+        range_name: str | MetricHistoryRange,
+    ) -> MetricHistoryRange:
+        if isinstance(range_name, MetricHistoryRange):
+            return range_name
+        try:
+            return MetricHistoryRange(str(range_name))
+        except ValueError as exc:
+            supported = ", ".join(MetricHistoryRange.values())
+            raise ValidationError(
+                f"invalid metrics history range: {range_name}. "
+                f"Supported ranges: {supported}"
+            ) from exc
+
+    @classmethod
+    def _range_delta(cls, range_name: str | MetricHistoryRange) -> timedelta:
+        history_range = cls._validate_history_range(range_name)
         ranges = {
-            "1h": timedelta(hours=1),
-            "6h": timedelta(hours=6),
-            "24h": timedelta(hours=24),
-            "7d": timedelta(days=7),
-            "30d": timedelta(days=30),
+            MetricHistoryRange.ONE_HOUR: timedelta(hours=1),
+            MetricHistoryRange.SIX_HOURS: timedelta(hours=6),
+            MetricHistoryRange.TWENTY_FOUR_HOURS: timedelta(hours=24),
+            MetricHistoryRange.SEVEN_DAYS: timedelta(days=7),
+            MetricHistoryRange.THIRTY_DAYS: timedelta(days=30),
         }
-        return ranges.get(range_name, ranges["1h"])
+        return ranges[history_range]
 
     def _setting(self, name: str, default: Any = None) -> Any:
         if isinstance(self.settings, dict):

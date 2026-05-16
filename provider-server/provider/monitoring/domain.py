@@ -17,6 +17,18 @@ class MetricScope(str, Enum):
     VM = "vm"
 
 
+class MetricHistoryRange(str, Enum):
+    ONE_HOUR = "1h"
+    SIX_HOURS = "6h"
+    TWENTY_FOUR_HOURS = "24h"
+    SEVEN_DAYS = "7d"
+    THIRTY_DAYS = "30d"
+
+    @classmethod
+    def values(cls) -> tuple[str, ...]:
+        return tuple(item.value for item in cls)
+
+
 class MetricSample(BaseModel):
     scope: MetricScope
     source: MetricSource

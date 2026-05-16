@@ -3,6 +3,8 @@ use serde_json::{json, Value};
 use std::fs::{self, File};
 use std::io::{Read, Seek, SeekFrom};
 use std::net::{SocketAddr, TcpStream};
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use tauri::Emitter;
@@ -36,6 +38,65 @@ struct ProviderRequirements {
 
 fn provider_api_base_url_value() -> String {
     format!("http://{PROVIDER_HOST}:{PROVIDER_PORT}/api/v1")
+}
+
+fn provider_vm_data_dir() -> Result<PathBuf, String> {
+    if let Ok(value) = std::env::var("GOLEM_PROVIDER_VM_DATA_DIR") {
+        let trimmed = value.trim();
+        if !trimmed.is_empty() {
+            let path = PathBuf::from(trimmed);
+            return Ok(if path.is_absolute() {
+                path
+            } else {
+                provider_home_dir()?.join(path)
+            });
+        }
+    }
+    Ok(provider_home_dir()?.join(".golem/provider/vms"))
+}
+
+fn provider_home_dir() -> Result<PathBuf, String> {
+    std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .map(PathBuf::from)
+        .map_err(|_| "Could not determine provider home directory".to_string())
+}
+
+fn generate_admin_token() -> Result<String, String> {
+    let mut bytes = [0_u8; 48];
+    File::open("/dev/urandom")
+        .map_err(|err| format!("Failed to open OS random source: {err}"))?
+        .read_exact(&mut bytes)
+        .map_err(|err| format!("Failed to read OS random source: {err}"))?;
+    Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
+}
+
+fn read_or_create_admin_token() -> Result<String, String> {
+    if let Ok(value) = std::env::var("GOLEM_PROVIDER_ADMIN_TOKEN") {
+        let trimmed = value.trim();
+        if !trimmed.is_empty() {
+            return Ok(trimmed.to_string());
+        }
+    }
+
+    let path = provider_vm_data_dir()?.join("provider-admin.token");
+    if path.exists() {
+        let value = fs::read_to_string(&path).map_err(|err| err.to_string())?;
+        let trimmed = value.trim();
+        if !trimmed.is_empty() {
+            return Ok(trimmed.to_string());
+        }
+    }
+
+    let token = generate_admin_token()?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| "Provider admin token path has no parent".to_string())?;
+    fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+    fs::write(&path, &token).map_err(|err| err.to_string())?;
+    #[cfg(unix)]
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).map_err(|err| err.to_string())?;
+    Ok(token)
 }
 
 fn emit_setup_status(app: &tauri::AppHandle, status: Value) {
@@ -158,7 +219,9 @@ fn daemon_stdio_log_path() -> Option<PathBuf> {
 }
 
 fn file_len(path: &Path) -> u64 {
-    fs::metadata(path).map(|metadata| metadata.len()).unwrap_or(0)
+    fs::metadata(path)
+        .map(|metadata| metadata.len())
+        .unwrap_or(0)
 }
 
 fn read_daemon_log_since(path: &Path, offset: u64) -> String {
@@ -462,10 +525,7 @@ async fn start_provider(app: tauri::AppHandle) -> Result<(), String> {
     eprintln!("[provider-sidecar] Starting provider daemon");
     let daemon_started_at = Instant::now();
     let daemon_log_path = daemon_stdio_log_path();
-    let daemon_log_offset = daemon_log_path
-        .as_deref()
-        .map(file_len)
-        .unwrap_or_default();
+    let daemon_log_offset = daemon_log_path.as_deref().map(file_len).unwrap_or_default();
     // Desktop already ran secure setup with live progress; avoid a duplicate
     // daemon preflight that would be invisible to the startup UI.
     if let Err(err) =
@@ -480,13 +540,12 @@ async fn start_provider(app: tauri::AppHandle) -> Result<(), String> {
         "[provider-sidecar] Provider daemon command finished in {:.2}s; waiting for API",
         daemon_started_at.elapsed().as_secs_f64()
     );
-    if let Err(err) =
-        wait_for_provider_api(
-            PROVIDER_START_TIMEOUT,
-            daemon_log_path.as_deref(),
-            daemon_log_offset,
-        )
-        .await
+    if let Err(err) = wait_for_provider_api(
+        PROVIDER_START_TIMEOUT,
+        daemon_log_path.as_deref(),
+        daemon_log_offset,
+    )
+    .await
     {
         mark_provider_daemon_failed(&mut status, &err);
         emit_setup_status(&app, status);
@@ -534,6 +593,11 @@ fn provider_api_base_url() -> String {
 }
 
 #[tauri::command]
+fn provider_admin_token() -> Result<String, String> {
+    read_or_create_admin_token()
+}
+
+#[tauri::command]
 async fn provider_requirements(app: tauri::AppHandle) -> Result<ProviderRequirements, String> {
     let output = run_provider_sidecar_output(app, &["requirements", "check", "--json"]).await?;
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -557,6 +621,7 @@ pub fn run() {
             stop_provider,
             provider_status,
             provider_api_base_url,
+            provider_admin_token,
             provider_requirements
         ])
         .run(tauri::generate_context!())

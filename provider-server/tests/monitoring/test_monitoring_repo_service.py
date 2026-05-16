@@ -1,9 +1,11 @@
 import asyncio
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from provider.errors import ValidationError
 from provider.monitoring.domain import (
     GuestMetricPayload,
     MetricSample,
@@ -44,6 +46,33 @@ def test_guest_token_auth_and_sample_storage(tmp_path: Path):
     assert guest["cpu_percent"]["value"] == 12.5
     assert guest["memory_percent"]["value"] == 50.0
     assert guest["disk_percent"]["value"] == 10.0
+
+
+def test_history_range_filters_24h_samples(tmp_path: Path, monkeypatch):
+    repo = MonitoringRepository(str(tmp_path / "monitoring.sqlite"))
+    repo.init_schema()
+    service = MonitoringService({}, repo, MagicMock(), MagicMock())
+    now = datetime(2026, 5, 14, 18, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr("provider.monitoring.services.utc_now", lambda: now)
+    repo.add_samples(
+        [
+            fixed_vm_sample("cpu_percent", 10, now - timedelta(hours=25)),
+            fixed_vm_sample("cpu_percent", 20, now - timedelta(hours=23)),
+        ]
+    )
+
+    history = service.history(scope=MetricScope.VM, range_name="24h", vm_id="vm-a")
+
+    assert [sample.value for sample in history.samples] == [20]
+
+
+def test_history_rejects_invalid_range(tmp_path: Path):
+    repo = MonitoringRepository(str(tmp_path / "monitoring.sqlite"))
+    repo.init_schema()
+    service = MonitoringService({}, repo, MagicMock(), MagicMock())
+
+    with pytest.raises(ValidationError, match="invalid metrics history range"):
+        service.history(scope=MetricScope.VM, range_name="bogus", vm_id="vm-a")
 
 
 def test_guest_samples_use_live_cache_and_downsample_history(tmp_path: Path):
@@ -185,8 +214,6 @@ def asyncio_run(coro):
 
 
 def fixed_host_sample(metric: str, value: float, timestamp: str) -> MetricSample:
-    from datetime import datetime
-
     return MetricSample(
         scope=MetricScope.HOST,
         source=MetricSource.INFRASTRUCTURE,
@@ -194,6 +221,18 @@ def fixed_host_sample(metric: str, value: float, timestamp: str) -> MetricSample
         value=value,
         unit="percent",
         timestamp=datetime.fromisoformat(timestamp),
+    )
+
+
+def fixed_vm_sample(metric: str, value: float, timestamp: datetime) -> MetricSample:
+    return MetricSample(
+        scope=MetricScope.VM,
+        source=MetricSource.GUEST_AGENT,
+        vm_id="vm-a",
+        metric=metric,
+        value=value,
+        unit="percent",
+        timestamp=timestamp,
     )
 
 

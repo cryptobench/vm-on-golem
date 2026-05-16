@@ -160,9 +160,12 @@ class CentralDiscoveryPublisher(DiscoveryPublisher):
                     platform_str = "x86_64"
                 else:
                     platform_str = raw
-            endpoint_protocol, endpoint_host, endpoint_port, endpoint_url = (
-                _provider_endpoint(settings, ip_address)
-            )
+            (
+                endpoint_protocol,
+                endpoint_host,
+                endpoint_port,
+                endpoint_url,
+            ) = _provider_endpoint(settings, ip_address)
             async with self.session.post(
                 f"{self.discovery_url}/api/v1/advertisements",
                 headers={

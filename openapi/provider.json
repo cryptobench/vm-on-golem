@@ -718,6 +718,17 @@
         "title": "LeaseQuoteCommand",
         "type": "object"
       },
+      "MetricHistoryRange": {
+        "enum": [
+          "1h",
+          "6h",
+          "24h",
+          "7d",
+          "30d"
+        ],
+        "title": "MetricHistoryRange",
+        "type": "string"
+      },
       "MetricSample": {
         "properties": {
           "metric": {
@@ -875,6 +886,61 @@
         "title": "MonitoringOverview",
         "type": "object"
       },
+      "PricingSettings": {
+        "properties": {
+          "glm_per_core_month": {
+            "minimum": 0.0,
+            "title": "Glm Per Core Month",
+            "type": "number"
+          },
+          "glm_per_gb_ram_month": {
+            "minimum": 0.0,
+            "title": "Glm Per Gb Ram Month",
+            "type": "number"
+          },
+          "glm_per_gb_storage_month": {
+            "minimum": 0.0,
+            "title": "Glm Per Gb Storage Month",
+            "type": "number"
+          },
+          "usd_per_core_month": {
+            "minimum": 0.0,
+            "title": "Usd Per Core Month",
+            "type": "number"
+          },
+          "usd_per_gb_ram_month": {
+            "minimum": 0.0,
+            "title": "Usd Per Gb Ram Month",
+            "type": "number"
+          },
+          "usd_per_gb_storage_month": {
+            "minimum": 0.0,
+            "title": "Usd Per Gb Storage Month",
+            "type": "number"
+          },
+          "warning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warning"
+          }
+        },
+        "required": [
+          "usd_per_core_month",
+          "usd_per_gb_ram_month",
+          "usd_per_gb_storage_month",
+          "glm_per_core_month",
+          "glm_per_gb_ram_month",
+          "glm_per_gb_storage_month"
+        ],
+        "title": "PricingSettings",
+        "type": "object"
+      },
       "ProviderInfo": {
         "properties": {
           "country": {
@@ -947,6 +1013,38 @@
         "title": "ProviderInfo",
         "type": "object"
       },
+      "ProviderSettings": {
+        "properties": {
+          "allocated_resources": {
+            "$ref": "#/components/schemas/ResourceSettings"
+          },
+          "available_resources": {
+            "$ref": "#/components/schemas/ResourceSettings"
+          },
+          "detected_resources": {
+            "$ref": "#/components/schemas/ResourceSettings"
+          },
+          "minimum_configurable_resources": {
+            "$ref": "#/components/schemas/ResourceSettings"
+          },
+          "offered_resources": {
+            "$ref": "#/components/schemas/ResourceSettings"
+          },
+          "pricing": {
+            "$ref": "#/components/schemas/PricingSettings"
+          }
+        },
+        "required": [
+          "detected_resources",
+          "offered_resources",
+          "allocated_resources",
+          "available_resources",
+          "minimum_configurable_resources",
+          "pricing"
+        ],
+        "title": "ProviderSettings",
+        "type": "object"
+      },
       "ProviderSummary": {
         "properties": {
           "certificate": {
@@ -997,6 +1095,81 @@
         "title": "ProviderSummary",
         "type": "object"
       },
+      "RequestorSession": {
+        "properties": {
+          "access_token": {
+            "title": "Access Token",
+            "type": "string"
+          },
+          "expires_at": {
+            "title": "Expires At",
+            "type": "integer"
+          },
+          "requestor_address": {
+            "title": "Requestor Address",
+            "type": "string"
+          },
+          "token_type": {
+            "default": "bearer",
+            "title": "Token Type",
+            "type": "string"
+          },
+          "vm_id": {
+            "title": "Vm Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "access_token",
+          "expires_at",
+          "requestor_address",
+          "vm_id"
+        ],
+        "title": "RequestorSession",
+        "type": "object"
+      },
+      "RequestorSessionCommand": {
+        "properties": {
+          "deadline": {
+            "title": "Deadline",
+            "type": "integer"
+          },
+          "nonce": {
+            "maxLength": 128,
+            "minLength": 8,
+            "title": "Nonce",
+            "type": "string"
+          },
+          "requestor_address": {
+            "title": "Requestor Address",
+            "type": "string"
+          },
+          "scope": {
+            "default": "vm",
+            "title": "Scope",
+            "type": "string"
+          },
+          "signature": {
+            "title": "Signature",
+            "type": "string"
+          },
+          "vm_id": {
+            "maxLength": 64,
+            "minLength": 3,
+            "title": "Vm Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "requestor_address",
+          "vm_id",
+          "nonce",
+          "deadline",
+          "signature"
+        ],
+        "title": "RequestorSessionCommand",
+        "type": "object"
+      },
       "ResizeVMRequest": {
         "description": "Request to resize an existing VM.",
         "properties": {
@@ -1008,6 +1181,32 @@
           "resources"
         ],
         "title": "ResizeVMRequest",
+        "type": "object"
+      },
+      "ResourceSettings": {
+        "properties": {
+          "cpu": {
+            "minimum": 0.0,
+            "title": "Cpu",
+            "type": "integer"
+          },
+          "memory": {
+            "minimum": 0.0,
+            "title": "Memory",
+            "type": "integer"
+          },
+          "storage": {
+            "minimum": 0.0,
+            "title": "Storage",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cpu",
+          "memory",
+          "storage"
+        ],
+        "title": "ResourceSettings",
         "type": "object"
       },
       "StreamComputed": {
@@ -1135,6 +1334,58 @@
           "reason"
         ],
         "title": "StreamStatus",
+        "type": "object"
+      },
+      "UpdatePricingSettings": {
+        "properties": {
+          "usd_per_core_month": {
+            "minimum": 0.0,
+            "title": "Usd Per Core Month",
+            "type": "number"
+          },
+          "usd_per_gb_ram_month": {
+            "minimum": 0.0,
+            "title": "Usd Per Gb Ram Month",
+            "type": "number"
+          },
+          "usd_per_gb_storage_month": {
+            "minimum": 0.0,
+            "title": "Usd Per Gb Storage Month",
+            "type": "number"
+          }
+        },
+        "required": [
+          "usd_per_core_month",
+          "usd_per_gb_ram_month",
+          "usd_per_gb_storage_month"
+        ],
+        "title": "UpdatePricingSettings",
+        "type": "object"
+      },
+      "UpdateResourceSettings": {
+        "properties": {
+          "cpu": {
+            "minimum": 1.0,
+            "title": "Cpu",
+            "type": "integer"
+          },
+          "memory": {
+            "minimum": 1.0,
+            "title": "Memory",
+            "type": "integer"
+          },
+          "storage": {
+            "minimum": 1.0,
+            "title": "Storage",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cpu",
+          "memory",
+          "storage"
+        ],
+        "title": "UpdateResourceSettings",
         "type": "object"
       },
       "VMAccessInfo": {
@@ -1612,6 +1863,12 @@
         "title": "WebhookTestResponse",
         "type": "object"
       }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "scheme": "bearer",
+        "type": "http"
+      }
     }
   },
   "info": {
@@ -1635,7 +1892,50 @@
             "description": "Successful Response"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Admin Shutdown"
+      }
+    },
+    "/api/v1/auth/requestor-sessions": {
+      "post": {
+        "operationId": "create_requestor_session_api_v1_auth_requestor_sessions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestorSessionCommand"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequestorSession"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Requestor Session"
       }
     },
     "/api/v1/images": {
@@ -1673,6 +1973,11 @@
             "description": "Successful Response"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Prometheus Metrics"
       }
     },
@@ -1695,6 +2000,11 @@
             "description": "Successful Response"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "List Alert Rules"
       },
       "post": {
@@ -1731,6 +2041,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Create Alert Rule"
       }
     },
@@ -1754,6 +2069,11 @@
             "description": "Successful Response"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Active Alerts"
       }
     },
@@ -1824,9 +2144,8 @@
             "name": "range",
             "required": false,
             "schema": {
-              "default": "1h",
-              "title": "Range",
-              "type": "string"
+              "$ref": "#/components/schemas/MetricHistoryRange",
+              "default": "1h"
             }
           },
           {
@@ -1884,6 +2203,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Monitoring History"
       }
     },
@@ -1902,6 +2226,11 @@
             "description": "Successful Response"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Monitoring Latest"
       }
     },
@@ -1920,6 +2249,11 @@
             "description": "Successful Response"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Monitoring Overview"
       }
     },
@@ -1942,6 +2276,11 @@
             "description": "Successful Response"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "List Webhooks"
       },
       "post": {
@@ -1978,6 +2317,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Create Webhook"
       }
     },
@@ -2017,6 +2361,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Test Webhook"
       }
     },
@@ -2077,6 +2426,11 @@
             "description": "Successful Response"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "List Stream Statuses"
       }
     },
@@ -2098,6 +2452,115 @@
         "summary": "Provider Info"
       }
     },
+    "/api/v1/provider/settings": {
+      "get": {
+        "operationId": "provider_settings_api_v1_provider_settings_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderSettings"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Provider Settings"
+      }
+    },
+    "/api/v1/provider/settings/pricing": {
+      "patch": {
+        "operationId": "update_provider_pricing_api_v1_provider_settings_pricing_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePricingSettings"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderSettings"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Provider Pricing"
+      }
+    },
+    "/api/v1/provider/settings/resources": {
+      "patch": {
+        "operationId": "update_provider_resources_api_v1_provider_settings_resources_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateResourceSettings"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderSettings"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Provider Resources"
+      }
+    },
     "/api/v1/summary": {
       "get": {
         "operationId": "provider_summary_api_v1_summary_get",
@@ -2113,6 +2576,11 @@
             "description": "Successful Response"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Provider Summary"
       }
     },
@@ -2135,6 +2603,11 @@
             "description": "Successful Response"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "List Vms"
       },
       "post": {
@@ -2148,70 +2621,6 @@
               "default": false,
               "title": "Async",
               "type": "boolean"
-            }
-          },
-          {
-            "in": "header",
-            "name": "x-golem-requestor",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Golem-Requestor"
-            }
-          },
-          {
-            "in": "header",
-            "name": "x-golem-signature",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Golem-Signature"
-            }
-          },
-          {
-            "in": "header",
-            "name": "x-golem-nonce",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Golem-Nonce"
-            }
-          },
-          {
-            "in": "header",
-            "name": "x-golem-deadline",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Golem-Deadline"
             }
           }
         ],
@@ -2257,6 +2666,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Create Vm"
       }
     },
@@ -2296,6 +2710,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Get Create Job"
       }
     },
@@ -2310,70 +2729,6 @@
             "schema": {
               "title": "Requestor Name",
               "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "x-golem-requestor",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Golem-Requestor"
-            }
-          },
-          {
-            "in": "header",
-            "name": "x-golem-signature",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Golem-Signature"
-            }
-          },
-          {
-            "in": "header",
-            "name": "x-golem-nonce",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Golem-Nonce"
-            }
-          },
-          {
-            "in": "header",
-            "name": "x-golem-deadline",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Golem-Deadline"
             }
           }
         ],
@@ -2397,6 +2752,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Delete Vm"
       },
       "get": {
@@ -2434,6 +2794,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Get Vm Status"
       }
     },
@@ -2483,6 +2848,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Get Vm Access"
       }
     },
@@ -2497,70 +2867,6 @@
             "schema": {
               "title": "Requestor Name",
               "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "x-golem-requestor",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Golem-Requestor"
-            }
-          },
-          {
-            "in": "header",
-            "name": "x-golem-signature",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Golem-Signature"
-            }
-          },
-          {
-            "in": "header",
-            "name": "x-golem-nonce",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Golem-Nonce"
-            }
-          },
-          {
-            "in": "header",
-            "name": "x-golem-deadline",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Golem-Deadline"
             }
           }
         ],
@@ -2596,6 +2902,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Clone Vm"
       }
     },
@@ -2617,9 +2928,8 @@
             "name": "range",
             "required": false,
             "schema": {
-              "default": "1h",
-              "title": "Range",
-              "type": "string"
+              "$ref": "#/components/schemas/MetricHistoryRange",
+              "default": "1h"
             }
           },
           {
@@ -2661,6 +2971,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Vm Metrics History"
       }
     },
@@ -2700,6 +3015,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Vm Metrics Latest"
       }
     },
@@ -2714,70 +3034,6 @@
             "schema": {
               "title": "Requestor Name",
               "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "x-golem-requestor",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Golem-Requestor"
-            }
-          },
-          {
-            "in": "header",
-            "name": "x-golem-signature",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Golem-Signature"
-            }
-          },
-          {
-            "in": "header",
-            "name": "x-golem-nonce",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Golem-Nonce"
-            }
-          },
-          {
-            "in": "header",
-            "name": "x-golem-deadline",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Golem-Deadline"
             }
           }
         ],
@@ -2813,6 +3069,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Resize Vm"
       }
     },
@@ -2828,70 +3089,6 @@
               "title": "Requestor Name",
               "type": "string"
             }
-          },
-          {
-            "in": "header",
-            "name": "x-golem-requestor",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Golem-Requestor"
-            }
-          },
-          {
-            "in": "header",
-            "name": "x-golem-signature",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Golem-Signature"
-            }
-          },
-          {
-            "in": "header",
-            "name": "x-golem-nonce",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Golem-Nonce"
-            }
-          },
-          {
-            "in": "header",
-            "name": "x-golem-deadline",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Golem-Deadline"
-            }
           }
         ],
         "responses": {
@@ -2916,6 +3113,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Restart Vm"
       }
     },
@@ -2931,70 +3133,6 @@
               "title": "Requestor Name",
               "type": "string"
             }
-          },
-          {
-            "in": "header",
-            "name": "x-golem-requestor",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Golem-Requestor"
-            }
-          },
-          {
-            "in": "header",
-            "name": "x-golem-signature",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Golem-Signature"
-            }
-          },
-          {
-            "in": "header",
-            "name": "x-golem-nonce",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Golem-Nonce"
-            }
-          },
-          {
-            "in": "header",
-            "name": "x-golem-deadline",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Golem-Deadline"
-            }
           }
         ],
         "responses": {
@@ -3019,6 +3157,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Resume Vm"
       }
     },
@@ -3062,6 +3205,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "List Snapshots"
       },
       "post": {
@@ -3074,70 +3222,6 @@
             "schema": {
               "title": "Requestor Name",
               "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "x-golem-requestor",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Golem-Requestor"
-            }
-          },
-          {
-            "in": "header",
-            "name": "x-golem-signature",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Golem-Signature"
-            }
-          },
-          {
-            "in": "header",
-            "name": "x-golem-nonce",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Golem-Nonce"
-            }
-          },
-          {
-            "in": "header",
-            "name": "x-golem-deadline",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Golem-Deadline"
             }
           }
         ],
@@ -3173,6 +3257,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Create Snapshot"
       }
     },
@@ -3197,70 +3286,6 @@
               "title": "Snapshot Name",
               "type": "string"
             }
-          },
-          {
-            "in": "header",
-            "name": "x-golem-requestor",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Golem-Requestor"
-            }
-          },
-          {
-            "in": "header",
-            "name": "x-golem-signature",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Golem-Signature"
-            }
-          },
-          {
-            "in": "header",
-            "name": "x-golem-nonce",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Golem-Nonce"
-            }
-          },
-          {
-            "in": "header",
-            "name": "x-golem-deadline",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Golem-Deadline"
-            }
           }
         ],
         "responses": {
@@ -3283,6 +3308,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Delete Snapshot"
       }
     },
@@ -3307,70 +3337,6 @@
               "title": "Snapshot Name",
               "type": "string"
             }
-          },
-          {
-            "in": "header",
-            "name": "x-golem-requestor",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Golem-Requestor"
-            }
-          },
-          {
-            "in": "header",
-            "name": "x-golem-signature",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Golem-Signature"
-            }
-          },
-          {
-            "in": "header",
-            "name": "x-golem-nonce",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Golem-Nonce"
-            }
-          },
-          {
-            "in": "header",
-            "name": "x-golem-deadline",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Golem-Deadline"
-            }
           }
         ],
         "responses": {
@@ -3395,6 +3361,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Restore Snapshot"
       }
     },
@@ -3410,70 +3381,6 @@
               "title": "Requestor Name",
               "type": "string"
             }
-          },
-          {
-            "in": "header",
-            "name": "x-golem-requestor",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Golem-Requestor"
-            }
-          },
-          {
-            "in": "header",
-            "name": "x-golem-signature",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Golem-Signature"
-            }
-          },
-          {
-            "in": "header",
-            "name": "x-golem-nonce",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Golem-Nonce"
-            }
-          },
-          {
-            "in": "header",
-            "name": "x-golem-deadline",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Golem-Deadline"
-            }
           }
         ],
         "responses": {
@@ -3498,6 +3405,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Start Vm"
       }
     },
@@ -3513,70 +3425,6 @@
               "title": "Requestor Name",
               "type": "string"
             }
-          },
-          {
-            "in": "header",
-            "name": "x-golem-requestor",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Golem-Requestor"
-            }
-          },
-          {
-            "in": "header",
-            "name": "x-golem-signature",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Golem-Signature"
-            }
-          },
-          {
-            "in": "header",
-            "name": "x-golem-nonce",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Golem-Nonce"
-            }
-          },
-          {
-            "in": "header",
-            "name": "x-golem-deadline",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Golem-Deadline"
-            }
           }
         ],
         "responses": {
@@ -3601,6 +3449,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Stop Vm"
       }
     },
@@ -3640,6 +3493,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Get Vm Stream Status"
       }
     },
@@ -3654,70 +3512,6 @@
             "schema": {
               "title": "Requestor Name",
               "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "x-golem-requestor",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Golem-Requestor"
-            }
-          },
-          {
-            "in": "header",
-            "name": "x-golem-signature",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Golem-Signature"
-            }
-          },
-          {
-            "in": "header",
-            "name": "x-golem-nonce",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Golem-Nonce"
-            }
-          },
-          {
-            "in": "header",
-            "name": "x-golem-deadline",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Golem-Deadline"
             }
           }
         ],
@@ -3743,6 +3537,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Suspend Vm"
       }
     },
@@ -3759,6 +3558,11 @@
             "description": "Successful Response"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Prometheus Metrics"
       }
     }

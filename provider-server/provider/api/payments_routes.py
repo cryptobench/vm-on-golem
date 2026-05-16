@@ -1,6 +1,11 @@
 from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends, Request
 
+from provider.auth.dependencies import (
+    require_provider_admin,
+    require_requestor_vm_access,
+)
+from provider.auth.domain import AdminIdentity, RequestorIdentity
 from provider.container import Container
 from provider.errors import ValidationError
 from provider.payments.domain import LeaseQuote, LeaseQuoteCommand, StreamStatus
@@ -84,6 +89,7 @@ async def create_lease_quote(
 @inject
 async def get_vm_stream_status(
     requestor_name: str,
+    _identity: RequestorIdentity = Depends(require_requestor_vm_access),
     stream_status_service: StreamStatusService = Depends(
         Provide[Container.stream_status_service]
     ),
@@ -94,6 +100,7 @@ async def get_vm_stream_status(
 @router.get("/payments/streams", response_model=list[StreamStatus])
 @inject
 async def list_stream_statuses(
+    _admin: AdminIdentity = Depends(require_provider_admin),
     stream_status_service: StreamStatusService = Depends(
         Provide[Container.stream_status_service]
     ),

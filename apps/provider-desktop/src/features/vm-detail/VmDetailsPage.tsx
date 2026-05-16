@@ -39,8 +39,8 @@ import {
   weiToToken,
 } from "../../lib/format";
 import { providerApi } from "../../lib/providerApi";
-import type { HistoryRange, VMInfo } from "../../lib/types";
-import { useVmDetail } from "../../lib/useProviderData";
+import type { HistoryRange, MetricsHistoryResponse, VMInfo } from "../../lib/types";
+import { useVmDetail, useVmMetricHistory } from "../../lib/useProviderData";
 
 type VmTab = "overview" | "metrics" | "stream" | "settings";
 
@@ -52,8 +52,7 @@ export function VmDetailsPage({
   onNavigate: (target: NavigateTarget) => void;
 }) {
   const [tab, setTab] = React.useState<VmTab>("overview");
-  const [range, setRange] = React.useState<HistoryRange>("1h");
-  const { data, loading, refresh } = useVmDetail(vmId, range);
+  const { data, loading, refresh } = useVmDetail(vmId);
   const vm = data?.vm;
   const latestVmMetrics = data?.latest?.vms?.[vmId] ?? {};
 
@@ -110,10 +109,8 @@ export function VmDetailsPage({
       ) : null}
       {tab === "metrics" ? (
         <MetricsTab
-          data={data}
+          vmId={vmId}
           latestVmMetrics={latestVmMetrics}
-          range={range}
-          setRange={setRange}
         />
       ) : null}
       {tab === "stream" ? <StreamTab data={data} /> : null}
@@ -220,15 +217,11 @@ function OverviewTab({
 }
 
 function MetricsTab({
-  data,
+  vmId,
   latestVmMetrics,
-  range,
-  setRange,
 }: {
-  data: ReturnType<typeof useVmDetail>["data"];
+  vmId: string;
   latestVmMetrics: Record<string, unknown>;
-  range: HistoryRange;
-  setRange: (range: HistoryRange) => void;
 }) {
   return (
     <div className="space-y-4">
@@ -238,8 +231,20 @@ function MetricsTab({
         <StatCard label="Disk" value={`${formatBytes(latestVmMetrics.disk_used_bytes)} / ${formatBytes(latestVmMetrics.disk_total_bytes)}`} detail="Current usage" icon={<RiHardDrive3Line className="h-5 w-5" />} tone="success" />
         <StatCard label="Network" value={formatBytes(latestVmMetrics.network_rx_bytes)} detail={`${formatBytes(latestVmMetrics.network_tx_bytes)} TX`} icon={<RiHardDrive3Line className="h-5 w-5" />} tone="primary" />
       </div>
-      <MetricChart title="CPU (%)" metric="cpu_percent" data={data} range={range} setRange={setRange} />
-      <MetricChart title="Memory" metric="memory_used_bytes" data={data} range={range} setRange={setRange} />
+      <VmMetricCharts vmId={vmId} />
+    </div>
+  );
+}
+
+function VmMetricCharts({ vmId }: { vmId: string }) {
+  const [range, setRange] = React.useState<HistoryRange>("1h");
+  const history = useVmMetricHistory(vmId, range);
+
+  return (
+    <div className="space-y-4">
+      {history.error ? <EndpointErrors errors={{ history: history.error }} /> : null}
+      <MetricChart title="CPU (%)" metric="cpu_percent" history={history.history} range={range} setRange={setRange} />
+      <MetricChart title="Memory" metric="memory_used_bytes" history={history.history} range={range} setRange={setRange} />
     </div>
   );
 }
@@ -247,13 +252,13 @@ function MetricsTab({
 function MetricChart({
   title,
   metric,
-  data,
+  history,
   range,
   setRange,
 }: {
   title: string;
   metric: string;
-  data: ReturnType<typeof useVmDetail>["data"];
+  history: MetricsHistoryResponse | null;
   range: HistoryRange;
   setRange: (range: HistoryRange) => void;
 }) {
@@ -265,7 +270,7 @@ function MetricChart({
           <RangePicker value={range} onChange={setRange} />
         </div>
         <LineAreaChart
-          data={metricChartPoints(data?.history, metric)}
+          data={metricChartPoints(history, metric)}
           height={240}
           yUnit={metric === "cpu_percent" ? "%" : undefined}
           valueFormatter={metric.endsWith("_bytes") ? formatBytes : undefined}

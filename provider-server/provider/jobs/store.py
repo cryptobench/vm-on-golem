@@ -17,6 +17,8 @@ class JobRecord:
     transitioning: bool
     next_poll_seconds: int
     error: Optional[str]
+    requestor_address: Optional[str]
+    stream_id: Optional[int]
     created_at: str
     updated_at: str
 
@@ -49,6 +51,8 @@ class JobStore:
                         transitioning INTEGER NOT NULL DEFAULT 1,
                         next_poll_seconds INTEGER NOT NULL DEFAULT 2,
                         error TEXT,
+                        requestor_address TEXT,
+                        stream_id INTEGER,
                         created_at TEXT NOT NULL,
                         updated_at TEXT NOT NULL
                     )
@@ -63,6 +67,8 @@ class JobStore:
                     "progress": "INTEGER NOT NULL DEFAULT 0",
                     "transitioning": "INTEGER NOT NULL DEFAULT 1",
                     "next_poll_seconds": "INTEGER NOT NULL DEFAULT 2",
+                    "requestor_address": "TEXT",
+                    "stream_id": "INTEGER",
                 }
                 for column, definition in migrations.items():
                     if column not in existing:
@@ -83,6 +89,8 @@ class JobStore:
         progress: int = 0,
         transitioning: bool = True,
         next_poll_seconds: int = 2,
+        requestor_address: Optional[str] = None,
+        stream_id: Optional[int] = None,
     ) -> None:
         now = datetime.now(timezone.utc).isoformat()
 
@@ -102,10 +110,12 @@ class JobStore:
                             transitioning,
                             next_poll_seconds,
                             error,
+                            requestor_address,
+                            stream_id,
                             created_at,
                             updated_at
                         )
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)
                         """,
                         (
                             job_id,
@@ -116,6 +126,8 @@ class JobStore:
                             int(progress),
                             1 if transitioning else 0,
                             int(next_poll_seconds),
+                            requestor_address,
+                            int(stream_id) if stream_id is not None else None,
                             now,
                             now,
                         ),
@@ -190,6 +202,8 @@ class JobStore:
                         transitioning,
                         next_poll_seconds,
                         error,
+                        requestor_address,
+                        stream_id,
                         created_at,
                         updated_at
                     FROM jobs
@@ -210,8 +224,10 @@ class JobStore:
                     "transitioning": bool(row[6]),
                     "next_poll_seconds": row[7],
                     "error": row[8],
-                    "created_at": row[9],
-                    "updated_at": row[10],
+                    "requestor_address": row[9],
+                    "stream_id": row[10],
+                    "created_at": row[11],
+                    "updated_at": row[12],
                 }
             finally:
                 conn.close()
@@ -240,6 +256,8 @@ class JobStore:
                         transitioning,
                         next_poll_seconds,
                         error,
+                        requestor_address,
+                        stream_id,
                         created_at,
                         updated_at
                     FROM jobs
@@ -261,8 +279,10 @@ class JobStore:
                         "transitioning": bool(row[6]),
                         "next_poll_seconds": row[7],
                         "error": row[8],
-                        "created_at": row[9],
-                        "updated_at": row[10],
+                        "requestor_address": row[9],
+                        "stream_id": row[10],
+                        "created_at": row[11],
+                        "updated_at": row[12],
                     }
                     for row in cur.fetchall()
                 ]

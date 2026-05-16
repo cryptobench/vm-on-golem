@@ -6,14 +6,7 @@ import {
   type ListAdvertisementsApiV1AdvertisementsGetParams,
 } from "./generated/api/central-discovery";
 import {
-  createVmApiV1VmsPost,
-  getCreateJobApiV1VmsJobsJobIdGet,
-  getVmAccessApiV1VmsRequestorNameAccessGet,
-  getVmStatusApiV1VmsRequestorNameGet,
-  getVmStreamStatusApiV1VmsRequestorNameStreamGet,
-  listSnapshotsApiV1VmsRequestorNameSnapshotsGet,
   providerInfoApiV1ProviderInfoGet,
-  providerSummaryApiV1SummaryGet,
   type CreateSnapshotRequest,
   type CreateVMJobResponse,
   type CreateVMRequest,
@@ -26,16 +19,20 @@ import {
   type VMSnapshot,
   type CreateVMJobStatus,
   type ProviderInfo,
-  type ProviderSummary,
 } from "./generated/api/provider";
 import type { AdsConfig } from "../context/AdsContext";
 import type { ApiRequestOptions } from "./api/orval-fetch";
-import { getRequestorRuntimeConfig } from "./runtimeConfig";
-import { getPaymentsSigner } from "./walletClient";
+import {
+  isUsableProviderEndpoint,
+  normalizeProviderEndpoint,
+  providerUrl,
+  requireProviderEndpoint,
+} from "./providerEndpoint";
+import { getProviderVmSession } from "./providerSession";
 
 export type { AdsConfig } from "../context/AdsContext";
 export type ProviderAd = AdvertisementResponse;
-export type { CreateVMRequest, VMResources, ProviderSummary };
+export type { CreateVMRequest, VMResources };
 export { loadSettings, saveSettings, type Settings, type SSHKey } from "./settings";
 
 export type Rental = {
@@ -57,6 +54,8 @@ export type Rental = {
   stream_id?: number | string | null;
   project_id?: string;
   platform?: string | null;
+  provider_pricing?: ProviderAd["pricing"] | null;
+  provider_available_resources?: ProviderAd["resources"] | null;
   created_at?: number;
   ended_at?: number;
   end_reason?: string;
@@ -252,89 +251,31 @@ export async function providerInfo(providerEndpointUrl: string) {
   );
 }
 
-export async function providerSummary(providerEndpointUrl: string) {
-  return unwrapAs<ProviderSummary>(
-    await providerSummaryApiV1SummaryGet(providerOptions(providerEndpointUrl)),
-    200,
-  );
-}
-
 export async function createVm(
   providerEndpointUrl: string,
   payload: CreateVMRequest,
 ): Promise<VMInfo | CreateVMJobResponse> {
-  if ((payload as any).payment) {
-    const path = "/api/v1/vms";
-    const body = JSON.stringify(payload);
-    const headers = await signedProviderActionHeaders("POST", path, body);
-    const response = await fetch(providerUrl(providerEndpointUrl, `${path}?async=true`), {
-      method: "POST",
-      headers: { "content-type": "application/json", ...headers },
-      body,
-    });
-    const data = await response.json().catch(() => null);
-    if (!response.ok) {
-      throw apiError(response.status, data);
-    }
-    return data as VMInfo | CreateVMJobResponse;
-  }
-  return unwrapAs<VMInfo | CreateVMJobResponse>(
-    await createVmApiV1VmsPost(
-      payload,
-      { async: true },
-      providerOptions(providerEndpointUrl),
-    ),
+  return providerAuthenticatedRequest<VMInfo | CreateVMJobResponse>(
+    providerEndpointUrl,
+    payload.name,
+    "POST",
+    "/api/v1/vms?async=true",
+    payload,
     200,
     202,
   );
 }
 
-async function signedProviderActionHeaders(method: string, path: string, body: string) {
-  const signer = await getPaymentsSigner();
-  const requestor = await signer.getAddress();
-  const deadline = Math.floor(Date.now() / 1000) + 300;
-  const nonce = String(Date.now()) + "-" + Math.random().toString(16).slice(2);
-  const bodyHash = await sha256Hex(body);
-  const signature = await signer.signTypedData(
-    { name: "GolemProviderAction", version: "2" },
-    {
-      ProviderAction: [
-        { name: "requestor", type: "address" },
-        { name: "method", type: "string" },
-        { name: "path", type: "string" },
-        { name: "bodyHash", type: "bytes32" },
-        { name: "nonce", type: "string" },
-        { name: "deadline", type: "uint256" },
-      ],
-    },
-    { requestor, method: method.toUpperCase(), path, bodyHash, nonce, deadline },
-  );
-  return {
-    "x-golem-requestor": requestor,
-    "x-golem-signature": signature,
-    "x-golem-nonce": nonce,
-    "x-golem-deadline": String(deadline),
-  };
-}
-
-async function sha256Hex(text: string) {
-  const data = new TextEncoder().encode(text);
-  const digest = await crypto.subtle.digest("SHA-256", data);
-  return `0x${Array.from(new Uint8Array(digest))
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("")}`;
-}
-
 export async function vmJobStatus(
   providerEndpointUrl: string,
   jobId: string,
+  vmId: string,
 ) {
-  return unwrapAs<CreateVMJobStatus>(
-    await getCreateJobApiV1VmsJobsJobIdGet(
-      jobId,
-      providerOptions(providerEndpointUrl),
-    ),
-    200,
+  return providerAuthenticatedRequest<CreateVMJobStatus>(
+    providerEndpointUrl,
+    vmId,
+    "GET",
+    `/api/v1/vms/jobs/${encodeURIComponent(jobId)}`,
   );
 }
 
@@ -342,11 +283,12 @@ export async function vmAccess(
   providerEndpointUrl: string,
   vmId: string,
 ) {
-  return unwrapAs<VMAccessInfo | VMAccessPendingResponse>(
-    await getVmAccessApiV1VmsRequestorNameAccessGet(
-      vmId,
-      providerOptions(providerEndpointUrl),
-    ),
+  return providerAuthenticatedRequest<VMAccessInfo | VMAccessPendingResponse>(
+    providerEndpointUrl,
+    vmId,
+    "GET",
+    `/api/v1/vms/${encodeURIComponent(vmId)}/access`,
+    undefined,
     200,
     202,
   );
@@ -356,12 +298,11 @@ export async function vmStatus(
   providerEndpointUrl: string,
   vmId: string,
 ) {
-  return unwrapAs<VMInfo>(
-    await getVmStatusApiV1VmsRequestorNameGet(
-      vmId,
-      providerOptions(providerEndpointUrl),
-    ),
-    200,
+  return providerAuthenticatedRequest<VMInfo>(
+    providerEndpointUrl,
+    vmId,
+    "GET",
+    `/api/v1/vms/${encodeURIComponent(vmId)}`,
   );
 }
 
@@ -385,12 +326,11 @@ export async function vmStreamStatus(
   providerEndpointUrl: string,
   vmId: string,
 ) {
-  return unwrapAs<StreamStatus>(
-    await getVmStreamStatusApiV1VmsRequestorNameStreamGet(
-      vmId,
-      providerOptions(providerEndpointUrl),
-    ),
-    200,
+  return providerAuthenticatedRequest<StreamStatus>(
+    providerEndpointUrl,
+    vmId,
+    "GET",
+    `/api/v1/vms/${encodeURIComponent(vmId)}/stream`,
   );
 }
 
@@ -398,8 +338,10 @@ export async function vmMetricsLatest(
   providerEndpointUrl: string,
   vmId: string,
 ) {
-  return providerFetch<VmMonitoringLatest>(
+  return providerAuthenticatedRequest<VmMonitoringLatest>(
     providerEndpointUrl,
+    vmId,
+    "GET",
     `/api/v1/vms/${encodeURIComponent(vmId)}/metrics/latest`,
   );
 }
@@ -409,8 +351,10 @@ export async function vmMetricsHistory(
   vmId: string,
   range = "1h",
 ) {
-  return providerFetch<VmMonitoringHistory>(
+  return providerAuthenticatedRequest<VmMonitoringHistory>(
     providerEndpointUrl,
+    vmId,
+    "GET",
     `/api/v1/vms/${encodeURIComponent(vmId)}/metrics/history?range=${encodeURIComponent(range)}`,
   );
 }
@@ -432,43 +376,49 @@ export function vmLiveUrl(
 }
 
 export const vmStart = (providerEndpointUrl: string, vmId: string) =>
-  signedProviderRequest<VMInfo>(
+  providerAuthenticatedRequest<VMInfo>(
     providerEndpointUrl,
+    vmId,
     "POST",
     `/api/v1/vms/${encodeURIComponent(vmId)}/start`,
     {},
   );
 export const vmStop = (providerEndpointUrl: string, vmId: string) =>
-  signedProviderRequest<VMInfo>(
+  providerAuthenticatedRequest<VMInfo>(
     providerEndpointUrl,
+    vmId,
     "POST",
     `/api/v1/vms/${encodeURIComponent(vmId)}/stop`,
     {},
   );
 export const vmRestart = (providerEndpointUrl: string, vmId: string) =>
-  signedProviderRequest<VMInfo>(
+  providerAuthenticatedRequest<VMInfo>(
     providerEndpointUrl,
+    vmId,
     "POST",
     `/api/v1/vms/${encodeURIComponent(vmId)}/restart`,
     {},
   );
 export const vmSuspend = (providerEndpointUrl: string, vmId: string) =>
-  signedProviderRequest<VMInfo>(
+  providerAuthenticatedRequest<VMInfo>(
     providerEndpointUrl,
+    vmId,
     "POST",
     `/api/v1/vms/${encodeURIComponent(vmId)}/suspend`,
     {},
   );
 export const vmResume = (providerEndpointUrl: string, vmId: string) =>
-  signedProviderRequest<VMInfo>(
+  providerAuthenticatedRequest<VMInfo>(
     providerEndpointUrl,
+    vmId,
     "POST",
     `/api/v1/vms/${encodeURIComponent(vmId)}/resume`,
     {},
   );
 export const vmDestroy = (providerEndpointUrl: string, vmId: string) =>
-  signedProviderRequest<null>(
+  providerAuthenticatedRequest<null>(
     providerEndpointUrl,
+    vmId,
     "DELETE",
     `/api/v1/vms/${encodeURIComponent(vmId)}`,
     null,
@@ -480,8 +430,9 @@ export function vmResize(
   resources: VMResources,
 ) {
   const payload: ResizeVMRequest = { resources };
-  return signedProviderRequest<VMInfo>(
+  return providerAuthenticatedRequest<VMInfo>(
     providerEndpointUrl,
+    vmId,
     "POST",
     `/api/v1/vms/${encodeURIComponent(vmId)}/resize`,
     payload,
@@ -492,12 +443,11 @@ export const listSnapshots = (
   providerEndpointUrl: string,
   vmId: string,
 ) =>
-  unwrapAs<VMSnapshot[]>(
-    listSnapshotsApiV1VmsRequestorNameSnapshotsGet(
-      vmId,
-      providerOptions(providerEndpointUrl),
-    ),
-    200,
+  providerAuthenticatedRequest<VMSnapshot[]>(
+    providerEndpointUrl,
+    vmId,
+    "GET",
+    `/api/v1/vms/${encodeURIComponent(vmId)}/snapshots`,
   );
 
 export const createSnapshot = (
@@ -505,8 +455,9 @@ export const createSnapshot = (
   vmId: string,
   payload: CreateSnapshotRequest,
 ) =>
-  signedProviderRequest<VMSnapshot>(
+  providerAuthenticatedRequest<VMSnapshot>(
     providerEndpointUrl,
+    vmId,
     "POST",
     `/api/v1/vms/${encodeURIComponent(vmId)}/snapshots`,
     payload,
@@ -517,8 +468,9 @@ export const restoreSnapshot = (
   vmId: string,
   snapshot: string,
 ) =>
-  signedProviderRequest<VMInfo>(
+  providerAuthenticatedRequest<VMInfo>(
     providerEndpointUrl,
+    vmId,
     "POST",
     `/api/v1/vms/${encodeURIComponent(vmId)}/snapshots/${encodeURIComponent(snapshot)}/restore`,
     {},
@@ -529,31 +481,35 @@ export const deleteSnapshot = (
   vmId: string,
   snapshot: string,
 ) =>
-  signedProviderRequest<null>(
+  providerAuthenticatedRequest<null>(
     providerEndpointUrl,
+    vmId,
     "DELETE",
     `/api/v1/vms/${encodeURIComponent(vmId)}/snapshots/${encodeURIComponent(snapshot)}`,
     null,
   );
 
-async function signedProviderRequest<T>(
+async function providerAuthenticatedRequest<T>(
   providerEndpointUrl: string,
-  method: "POST" | "DELETE",
+  vmId: string,
+  method: "GET" | "POST" | "DELETE",
   path: string,
-  payload: unknown,
+  payload?: unknown,
+  ...okStatuses: number[]
 ): Promise<T> {
-  const body = payload === null ? "" : JSON.stringify(payload);
-  const headers = await signedProviderActionHeaders(method, path, body);
+  const body = payload == null ? "" : JSON.stringify(payload);
+  const token = await getProviderVmSession(providerEndpointUrl, vmId);
   const response = await fetch(providerUrl(providerEndpointUrl, path), {
     method,
-    headers:
-      payload === null
-        ? headers
-        : { "content-type": "application/json", ...headers },
-    body: payload === null ? undefined : body,
+    headers: {
+      "authorization": `Bearer ${token}`,
+      ...(payload == null ? {} : { "content-type": "application/json" }),
+    },
+    body: payload == null ? undefined : body,
   });
   const data = await response.json().catch(() => null);
-  if (!response.ok) {
+  const allowed = okStatuses.length ? okStatuses : [200];
+  if (!allowed.includes(response.status)) {
     throw apiError(response.status, data);
   }
   return data as T;
@@ -599,50 +555,6 @@ function centralDiscoveryOrigin(ads: AdsConfig): string {
 
 function providerOptions(providerEndpointUrl: string): RequestInit {
   return withBaseUrl(normalizeProviderEndpoint(providerEndpointUrl));
-}
-
-async function providerFetch<TData>(
-  providerEndpointUrl: string,
-  path: string,
-): Promise<TData> {
-  const response = await fetch(providerUrl(providerEndpointUrl, path), {
-    cache: "no-store",
-  });
-  const data = await response.json().catch(() => null);
-  if (!response.ok) {
-    throw apiError(response.status, data);
-  }
-  return data as TData;
-}
-
-function providerUrl(providerEndpointUrl: string, path: string): string {
-  return `${normalizeProviderEndpoint(providerEndpointUrl)}${path}`;
-}
-
-function normalizeProviderEndpoint(endpointUrl: string): string {
-  return requireProviderEndpoint(endpointUrl).replace(/\/$/, "");
-}
-
-function requireProviderEndpoint(endpointUrl: unknown): string {
-  const value = typeof endpointUrl === "string" ? endpointUrl.trim() : "";
-  if (!isUsableProviderEndpoint(value)) {
-    throw new Error("Provider endpoint unavailable");
-  }
-  return value;
-}
-
-function isUsableProviderEndpoint(endpointUrl: unknown): endpointUrl is string {
-  if (typeof endpointUrl !== "string" || !endpointUrl.trim()) return false;
-  try {
-    const url = new URL(endpointUrl);
-    if (url.protocol === "https:") return true;
-    return (
-      url.protocol === "http:" &&
-      getRequestorRuntimeConfig().golemEnvironment === "development"
-    );
-  } catch {
-    return false;
-  }
 }
 
 function withBaseUrl(

@@ -10,6 +10,7 @@ from provider.monitoring.domain import (
     GuestMetricPayload,
     MetricSample,
     MetricScope,
+    MetricsHistoryResponse,
     MetricSource,
 )
 from provider.monitoring.repo import MonitoringRepository
@@ -22,8 +23,10 @@ from provider.vm.models import VMAccessInfo, VMInfo, VMResources, VMStatus
 class FakeWebSocket:
     def __init__(self):
         self.accepted = False
+        self.closed_code = None
         self.sent: asyncio.Queue[dict] = asyncio.Queue()
         self.received: asyncio.Queue[dict] = asyncio.Queue()
+        self.received.put_nowait({"type": "auth", "token": "test-token"})
 
     async def accept(self):
         self.accepted = True
@@ -34,10 +37,20 @@ class FakeWebSocket:
     async def receive_json(self):
         return await self.received.get()
 
+    async def close(self, code=1000):
+        self.closed_code = code
+
 
 class DisconnectingWebSocket(FakeWebSocket):
     async def send_json(self, payload):
         raise WebSocketDisconnect()
+
+
+class BadAuthWebSocket(FakeWebSocket):
+    def __init__(self):
+        super().__init__()
+        self.received = asyncio.Queue()
+        self.received.put_nowait({"type": "refresh"})
 
 
 class FakeVmApp:
@@ -84,6 +97,17 @@ class FakeStreamStatus:
 
     async def get_vm_stream_status(self, vm_id):
         raise StreamNotFoundError("no stream mapped for this VM")
+
+
+class FakeAuth:
+    def validate_requestor_token(self, token):
+        return object()
+
+    async def require_vm_access(self, identity, vm_id):
+        return identity
+
+    def validate_admin_token(self, token):
+        return object()
 
 
 class FakeSummary:
@@ -157,6 +181,7 @@ def test_vm_live_stream_sends_hello_snapshot_and_metric_update(tmp_path: Path):
             FakeVmApp(),
             FakeProviderInfo(),
             FakeStreamStatus(),
+            FakeAuth(),
         )
         websocket = FakeWebSocket()
         task = asyncio.create_task(service.stream_vm(websocket, "vm-a"))
@@ -186,6 +211,28 @@ def test_vm_live_stream_sends_hello_snapshot_and_metric_update(tmp_path: Path):
     asyncio.run(run())
 
 
+def test_vm_live_stream_sends_no_snapshot_before_auth():
+    async def run():
+        service = VMLiveService(
+            MagicMock(),
+            FakeVmApp(),
+            FakeProviderInfo(),
+            FakeStreamStatus(),
+            FakeAuth(),
+        )
+        websocket = BadAuthWebSocket()
+
+        await service.stream_vm(websocket, "vm-a")
+
+        event = await asyncio.wait_for(websocket.sent.get(), timeout=1)
+        assert websocket.accepted is True
+        assert event["type"] == "error"
+        assert websocket.closed_code == 1008
+        assert websocket.sent.empty()
+
+    asyncio.run(run())
+
+
 def test_vm_live_stream_treats_early_disconnect_as_normal_close(tmp_path: Path):
     async def run():
         repo = MonitoringRepository(str(tmp_path / "monitoring.sqlite"))
@@ -201,12 +248,91 @@ def test_vm_live_stream_treats_early_disconnect_as_normal_close(tmp_path: Path):
             FakeVmApp(),
             FakeProviderInfo(),
             FakeStreamStatus(),
+            FakeAuth(),
         )
         websocket = DisconnectingWebSocket()
 
         await asyncio.wait_for(service.stream_vm(websocket, "vm-a"), timeout=1)
 
         assert websocket.accepted is True
+
+    asyncio.run(run())
+
+
+def test_vm_live_stream_rejects_invalid_initial_history_range():
+    async def run():
+        service = VMLiveService(
+            MagicMock(),
+            FakeVmApp(),
+            FakeProviderInfo(),
+            FakeStreamStatus(),
+            FakeAuth(),
+        )
+        websocket = FakeWebSocket()
+
+        await service.stream_vm(websocket, "vm-a", history_range="bogus")
+
+        event = await asyncio.wait_for(websocket.sent.get(), timeout=1)
+        assert websocket.accepted is True
+        assert event["type"] == "error"
+        assert event["scope"] == "metrics"
+        assert "invalid metrics history range" in event["error"]
+        assert websocket.closed_code == 1008
+        assert websocket.sent.empty()
+
+    asyncio.run(run())
+
+
+def test_vm_live_invalid_history_range_event_keeps_current_range(tmp_path: Path):
+    async def run():
+        repo = MonitoringRepository(str(tmp_path / "monitoring.sqlite"))
+        repo.init_schema()
+        monitoring = MonitoringService(
+            {"MONITORING_LIVE_ACTIVE_INTERVAL_SECONDS": 1},
+            repo,
+            MagicMock(),
+            MagicMock(),
+        )
+        history_ranges: list[str] = []
+
+        def history(**kwargs):
+            history_ranges.append(kwargs["range_name"])
+            return MetricsHistoryResponse(samples=[])
+
+        monitoring.history = MagicMock(side_effect=history)
+        service = VMLiveService(
+            monitoring,
+            FakeVmApp(),
+            FakeProviderInfo(),
+            FakeStreamStatus(),
+            FakeAuth(),
+        )
+        websocket = FakeWebSocket()
+        task = asyncio.create_task(service.stream_vm(websocket, "vm-a"))
+        try:
+            await asyncio.wait_for(websocket.sent.get(), timeout=1)
+            snapshot = await asyncio.wait_for(websocket.sent.get(), timeout=1)
+            assert snapshot["type"] == "snapshot"
+            assert history_ranges == ["1h"]
+
+            await websocket.received.put(
+                {"type": "set_history_range", "history_range": "bogus"}
+            )
+            error = await asyncio.wait_for(websocket.sent.get(), timeout=1)
+            assert error["type"] == "error"
+            assert error["scope"] == "metrics"
+            assert "invalid metrics history range" in error["error"]
+            assert history_ranges == ["1h"]
+
+            await websocket.received.put({"type": "refresh", "scopes": ["metrics"]})
+            update = await asyncio.wait_for(websocket.sent.get(), timeout=1)
+        finally:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+        assert update["type"] == "update"
+        assert update["scope"] == "metrics"
+        assert history_ranges == ["1h", "1h"]
 
     asyncio.run(run())
 
@@ -233,7 +359,7 @@ def test_host_live_stream_sends_hello_snapshot_and_metric_update(tmp_path: Path)
                 )
             ]
         )
-        service = HostLiveService(monitoring)
+        service = HostLiveService(monitoring, FakeAuth())
         websocket = FakeWebSocket()
         task = asyncio.create_task(service.stream_host(websocket))
         try:
@@ -266,6 +392,7 @@ def test_provider_live_stream_sends_snapshot_and_invalidation_update():
             vm_application_service=FakeVmApp(),
             stream_status_service=FakeStreamStatus(),
             monitoring_service=FakeMonitoring(),
+            auth_service=FakeAuth(),
         )
         websocket = FakeWebSocket()
         task = asyncio.create_task(service.stream_provider(websocket))
@@ -298,6 +425,7 @@ def test_provider_live_stream_sends_scoped_error():
             vm_application_service=FakeVmApp(),
             stream_status_service=FakeStreamStatus(),
             monitoring_service=FakeMonitoring(),
+            auth_service=FakeAuth(),
         )
         websocket = FakeWebSocket()
         task = asyncio.create_task(service.stream_provider(websocket))
