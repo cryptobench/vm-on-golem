@@ -246,6 +246,22 @@ export interface LeaseQuoteCommand {
   vm_name: string;
 }
 
+export type MetricHistoryPointVmId = string | null;
+
+export interface MetricHistoryPoint {
+  avg: number;
+  bucket_end: string;
+  bucket_start: string;
+  count: number;
+  max: number;
+  metric: string;
+  min: number;
+  scope: MetricScope;
+  source: MetricSource;
+  unit: string;
+  vm_id?: MetricHistoryPointVmId;
+}
+
 export type MetricHistoryRange =
   (typeof MetricHistoryRange)[keyof typeof MetricHistoryRange];
 
@@ -257,18 +273,6 @@ export const MetricHistoryRange = {
   "7d": "7d",
   "30d": "30d",
 } as const;
-
-export type MetricSampleVmId = string | null;
-
-export interface MetricSample {
-  metric: string;
-  scope: MetricScope;
-  source: MetricSource;
-  timestamp?: string;
-  unit: string;
-  value: number;
-  vm_id?: MetricSampleVmId;
-}
 
 export type MetricScope = (typeof MetricScope)[keyof typeof MetricScope];
 
@@ -287,7 +291,10 @@ export const MetricSource = {
 } as const;
 
 export interface MetricsHistoryResponse {
-  samples: MetricSample[];
+  generated_at: string;
+  points: MetricHistoryPoint[];
+  range: MetricHistoryRange;
+  resolution_seconds: number;
 }
 
 export type MetricsLatestResponseHost = { [key: string]: unknown };
@@ -409,9 +416,16 @@ export interface RequestorSessionCommand {
 }
 
 /**
+ * Replacement lease-bound StreamPayment proof for the resized VM
+ */
+export type ResizeVMRequestPayment = LeasePayment | null;
+
+/**
  * Request to resize an existing VM.
  */
 export interface ResizeVMRequest {
+  /** Replacement lease-bound StreamPayment proof for the resized VM */
+  payment?: ResizeVMRequestPayment;
   resources: VMResources;
 }
 
@@ -636,31 +650,231 @@ export interface ValidationError {
   type: string;
 }
 
-export type WebhookConfigId = number | null;
+export type WebhookConfigInputEventsItem =
+  (typeof WebhookConfigInputEventsItem)[keyof typeof WebhookConfigInputEventsItem];
 
-export type WebhookConfigLastDeliveredAt = string | null;
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const WebhookConfigInputEventsItem = {
+  alertfired: "alert.fired",
+  alertresolved: "alert.resolved",
+  vmready: "vm.ready",
+  vmfailed: "vm.failed",
+  vmstopped: "vm.stopped",
+  vmdeleted: "vm.deleted",
+  paymentstreamlost: "payment.stream.lost",
+} as const;
 
-export type WebhookConfigLastError = string | null;
+export type WebhookConfigInputId = number | null;
 
-export type WebhookConfigLastStatus = string | null;
+export type WebhookConfigInputLastDeliveredAt = string | null;
 
-export interface WebhookConfig {
+export type WebhookConfigInputLastError = string | null;
+
+export type WebhookConfigInputLastHttpStatus = number | null;
+
+export type WebhookConfigInputLastStatus =
+  | "pending"
+  | "success"
+  | "failed"
+  | null;
+
+export type WebhookConfigInputServiceType =
+  (typeof WebhookConfigInputServiceType)[keyof typeof WebhookConfigInputServiceType];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const WebhookConfigInputServiceType = {
+  generic_json: "generic_json",
+  discord: "discord",
+  slack: "slack",
+} as const;
+
+export interface WebhookConfigInput {
   enabled?: boolean;
-  id?: WebhookConfigId;
-  last_delivered_at?: WebhookConfigLastDeliveredAt;
-  last_error?: WebhookConfigLastError;
-  last_status?: WebhookConfigLastStatus;
+  events?: WebhookConfigInputEventsItem[];
+  id?: WebhookConfigInputId;
+  last_delivered_at?: WebhookConfigInputLastDeliveredAt;
+  last_error?: WebhookConfigInputLastError;
+  last_http_status?: WebhookConfigInputLastHttpStatus;
+  last_status?: WebhookConfigInputLastStatus;
   name: string;
+  service_type?: WebhookConfigInputServiceType;
+  template?: WebhookTemplate;
   url: string;
 }
 
+export type WebhookConfigOutputEventsItem =
+  (typeof WebhookConfigOutputEventsItem)[keyof typeof WebhookConfigOutputEventsItem];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const WebhookConfigOutputEventsItem = {
+  alertfired: "alert.fired",
+  alertresolved: "alert.resolved",
+  vmready: "vm.ready",
+  vmfailed: "vm.failed",
+  vmstopped: "vm.stopped",
+  vmdeleted: "vm.deleted",
+  paymentstreamlost: "payment.stream.lost",
+} as const;
+
+export type WebhookConfigOutputId = number | null;
+
+export type WebhookConfigOutputLastDeliveredAt = string | null;
+
+export type WebhookConfigOutputLastError = string | null;
+
+export type WebhookConfigOutputLastHttpStatus = number | null;
+
+export type WebhookConfigOutputLastStatus =
+  | "pending"
+  | "success"
+  | "failed"
+  | null;
+
+export type WebhookConfigOutputServiceType =
+  (typeof WebhookConfigOutputServiceType)[keyof typeof WebhookConfigOutputServiceType];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const WebhookConfigOutputServiceType = {
+  generic_json: "generic_json",
+  discord: "discord",
+  slack: "slack",
+} as const;
+
+export interface WebhookConfigOutput {
+  enabled?: boolean;
+  events?: WebhookConfigOutputEventsItem[];
+  id?: WebhookConfigOutputId;
+  last_delivered_at?: WebhookConfigOutputLastDeliveredAt;
+  last_error?: WebhookConfigOutputLastError;
+  last_http_status?: WebhookConfigOutputLastHttpStatus;
+  last_status?: WebhookConfigOutputLastStatus;
+  name: string;
+  service_type?: WebhookConfigOutputServiceType;
+  template?: WebhookTemplate;
+  url: string;
+}
+
+export type WebhookDeliveryAttemptError = string | null;
+
+export type WebhookDeliveryAttemptHttpStatus = number | null;
+
+export type WebhookDeliveryAttemptId = number | null;
+
+export type WebhookDeliveryAttemptStatus =
+  (typeof WebhookDeliveryAttemptStatus)[keyof typeof WebhookDeliveryAttemptStatus];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const WebhookDeliveryAttemptStatus = {
+  pending: "pending",
+  success: "success",
+  failed: "failed",
+} as const;
+
+export interface WebhookDeliveryAttempt {
+  attempt: number;
+  attempted_at?: string;
+  error?: WebhookDeliveryAttemptError;
+  event_id: string;
+  event_type: string;
+  http_status?: WebhookDeliveryAttemptHttpStatus;
+  id?: WebhookDeliveryAttemptId;
+  status: WebhookDeliveryAttemptStatus;
+  webhook_id: number;
+}
+
+export type WebhookPreviewRequestEventType =
+  (typeof WebhookPreviewRequestEventType)[keyof typeof WebhookPreviewRequestEventType];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const WebhookPreviewRequestEventType = {
+  alertfired: "alert.fired",
+  alertresolved: "alert.resolved",
+  vmready: "vm.ready",
+  vmfailed: "vm.failed",
+  vmstopped: "vm.stopped",
+  vmdeleted: "vm.deleted",
+  paymentstreamlost: "payment.stream.lost",
+} as const;
+
+export type WebhookPreviewRequestServiceType =
+  (typeof WebhookPreviewRequestServiceType)[keyof typeof WebhookPreviewRequestServiceType];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const WebhookPreviewRequestServiceType = {
+  generic_json: "generic_json",
+  discord: "discord",
+  slack: "slack",
+} as const;
+
+export interface WebhookPreviewRequest {
+  event_type?: WebhookPreviewRequestEventType;
+  service_type: WebhookPreviewRequestServiceType;
+  template?: WebhookTemplate;
+}
+
+export type WebhookPreviewResponsePayload = { [key: string]: unknown };
+
+export type WebhookPreviewResponseServiceType =
+  (typeof WebhookPreviewResponseServiceType)[keyof typeof WebhookPreviewResponseServiceType];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const WebhookPreviewResponseServiceType = {
+  generic_json: "generic_json",
+  discord: "discord",
+  slack: "slack",
+} as const;
+
+export interface WebhookPreviewResponse {
+  payload: WebhookPreviewResponsePayload;
+  service_type: WebhookPreviewResponseServiceType;
+}
+
+export interface WebhookTemplate {
+  color?: string;
+  fields?: WebhookTemplateField[];
+  footer?: string;
+  message?: string;
+  title?: string;
+}
+
+export interface WebhookTemplateField {
+  name: string;
+  value: string;
+}
+
+export type WebhookTestRequestEventType =
+  (typeof WebhookTestRequestEventType)[keyof typeof WebhookTestRequestEventType];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const WebhookTestRequestEventType = {
+  alertfired: "alert.fired",
+  alertresolved: "alert.resolved",
+  vmready: "vm.ready",
+  vmfailed: "vm.failed",
+  vmstopped: "vm.stopped",
+  vmdeleted: "vm.deleted",
+  paymentstreamlost: "payment.stream.lost",
+} as const;
+
+export interface WebhookTestRequest {
+  event_type?: WebhookTestRequestEventType;
+}
+
 export type WebhookTestResponseError = string | null;
+
+export type WebhookTestResponseEventId = string | null;
+
+export type WebhookTestResponsePayloadAnyOf = { [key: string]: unknown };
+
+export type WebhookTestResponsePayload = WebhookTestResponsePayloadAnyOf | null;
 
 export type WebhookTestResponseStatus = number | null;
 
 export interface WebhookTestResponse {
   error?: WebhookTestResponseError;
+  event_id?: WebhookTestResponseEventId;
   ok: boolean;
+  payload?: WebhookTestResponsePayload;
   status?: WebhookTestResponseStatus;
 }
 
@@ -674,6 +888,9 @@ export type MonitoringHistoryApiV1MonitoringMetricsHistoryGetParams = {
   vm_id?: string | null;
   source?: MetricSource | null;
 };
+
+export type TestWebhookApiV1MonitoringWebhooksWebhookIdTestPostBody =
+  WebhookTestRequest | null;
 
 export type CreateVmApiV1VmsPostParams = {
   async?: boolean;
@@ -1101,7 +1318,7 @@ export const monitoringOverviewApiV1MonitoringOverviewGet = async (
  * @summary List Webhooks
  */
 export type listWebhooksApiV1MonitoringWebhooksGetResponse200 = {
-  data: WebhookConfig[];
+  data: WebhookConfigOutput[];
   status: 200;
 };
 
@@ -1132,7 +1349,7 @@ export const listWebhooksApiV1MonitoringWebhooksGet = async (
  * @summary Create Webhook
  */
 export type createWebhookApiV1MonitoringWebhooksPostResponse200 = {
-  data: WebhookConfig;
+  data: WebhookConfigOutput;
   status: 200;
 };
 
@@ -1159,7 +1376,7 @@ export const getCreateWebhookApiV1MonitoringWebhooksPostUrl = () => {
 };
 
 export const createWebhookApiV1MonitoringWebhooksPost = async (
-  webhookConfig: WebhookConfig,
+  webhookConfigInput: WebhookConfigInput,
   options?: RequestInit,
 ): Promise<createWebhookApiV1MonitoringWebhooksPostResponse> => {
   return orvalFetch<createWebhookApiV1MonitoringWebhooksPostResponse>(
@@ -1168,10 +1385,198 @@ export const createWebhookApiV1MonitoringWebhooksPost = async (
       ...options,
       method: "POST",
       headers: { "Content-Type": "application/json", ...options?.headers },
-      body: JSON.stringify(webhookConfig),
+      body: JSON.stringify(webhookConfigInput),
     },
   );
 };
+
+/**
+ * @summary Preview Webhook
+ */
+export type previewWebhookApiV1MonitoringWebhooksPreviewPostResponse200 = {
+  data: WebhookPreviewResponse;
+  status: 200;
+};
+
+export type previewWebhookApiV1MonitoringWebhooksPreviewPostResponse422 = {
+  data: HTTPValidationError;
+  status: 422;
+};
+
+export type previewWebhookApiV1MonitoringWebhooksPreviewPostResponseSuccess =
+  previewWebhookApiV1MonitoringWebhooksPreviewPostResponse200 & {
+    headers: Headers;
+  };
+export type previewWebhookApiV1MonitoringWebhooksPreviewPostResponseError =
+  previewWebhookApiV1MonitoringWebhooksPreviewPostResponse422 & {
+    headers: Headers;
+  };
+
+export type previewWebhookApiV1MonitoringWebhooksPreviewPostResponse =
+  | previewWebhookApiV1MonitoringWebhooksPreviewPostResponseSuccess
+  | previewWebhookApiV1MonitoringWebhooksPreviewPostResponseError;
+
+export const getPreviewWebhookApiV1MonitoringWebhooksPreviewPostUrl = () => {
+  return `/api/v1/monitoring/webhooks/preview`;
+};
+
+export const previewWebhookApiV1MonitoringWebhooksPreviewPost = async (
+  webhookPreviewRequest: WebhookPreviewRequest,
+  options?: RequestInit,
+): Promise<previewWebhookApiV1MonitoringWebhooksPreviewPostResponse> => {
+  return orvalFetch<previewWebhookApiV1MonitoringWebhooksPreviewPostResponse>(
+    getPreviewWebhookApiV1MonitoringWebhooksPreviewPostUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(webhookPreviewRequest),
+    },
+  );
+};
+
+/**
+ * @summary Delete Webhook
+ */
+export type deleteWebhookApiV1MonitoringWebhooksWebhookIdDeleteResponse204 = {
+  data: void;
+  status: 204;
+};
+
+export type deleteWebhookApiV1MonitoringWebhooksWebhookIdDeleteResponse422 = {
+  data: HTTPValidationError;
+  status: 422;
+};
+
+export type deleteWebhookApiV1MonitoringWebhooksWebhookIdDeleteResponseSuccess =
+  deleteWebhookApiV1MonitoringWebhooksWebhookIdDeleteResponse204 & {
+    headers: Headers;
+  };
+export type deleteWebhookApiV1MonitoringWebhooksWebhookIdDeleteResponseError =
+  deleteWebhookApiV1MonitoringWebhooksWebhookIdDeleteResponse422 & {
+    headers: Headers;
+  };
+
+export type deleteWebhookApiV1MonitoringWebhooksWebhookIdDeleteResponse =
+  | deleteWebhookApiV1MonitoringWebhooksWebhookIdDeleteResponseSuccess
+  | deleteWebhookApiV1MonitoringWebhooksWebhookIdDeleteResponseError;
+
+export const getDeleteWebhookApiV1MonitoringWebhooksWebhookIdDeleteUrl = (
+  webhookId: number,
+) => {
+  return `/api/v1/monitoring/webhooks/${webhookId}`;
+};
+
+export const deleteWebhookApiV1MonitoringWebhooksWebhookIdDelete = async (
+  webhookId: number,
+  options?: RequestInit,
+): Promise<deleteWebhookApiV1MonitoringWebhooksWebhookIdDeleteResponse> => {
+  return orvalFetch<deleteWebhookApiV1MonitoringWebhooksWebhookIdDeleteResponse>(
+    getDeleteWebhookApiV1MonitoringWebhooksWebhookIdDeleteUrl(webhookId),
+    {
+      ...options,
+      method: "DELETE",
+    },
+  );
+};
+
+/**
+ * @summary Update Webhook
+ */
+export type updateWebhookApiV1MonitoringWebhooksWebhookIdPutResponse200 = {
+  data: WebhookConfigOutput;
+  status: 200;
+};
+
+export type updateWebhookApiV1MonitoringWebhooksWebhookIdPutResponse422 = {
+  data: HTTPValidationError;
+  status: 422;
+};
+
+export type updateWebhookApiV1MonitoringWebhooksWebhookIdPutResponseSuccess =
+  updateWebhookApiV1MonitoringWebhooksWebhookIdPutResponse200 & {
+    headers: Headers;
+  };
+export type updateWebhookApiV1MonitoringWebhooksWebhookIdPutResponseError =
+  updateWebhookApiV1MonitoringWebhooksWebhookIdPutResponse422 & {
+    headers: Headers;
+  };
+
+export type updateWebhookApiV1MonitoringWebhooksWebhookIdPutResponse =
+  | updateWebhookApiV1MonitoringWebhooksWebhookIdPutResponseSuccess
+  | updateWebhookApiV1MonitoringWebhooksWebhookIdPutResponseError;
+
+export const getUpdateWebhookApiV1MonitoringWebhooksWebhookIdPutUrl = (
+  webhookId: number,
+) => {
+  return `/api/v1/monitoring/webhooks/${webhookId}`;
+};
+
+export const updateWebhookApiV1MonitoringWebhooksWebhookIdPut = async (
+  webhookId: number,
+  webhookConfigInput: WebhookConfigInput,
+  options?: RequestInit,
+): Promise<updateWebhookApiV1MonitoringWebhooksWebhookIdPutResponse> => {
+  return orvalFetch<updateWebhookApiV1MonitoringWebhooksWebhookIdPutResponse>(
+    getUpdateWebhookApiV1MonitoringWebhooksWebhookIdPutUrl(webhookId),
+    {
+      ...options,
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(webhookConfigInput),
+    },
+  );
+};
+
+/**
+ * @summary List Webhook Deliveries
+ */
+export type listWebhookDeliveriesApiV1MonitoringWebhooksWebhookIdDeliveriesGetResponse200 =
+  {
+    data: WebhookDeliveryAttempt[];
+    status: 200;
+  };
+
+export type listWebhookDeliveriesApiV1MonitoringWebhooksWebhookIdDeliveriesGetResponse422 =
+  {
+    data: HTTPValidationError;
+    status: 422;
+  };
+
+export type listWebhookDeliveriesApiV1MonitoringWebhooksWebhookIdDeliveriesGetResponseSuccess =
+  listWebhookDeliveriesApiV1MonitoringWebhooksWebhookIdDeliveriesGetResponse200 & {
+    headers: Headers;
+  };
+export type listWebhookDeliveriesApiV1MonitoringWebhooksWebhookIdDeliveriesGetResponseError =
+  listWebhookDeliveriesApiV1MonitoringWebhooksWebhookIdDeliveriesGetResponse422 & {
+    headers: Headers;
+  };
+
+export type listWebhookDeliveriesApiV1MonitoringWebhooksWebhookIdDeliveriesGetResponse =
+
+    | listWebhookDeliveriesApiV1MonitoringWebhooksWebhookIdDeliveriesGetResponseSuccess
+    | listWebhookDeliveriesApiV1MonitoringWebhooksWebhookIdDeliveriesGetResponseError;
+
+export const getListWebhookDeliveriesApiV1MonitoringWebhooksWebhookIdDeliveriesGetUrl =
+  (webhookId: number) => {
+    return `/api/v1/monitoring/webhooks/${webhookId}/deliveries`;
+  };
+
+export const listWebhookDeliveriesApiV1MonitoringWebhooksWebhookIdDeliveriesGet =
+  async (
+    webhookId: number,
+    options?: RequestInit,
+  ): Promise<listWebhookDeliveriesApiV1MonitoringWebhooksWebhookIdDeliveriesGetResponse> => {
+    return orvalFetch<listWebhookDeliveriesApiV1MonitoringWebhooksWebhookIdDeliveriesGetResponse>(
+      getListWebhookDeliveriesApiV1MonitoringWebhooksWebhookIdDeliveriesGetUrl(
+        webhookId,
+      ),
+      {
+        ...options,
+        method: "GET",
+      },
+    );
+  };
 
 /**
  * @summary Test Webhook
@@ -1207,6 +1612,7 @@ export const getTestWebhookApiV1MonitoringWebhooksWebhookIdTestPostUrl = (
 
 export const testWebhookApiV1MonitoringWebhooksWebhookIdTestPost = async (
   webhookId: number,
+  testWebhookApiV1MonitoringWebhooksWebhookIdTestPostBody: TestWebhookApiV1MonitoringWebhooksWebhookIdTestPostBody,
   options?: RequestInit,
 ): Promise<testWebhookApiV1MonitoringWebhooksWebhookIdTestPostResponse> => {
   return orvalFetch<testWebhookApiV1MonitoringWebhooksWebhookIdTestPostResponse>(
@@ -1214,6 +1620,10 @@ export const testWebhookApiV1MonitoringWebhooksWebhookIdTestPost = async (
     {
       ...options,
       method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(
+        testWebhookApiV1MonitoringWebhooksWebhookIdTestPostBody,
+      ),
     },
   );
 };

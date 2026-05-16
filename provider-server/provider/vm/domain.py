@@ -7,7 +7,7 @@ from .models import VMResources
 
 class CreateVMCommand(BaseModel):
     name: str
-    image: str
+    image: str | None = None
     resources: VMResources
     ssh_key: str
     payment: LeasePayment | None = None

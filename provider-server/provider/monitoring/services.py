@@ -10,8 +10,10 @@ from typing import Any, Optional
 import aiohttp
 import psutil
 
+from provider.auth.errors import UnauthorizedError
 from provider.errors import ValidationError
 from provider.utils.time import ensure_utc, utc_now
+from provider.webhooks.domain import WebhookEvent, WebhookResource
 
 from .domain import (
     AlertRule,
@@ -41,11 +43,13 @@ class MonitoringService:
         repo: MonitoringRepository,
         vm_service: Any,
         proxy_manager: Any,
+        webhook_service: Any = None,
     ):
         self.settings = settings
         self.repo = repo
         self.vm_service = vm_service
         self.proxy_manager = proxy_manager
+        self.webhook_service = webhook_service
         self._task: Optional[asyncio.Task] = None
         self._host_live_task: Optional[asyncio.Task] = None
         self._stop_event = asyncio.Event()
@@ -98,7 +102,7 @@ class MonitoringService:
     ) -> GuestMetricAccepted:
         self.repo.init_schema()
         if not self.repo.validate_guest_token(vm_id, payload.token):
-            raise ValueError("invalid guest metrics token")
+            raise UnauthorizedError("invalid guest metrics token")
 
         timestamp = ensure_utc(payload.timestamp) if payload.timestamp else utc_now()
         samples: list[MetricSample] = [
@@ -215,11 +219,20 @@ class MonitoringService:
         vm_id: Optional[str] = None,
         source: Optional[MetricSource] = None,
     ) -> MetricsHistoryResponse:
-        since = utc_now() - self._range_delta(range_name)
+        history_range = self._validate_history_range(range_name)
+        resolution_seconds = self._history_resolution_seconds(history_range)
+        since = utc_now() - self._range_delta(history_range)
         return MetricsHistoryResponse(
-            samples=self.repo.history(
-                scope=scope, since=since, vm_id=vm_id, source=source
-            )
+            points=self.repo.history_points(
+                scope=scope,
+                since=since,
+                resolution_seconds=resolution_seconds,
+                vm_id=vm_id,
+                source=source,
+            ),
+            range=history_range,
+            resolution_seconds=resolution_seconds,
+            generated_at=utc_now(),
         )
 
     def is_vm_live(self, vm_id: str) -> bool:
@@ -316,12 +329,18 @@ class MonitoringService:
         return self.repo.active_alerts()
 
     def list_webhooks(self) -> list[WebhookConfig]:
+        if self.webhook_service is not None:
+            return self.webhook_service.list_webhooks()
         return self.repo.list_webhooks()
 
     def create_webhook(self, webhook: WebhookConfig) -> WebhookConfig:
+        if self.webhook_service is not None:
+            return self.webhook_service.create_webhook(webhook)
         return self.repo.create_webhook(webhook)
 
     async def test_webhook(self, webhook_id: int) -> WebhookTestResponse:
+        if self.webhook_service is not None:
+            return await self.webhook_service.test_webhook(webhook_id)
         webhook = next(
             (item for item in self.repo.list_webhooks() if item.id == webhook_id), None
         )
@@ -555,7 +574,14 @@ class MonitoringService:
                             self._alert_payload("alert.resolved", rule, sample)
                         )
         for payload in [*fired_payloads, *resolved_payloads]:
-            await self._send_webhooks(payload)
+            if self.webhook_service is not None:
+                await self.webhook_service.emit_event(payload)
+            else:
+                await self._send_webhooks(
+                    payload.model_dump(mode="json")
+                    if hasattr(payload, "model_dump")
+                    else payload
+                )
 
     def _sustained(self, rule: AlertRule, vm_id: Optional[str]) -> bool:
         if rule.duration_seconds <= 0:
@@ -790,14 +816,43 @@ class MonitoringService:
         }
         return ranges[history_range]
 
+    @classmethod
+    def _history_resolution_seconds(cls, range_name: str | MetricHistoryRange) -> int:
+        history_range = cls._validate_history_range(range_name)
+        resolutions = {
+            MetricHistoryRange.ONE_HOUR: 10,
+            MetricHistoryRange.SIX_HOURS: 60,
+            MetricHistoryRange.TWENTY_FOUR_HOURS: 5 * 60,
+            MetricHistoryRange.SEVEN_DAYS: 60 * 60,
+            MetricHistoryRange.THIRTY_DAYS: 6 * 60 * 60,
+        }
+        return resolutions[history_range]
+
     def _setting(self, name: str, default: Any = None) -> Any:
         if isinstance(self.settings, dict):
             return self.settings.get(name, default)
         return getattr(self.settings, name, default)
 
-    def _alert_payload(
-        self, event: str, rule: AlertRule, sample: MetricSample
-    ) -> dict[str, Any]:
+    def _alert_payload(self, event: str, rule: AlertRule, sample: MetricSample) -> Any:
+        if self.webhook_service is not None:
+            severity = "critical" if rule.severity == "critical" else "warning"
+            status = "fired" if event == "alert.fired" else "resolved"
+            return WebhookEvent(
+                event_type=event,
+                provider_id=str(self._setting("PROVIDER_ID", "") or ""),
+                resource=WebhookResource(type="alert", id=rule.name),
+                severity=severity if event == "alert.fired" else "info",
+                summary=f"{rule.name} {status}",
+                data={
+                    "rule": rule.model_dump(mode="json"),
+                    "vm_id": sample.vm_id,
+                    "metric": sample.metric,
+                    "value": sample.value,
+                    "unit": sample.unit,
+                    "source": sample.source.value,
+                    "scope": sample.scope.value,
+                },
+            )
         return {
             "event": event,
             "provider_id": self._setting("PROVIDER_ID", ""),

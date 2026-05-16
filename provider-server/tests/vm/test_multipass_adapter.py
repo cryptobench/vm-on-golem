@@ -1,3 +1,4 @@
+import subprocess
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -10,6 +11,7 @@ from provider.vm.multipass_adapter import MultipassAdapter, MultipassError
 def mock_settings():
     settings = MagicMock()
     settings.MULTIPASS_BINARY_PATH = "/usr/local/bin/multipass"
+    settings.LAUNCH_TIMEOUT_SECONDS = 300
     return settings
 
 
@@ -112,6 +114,24 @@ async def test_verify_installation_failure(multipass_adapter):
         await multipass_adapter.initialize()
 
 
+@pytest.mark.asyncio
+async def test_run_multipass_captures_launch_stderr(multipass_adapter):
+    run_multipass = MultipassAdapter._run_multipass.__get__(
+        multipass_adapter, MultipassAdapter
+    )
+    with patch("provider.vm.multipass_adapter.subprocess.run") as run:
+        run.side_effect = subprocess.CalledProcessError(
+            2,
+            ["/usr/local/bin/multipass", "launch", "ubuntu:24.04"],
+            stderr="launch failed: Remote 'ubuntu' is not found.",
+        )
+
+        with pytest.raises(MultipassError, match="Remote 'ubuntu' is not found"):
+            await run_multipass(["launch", "ubuntu:24.04"])
+
+    assert run.call_args.kwargs["capture_output"] is True
+
+
 def test_rejects_known_broken_macos_qemu_driver(multipass_adapter, tmp_path):
     qemu = tmp_path / "qemu-system-aarch64"
     qemu.write_text("#!/bin/sh\necho 'QEMU emulator version 8.2.1'\n")
@@ -170,7 +190,7 @@ async def test_create_vm_happy_path(multipass_adapter):
     # Arrange
     config = VMConfig(
         name="test-vm",
-        image="ubuntu:22.04",
+        image="22.04",
         ssh_key="ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQD...",
         cloud_init_path="/path/to/cloud-init",
         resources=VMResources(cpu=2, memory=2, storage=20),
@@ -197,6 +217,68 @@ async def test_create_vm_happy_path(multipass_adapter):
     assert launch_call_args[2] == "--name"
     assert launch_call_args[3].startswith("golem-")
     multipass_adapter.name_mapper.add_mapping.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_create_vm_normalizes_legacy_ubuntu_remote_for_launch(multipass_adapter):
+    config = VMConfig(
+        name="test-vm",
+        image="ubuntu:24.04",
+        ssh_key="ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQD...",
+        cloud_init_path="/path/to/cloud-init",
+        resources=VMResources(cpu=2, memory=2, storage=20),
+    )
+    multipass_adapter._get_vm_info = AsyncMock(
+        return_value={
+            "state": "RUNNING",
+            "ipv4": ["127.0.0.1"],
+            "cpu_count": "2",
+            "memory": {"total": 2147483648},
+            "disks": {"sda1": {"total": 21474836480}},
+        }
+    )
+
+    await multipass_adapter.create_vm(config)
+
+    launch_call_args = multipass_adapter._run_multipass.call_args[0][0]
+    assert launch_call_args[0] == "launch"
+    assert launch_call_args[1] == "24.04"
+
+
+@pytest.mark.asyncio
+async def test_create_vm_with_preassigned_multipass_name_registers_mapping(
+    multipass_adapter,
+):
+    config = VMConfig(
+        name="test-vm",
+        image="ubuntu:22.04",
+        ssh_key="ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQD...",
+        cloud_init_path="/path/to/cloud-init",
+        resources=VMResources(cpu=2, memory=2, storage=20),
+        multipass_name="golem-stable",
+    )
+    multipass_adapter.name_mapper.get_requestor_name = AsyncMock(return_value=None)
+    multipass_adapter.name_mapper.get_multipass_name = AsyncMock(
+        return_value="golem-stable"
+    )
+    multipass_adapter._get_vm_info = AsyncMock(
+        return_value={
+            "state": "RUNNING",
+            "ipv4": ["127.0.0.1"],
+            "cpu_count": "2",
+            "memory": {"total": 2147483648},
+            "disks": {"sda1": {"total": 21474836480}},
+        }
+    )
+
+    vm = await multipass_adapter.create_vm(config)
+
+    multipass_adapter.name_mapper.add_mapping.assert_awaited_once_with(
+        "test-vm", "golem-stable"
+    )
+    multipass_adapter.name_mapper.get_multipass_name.assert_awaited_with("test-vm")
+    multipass_adapter._get_vm_info.assert_awaited_with("golem-stable")
+    assert vm.id == "test-vm"
 
 
 @pytest.mark.asyncio
@@ -479,6 +561,35 @@ async def test_list_vms(multipass_adapter):
 
 
 @pytest.mark.asyncio
+async def test_list_vms_preserves_mapping_for_active_creation(multipass_adapter):
+    multipass_adapter.get_vm_status = AsyncMock(
+        side_effect=VMNotFoundError("VM test-vm not found")
+    )
+    multipass_adapter._creating_multipass_names.add("multipass-vm-name")
+
+    vms = await multipass_adapter.list_vms()
+
+    assert vms == []
+    multipass_adapter.proxy_manager.remove_vm.assert_not_awaited()
+    multipass_adapter.name_mapper.remove_mapping.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_list_vms_cleans_stale_mapping_when_not_creating(multipass_adapter):
+    multipass_adapter.get_vm_status = AsyncMock(
+        side_effect=VMNotFoundError("VM test-vm not found")
+    )
+
+    vms = await multipass_adapter.list_vms()
+
+    assert vms == []
+    multipass_adapter.proxy_manager.remove_vm.assert_awaited_once_with(
+        "multipass-vm-name"
+    )
+    multipass_adapter.name_mapper.remove_mapping.assert_awaited_once_with("test-vm")
+
+
+@pytest.mark.asyncio
 async def test_get_all_vms_resources(multipass_adapter):
     # Arrange
     multipass_adapter._get_vm_info = AsyncMock(
@@ -499,6 +610,65 @@ async def test_get_all_vms_resources(multipass_adapter):
     assert resources["test-vm"].cpu == 2
     assert resources["test-vm"].memory == 2
     assert resources["test-vm"].storage == 10
+
+
+@pytest.mark.asyncio
+async def test_get_all_vms_resources_preserves_mapping_for_active_creation(
+    multipass_adapter,
+):
+    multipass_adapter._get_vm_info = AsyncMock(
+        side_effect=VMNotFoundError("VM test-vm not found")
+    )
+    multipass_adapter._creating_multipass_names.add("multipass-vm-name")
+
+    resources = await multipass_adapter.get_all_vms_resources()
+
+    assert resources == {}
+    multipass_adapter.proxy_manager.remove_vm.assert_not_awaited()
+    multipass_adapter.name_mapper.remove_mapping.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_create_vm_clears_active_creation_after_success(multipass_adapter):
+    config = VMConfig(
+        name="test-vm",
+        image="24.04",
+        ssh_key="ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQD...",
+        cloud_init_path="/path/to/cloud-init",
+        resources=VMResources(cpu=2, memory=2, storage=20),
+        multipass_name="golem-stable",
+    )
+    multipass_adapter._get_vm_info = AsyncMock(
+        return_value={
+            "state": "RUNNING",
+            "ipv4": ["127.0.0.1"],
+            "cpu_count": "2",
+            "memory": {"total": 2147483648},
+            "disks": {"sda1": {"total": 21474836480}},
+        }
+    )
+
+    await multipass_adapter.create_vm(config)
+
+    assert "golem-stable" not in multipass_adapter._creating_multipass_names
+
+
+@pytest.mark.asyncio
+async def test_create_vm_clears_active_creation_after_failure(multipass_adapter):
+    config = VMConfig(
+        name="test-vm",
+        image="24.04",
+        ssh_key="ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQD...",
+        cloud_init_path="/path/to/cloud-init",
+        resources=VMResources(cpu=2, memory=2, storage=20),
+        multipass_name="golem-stable",
+    )
+    multipass_adapter._run_multipass.side_effect = MultipassError("launch failed")
+
+    with pytest.raises(MultipassError):
+        await multipass_adapter.create_vm(config)
+
+    assert "golem-stable" not in multipass_adapter._creating_multipass_names
 
 
 @pytest.mark.asyncio

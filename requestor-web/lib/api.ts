@@ -11,6 +11,7 @@ import {
   type CreateVMJobResponse,
   type CreateVMRequest,
   type ResizeVMRequest,
+  type LeasePayment,
   type StreamStatus,
   type VMAccessInfo,
   type VMAccessPendingResponse,
@@ -34,6 +35,10 @@ export type { AdsConfig } from "../context/AdsContext";
 export type ProviderAd = AdvertisementResponse;
 export type { CreateVMRequest, VMResources };
 export { loadSettings, saveSettings, type Settings, type SSHKey } from "./settings";
+
+type LeasePaymentPayload = Omit<LeasePayment, "rate_per_second_wei"> & {
+  rate_per_second_wei: number | string;
+};
 
 export type Rental = {
   name: string;
@@ -428,8 +433,11 @@ export function vmResize(
   providerEndpointUrl: string,
   vmId: string,
   resources: VMResources,
+  payment?: LeasePaymentPayload | null,
 ) {
-  const payload: ResizeVMRequest = { resources };
+  const payload = (payment ? { resources, payment } : { resources }) as
+    | ResizeVMRequest
+    | { resources: VMResources; payment: LeasePaymentPayload };
   return providerAuthenticatedRequest<VMInfo>(
     providerEndpointUrl,
     vmId,

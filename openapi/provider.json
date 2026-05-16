@@ -718,22 +718,37 @@
         "title": "LeaseQuoteCommand",
         "type": "object"
       },
-      "MetricHistoryRange": {
-        "enum": [
-          "1h",
-          "6h",
-          "24h",
-          "7d",
-          "30d"
-        ],
-        "title": "MetricHistoryRange",
-        "type": "string"
-      },
-      "MetricSample": {
+      "MetricHistoryPoint": {
         "properties": {
+          "avg": {
+            "title": "Avg",
+            "type": "number"
+          },
+          "bucket_end": {
+            "format": "date-time",
+            "title": "Bucket End",
+            "type": "string"
+          },
+          "bucket_start": {
+            "format": "date-time",
+            "title": "Bucket Start",
+            "type": "string"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "max": {
+            "title": "Max",
+            "type": "number"
+          },
           "metric": {
             "title": "Metric",
             "type": "string"
+          },
+          "min": {
+            "title": "Min",
+            "type": "number"
           },
           "scope": {
             "$ref": "#/components/schemas/MetricScope"
@@ -741,18 +756,9 @@
           "source": {
             "$ref": "#/components/schemas/MetricSource"
           },
-          "timestamp": {
-            "format": "date-time",
-            "title": "Timestamp",
-            "type": "string"
-          },
           "unit": {
             "title": "Unit",
             "type": "string"
-          },
-          "value": {
-            "title": "Value",
-            "type": "number"
           },
           "vm_id": {
             "anyOf": [
@@ -770,11 +776,27 @@
           "scope",
           "source",
           "metric",
-          "value",
-          "unit"
+          "unit",
+          "bucket_start",
+          "bucket_end",
+          "avg",
+          "min",
+          "max",
+          "count"
         ],
-        "title": "MetricSample",
+        "title": "MetricHistoryPoint",
         "type": "object"
+      },
+      "MetricHistoryRange": {
+        "enum": [
+          "1h",
+          "6h",
+          "24h",
+          "7d",
+          "30d"
+        ],
+        "title": "MetricHistoryRange",
+        "type": "string"
       },
       "MetricScope": {
         "enum": [
@@ -794,16 +816,31 @@
       },
       "MetricsHistoryResponse": {
         "properties": {
-          "samples": {
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "points": {
             "items": {
-              "$ref": "#/components/schemas/MetricSample"
+              "$ref": "#/components/schemas/MetricHistoryPoint"
             },
-            "title": "Samples",
+            "title": "Points",
             "type": "array"
+          },
+          "range": {
+            "$ref": "#/components/schemas/MetricHistoryRange"
+          },
+          "resolution_seconds": {
+            "title": "Resolution Seconds",
+            "type": "integer"
           }
         },
         "required": [
-          "samples"
+          "points",
+          "range",
+          "resolution_seconds",
+          "generated_at"
         ],
         "title": "MetricsHistoryResponse",
         "type": "object"
@@ -1173,6 +1210,17 @@
       "ResizeVMRequest": {
         "description": "Request to resize an existing VM.",
         "properties": {
+          "payment": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LeasePayment"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Replacement lease-bound StreamPayment proof for the resized VM"
+          },
           "resources": {
             "$ref": "#/components/schemas/VMResources"
           }
@@ -1760,12 +1808,28 @@
         "title": "ValidationError",
         "type": "object"
       },
-      "WebhookConfig": {
+      "WebhookConfig-Input": {
         "properties": {
           "enabled": {
             "default": true,
             "title": "Enabled",
             "type": "boolean"
+          },
+          "events": {
+            "items": {
+              "enum": [
+                "alert.fired",
+                "alert.resolved",
+                "vm.ready",
+                "vm.failed",
+                "vm.stopped",
+                "vm.deleted",
+                "payment.stream.lost"
+              ],
+              "type": "string"
+            },
+            "title": "Events",
+            "type": "array"
           },
           "id": {
             "anyOf": [
@@ -1801,9 +1865,25 @@
             ],
             "title": "Last Error"
           },
+          "last_http_status": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Http Status"
+          },
           "last_status": {
             "anyOf": [
               {
+                "enum": [
+                  "pending",
+                  "success",
+                  "failed"
+                ],
                 "type": "string"
               },
               {
@@ -1816,6 +1896,19 @@
             "title": "Name",
             "type": "string"
           },
+          "service_type": {
+            "default": "generic_json",
+            "enum": [
+              "generic_json",
+              "discord",
+              "slack"
+            ],
+            "title": "Service Type",
+            "type": "string"
+          },
+          "template": {
+            "$ref": "#/components/schemas/WebhookTemplate"
+          },
           "url": {
             "title": "Url",
             "type": "string"
@@ -1826,6 +1919,325 @@
           "url"
         ],
         "title": "WebhookConfig",
+        "type": "object"
+      },
+      "WebhookConfig-Output": {
+        "properties": {
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "events": {
+            "items": {
+              "enum": [
+                "alert.fired",
+                "alert.resolved",
+                "vm.ready",
+                "vm.failed",
+                "vm.stopped",
+                "vm.deleted",
+                "payment.stream.lost"
+              ],
+              "type": "string"
+            },
+            "title": "Events",
+            "type": "array"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "last_delivered_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Delivered At"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "last_http_status": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Http Status"
+          },
+          "last_status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "pending",
+                  "success",
+                  "failed"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Status"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "service_type": {
+            "default": "generic_json",
+            "enum": [
+              "generic_json",
+              "discord",
+              "slack"
+            ],
+            "title": "Service Type",
+            "type": "string"
+          },
+          "template": {
+            "$ref": "#/components/schemas/WebhookTemplate"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "url"
+        ],
+        "title": "WebhookConfig",
+        "type": "object"
+      },
+      "WebhookDeliveryAttempt": {
+        "properties": {
+          "attempt": {
+            "title": "Attempt",
+            "type": "integer"
+          },
+          "attempted_at": {
+            "format": "date-time",
+            "title": "Attempted At",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "event_type": {
+            "title": "Event Type",
+            "type": "string"
+          },
+          "http_status": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Http Status"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "success",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "webhook_id": {
+            "title": "Webhook Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "webhook_id",
+          "event_id",
+          "event_type",
+          "attempt",
+          "status"
+        ],
+        "title": "WebhookDeliveryAttempt",
+        "type": "object"
+      },
+      "WebhookPreviewRequest": {
+        "properties": {
+          "event_type": {
+            "default": "alert.fired",
+            "enum": [
+              "alert.fired",
+              "alert.resolved",
+              "vm.ready",
+              "vm.failed",
+              "vm.stopped",
+              "vm.deleted",
+              "payment.stream.lost"
+            ],
+            "title": "Event Type",
+            "type": "string"
+          },
+          "service_type": {
+            "enum": [
+              "generic_json",
+              "discord",
+              "slack"
+            ],
+            "title": "Service Type",
+            "type": "string"
+          },
+          "template": {
+            "$ref": "#/components/schemas/WebhookTemplate"
+          }
+        },
+        "required": [
+          "service_type"
+        ],
+        "title": "WebhookPreviewRequest",
+        "type": "object"
+      },
+      "WebhookPreviewResponse": {
+        "properties": {
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "service_type": {
+            "enum": [
+              "generic_json",
+              "discord",
+              "slack"
+            ],
+            "title": "Service Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "service_type",
+          "payload"
+        ],
+        "title": "WebhookPreviewResponse",
+        "type": "object"
+      },
+      "WebhookTemplate": {
+        "properties": {
+          "color": {
+            "default": "severity",
+            "title": "Color",
+            "type": "string"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/WebhookTemplateField"
+            },
+            "title": "Fields",
+            "type": "array"
+          },
+          "footer": {
+            "default": "Golem Provider",
+            "title": "Footer",
+            "type": "string"
+          },
+          "message": {
+            "default": "{{summary}}",
+            "title": "Message",
+            "type": "string"
+          },
+          "title": {
+            "default": "{{summary}}",
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "title": "WebhookTemplate",
+        "type": "object"
+      },
+      "WebhookTemplateField": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "value"
+        ],
+        "title": "WebhookTemplateField",
+        "type": "object"
+      },
+      "WebhookTestRequest": {
+        "properties": {
+          "event_type": {
+            "default": "alert.fired",
+            "enum": [
+              "alert.fired",
+              "alert.resolved",
+              "vm.ready",
+              "vm.failed",
+              "vm.stopped",
+              "vm.deleted",
+              "payment.stream.lost"
+            ],
+            "title": "Event Type",
+            "type": "string"
+          }
+        },
+        "title": "WebhookTestRequest",
         "type": "object"
       },
       "WebhookTestResponse": {
@@ -1841,9 +2253,32 @@
             ],
             "title": "Error"
           },
+          "event_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Id"
+          },
           "ok": {
             "title": "Ok",
             "type": "boolean"
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payload"
           },
           "status": {
             "anyOf": [
@@ -2266,7 +2701,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/WebhookConfig"
+                    "$ref": "#/components/schemas/WebhookConfig-Output"
                   },
                   "title": "Response List Webhooks Api V1 Monitoring Webhooks Get",
                   "type": "array"
@@ -2289,7 +2724,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/WebhookConfig"
+                "$ref": "#/components/schemas/WebhookConfig-Input"
               }
             }
           },
@@ -2300,7 +2735,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/WebhookConfig"
+                  "$ref": "#/components/schemas/WebhookConfig-Output"
                 }
               }
             },
@@ -2325,6 +2760,186 @@
         "summary": "Create Webhook"
       }
     },
+    "/api/v1/monitoring/webhooks/preview": {
+      "post": {
+        "operationId": "preview_webhook_api_v1_monitoring_webhooks_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookPreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookPreviewResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Preview Webhook"
+      }
+    },
+    "/api/v1/monitoring/webhooks/{webhook_id}": {
+      "delete": {
+        "operationId": "delete_webhook_api_v1_monitoring_webhooks__webhook_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "webhook_id",
+            "required": true,
+            "schema": {
+              "title": "Webhook Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Webhook"
+      },
+      "put": {
+        "operationId": "update_webhook_api_v1_monitoring_webhooks__webhook_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "webhook_id",
+            "required": true,
+            "schema": {
+              "title": "Webhook Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookConfig-Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookConfig-Output"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Webhook"
+      }
+    },
+    "/api/v1/monitoring/webhooks/{webhook_id}/deliveries": {
+      "get": {
+        "operationId": "list_webhook_deliveries_api_v1_monitoring_webhooks__webhook_id__deliveries_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "webhook_id",
+            "required": true,
+            "schema": {
+              "title": "Webhook Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WebhookDeliveryAttempt"
+                  },
+                  "title": "Response List Webhook Deliveries Api V1 Monitoring Webhooks  Webhook Id  Deliveries Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Webhook Deliveries"
+      }
+    },
     "/api/v1/monitoring/webhooks/{webhook_id}/test": {
       "post": {
         "operationId": "test_webhook_api_v1_monitoring_webhooks__webhook_id__test_post",
@@ -2339,6 +2954,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/WebhookTestRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Request"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {

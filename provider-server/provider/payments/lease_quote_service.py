@@ -33,6 +33,7 @@ class LeaseQuoteService:
         if command.duration_seconds <= 0:
             raise ValidationError("duration_seconds must be positive")
 
+        image = command.image or str(self._setting("DEFAULT_VM_IMAGE", "24.04") or "")
         provider_address = str(self._setting("PROVIDER_ID", "") or "")
         contract_address = str(self._setting("STREAM_PAYMENT_ADDRESS", "") or "")
         glm_token_address = str(self._setting("GLM_TOKEN_ADDRESS", "") or "")
@@ -48,6 +49,7 @@ class LeaseQuoteService:
             ]
         ):
             raise ValidationError("provider payment settings are incomplete")
+        self._require_provider_private_key_matches(private_key, provider_address)
 
         chain_id = self._chain_id(rpc_url)
         rate = self._rate_per_second_wei(
@@ -63,7 +65,7 @@ class LeaseQuoteService:
             provider_address=provider_address,
             requestor_address=command.requestor_address,
             vm_name=command.vm_name,
-            image=command.image or "",
+            image=image,
             cpu=command.cpu,
             memory=command.memory,
             storage=command.storage,
@@ -208,6 +210,23 @@ class LeaseQuoteService:
         if len(data) != 32:
             raise ValidationError(f"{field_name} must be exactly 32 bytes")
         return "0x" + data.hex()
+
+    @staticmethod
+    def _provider_signer_address(private_key: str) -> str:
+        try:
+            return Account.from_key(private_key).address
+        except Exception as exc:
+            raise ValidationError("provider payment private key is invalid") from exc
+
+    @staticmethod
+    def _require_provider_private_key_matches(
+        private_key: str, provider_address: str
+    ) -> None:
+        signer_address = LeaseQuoteService._provider_signer_address(private_key)
+        if signer_address.lower() != provider_address.lower():
+            raise ValidationError(
+                "provider payment private key does not match PROVIDER_ID"
+            )
 
     @staticmethod
     def _sign_quote(

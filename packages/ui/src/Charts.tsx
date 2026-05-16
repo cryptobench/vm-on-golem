@@ -2,7 +2,9 @@
 
 import React from "react";
 import {
+  Area,
   CartesianGrid,
+  ComposedChart,
   Legend,
   Line,
   LineChart,
@@ -13,6 +15,7 @@ import {
   type TooltipProps,
 } from "recharts";
 import { cn } from "./cn";
+import { formatLocalDate, formatLocalDateTime, formatLocalTime } from "./time";
 
 export type ChartPoint = {
   label: string;
@@ -27,6 +30,18 @@ export type ChartSeries = {
   label: string;
   colorClassName: string;
   dotClassName?: string;
+};
+
+export type TimeSeriesRange = "1h" | "6h" | "24h" | "7d" | "30d";
+
+export type TimeSeriesPoint = {
+  timestamp: number;
+  bucketStart: number;
+  bucketEnd: number;
+  value: number;
+  min: number;
+  max: number;
+  count: number;
 };
 
 export function LineAreaChart({
@@ -78,6 +93,94 @@ export function LineAreaChart({
       height={height}
       showLegend={false}
     />
+  );
+}
+
+export function TimeSeriesAreaChart({
+  data,
+  range,
+  height = 220,
+  yUnit,
+  valueFormatter,
+  className,
+}: {
+  data: TimeSeriesPoint[];
+  range: TimeSeriesRange;
+  height?: number;
+  yUnit?: string;
+  valueFormatter?: (value: number) => string;
+  className?: string;
+}) {
+  const chartData = data.map((point) => ({
+    ...point,
+    band: [point.min, point.max] as [number, number],
+  }));
+  const formatValue = valueFormatter ?? ((value: number) => `${value}${yUnit ?? ""}`);
+
+  return (
+    <div
+      className={cn("golem-sliding-chart min-h-0", className)}
+      style={{ height }}
+    >
+      <ResponsiveContainer width="100%" height="100%">
+        <ComposedChart data={chartData} margin={{ top: 8, right: 20, bottom: 0, left: 0 }}>
+          <CartesianGrid
+            vertical={false}
+            className="stroke-border"
+            stroke="currentColor"
+          />
+          <XAxis
+            dataKey="timestamp"
+            type="number"
+            domain={["dataMin", "dataMax"]}
+            tickLine={false}
+            axisLine={false}
+            minTickGap={28}
+            padding={{ left: 20, right: 20 }}
+            tickFormatter={(value) => formatTimeSeriesTick(Number(value), range)}
+            className="fill-text-primary text-xs"
+          />
+          <YAxis
+            width={56}
+            tickLine={false}
+            axisLine={false}
+            domain={["auto", "auto"]}
+            tickFormatter={formatValue}
+            allowDecimals
+            className="fill-text-primary text-xs"
+          />
+          <Tooltip
+            isAnimationActive={false}
+            cursor={{ stroke: "var(--border-strong)", strokeWidth: 1 }}
+            content={<TimeSeriesTooltip valueFormatter={formatValue} />}
+          />
+          <Area
+            className="text-primary"
+            type="linear"
+            dataKey="band"
+            stroke="none"
+            fill="currentColor"
+            fillOpacity={0.14}
+            activeDot={false}
+            isAnimationActive={false}
+          />
+          <Line
+            className="text-primary"
+            type="linear"
+            dataKey="value"
+            name="Average"
+            stroke="currentColor"
+            strokeWidth={2}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            dot={false}
+            activeDot={{ r: 4 }}
+            connectNulls={false}
+            isAnimationActive={false}
+          />
+        </ComposedChart>
+      </ResponsiveContainer>
+    </div>
   );
 }
 
@@ -333,6 +436,57 @@ function MetricTooltip({
       </div>
     </div>
   );
+}
+
+function TimeSeriesTooltip({
+  active,
+  payload,
+  valueFormatter,
+}: TooltipProps<number, string> & {
+  valueFormatter: (value: number) => string;
+}) {
+  if (!active || !payload?.length) return null;
+  const point = payload.find((item) => item.dataKey === "value")?.payload as
+    | TimeSeriesPoint
+    | undefined;
+  if (!point) return null;
+
+  return (
+    <div className="rounded-md border border-border bg-surface px-3 py-2 text-xs shadow-popover">
+      <div className="mb-1 font-medium text-text-primary">
+        {formatBucketInterval(point.bucketStart, point.bucketEnd)}
+      </div>
+      <div className="space-y-1 text-text-secondary">
+        <TooltipRow label="Average" value={valueFormatter(point.value)} />
+        <TooltipRow label="Min" value={valueFormatter(point.min)} />
+        <TooltipRow label="Max" value={valueFormatter(point.max)} />
+        <TooltipRow label="Samples" value={String(point.count)} />
+      </div>
+    </div>
+  );
+}
+
+function TooltipRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <span>{label}</span>
+      <span className="font-medium text-text-primary">{value}</span>
+    </div>
+  );
+}
+
+function formatTimeSeriesTick(timestamp: number, range: TimeSeriesRange) {
+  if (range === "7d" || range === "30d") {
+    return formatLocalDate(timestamp) ?? "";
+  }
+  return formatLocalTime(timestamp) ?? "";
+}
+
+function formatBucketInterval(start: number, end: number) {
+  const startLabel = formatLocalDateTime(start);
+  const endLabel = formatLocalDateTime(end);
+  if (!startLabel || !endLabel) return "";
+  return `${startLabel} - ${endLabel}`;
 }
 
 export function getAppendOnlySlideChange(

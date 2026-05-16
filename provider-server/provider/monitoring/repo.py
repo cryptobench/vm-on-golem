@@ -1,13 +1,21 @@
 import json
 import secrets
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
 from provider.utils.time import ensure_utc, utc_now
+from provider.webhooks.domain import WEBHOOK_EVENT_TYPES, WebhookTemplate
 
-from .domain import AlertRule, MetricSample, MetricScope, MetricSource, WebhookConfig
+from .domain import (
+    AlertRule,
+    MetricHistoryPoint,
+    MetricSample,
+    MetricScope,
+    MetricSource,
+    WebhookConfig,
+)
 
 
 def _dt(value: datetime | str | None = None) -> datetime:
@@ -83,6 +91,19 @@ class MonitoringRepository:
                 );
                 """
             )
+            self._ensure_webhook_columns(conn)
+            conn.execute(
+                """
+                UPDATE webhooks
+                SET service_type = COALESCE(service_type, 'generic_json'),
+                    events = COALESCE(events, ?),
+                    template = COALESCE(template, ?)
+                """,
+                (
+                    json.dumps(list(WEBHOOK_EVENT_TYPES)),
+                    WebhookTemplate().model_dump_json(),
+                ),
+            )
             self._ensure_default_rules(conn)
 
     def add_samples(self, samples: Iterable[MetricSample]) -> None:
@@ -153,6 +174,49 @@ class MonitoringRepository:
         with self._connect() as conn:
             rows = conn.execute(query, params).fetchall()
         return [self._sample_from_row(row) for row in rows]
+
+    def history_points(
+        self,
+        scope: MetricScope,
+        since: datetime,
+        resolution_seconds: int,
+        vm_id: Optional[str] = None,
+        source: Optional[MetricSource] = None,
+    ) -> list[MetricHistoryPoint]:
+        query = """
+            SELECT
+                ((CAST(strftime('%s', ts) AS INTEGER) / ?) * ?) AS bucket_epoch,
+                scope,
+                source,
+                vm_id,
+                metric,
+                unit,
+                AVG(value) AS avg_value,
+                MIN(value) AS min_value,
+                MAX(value) AS max_value,
+                COUNT(*) AS sample_count
+            FROM metric_samples
+            WHERE scope = ? AND ts >= ?
+        """
+        params: list[Any] = [
+            resolution_seconds,
+            resolution_seconds,
+            scope.value,
+            ensure_utc(since).isoformat(),
+        ]
+        if vm_id is not None:
+            query += " AND vm_id = ?"
+            params.append(vm_id)
+        if source is not None:
+            query += " AND source = ?"
+            params.append(source.value)
+        query += """
+            GROUP BY bucket_epoch, scope, source, COALESCE(vm_id, ''), metric, unit
+            ORDER BY bucket_epoch ASC, metric ASC
+        """
+        with self._connect() as conn:
+            rows = conn.execute(query, params).fetchall()
+        return [self._history_point_from_row(row, resolution_seconds) for row in rows]
 
     def prune(self, retention_days: int) -> None:
         cutoff = utc_now() - timedelta(days=retention_days)
@@ -281,10 +345,17 @@ class MonitoringRepository:
         with self._connect() as conn:
             cur = conn.execute(
                 """
-                INSERT INTO webhooks (name, url, enabled)
-                VALUES (?, ?, ?)
+                INSERT INTO webhooks (name, url, enabled, service_type, events, template)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (webhook.name, webhook.url, int(webhook.enabled)),
+                (
+                    webhook.name,
+                    webhook.url,
+                    int(webhook.enabled),
+                    webhook.service_type,
+                    json.dumps(webhook.events),
+                    webhook.template.model_dump_json(),
+                ),
             )
             webhook.id = int(cur.lastrowid)
         return webhook
@@ -296,10 +367,10 @@ class MonitoringRepository:
             conn.execute(
                 """
                 UPDATE webhooks
-                SET last_status = ?, last_error = ?, last_delivered_at = ?
+                SET last_status = ?, last_http_status = ?, last_error = ?, last_delivered_at = ?
                 WHERE id = ?
                 """,
-                (status, error, utc_now().isoformat(), webhook_id),
+                (status, None, error, utc_now().isoformat(), webhook_id),
             )
 
     def _connect(self) -> sqlite3.Connection:
@@ -317,6 +388,26 @@ class MonitoringRepository:
             metric=row["metric"],
             value=float(row["value"]),
             unit=row["unit"],
+        )
+
+    @staticmethod
+    def _history_point_from_row(
+        row: sqlite3.Row, resolution_seconds: int
+    ) -> MetricHistoryPoint:
+        bucket_epoch = int(row["bucket_epoch"])
+        bucket_start = datetime.fromtimestamp(bucket_epoch, tz=timezone.utc)
+        return MetricHistoryPoint(
+            scope=MetricScope(row["scope"]),
+            source=MetricSource(row["source"]),
+            vm_id=row["vm_id"],
+            metric=row["metric"],
+            unit=row["unit"],
+            bucket_start=bucket_start,
+            bucket_end=bucket_start + timedelta(seconds=resolution_seconds),
+            avg=float(row["avg_value"]),
+            min=float(row["min_value"]),
+            max=float(row["max_value"]),
+            count=int(row["sample_count"]),
         )
 
     @staticmethod
@@ -341,12 +432,34 @@ class MonitoringRepository:
             name=row["name"],
             url=row["url"],
             enabled=bool(row["enabled"]),
+            service_type=row["service_type"] or "generic_json",
+            events=json.loads(row["events"] or json.dumps(list(WEBHOOK_EVENT_TYPES))),
+            template=WebhookTemplate.model_validate_json(row["template"])
+            if row["template"]
+            else WebhookTemplate(),
             last_status=row["last_status"],
+            last_http_status=row["last_http_status"],
             last_error=row["last_error"],
             last_delivered_at=_dt(row["last_delivered_at"])
             if row["last_delivered_at"]
             else None,
         )
+
+    @staticmethod
+    def _ensure_webhook_columns(conn: sqlite3.Connection) -> None:
+        columns = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(webhooks)").fetchall()
+        }
+        additions = {
+            "service_type": "TEXT",
+            "events": "TEXT",
+            "template": "TEXT",
+            "last_http_status": "INTEGER",
+        }
+        for name, column_type in additions.items():
+            if name not in columns:
+                conn.execute(f"ALTER TABLE webhooks ADD COLUMN {name} {column_type}")
 
     @staticmethod
     def _ensure_default_rules(conn: sqlite3.Connection) -> None:

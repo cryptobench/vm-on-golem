@@ -205,7 +205,7 @@ async def resize_vm(
     ),
 ) -> VMInfo:
     return await vm_app_service.resize_vm(
-        requestor_name, request.resources, identity.requestor_address
+        requestor_name, request.resources, identity.requestor_address, request.payment
     )
 
 

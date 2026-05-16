@@ -19,7 +19,7 @@ export function ToggleSwitch({
   return (
     <button
       className={cn(
-        "relative h-6 w-11 rounded-full border border-border transition focus:outline-none focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-50",
+        "relative inline-flex h-6 w-11 shrink-0 rounded-full border border-border p-0 transition focus:outline-none focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-50",
         checked ? "bg-primary" : "bg-border-strong",
         className,
       )}
@@ -32,8 +32,8 @@ export function ToggleSwitch({
     >
       <span
         className={cn(
-          "absolute top-0.5 h-5 w-5 rounded-full bg-surface shadow-soft transition-transform",
-          checked ? "translate-x-5" : "translate-x-0.5",
+          "pointer-events-none absolute left-0.5 top-1/2 h-5 w-5 -translate-y-1/2 rounded-full bg-surface shadow-soft transition-transform",
+          checked ? "translate-x-5" : "translate-x-0",
         )}
         aria-hidden
       />

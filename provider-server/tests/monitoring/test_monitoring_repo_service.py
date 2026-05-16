@@ -5,8 +5,10 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from provider.auth.errors import UnauthorizedError
 from provider.errors import ValidationError
 from provider.monitoring.domain import (
+    AlertRule,
     GuestMetricPayload,
     MetricSample,
     MetricScope,
@@ -23,7 +25,7 @@ def test_guest_token_auth_and_sample_storage(tmp_path: Path):
     token = repo.issue_guest_token("vm-a")
     service = MonitoringService({}, repo, MagicMock(), MagicMock())
 
-    with pytest.raises(ValueError):
+    with pytest.raises(UnauthorizedError):
         asyncio_run(
             service.record_guest_sample("vm-a", GuestMetricPayload(token="bad"))
         )
@@ -63,7 +65,110 @@ def test_history_range_filters_24h_samples(tmp_path: Path, monkeypatch):
 
     history = service.history(scope=MetricScope.VM, range_name="24h", vm_id="vm-a")
 
-    assert [sample.value for sample in history.samples] == [20]
+    assert [point.avg for point in history.points] == [20]
+    assert history.range == "24h"
+    assert history.resolution_seconds == 300
+
+
+def test_history_aggregates_samples_into_fixed_buckets(tmp_path: Path, monkeypatch):
+    repo = MonitoringRepository(str(tmp_path / "monitoring.sqlite"))
+    repo.init_schema()
+    service = MonitoringService({}, repo, MagicMock(), MagicMock())
+    now = datetime(2026, 5, 14, 18, 0, 30, tzinfo=timezone.utc)
+    monkeypatch.setattr("provider.monitoring.services.utc_now", lambda: now)
+    repo.add_samples(
+        [
+            fixed_host_sample("cpu_percent", 10, "2026-05-14T18:00:01+00:00"),
+            fixed_host_sample("cpu_percent", 20, "2026-05-14T18:00:09+00:00"),
+            fixed_host_sample("memory_percent", 50, "2026-05-14T18:00:09+00:00"),
+        ]
+    )
+
+    history = service.history(scope=MetricScope.HOST, range_name="1h")
+    cpu_points = [point for point in history.points if point.metric == "cpu_percent"]
+    memory_points = [
+        point for point in history.points if point.metric == "memory_percent"
+    ]
+
+    assert len(cpu_points) == 1
+    assert cpu_points[0].avg == 15
+    assert cpu_points[0].min == 10
+    assert cpu_points[0].max == 20
+    assert cpu_points[0].count == 2
+    assert cpu_points[0].bucket_start == datetime(
+        2026, 5, 14, 18, 0, tzinfo=timezone.utc
+    )
+    assert len(memory_points) == 1
+    assert memory_points[0].avg == 50
+
+
+def test_history_keeps_scope_source_metric_and_vm_buckets_separate(
+    tmp_path: Path, monkeypatch
+):
+    repo = MonitoringRepository(str(tmp_path / "monitoring.sqlite"))
+    repo.init_schema()
+    service = MonitoringService({}, repo, MagicMock(), MagicMock())
+    now = datetime(2026, 5, 14, 18, 0, 30, tzinfo=timezone.utc)
+    monkeypatch.setattr("provider.monitoring.services.utc_now", lambda: now)
+    repo.add_samples(
+        [
+            fixed_vm_sample("cpu_percent", 10, now - timedelta(seconds=4)),
+            fixed_vm_sample("memory_percent", 20, now - timedelta(seconds=4)),
+            MetricSample(
+                scope=MetricScope.VM,
+                source=MetricSource.INFRASTRUCTURE,
+                vm_id="vm-a",
+                metric="cpu_percent",
+                value=30,
+                unit="percent",
+                timestamp=now - timedelta(seconds=4),
+            ),
+            MetricSample(
+                scope=MetricScope.VM,
+                source=MetricSource.GUEST_AGENT,
+                vm_id="vm-b",
+                metric="cpu_percent",
+                value=40,
+                unit="percent",
+                timestamp=now - timedelta(seconds=4),
+            ),
+        ]
+    )
+
+    history = service.history(scope=MetricScope.VM, range_name="1h")
+    keys = {
+        (point.source, point.vm_id, point.metric, point.avg) for point in history.points
+    }
+
+    assert keys == {
+        (MetricSource.GUEST_AGENT, "vm-a", "cpu_percent", 10),
+        (MetricSource.GUEST_AGENT, "vm-a", "memory_percent", 20),
+        (MetricSource.INFRASTRUCTURE, "vm-a", "cpu_percent", 30),
+        (MetricSource.GUEST_AGENT, "vm-b", "cpu_percent", 40),
+    }
+
+
+@pytest.mark.parametrize(
+    ("range_name", "resolution_seconds"),
+    [
+        ("1h", 10),
+        ("6h", 60),
+        ("24h", 300),
+        ("7d", 3600),
+        ("30d", 21600),
+    ],
+)
+def test_history_returns_expected_resolution(
+    tmp_path: Path, range_name: str, resolution_seconds: int
+):
+    repo = MonitoringRepository(str(tmp_path / "monitoring.sqlite"))
+    repo.init_schema()
+    service = MonitoringService({}, repo, MagicMock(), MagicMock())
+
+    history = service.history(scope=MetricScope.HOST, range_name=range_name)
+
+    assert history.range == range_name
+    assert history.resolution_seconds == resolution_seconds
 
 
 def test_history_rejects_invalid_range(tmp_path: Path):
@@ -205,6 +310,53 @@ def test_host_disk_path_prefers_existing_parent_and_windows_drive(tmp_path: Path
         MagicMock(),
     )
     assert windows_service._host_disk_path() == "C:\\"
+
+
+def test_alert_evaluation_emits_webhook_events(tmp_path: Path):
+    class FakeWebhookService:
+        def __init__(self):
+            self.events = []
+
+        async def emit_event(self, event):
+            self.events.append(event)
+
+    repo = MonitoringRepository(str(tmp_path / "monitoring.sqlite"))
+    repo.init_schema()
+    rule = repo.create_alert_rule(
+        AlertRule(
+            name="Host CPU high",
+            metric="cpu_percent",
+            scope=MetricScope.HOST,
+            source=MetricSource.INFRASTRUCTURE,
+            threshold=80,
+            duration_seconds=0,
+            severity="critical",
+        )
+    )
+    webhook_service = FakeWebhookService()
+    service = MonitoringService(
+        {},
+        repo,
+        MagicMock(),
+        MagicMock(),
+        webhook_service=webhook_service,
+    )
+    now = datetime(2026, 5, 14, 18, 0, tzinfo=timezone.utc)
+    repo.add_samples([fixed_host_sample(rule.metric, 90, now.isoformat())])
+
+    asyncio_run(service._evaluate_alerts())
+
+    repo.add_samples(
+        [fixed_host_sample(rule.metric, 20, (now + timedelta(seconds=1)).isoformat())]
+    )
+    asyncio_run(service._evaluate_alerts())
+
+    assert [event.event_type for event in webhook_service.events] == [
+        "alert.fired",
+        "alert.resolved",
+    ]
+    assert webhook_service.events[0].severity == "critical"
+    assert webhook_service.events[0].data["metric"] == "cpu_percent"
 
 
 def asyncio_run(coro):

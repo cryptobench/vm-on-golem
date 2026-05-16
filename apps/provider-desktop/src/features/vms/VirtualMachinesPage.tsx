@@ -7,14 +7,13 @@ import {
   ProgressBar,
   StatCard,
   StatusBadge,
-  TextInput,
+  Input,
   ToggleSwitch,
   formatLocalDateTime,
 } from "@golem/ui";
 import {
   RiAlertLine,
   RiLoader4Line,
-  RiSearchLine,
   RiStackLine,
   RiStopCircleLine,
 } from "@remixicon/react";
@@ -63,10 +62,9 @@ export function VirtualMachinesPage({
       </div>
 
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <label className="relative w-full max-w-md">
-          <RiSearchLine className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted" aria-hidden />
-          <TextInput
-            className="pl-10"
+        <label className="w-full max-w-md">
+          <Input
+            type="search"
             placeholder="Search VMs..."
             value={search}
             onChange={(event) => setSearch(event.target.value)}

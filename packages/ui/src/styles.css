@@ -22,10 +22,6 @@
   @apply bg-danger text-white ring-danger hover:opacity-90;
 }
 
-.input {
-  @apply block w-full rounded-md border-border shadow-sm focus:border-primary focus:ring-primary sm:text-sm;
-}
-
 .label {
   @apply block text-sm font-medium text-text-secondary;
 }

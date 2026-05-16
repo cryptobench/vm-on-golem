@@ -1,6 +1,6 @@
 "use client";
 import React from "react";
-import { Modal } from "@golem/ui";
+import { Input, Modal, Textarea } from "@golem/ui";
 import { loadSettings, saveSettings, type SSHKey } from "../../lib/api";
 
 export function KeyAddModal({ open, onClose, onAdded }: { open: boolean; onClose: () => void; onAdded?: (key: SSHKey) => void }) {
@@ -39,11 +39,11 @@ export function KeyAddModal({ open, onClose, onAdded }: { open: boolean; onClose
         <h3 className="text-lg font-medium">Add SSH Key</h3>
         <div className="mt-3">
           <label className="label">Name</label>
-          <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Work Laptop" />
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Work Laptop" />
         </div>
         <div className="mt-3">
           <label className="label">Public key</label>
-          <textarea className="input" rows={3} value={value} onChange={(e) => setValue(e.target.value)} placeholder="ssh-ed25519 AAAA... user@host" />
+          <Textarea rows={3} value={value} onChange={(e) => setValue(e.target.value)} placeholder="ssh-ed25519 AAAA... user@host" />
         </div>
         {error && <div className="mt-2 text-sm text-danger">{error}</div>}
         <div className="mt-4 flex justify-end gap-2">

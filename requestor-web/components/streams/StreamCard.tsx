@@ -5,7 +5,7 @@ import { Card, Tracker } from "@tremor/react";
 import { RiCheckboxCircleFill, RiErrorWarningFill, RiCloseCircleFill, RiTimeFill } from "@remixicon/react";
 import { humanDuration, isTerminatedStream } from "../../lib/streams";
 import { parseHumanDuration } from "../../lib/time";
-import { Spinner } from "@golem/ui";
+import { Input, Spinner } from "@golem/ui";
 
 export type StreamMeta = {
   tokenSymbol: string;
@@ -166,8 +166,8 @@ export function StreamCard({ title, streamId, chain, remaining, meta, displayCur
                 {actionsRight}
                 {/* On small/medium cards (e.g., 2-col grid), wrap to next line */}
                 <div className="flex items-center gap-2 ml-0 w-full lg:w-auto lg:ml-auto">
-                  <input
-                    className="input w-44"
+                  <Input
+                    className="w-44"
                     placeholder="Custom: 30d, 45m, 1h30m"
                     value={customInput}
                     onChange={(e) => setCustomInput(e.target.value)}

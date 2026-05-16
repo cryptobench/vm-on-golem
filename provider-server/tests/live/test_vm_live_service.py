@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -18,6 +19,15 @@ from provider.monitoring.services import MonitoringService
 from provider.payments.errors import StreamNotFoundError
 from provider.provider_info.domain import ProviderInfo
 from provider.vm.models import VMAccessInfo, VMInfo, VMResources, VMStatus
+
+
+def empty_history(range_name: str = "1h") -> MetricsHistoryResponse:
+    return MetricsHistoryResponse(
+        points=[],
+        range=range_name,
+        resolution_seconds=10,
+        generated_at=datetime(2026, 5, 14, tzinfo=timezone.utc),
+    )
 
 
 class FakeWebSocket:
@@ -140,8 +150,6 @@ class FakeMonitoring:
         )
 
     def latest(self):
-        from datetime import datetime, timezone
-
         from provider.monitoring.domain import MetricsLatestResponse
 
         return MetricsLatestResponse(
@@ -151,9 +159,7 @@ class FakeMonitoring:
         )
 
     def history(self, **kwargs):
-        from provider.monitoring.domain import MetricsHistoryResponse
-
-        return MetricsHistoryResponse(samples=[])
+        return empty_history(kwargs.get("range_name", "1h"))
 
     def active_alerts(self):
         return []
@@ -199,6 +205,8 @@ def test_vm_live_stream_sends_hello_snapshot_and_metric_update(tmp_path: Path):
         assert websocket.accepted is True
         assert hello["type"] == "hello"
         assert snapshot["type"] == "snapshot"
+        assert "points" in snapshot["data"]["metrics_history"]
+        assert snapshot["data"]["metrics_history"]["resolution_seconds"] == 10
         assert update["type"] == "update"
         assert update["scope"] == "metrics"
         assert (
@@ -297,7 +305,7 @@ def test_vm_live_invalid_history_range_event_keeps_current_range(tmp_path: Path)
 
         def history(**kwargs):
             history_ranges.append(kwargs["range_name"])
-            return MetricsHistoryResponse(samples=[])
+            return empty_history(kwargs["range_name"])
 
         monitoring.history = MagicMock(side_effect=history)
         service = VMLiveService(
@@ -374,6 +382,8 @@ def test_host_live_stream_sends_hello_snapshot_and_metric_update(tmp_path: Path)
         assert hello["type"] == "hello"
         assert hello["data"]["protocol"] == "provider-host-live.v1"
         assert snapshot["type"] == "snapshot"
+        assert "points" in snapshot["data"]["metrics_history"]
+        assert snapshot["data"]["metrics_history"]["resolution_seconds"] == 10
         assert update["type"] == "update"
         assert update["scope"] == "metrics"
         assert update["data"]["latest"]["host"]["cpu_percent"]["value"] == 42

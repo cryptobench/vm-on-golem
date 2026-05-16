@@ -8,6 +8,7 @@ from provider.errors import ExternalServiceError, NotFoundError
 from provider.payments.domain import LeasePayment
 from provider.payments.errors import InvalidStreamError
 from provider.payments.stream_status_service import StreamStatusService
+from provider.webhooks.domain import WebhookEventType
 
 from .domain import CreateVMCommand, CreateVMJobResult
 from .lifecycle import VMLifecycleState, creation_lifecycle, lifecycle_for_status
@@ -37,12 +38,14 @@ class VMApplicationService:
         stream_status_service: StreamStatusService,
         job_store: Any,
         event_broadcaster: Any = None,
+        webhook_service: Any = None,
     ):
         self.vm_service = vm_service
         self.settings = settings
         self.stream_status_service = stream_status_service
         self.job_store = job_store
         self.event_broadcaster = event_broadcaster
+        self.webhook_service = webhook_service
 
     def _setting(self, name: str, default: Any = None) -> Any:
         if isinstance(self.settings, dict):
@@ -61,13 +64,13 @@ class VMApplicationService:
             requestor_address=command.action_signer,
             current_vm_id=command.name,
             vm_name=command.name,
-            image=command.image or str(self._setting("DEFAULT_VM_IMAGE", "")),
+            image=command.image or str(self._setting("DEFAULT_VM_IMAGE", "24.04")),
             resources=command.resources,
         )
 
         config = VMConfig(
             name=command.name,
-            image=command.image or str(self._setting("DEFAULT_VM_IMAGE", "")),
+            image=command.image or str(self._setting("DEFAULT_VM_IMAGE", "24.04")),
             resources=command.resources,
             ssh_key=command.ssh_key,
         )
@@ -84,6 +87,13 @@ class VMApplicationService:
                 "VM creation failed",
                 extra={"vm_id": command.name},
                 exc_info=True,
+            )
+            await self._emit_webhook(
+                "vm.failed",
+                command.name,
+                "critical",
+                "VM creation failed",
+                {"error": str(exc)},
             )
             raise ExternalServiceError(
                 f"failed to create VM {command.name}: {exc}"
@@ -113,6 +123,13 @@ class VMApplicationService:
             extra={"vm_id": vm_info.id, "status": str(vm_info.status)},
         )
         await self._publish_live(["vms", "summary", "streams"])
+        await self._emit_webhook(
+            "vm.ready",
+            vm_info.id,
+            "info",
+            "VM is online",
+            {"status": str(vm_info.status)},
+        )
         return vm_info
 
     async def _schedule_create_vm(
@@ -160,9 +177,6 @@ class VMApplicationService:
                     command.payment,
                     requestor_address=command.action_signer,
                     current_vm_id=command.name,
-                    vm_name=command.name,
-                    image=command.image or str(self._setting("DEFAULT_VM_IMAGE", "")),
-                    resources=command.resources,
                 )
                 vm_info = await self.vm_service.create_vm_with_progress(
                     config,
@@ -193,6 +207,13 @@ class VMApplicationService:
                     "Create VM job completed",
                     extra={"job_id": job_id, "vm_id": vm_info.id},
                 )
+                await self._emit_webhook(
+                    "vm.ready",
+                    vm_info.id,
+                    "info",
+                    "VM is online",
+                    {"job_id": job_id, "status": str(vm_info.status)},
+                )
             except Exception as exc:
                 logger.error(
                     "Create VM job failed",
@@ -210,6 +231,13 @@ class VMApplicationService:
                     error=str(exc),
                 )
                 await self._publish_live(["vms", "summary"])
+                await self._emit_webhook(
+                    "vm.failed",
+                    command.name,
+                    "critical",
+                    "VM creation failed",
+                    {"job_id": job_id, "error": str(exc)},
+                )
 
         asyncio.create_task(_run_creation(), name=f"create-vm:{command.name}")
         return CreateVMJobResult(
@@ -371,6 +399,13 @@ class VMApplicationService:
             vm = await self.vm_service.stop_vm(vm_id)
             logger.info("Provider VM stopped", extra={"vm_id": vm_id})
             await self._publish_live(["vms", "summary", "monitoring", "metrics"])
+            await self._emit_webhook(
+                "vm.stopped",
+                vm_id,
+                "info",
+                "VM stopped",
+                {"status": str(vm.status)},
+            )
             return vm
         except VMNotFoundError:
             raise
@@ -452,14 +487,31 @@ class VMApplicationService:
         vm_id: str,
         resources: VMResources,
         action_signer: str | None = None,
+        payment: LeasePayment | None = None,
     ) -> VMInfo:
         try:
-            await self.stream_status_service.require_vm_action_authorized(
-                vm_id, action_signer
-            )
+            if payment is not None:
+                await self.stream_status_service.require_valid_lease(
+                    payment,
+                    requestor_address=action_signer,
+                    current_vm_id=vm_id,
+                    vm_name=vm_id,
+                    image=str(self._setting("DEFAULT_VM_IMAGE", "24.04")),
+                    resources=resources,
+                )
+            else:
+                await self.stream_status_service.require_vm_action_authorized(
+                    vm_id, action_signer
+                )
             vm = await self.vm_service.resize_vm(vm_id, resources)
+            if payment is not None:
+                await self.stream_status_service.set_vm_stream(
+                    vm_id, payment.stream_id, action_signer
+                )
             logger.info("Provider VM resized", extra={"vm_id": vm_id})
-            await self._publish_live(["vms", "summary", "monitoring", "metrics"])
+            await self._publish_live(
+                ["vms", "summary", "monitoring", "metrics", "streams"]
+            )
             return vm
         except VMNotFoundError:
             raise
@@ -592,6 +644,13 @@ class VMApplicationService:
             await self._publish_live(
                 ["vms", "summary", "streams", "monitoring", "metrics"]
             )
+            await self._emit_webhook(
+                "vm.deleted",
+                vm_id,
+                "info",
+                "VM deleted",
+                {},
+            )
         except VMNotFoundError:
             await self.stream_status_service.remove_vm_stream(vm_id)
             logger.warning(
@@ -611,6 +670,25 @@ class VMApplicationService:
         if self.event_broadcaster is None:
             return
         await self.event_broadcaster.publish(scopes)
+
+    async def _emit_webhook(
+        self,
+        event_type: WebhookEventType,
+        vm_id: str,
+        severity: str,
+        summary: str,
+        data: dict[str, Any],
+    ) -> None:
+        if self.webhook_service is None:
+            return
+        await self.webhook_service.emit(
+            event_type,
+            resource_type="vm",
+            resource_id=vm_id,
+            severity=severity,
+            summary=summary,
+            data=data,
+        )
 
 
 def _job_datetime(value: Any) -> datetime:

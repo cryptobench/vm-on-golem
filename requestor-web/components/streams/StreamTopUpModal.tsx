@@ -6,6 +6,7 @@ import { humanDuration } from "../../lib/streams";
 import { parseHumanDuration } from "../../lib/time";
 import { Button } from "@golem/ui";
 import { Callout } from "@golem/ui";
+import { Input } from "@golem/ui";
 import { Modal } from "@golem/ui";
 import { SelectableCard } from "@golem/ui";
 import { formatTokenValue } from "./CurrencyCell";
@@ -113,8 +114,8 @@ export function StreamTopUpModal({
 
         <label className="label mt-5">Custom duration</label>
         <div className="relative mt-2">
-          <input
-            className="input h-10 pr-10"
+          <Input
+            inputClassName="h-10 pr-10"
             disabled={busy}
             onChange={(event) => setCustom(event.target.value)}
             placeholder="45m, 1h, 2d"

@@ -8,7 +8,6 @@ from fastapi.testclient import TestClient
 from provider.main import app
 from provider.payments.lease_quote_service import LeaseQuoteService
 
-
 REQUESTOR = "0x3333333333333333333333333333333333333333"
 TOKEN = "0x4444444444444444444444444444444444444444"
 LEASE = "0x" + "11" * 32
@@ -177,6 +176,92 @@ def test_create_vm_accepts_valid_stream(monkeypatch, client: TestClient):
         assert resp.json()["name"] == "test-vm"
         # mapping persisted
         assert dummy_map.set_calls == [("test-vm", 123)]
+    finally:
+        app.container.stream_reader.reset_override()
+        app.container.stream_map.reset_override()
+        app.container.config.override(old)
+
+
+def test_create_vm_accepts_quote_when_live_pricing_changes(
+    monkeypatch, client: TestClient
+):
+    old = dict(app.container.config())
+    cfg = dict(old)
+    cfg.update(
+        {
+            "DEFAULT_VM_IMAGE": "24.04",
+            "STREAM_PAYMENT_ADDRESS": "0x1111111111111111111111111111111111111111",
+            "POLYGON_RPC_URL": "http://localhost",
+            "PROVIDER_ID": "0x2222222222222222222222222222222222222222",
+            "GLM_TOKEN_ADDRESS": TOKEN,
+            "PRICE_GLM_PER_CORE_MONTH": "0",
+            "PRICE_GLM_PER_GB_RAM_MONTH": "0",
+            "PRICE_GLM_PER_GB_STORAGE_MONTH": "0",
+        }
+    )
+    try:
+        app.container.config.override(cfg)
+
+        def fail_if_repriced():
+            raise AssertionError("validation must not fetch live GLM pricing")
+
+        monkeypatch.setattr(
+            "provider.utils.pricing.fetch_glm_usd_price",
+            fail_if_repriced,
+        )
+
+        class Reader:
+            def __init__(self, *a, **kw):
+                pass
+
+            def get_stream(self, *_):
+                return stream(cfg, terms_hash(cfg))
+
+            @property
+            def web3(self):
+                class W3:
+                    class Eth:
+                        chain_id = 31337
+
+                        def get_block(self, *_):
+                            return {"timestamp": 150}
+
+                    eth = Eth()
+
+                return W3()
+
+        app.container.stream_reader.override(providers.Factory(Reader))
+
+        from provider.vm.models import VMInfo, VMResources, VMStatus
+
+        app.container.vm_service().create_vm = AsyncMock(
+            return_value=VMInfo(
+                id="test-vm",
+                name="test-vm",
+                status=VMStatus.RUNNING,
+                resources=VMResources(cpu=1, memory=1, storage=10),
+            )
+        )
+
+        class DummyStreamMap:
+            async def set(self, *_):
+                return None
+
+            async def all_items(self):
+                return {}
+
+        app.container.stream_map.override(DummyStreamMap())
+
+        resp = client.post(
+            "/api/v1/vms",
+            json={
+                "name": "test-vm",
+                "ssh_key": "ssh-rsa AAA...",
+                "resources": {"cpu": 1, "memory": 1, "storage": 10},
+                "payment": payment(123, terms_hash(cfg)),
+            },
+        )
+        assert resp.status_code == 200
     finally:
         app.container.stream_reader.reset_override()
         app.container.stream_map.reset_override()

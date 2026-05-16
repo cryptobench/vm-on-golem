@@ -50,6 +50,8 @@ const READY_STAGES = new Set([
   "deleted",
   "terminated",
   "offline",
+  "failed",
+  "error",
 ]);
 
 const STATUS_LABELS: Record<string, string> = {
@@ -133,6 +135,36 @@ export function deriveVmDisplayLifecycle({
       lifecycle,
     })
   ) {
+    const failureStatus = lastKnownFailureStatus(lifecycle, fallback);
+    if (failureStatus) {
+      return deriveVmLifecycle({
+        status: failureStatus,
+        lifecycle_stage: "failed",
+        status_message:
+          lifecycle?.status_message ||
+          fallback?.status_message ||
+          STATUS_MESSAGES[failureStatus],
+        progress: lifecycle?.progress ?? fallback?.progress ?? 100,
+        transitioning: false,
+        next_poll_seconds: 8,
+      });
+    }
+
+    const transitionalStatus = lastKnownTransitionalStatus(lifecycle, fallback);
+    if (transitionalStatus) {
+      return deriveVmLifecycle({
+        status: transitionalStatus,
+        lifecycle_stage: lastKnownLifecycleStage(lifecycle, fallback),
+        status_message: STATUS_MESSAGES.offline,
+        progress:
+          lifecycle?.progress ??
+          fallback?.progress ??
+          PROGRESS_BY_STATUS[transitionalStatus],
+        transitioning: true,
+        next_poll_seconds: 8,
+      });
+    }
+
     return deriveVmLifecycle({
       status: "offline",
       lifecycle_stage: lastKnownLifecycleStage(lifecycle, fallback),
@@ -247,6 +279,36 @@ function lastKnownLifecycleStage(
   );
 }
 
+function lastKnownTransitionalStatus(
+  lifecycle?: LifecycleSource | null,
+  fallback?: LifecycleSource | null,
+) {
+  const lifecycleStatus = normalizeStatus(lifecycle?.status);
+  if (TRANSITIONAL_STATUSES.has(lifecycleStatus)) return lifecycleStatus;
+
+  const fallbackStatus = normalizeStatus(fallback?.status);
+  if (TRANSITIONAL_STATUSES.has(fallbackStatus)) return fallbackStatus;
+
+  return null;
+}
+
+function lastKnownFailureStatus(
+  lifecycle?: LifecycleSource | null,
+  fallback?: LifecycleSource | null,
+) {
+  const lifecycleStatus = normalizeStatus(lifecycle?.status);
+  if (lifecycleStatus === "failed" || lifecycleStatus === "error") {
+    return lifecycleStatus;
+  }
+
+  const fallbackStatus = normalizeStatus(fallback?.status);
+  if (fallbackStatus === "failed" || fallbackStatus === "error") {
+    return fallbackStatus;
+  }
+
+  return null;
+}
+
 function normalizeStage(stage?: string | null) {
   return String(stage || "unknown")
     .trim()
@@ -266,7 +328,7 @@ function toneForStatus(status: string): VmLifecycleTone {
     return "danger";
   }
   if (status === "stopped" || status === "suspended") return "neutral";
-  if (TRANSITIONAL_STATUSES.has(status)) return "warning";
+  if (TRANSITIONAL_STATUSES.has(status)) return "primary";
   return "primary";
 }
 

@@ -2,7 +2,7 @@
 import React from "react";
 import { useProjects } from "../../context/ProjectsContext";
 import { Button } from "@golem/ui";
-import { FormField, TextInput } from "@golem/ui";
+import { FormField, Input } from "@golem/ui";
 import { PageHeader } from "@golem/ui";
 import { cn } from "@golem/ui";
 
@@ -22,7 +22,7 @@ export default function ProjectsPage() {
             <div className="card-body grid gap-3">
               <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-center">
                 <FormField label="Name">
-                  <TextInput value={p.name} onChange={(e) => renameProject(p.id, e.target.value)} />
+                  <Input value={p.name} onChange={(e) => renameProject(p.id, e.target.value)} />
                 </FormField>
                 <div className="flex gap-2 pt-6 sm:pt-0">
                   <Button variant="secondary" onClick={() => setActive(p.id)} disabled={activeId === p.id}>Set Active</Button>

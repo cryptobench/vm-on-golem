@@ -426,6 +426,7 @@ class ProviderLiveService:
         stream_status_service: Any,
         monitoring_service: Any,
         auth_service: Any,
+        webhook_service: Any = None,
     ):
         self.broadcaster = broadcaster
         self.provider_info_service = provider_info_service
@@ -433,6 +434,7 @@ class ProviderLiveService:
         self.vm_application_service = vm_application_service
         self.stream_status_service = stream_status_service
         self.monitoring_service = monitoring_service
+        self.webhook_service = webhook_service
         self.auth_service = auth_service
 
     async def stream_provider(self, websocket: WebSocket) -> None:
@@ -617,6 +619,11 @@ class ProviderLiveService:
                 for rule in self.monitoring_service.list_alert_rules()
             ]
         if scope == "webhooks":
+            if self.webhook_service is not None:
+                return [
+                    webhook.model_dump(mode="json")
+                    for webhook in self.webhook_service.list_webhooks()
+                ]
             return [
                 webhook.model_dump(mode="json")
                 for webhook in self.monitoring_service.list_webhooks()

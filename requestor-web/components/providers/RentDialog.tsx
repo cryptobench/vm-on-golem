@@ -20,7 +20,10 @@ import {
 } from "../../lib/api";
 import { getPaymentNetworkErrorMessage } from "../../lib/chain";
 import { markCreateFailedSettled } from "../../lib/rentalLifecycle";
-import { openPaymentStream } from "../../lib/paymentStreams";
+import {
+  openPaymentStream,
+  type OpenedPaymentStream,
+} from "../../lib/paymentStreams";
 import { vmDetailsHref } from "../../lib/routes";
 import { getRequestorRuntimeConfig } from "../../lib/runtimeConfig";
 import { terminateStreamWithWallet } from "../../lib/streams";
@@ -102,6 +105,7 @@ export function RentDialog({
   const [openedStreamPaymentAddress, setOpenedStreamPaymentAddress] =
     React.useState<string>("");
   const [openedPayment, setOpenedPayment] = React.useState<any>(null);
+  const [openedImage, setOpenedImage] = React.useState<string | null>(null);
   const [step, setStep] = React.useState(0);
   const [preset, setPreset] = React.useState<RentDurationPreset>("30d");
   const [customInput, setCustomInput] = React.useState("");
@@ -112,6 +116,7 @@ export function RentDialog({
     setStreamId(null);
     setOpenedStreamPaymentAddress("");
     setOpenedPayment(null);
+    setOpenedImage(null);
     setError(null);
     setPhase("");
     setStep(0);
@@ -165,17 +170,7 @@ export function RentDialog({
   });
   const actionDisabled = Boolean(currentStepDisabledReason) || creating;
 
-  const openStream = async (): Promise<{
-    id: string;
-    contractAddress: string;
-    payment: {
-      stream_id: number;
-      lease_id: string;
-      terms_hash: string;
-      rate_per_second_wei: number;
-      duration_seconds: number;
-    };
-  }> => {
+  const openStream = async (): Promise<OpenedPaymentStream> => {
     setError(null);
     walletDebug("rent-dialog:open-stream:start", {
       providerId: provider.provider_id,
@@ -188,12 +183,14 @@ export function RentDialog({
       durationSeconds,
       ads: adsMode,
       account,
+      vmName: name.trim(),
       ensurePaymentsNetwork,
       onPhase: setPhase,
     });
     setStreamId(opened.id);
     setOpenedStreamPaymentAddress(opened.contractAddress);
     setOpenedPayment(opened.payment);
+    setOpenedImage(opened.image || null);
     walletDebug("rent-dialog:open-stream:done", {
       providerId: provider.provider_id,
       streamId: opened.id,
@@ -226,6 +223,7 @@ export function RentDialog({
               ""
             ).trim(),
             payment: openedPayment,
+            image: openedImage,
           }
         : await openStream();
       const activeStreamId = opened.id;
@@ -236,6 +234,7 @@ export function RentDialog({
         resources: spec,
         ssh_key: sshKey,
         payment: opened.payment,
+        ...(opened.image ? { image: opened.image } : {}),
       } as CreateVMRequest;
       pendingEntry = {
         name: payload.name,

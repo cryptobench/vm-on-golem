@@ -1,7 +1,7 @@
 from typing import Optional
 
 from dependency_injector.wiring import Provide, inject
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import PlainTextResponse
 
 from provider.auth.dependencies import (
@@ -21,10 +21,17 @@ from provider.monitoring.domain import (
     MetricsLatestResponse,
     MetricSource,
     MonitoringOverview,
-    WebhookConfig,
-    WebhookTestResponse,
 )
 from provider.monitoring.services import MonitoringService
+from provider.webhooks.domain import (
+    WebhookConfig,
+    WebhookDeliveryAttempt,
+    WebhookPreviewRequest,
+    WebhookPreviewResponse,
+    WebhookTestRequest,
+    WebhookTestResponse,
+)
+from provider.webhooks.service import WebhookService
 
 router = APIRouter()
 
@@ -80,12 +87,9 @@ async def record_guest_sample(
         Provide[Container.provider_event_broadcaster]
     ),
 ) -> GuestMetricAccepted:
-    try:
-        result = await monitoring_service.record_guest_sample(vm_id, payload)
-        await event_broadcaster.publish(["monitoring", "metrics"])
-        return result
-    except ValueError as exc:
-        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    result = await monitoring_service.record_guest_sample(vm_id, payload)
+    await event_broadcaster.publish(["monitoring", "metrics"])
+    return result
 
 
 @router.get(
@@ -165,11 +169,9 @@ async def create_alert_rule(
 @inject
 async def list_webhooks(
     _admin: AdminIdentity = Depends(require_provider_admin),
-    monitoring_service: MonitoringService = Depends(
-        Provide[Container.monitoring_service]
-    ),
+    webhook_service: WebhookService = Depends(Provide[Container.webhook_service]),
 ) -> list[WebhookConfig]:
-    return monitoring_service.list_webhooks()
+    return webhook_service.list_webhooks()
 
 
 @router.post("/monitoring/webhooks", response_model=WebhookConfig)
@@ -177,16 +179,67 @@ async def list_webhooks(
 async def create_webhook(
     webhook: WebhookConfig,
     _admin: AdminIdentity = Depends(require_provider_admin),
-    monitoring_service: MonitoringService = Depends(
-        Provide[Container.monitoring_service]
-    ),
+    webhook_service: WebhookService = Depends(Provide[Container.webhook_service]),
     event_broadcaster: ProviderEventBroadcaster = Depends(
         Provide[Container.provider_event_broadcaster]
     ),
 ) -> WebhookConfig:
-    created = monitoring_service.create_webhook(webhook)
+    created = webhook_service.create_webhook(webhook)
     await event_broadcaster.publish(["webhooks"])
     return created
+
+
+@router.put("/monitoring/webhooks/{webhook_id}", response_model=WebhookConfig)
+@inject
+async def update_webhook(
+    webhook_id: int,
+    webhook: WebhookConfig,
+    _admin: AdminIdentity = Depends(require_provider_admin),
+    webhook_service: WebhookService = Depends(Provide[Container.webhook_service]),
+    event_broadcaster: ProviderEventBroadcaster = Depends(
+        Provide[Container.provider_event_broadcaster]
+    ),
+) -> WebhookConfig:
+    updated = webhook_service.update_webhook(webhook_id, webhook)
+    await event_broadcaster.publish(["webhooks"])
+    return updated
+
+
+@router.delete("/monitoring/webhooks/{webhook_id}", status_code=204)
+@inject
+async def delete_webhook(
+    webhook_id: int,
+    _admin: AdminIdentity = Depends(require_provider_admin),
+    webhook_service: WebhookService = Depends(Provide[Container.webhook_service]),
+    event_broadcaster: ProviderEventBroadcaster = Depends(
+        Provide[Container.provider_event_broadcaster]
+    ),
+) -> None:
+    webhook_service.delete_webhook(webhook_id)
+    await event_broadcaster.publish(["webhooks"])
+
+
+@router.get(
+    "/monitoring/webhooks/{webhook_id}/deliveries",
+    response_model=list[WebhookDeliveryAttempt],
+)
+@inject
+async def list_webhook_deliveries(
+    webhook_id: int,
+    _admin: AdminIdentity = Depends(require_provider_admin),
+    webhook_service: WebhookService = Depends(Provide[Container.webhook_service]),
+) -> list[WebhookDeliveryAttempt]:
+    return webhook_service.list_delivery_attempts(webhook_id)
+
+
+@router.post("/monitoring/webhooks/preview", response_model=WebhookPreviewResponse)
+@inject
+async def preview_webhook(
+    request: WebhookPreviewRequest,
+    _admin: AdminIdentity = Depends(require_provider_admin),
+    webhook_service: WebhookService = Depends(Provide[Container.webhook_service]),
+) -> WebhookPreviewResponse:
+    return webhook_service.preview(request)
 
 
 @router.post(
@@ -195,20 +248,16 @@ async def create_webhook(
 @inject
 async def test_webhook(
     webhook_id: int,
+    request: WebhookTestRequest | None = None,
     _admin: AdminIdentity = Depends(require_provider_admin),
-    monitoring_service: MonitoringService = Depends(
-        Provide[Container.monitoring_service]
-    ),
+    webhook_service: WebhookService = Depends(Provide[Container.webhook_service]),
     event_broadcaster: ProviderEventBroadcaster = Depends(
         Provide[Container.provider_event_broadcaster]
     ),
 ) -> WebhookTestResponse:
-    try:
-        result = await monitoring_service.test_webhook(webhook_id)
-        await event_broadcaster.publish(["webhooks"])
-        return result
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    result = await webhook_service.test_webhook(webhook_id, request)
+    await event_broadcaster.publish(["webhooks"])
+    return result
 
 
 @router.get("/metrics")

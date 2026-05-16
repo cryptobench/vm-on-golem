@@ -181,6 +181,20 @@ export type MetricSample = {
   vm_id: string | null;
 };
 
+export type MetricHistoryPoint = {
+  scope: "host" | "vm";
+  source: "infrastructure" | "guest_agent";
+  vm_id: string | null;
+  metric: string;
+  unit: string;
+  bucket_start: string;
+  bucket_end: string;
+  avg: number;
+  min: number;
+  max: number;
+  count: number;
+};
+
 export type MetricsLatestResponse = {
   host: Record<string, unknown>;
   vms: Record<string, Record<string, unknown>>;
@@ -188,7 +202,10 @@ export type MetricsLatestResponse = {
 };
 
 export type MetricsHistoryResponse = {
-  samples: MetricSample[];
+  points: MetricHistoryPoint[];
+  range: HistoryRange;
+  resolution_seconds: number;
+  generated_at: string;
 };
 
 export type MonitoringOverview = {
@@ -230,15 +247,66 @@ export type WebhookConfig = {
   name: string;
   url: string;
   enabled: boolean;
-  last_status: string | null;
+  service_type: "generic_json" | "discord" | "slack";
+  events: WebhookEventType[];
+  template: WebhookTemplate;
+  last_status: "pending" | "success" | "failed" | null;
+  last_http_status: number | null;
   last_error: string | null;
   last_delivered_at: string | null;
+};
+
+export type WebhookEventType =
+  | "alert.fired"
+  | "alert.resolved"
+  | "vm.ready"
+  | "vm.failed"
+  | "vm.stopped"
+  | "vm.deleted"
+  | "payment.stream.lost";
+
+export type WebhookTemplateField = {
+  name: string;
+  value: string;
+};
+
+export type WebhookTemplate = {
+  title: string;
+  message: string;
+  color: string;
+  fields: WebhookTemplateField[];
+  footer: string;
+};
+
+export type WebhookDeliveryAttempt = {
+  id: number | null;
+  webhook_id: number;
+  event_id: string;
+  event_type: string;
+  attempt: number;
+  status: "pending" | "success" | "failed";
+  http_status: number | null;
+  error: string | null;
+  attempted_at: string;
+};
+
+export type WebhookPreviewRequest = {
+  service_type: WebhookConfig["service_type"];
+  template: WebhookTemplate;
+  event_type: WebhookEventType;
+};
+
+export type WebhookPreviewResponse = {
+  service_type: WebhookConfig["service_type"];
+  payload: Record<string, unknown>;
 };
 
 export type WebhookTestResponse = {
   ok: boolean;
   status: number | null;
   error: string | null;
+  event_id: string | null;
+  payload: Record<string, unknown> | null;
 };
 
 export type HistoryRange = "1h" | "6h" | "24h" | "7d" | "30d";

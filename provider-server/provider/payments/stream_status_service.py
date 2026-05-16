@@ -84,18 +84,16 @@ class StreamStatusService:
 
         expected_recipient = str(self._setting("PROVIDER_ID", "") or "")
         expected_token = str(self._setting("GLM_TOKEN_ADDRESS", "") or "")
-        expected_rate = None
         expected_terms_hash = None
         if resources is not None:
             if payment.duration_seconds is None or int(payment.duration_seconds) <= 0:
                 raise InvalidStreamError("payment duration required")
-            quote_service = LeaseQuoteService(self.settings)
-            expected_rate = quote_service._rate_per_second_wei(resources)
             chain_id = getattr(reader.web3.eth, "chain_id", None)
             if chain_id is None:
                 chain_id = int(reader.web3.eth.get_block("latest").get("chainId", 0))
             if not chain_id:
                 raise InvalidStreamError("chain id unavailable")
+            stream_rate = int(stream["ratePerSecond"])
             expected_terms_hash = LeaseQuoteService._terms_hash(
                 provider_address=expected_recipient,
                 requestor_address=requestor_address,
@@ -104,7 +102,7 @@ class StreamStatusService:
                 cpu=int(resources.cpu),
                 memory=int(resources.memory),
                 storage=int(resources.storage),
-                rate_per_second=int(expected_rate),
+                rate_per_second=stream_rate,
                 duration_seconds=int(payment.duration_seconds),
                 contract_address=self._stream_contract_address(),
                 glm_token_address=expected_token,
@@ -125,9 +123,8 @@ class StreamStatusService:
             (stream["token"].lower() == expected_token.lower(), "token mismatch"),
             (int(stream["stopTime"]) > now, "stream expired"),
             (
-                int(stream["ratePerSecond"])
-                >= int(expected_rate or payment.rate_per_second_wei),
-                "stream rate too low",
+                int(stream["ratePerSecond"]) == int(payment.rate_per_second_wei),
+                "stream rate mismatch",
             ),
             (
                 _normalize_bytes32(stream["leaseId"])

@@ -5,6 +5,7 @@ from typing import Any, Optional
 from pydantic import BaseModel, Field, field_validator
 
 from provider.utils.time import ensure_utc, utc_now
+from provider.webhooks.domain import WebhookConfig, WebhookTestResponse
 
 
 class MetricSource(str, Enum):
@@ -41,6 +42,25 @@ class MetricSample(BaseModel):
     @field_validator("timestamp")
     @classmethod
     def ensure_timestamp_timezone(cls, value: datetime) -> datetime:
+        return ensure_utc(value)
+
+
+class MetricHistoryPoint(BaseModel):
+    scope: MetricScope
+    source: MetricSource
+    vm_id: Optional[str] = None
+    metric: str
+    unit: str
+    bucket_start: datetime
+    bucket_end: datetime
+    avg: float
+    min: float
+    max: float
+    count: int
+
+    @field_validator("bucket_start", "bucket_end")
+    @classmethod
+    def ensure_bucket_timezone(cls, value: datetime) -> datetime:
         return ensure_utc(value)
 
 
@@ -87,7 +107,15 @@ class MetricsLatestResponse(BaseModel):
 
 
 class MetricsHistoryResponse(BaseModel):
-    samples: list[MetricSample]
+    points: list[MetricHistoryPoint]
+    range: MetricHistoryRange
+    resolution_seconds: int
+    generated_at: datetime
+
+    @field_validator("generated_at")
+    @classmethod
+    def ensure_history_generated_at_timezone(cls, value: datetime) -> datetime:
+        return ensure_utc(value)
 
 
 class MonitoringOverview(BaseModel):
@@ -116,26 +144,3 @@ class AlertRule(BaseModel):
     duration_seconds: int = 300
     severity: str = "warning"
     enabled: bool = True
-
-
-class WebhookConfig(BaseModel):
-    id: Optional[int] = None
-    name: str
-    url: str
-    enabled: bool = True
-    last_status: Optional[str] = None
-    last_error: Optional[str] = None
-    last_delivered_at: Optional[datetime] = None
-
-    @field_validator("last_delivered_at")
-    @classmethod
-    def ensure_last_delivered_at_timezone(
-        cls, value: Optional[datetime]
-    ) -> Optional[datetime]:
-        return ensure_utc(value) if value is not None else value
-
-
-class WebhookTestResponse(BaseModel):
-    ok: bool
-    status: Optional[int] = None
-    error: Optional[str] = None

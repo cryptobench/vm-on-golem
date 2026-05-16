@@ -5,10 +5,9 @@ import Link from "next/link";
 import {
   RiInformationLine,
   RiRefreshLine,
-  RiSearchLine,
   RiSettings3Line,
 } from "@remixicon/react";
-import { ToggleSwitch } from "@golem/ui";
+import { Input, ToggleSwitch } from "@golem/ui";
 
 type RentalsToolbarProps = {
   query: string;
@@ -42,12 +41,8 @@ export function RentalsToolbar({
 
       <label className="relative min-w-0 flex-1 lg:max-w-md">
         <span className="sr-only">Search VMs</span>
-        <RiSearchLine
-          className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-text-muted"
-          aria-hidden
-        />
-        <input
-          className="input h-10 pl-11 text-sm"
+        <Input
+          type="search"
           value={query}
           onChange={(event) => onQueryChange(event.target.value)}
           placeholder="Search VMs by name or ID..."

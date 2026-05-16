@@ -36,6 +36,7 @@ renamed, removed, or materially changes purpose.
 - `StepProgress` - Multi-step progress indicator.
 - `SummaryChip` - Compact summary item with optional icon.
 - `Tabs` - Segmented tab navigation.
+- `TimeSeriesAreaChart` - Responsive timestamp-based usage chart with average line, min/max band, and range-aware labels.
 - `Toast` - Toast provider and hook for transient messages.
 - `ToggleSwitch` - Binary toggle control.
 - `cn` - Class-name joining helper.

@@ -4,6 +4,7 @@ from typing import Dict, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
+from provider.payments.domain import LeasePayment
 from provider.utils.time import ensure_utc, utc_now
 
 
@@ -273,6 +274,10 @@ class ResizeVMRequest(BaseModel):
     """Request to resize an existing VM."""
 
     resources: VMResources
+    payment: Optional[LeasePayment] = Field(
+        default=None,
+        description="Replacement lease-bound StreamPayment proof for the resized VM",
+    )
 
 
 class CreateSnapshotRequest(BaseModel):

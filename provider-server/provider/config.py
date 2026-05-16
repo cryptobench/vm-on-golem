@@ -497,7 +497,7 @@ class Settings(BaseSettings):
             self._profile_defaults(self.PAYMENTS_NETWORK).get("faucet_enabled", False)
         )
 
-    DEFAULT_VM_IMAGE: str = "ubuntu:24.04"
+    DEFAULT_VM_IMAGE: str = "24.04"
     VM_DATA_DIR: str = ""
     SSH_KEY_DIR: str = ""
     CLOUD_INIT_DIR: str = ""

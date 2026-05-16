@@ -10,6 +10,7 @@ import {
   StatCard,
   StatusBadge,
   Tabs,
+  TimeSeriesAreaChart,
 } from "@golem/ui";
 import {
   RiArrowLeftLine,
@@ -269,8 +270,9 @@ function MetricChart({
           <h2 className="text-base font-semibold text-text-primary">{title}</h2>
           <RangePicker value={range} onChange={setRange} />
         </div>
-        <LineAreaChart
+        <TimeSeriesAreaChart
           data={metricChartPoints(history, metric)}
+          range={range}
           height={240}
           yUnit={metric === "cpu_percent" ? "%" : undefined}
           valueFormatter={metric.endsWith("_bytes") ? formatBytes : undefined}

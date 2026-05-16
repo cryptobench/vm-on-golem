@@ -3,10 +3,10 @@ import {
   Card,
   CardBody,
   DataTable,
-  LineAreaChart,
   PageHeader,
   ProgressBar,
   StatCard,
+  TimeSeriesAreaChart,
 } from "@golem/ui";
 import { RiCpuLine, RiDownloadLine, RiHardDrive3Line, RiLineChartLine, RiUploadLine } from "@remixicon/react";
 import { EndpointErrors, LoadingGrid } from "../../components/StateViews";
@@ -137,7 +137,12 @@ function HostUsageCharts({
             <h2 className="text-base font-semibold text-text-primary">Host CPU Usage</h2>
             <RangePicker value={range} onChange={handleRangeChange} />
           </div>
-          <LineAreaChart data={metricChartPoints(history, "cpu_percent")} yUnit="%" height={240} />
+          <TimeSeriesAreaChart
+            data={metricChartPoints(history, "cpu_percent")}
+            range={range}
+            yUnit="%"
+            height={240}
+          />
         </CardBody>
       </Card>
       <Card>
@@ -146,8 +151,9 @@ function HostUsageCharts({
             <h2 className="text-base font-semibold text-text-primary">Host Memory Usage</h2>
             <RangePicker value={range} onChange={handleRangeChange} />
           </div>
-          <LineAreaChart
+          <TimeSeriesAreaChart
             data={metricChartPoints(history, "memory_used_bytes")}
+            range={range}
             height={240}
             valueFormatter={formatBytes}
           />
