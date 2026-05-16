@@ -7,6 +7,10 @@ class CreateStreamCommand(BaseModel):
     provider_address: str = Field(..., min_length=1)
     deposit_wei: int = Field(..., ge=1)
     rate_per_second_wei: int = Field(..., ge=1)
+    lease_id: str = Field(..., min_length=1)
+    terms_hash: str = Field(..., min_length=1)
+    quote_expires_at: int = Field(..., ge=1)
+    provider_signature: str = Field(..., min_length=1)
 
 
 class TopUpStreamCommand(BaseModel):

@@ -72,6 +72,24 @@ def test_local_stack_writes_aggregate_setup_and_service_logs(tmp_path):
     assert "provider line" in (tmp_path / "provider.log").read_text()
 
 
+def test_local_stack_can_echo_tailed_logs_without_rewriting_source_log(tmp_path):
+    local_stack = load_local_stack_module()
+    sink = local_stack.configure_stack_logging(
+        local_stack.LogConfig(log_dir=tmp_path, max_bytes=1024, backups=1)
+    )
+
+    local_stack.log_service(
+        "provider",
+        "provider file tail line",
+        echo=False,
+        write_service_log=False,
+    )
+    sink.close()
+
+    assert "provider file tail line" in (tmp_path / "local-stack.log").read_text()
+    assert not (tmp_path / "provider.log").exists()
+
+
 def test_local_stack_logs_setup_command_output(tmp_path):
     local_stack = load_local_stack_module()
     sink = local_stack.configure_stack_logging(
@@ -121,8 +139,10 @@ def test_local_stack_build_services_passes_log_env_to_every_service(tmp_path):
         assert service.env["GOLEM_LOCAL_STACK_LOG_DIR"] == str(tmp_path)
         assert service.env["GOLEM_LOCAL_STACK_LOG_MAX_BYTES"] == "2048"
         assert service.env["GOLEM_LOCAL_STACK_LOG_BACKUPS"] == "3"
+        assert service.env["PYTHONUNBUFFERED"] == "1"
 
-    provider = next(service for service in services if service.name == "provider")
+    providers = [service for service in services if service.name == "provider"]
+    provider = providers[0]
     provider_desktop = next(
         service for service in services if service.name == "provider-desktop"
     )
@@ -140,6 +160,7 @@ def test_local_stack_build_services_passes_log_env_to_every_service(tmp_path):
     )
 
     assert provider.env["GOLEM_PROVIDER_LOG_DIR"] == str(tmp_path)
+    assert any(service.write_service_log is False for service in providers)
     assert provider_desktop.env["GOLEM_PROVIDER_LOG_DIR"] == str(tmp_path)
     assert port_checker.env["PORT_CHECKER_LOG_DIR"] == str(tmp_path)
     assert requestor_api.env["GOLEM_REQUESTOR_LOG_DIR"] == str(tmp_path)

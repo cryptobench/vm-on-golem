@@ -1465,15 +1465,17 @@ httpx = ">=0.23,<1"
 
 [[package]]
 name = "golem-streaming-abi"
-version = "0.1.1"
-description = "Shared StreamPayment and ERC20 ABI definitions for VM on Golem"
+version = "0.1.0"
+description = "Shared native-ETH StreamPayment ABI definitions for VM on Golem"
 optional = false
-python-versions = "<4.0,>=3.9"
+python-versions = "^3.9"
 groups = ["main"]
-files = [
-    {file = "golem_streaming_abi-0.1.1-py3-none-any.whl", hash = "sha256:cc4b36d32eca37b13e8801c462397525b982daf1a88779c59278e3e8d992b1ba"},
-    {file = "golem_streaming_abi-0.1.1.tar.gz", hash = "sha256:833cb9f523e5c5d65dffe4300e287abe1c0b26cce7486c268446a8d081e03998"},
-]
+files = []
+develop = true
+
+[package.source]
+type = "directory"
+url = "../streaming-abi"
 
 [[package]]
 name = "greenlet"
@@ -3536,4 +3538,4 @@ propcache = ">=0.2.1"
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.11"
-content-hash = "8151018c24774774adb91336a3004d150105c4f32a23f1df6d0f9412c7eaaa3a"
+content-hash = "447027a68ab586bbcb69944897bd74083a2452afb46c2820bc83d8520543fe8c"

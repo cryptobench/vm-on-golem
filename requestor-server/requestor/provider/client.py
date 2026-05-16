@@ -1,10 +1,15 @@
 import logging
+import hashlib
+import json
 import time
 from typing import Dict, Optional
 
 import aiohttp
+from eth_account import Account
+from eth_account.messages import encode_typed_data
 
 from requestor.errors import ProviderError
+from requestor.config import config
 
 logger = logging.getLogger(__name__)
 
@@ -64,20 +69,17 @@ class ProviderClient:
         memory: int,
         storage: int,
         ssh_key: str,
-        stream_id: int | None = None,
+        payment: dict | None = None,
     ) -> Dict:
         """Create a VM on the provider (async job semantics)."""
-        session = self._require_session()
         payload = {
             "name": name,
             "resources": {"cpu": cpu, "memory": memory, "storage": storage},
             "ssh_key": ssh_key,
         }
-        if stream_id is not None:
-            payload["stream_id"] = int(stream_id)
-        async with session.post(
-            f"{self.provider_url}/api/v1/vms?async=true", json=payload
-        ) as response:
+        if payment is not None:
+            payload["payment"] = payment
+        async with self._post_json("/api/v1/vms?async=true", payload) as response:
             if not response.ok:
                 error_text = await response.text()
                 raise ProviderError(f"Failed to create VM: {error_text}")
@@ -95,6 +97,16 @@ class ProviderClient:
                 "status": data.get("status", "ready"),
                 "_vm": data,
             }
+
+    async def create_lease_quote(self, payload: Dict) -> Dict:
+        session = self._require_session()
+        async with session.post(
+            f"{self.provider_url}/api/v1/payments/lease-quotes", json=payload
+        ) as response:
+            if not response.ok:
+                error_text = await response.text()
+                raise ProviderError(f"Failed to create lease quote: {error_text}")
+            return await response.json()
 
     async def get_create_job(self, job_id: str) -> Dict:
         """Get provider-side VM creation job lifecycle status."""
@@ -136,10 +148,7 @@ class ProviderClient:
 
     async def start_vm(self, vm_id: str) -> Dict:
         """Start a VM."""
-        session = self._require_session()
-        async with session.post(
-            f"{self.provider_url}/api/v1/vms/{vm_id}/start"
-        ) as response:
+        async with self._post_json(f"/api/v1/vms/{vm_id}/start", {}) as response:
             if not response.ok:
                 error_text = await response.text()
                 raise ProviderError(f"Failed to start VM: {error_text}")
@@ -147,10 +156,7 @@ class ProviderClient:
 
     async def stop_vm(self, vm_id: str) -> Dict:
         """Stop a VM."""
-        session = self._require_session()
-        async with session.post(
-            f"{self.provider_url}/api/v1/vms/{vm_id}/stop"
-        ) as response:
+        async with self._post_json(f"/api/v1/vms/{vm_id}/stop", {}) as response:
             if not response.ok:
                 error_text = await response.text()
                 raise ProviderError(f"Failed to stop VM: {error_text}")
@@ -170,10 +176,9 @@ class ProviderClient:
 
     async def resize_vm(self, vm_id: str, cpu: int, memory: int, storage: int) -> Dict:
         """Resize a VM."""
-        session = self._require_session()
-        async with session.post(
-            f"{self.provider_url}/api/v1/vms/{vm_id}/resize",
-            json={"resources": {"cpu": cpu, "memory": memory, "storage": storage}},
+        async with self._post_json(
+            f"/api/v1/vms/{vm_id}/resize",
+            {"resources": {"cpu": cpu, "memory": memory, "storage": storage}},
         ) as response:
             if not response.ok:
                 error_text = await response.text()
@@ -204,14 +209,13 @@ class ProviderClient:
         self, vm_id: str, name: str | None = None, comment: str | None = None
     ) -> Dict:
         """Create a VM snapshot."""
-        session = self._require_session()
         payload = {}
         if name:
             payload["name"] = name
         if comment:
             payload["comment"] = comment
-        async with session.post(
-            f"{self.provider_url}/api/v1/vms/{vm_id}/snapshots", json=payload
+        async with self._post_json(
+            f"/api/v1/vms/{vm_id}/snapshots", payload
         ) as response:
             if not response.ok:
                 error_text = await response.text()
@@ -220,9 +224,8 @@ class ProviderClient:
 
     async def restore_snapshot(self, vm_id: str, snapshot_name: str) -> Dict:
         """Restore a VM snapshot."""
-        session = self._require_session()
-        async with session.post(
-            f"{self.provider_url}/api/v1/vms/{vm_id}/snapshots/{snapshot_name}/restore"
+        async with self._post_json(
+            f"/api/v1/vms/{vm_id}/snapshots/{snapshot_name}/restore", {}
         ) as response:
             if not response.ok:
                 error_text = await response.text()
@@ -231,9 +234,8 @@ class ProviderClient:
 
     async def delete_snapshot(self, vm_id: str, snapshot_name: str) -> None:
         """Delete a VM snapshot."""
-        session = self._require_session()
-        async with session.delete(
-            f"{self.provider_url}/api/v1/vms/{vm_id}/snapshots/{snapshot_name}"
+        async with self._delete_signed(
+            f"/api/v1/vms/{vm_id}/snapshots/{snapshot_name}"
         ) as response:
             if not response.ok:
                 error_text = await response.text()
@@ -241,9 +243,8 @@ class ProviderClient:
 
     async def clone_vm(self, vm_id: str, name: str) -> Dict:
         """Clone a VM."""
-        session = self._require_session()
-        async with session.post(
-            f"{self.provider_url}/api/v1/vms/{vm_id}/clone", json={"name": name}
+        async with self._post_json(
+            f"/api/v1/vms/{vm_id}/clone", {"name": name}
         ) as response:
             if not response.ok:
                 error_text = await response.text()
@@ -252,10 +253,7 @@ class ProviderClient:
 
     async def destroy_vm(self, vm_id: str) -> None:
         """Destroy a VM."""
-        session = self._require_session()
-        async with session.delete(
-            f"{self.provider_url}/api/v1/vms/{vm_id}"
-        ) as response:
+        async with self._delete_signed(f"/api/v1/vms/{vm_id}") as response:
             if not response.ok:
                 error_text = await response.text()
                 raise ProviderError(f"Failed to destroy VM: {error_text}")
@@ -290,11 +288,63 @@ class ProviderClient:
         return self.session
 
     async def _post_vm_action(self, vm_id: str, action: str, label: str) -> Dict:
-        session = self._require_session()
-        async with session.post(
-            f"{self.provider_url}/api/v1/vms/{vm_id}/{action}"
-        ) as response:
+        async with self._post_json(f"/api/v1/vms/{vm_id}/{action}", {}) as response:
             if not response.ok:
                 error_text = await response.text()
                 raise ProviderError(f"Failed to {label}: {error_text}")
             return await response.json()
+
+    def _signed_headers(self, method: str, path: str, body: str) -> Dict[str, str]:
+        account = Account.from_key(config.ethereum_private_key)
+        deadline = int(time.time()) + 300
+        body_hash = "0x" + hashlib.sha256(body.encode()).hexdigest()
+        nonce = str(time.time_ns())
+        signable = encode_typed_data(
+            domain_data={"name": "GolemProviderAction", "version": "2"},
+            message_types={
+                "ProviderAction": [
+                    {"name": "requestor", "type": "address"},
+                    {"name": "method", "type": "string"},
+                    {"name": "path", "type": "string"},
+                    {"name": "bodyHash", "type": "bytes32"},
+                    {"name": "nonce", "type": "string"},
+                    {"name": "deadline", "type": "uint256"},
+                ]
+            },
+            message_data={
+                "requestor": account.address,
+                "method": method.upper(),
+                "path": path,
+                "bodyHash": body_hash,
+                "nonce": nonce,
+                "deadline": deadline,
+            },
+        )
+        signature = Account.sign_message(
+            signable, private_key=config.ethereum_private_key
+        ).signature.hex()
+        return {
+            "content-type": "application/json",
+            "x-golem-requestor": account.address,
+            "x-golem-signature": signature,
+            "x-golem-nonce": nonce,
+            "x-golem-deadline": str(deadline),
+        }
+
+    def _post_json(self, path: str, payload: Dict):
+        session = self._require_session()
+        body = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        clean_path = path.split("?", 1)[0]
+        return session.post(
+            f"{self.provider_url}{path}",
+            data=body,
+            headers=self._signed_headers("POST", clean_path, body),
+        )
+
+    def _delete_signed(self, path: str):
+        session = self._require_session()
+        body = ""
+        return session.delete(
+            f"{self.provider_url}{path}",
+            headers=self._signed_headers("DELETE", path, body),
+        )

@@ -1,5 +1,5 @@
 import type { Rental } from "../../lib/api";
-import type { ChainStream } from "../../lib/streams";
+import { isTerminatedStream, type ChainStream } from "../../lib/streams";
 
 export type DisplayCurrency = "fiat" | "token";
 
@@ -15,7 +15,7 @@ export type StreamStatusKind =
   | "active"
   | "needs-top-up"
   | "out-of-funds"
-  | "halted";
+  | "terminated";
 
 export type TokenTotal = {
   symbol: string;
@@ -23,7 +23,7 @@ export type TokenTotal = {
 };
 
 export function remainingSeconds(row: StreamRow, nowSec: number) {
-  if (row.chain.halted) return 0;
+  if (isTerminatedStream(row.chain)) return 0;
   return Math.max(0, Number(row.chain.stopTime || 0n) - nowSec);
 }
 
@@ -48,7 +48,7 @@ export function spentTokenBalance(row: StreamRow, nowSec: number) {
   const startTime = Number(row.chain.startTime || 0n);
   const stopTime = Number(row.chain.stopTime || 0n);
   const deposit = depositedTokenBalance(row);
-  const effectiveTime = row.chain.halted
+  const effectiveTime = isTerminatedStream(row.chain)
     ? stopTime
     : Math.min(nowSec, stopTime);
   const elapsedSeconds = Math.max(0, effectiveTime - startTime);
@@ -58,13 +58,13 @@ export function spentTokenBalance(row: StreamRow, nowSec: number) {
 export function streamRunwayPercent(row: StreamRow, nowSec: number) {
   const ratePerSecond = Number(row.chain.ratePerSecond) / tokenScale(row);
   const deposit = Number(row.chain.deposit) / tokenScale(row);
-  if (row.chain.halted || ratePerSecond <= 0 || deposit <= 0) return 0;
+  if (isTerminatedStream(row.chain) || ratePerSecond <= 0 || deposit <= 0) return 0;
   const totalSeconds = Math.max(1, Math.floor(deposit / ratePerSecond));
   return Math.max(0, Math.min(100, (remainingSeconds(row, nowSec) / totalSeconds) * 100));
 }
 
 export function streamStatus(row: StreamRow, nowSec: number): StreamStatusKind {
-  if (row.chain.halted) return "halted";
+  if (isTerminatedStream(row.chain)) return "terminated";
   const remaining = remainingSeconds(row, nowSec);
   if (remaining <= 0 || remainingTokenBalance(row, nowSec) <= 0) return "out-of-funds";
   if (remaining < 3600) return "needs-top-up";
@@ -73,7 +73,7 @@ export function streamStatus(row: StreamRow, nowSec: number): StreamStatusKind {
 
 export function isEndedStream(row: StreamRow, nowSec: number) {
   const status = streamStatus(row, nowSec);
-  return status === "halted" || status === "out-of-funds";
+  return status === "terminated" || status === "out-of-funds";
 }
 
 export function formatTokenAmount(value: number, symbol: string, maxDigits = 2) {
@@ -127,7 +127,7 @@ export function sortRowsByImportance(rows: StreamRow[], nowSec: number) {
   const statusRank: Record<StreamStatusKind, number> = {
     "needs-top-up": 0,
     "out-of-funds": 1,
-    halted: 2,
+    terminated: 2,
     active: 3,
   };
 

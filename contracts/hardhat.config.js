@@ -31,6 +31,10 @@ export default defineConfig({
     profiles: {
       default: {
         version: "0.8.20",
+        settings: {
+          optimizer: { enabled: true, runs: 200 },
+          viaIR: true,
+        },
       },
     },
   },
@@ -71,7 +75,7 @@ export default defineConfig({
     hoodi: {
       type: "http",
       chainType: "l1",
-      url: HOODI_RPC_URL || "https://ethereum-hoodi-rpc.publicnode.com",
+      url: HOODI_RPC_URL || "https://rpc.hoodi.ethpandaops.io",
       chainId: DEFAULT_HOODI_CHAIN_ID,
       accounts: PRIVATE_KEY ? [PRIVATE_KEY] : [],
     },

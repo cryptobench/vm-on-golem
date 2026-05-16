@@ -1,8 +1,9 @@
 "use client";
-import { BrowserProvider, Contract } from "ethers";
+import { Contract } from "ethers";
 import streamPayment from "../public/abi/StreamPayment.json";
 import erc20 from "../public/abi/ERC20.json";
 import { useWallet } from "../context/WalletContext";
+import { getPaymentsSigner, getWalletName } from "../lib/walletClient";
 
 export function useStreamActions(spAddr: string | null | undefined) {
   const { ensurePaymentsNetwork } = useWallet();
@@ -15,11 +16,7 @@ export function useStreamActions(spAddr: string | null | undefined) {
   ) {
     if (!spAddr) throw new Error("StreamPayment address missing");
     const sid = typeof streamId === "bigint" ? streamId : BigInt(streamId);
-    const { ethereum } = window as any;
-    if (!ethereum) throw new Error("MetaMask not detected");
-    await ensurePaymentsNetwork();
-    const provider = new BrowserProvider(ethereum);
-    const signer = await provider.getSigner();
+    const signer = await getPaymentsSigner({ ensurePaymentsNetwork });
     const contract = new Contract(spAddr, (streamPayment as any).abi, signer);
     const addWei = ratePerSecond * BigInt(seconds);
     const token = new Contract(tokenAddress, (erc20 as any).abi, signer);
@@ -40,14 +37,11 @@ export function useStreamActions(spAddr: string | null | undefined) {
   ) {
     if (!spAddr) throw new Error("StreamPayment address missing");
     const sid = typeof streamId === "bigint" ? streamId : BigInt(streamId);
-    const { ethereum } = window as any;
-    const walletName = getWalletName(ethereum);
+    const walletName = getWalletName();
     onPhase?.(
       `Waiting for your approval in ${walletName} to terminate the old stream`,
     );
-    await ensurePaymentsNetwork();
-    const provider = new BrowserProvider(ethereum);
-    const signer = await provider.getSigner();
+    const signer = await getPaymentsSigner({ ensurePaymentsNetwork });
     const contract = new Contract(spAddr, (streamPayment as any).abi, signer);
     const tx = await contract.terminate(sid, { gasLimit: 180000n });
     onPhase?.(
@@ -58,11 +52,4 @@ export function useStreamActions(spAddr: string | null | undefined) {
   }
 
   return { topUp, terminate };
-}
-
-function getWalletName(ethereum: any) {
-  if (ethereum?.isMetaMask) return "MetaMask";
-  if (ethereum?.isRabby) return "Rabby";
-  if (ethereum?.isBraveWallet) return "Brave Wallet";
-  return "your wallet";
 }

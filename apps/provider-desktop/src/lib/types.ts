@@ -49,6 +49,8 @@ export type ProviderSummary = {
     available?: Partial<VMResources>;
     total_resources?: Partial<VMResources>;
     available_resources?: Partial<VMResources>;
+    detected?: Partial<VMResources>;
+    allocated?: Partial<VMResources>;
     [key: string]: unknown;
   };
   pricing: Record<string, number | string | null | undefined>;
@@ -59,6 +61,34 @@ export type ProviderSummary = {
     [key: string]: unknown;
   };
 };
+
+export type ProviderPricingSettings = {
+  usd_per_core_month: number;
+  usd_per_gb_ram_month: number;
+  usd_per_gb_storage_month: number;
+  glm_per_core_month: number;
+  glm_per_gb_ram_month: number;
+  glm_per_gb_storage_month: number;
+  warning: string | null;
+};
+
+export type ProviderSettings = {
+  detected_resources: VMResources;
+  offered_resources: VMResources;
+  allocated_resources: VMResources;
+  available_resources: VMResources;
+  minimum_configurable_resources: VMResources;
+  pricing: ProviderPricingSettings;
+};
+
+export type UpdateProviderResources = VMResources;
+
+export type UpdateProviderPricing = Pick<
+  ProviderPricingSettings,
+  | "usd_per_core_month"
+  | "usd_per_gb_ram_month"
+  | "usd_per_gb_storage_month"
+>;
 
 export type VMStatus =
   | "creating"
@@ -120,7 +150,8 @@ export type StreamOnChain = {
   ratePerSecond: number;
   deposit: number;
   withdrawn: number;
-  halted: boolean;
+  leaseId: string;
+  termsHash: string;
 };
 
 export type StreamComputed = {
@@ -137,6 +168,7 @@ export type StreamStatus = {
   computed: StreamComputed;
   verified: boolean;
   reason: string;
+  payment_state?: string;
 };
 
 export type MetricSample = {

@@ -17,6 +17,7 @@ import {
   spentTokenBalance,
   streamStatus,
   type StreamRow,
+  isEndedStream,
 } from "./streamModel";
 
 type StreamTableRowProps = {
@@ -44,7 +45,7 @@ export function StreamTableRow({
   const spent = spentTokenBalance(row, nowSec);
   const balance = remainingTokenBalance(row, nowSec);
   const hourlyUsd = row.usdPrice == null ? null : tokenRate * row.usdPrice;
-  const terminal = row.chain.halted || status === "out-of-funds";
+  const terminal = isEndedStream(row, nowSec);
 
   return (
     <tr className="streams-table-row border-t border-border first:border-t-0">

@@ -15,7 +15,8 @@ class DummyDB:
 
 
 @pytest.mark.asyncio
-async def test_requestor_monitor_topups_when_below_min(monkeypatch):
+@pytest.mark.parametrize("stream_shape", ["current", "transitional", "legacy"])
+async def test_requestor_monitor_topups_when_below_min(monkeypatch, stream_shape):
     # VM with running status and no local stream_id in config; monitor will use resolver
     vms = [
         {
@@ -45,6 +46,21 @@ async def test_requestor_monitor_topups_when_below_min(monkeypatch):
             pass
 
         def call(self):
+            lease_stream = (
+                "0xsender",
+                "0xrecipient",
+                now - 10_000,  # startTime
+                stop_time,
+                rate,  # ratePerSecond
+                0,  # deposit
+                0,  # withdrawn
+                "0x" + "11" * 32,  # leaseId
+                "0x" + "22" * 32,  # termsHash
+            )
+            if stream_shape == "current":
+                return ("0x0", *lease_stream)
+            if stream_shape == "transitional":
+                return lease_stream
             return (
                 "0x0",  # token
                 "0xsender",

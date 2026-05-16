@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import PlainTextResponse
 
 from provider.container import Container
+from provider.live.events import ProviderEventBroadcaster
 from provider.monitoring.domain import (
     AlertRule,
     GuestMetricAccepted,
@@ -66,9 +67,14 @@ async def record_guest_sample(
     monitoring_service: MonitoringService = Depends(
         Provide[Container.monitoring_service]
     ),
+    event_broadcaster: ProviderEventBroadcaster = Depends(
+        Provide[Container.provider_event_broadcaster]
+    ),
 ) -> GuestMetricAccepted:
     try:
-        return await monitoring_service.record_guest_sample(vm_id, payload)
+        result = await monitoring_service.record_guest_sample(vm_id, payload)
+        await event_broadcaster.publish(["monitoring", "metrics"])
+        return result
     except ValueError as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
 
@@ -132,8 +138,13 @@ async def create_alert_rule(
     monitoring_service: MonitoringService = Depends(
         Provide[Container.monitoring_service]
     ),
+    event_broadcaster: ProviderEventBroadcaster = Depends(
+        Provide[Container.provider_event_broadcaster]
+    ),
 ) -> AlertRule:
-    return monitoring_service.create_alert_rule(rule)
+    created = monitoring_service.create_alert_rule(rule)
+    await event_broadcaster.publish(["alert_rules", "alerts"])
+    return created
 
 
 @router.get("/monitoring/webhooks", response_model=list[WebhookConfig])
@@ -153,8 +164,13 @@ async def create_webhook(
     monitoring_service: MonitoringService = Depends(
         Provide[Container.monitoring_service]
     ),
+    event_broadcaster: ProviderEventBroadcaster = Depends(
+        Provide[Container.provider_event_broadcaster]
+    ),
 ) -> WebhookConfig:
-    return monitoring_service.create_webhook(webhook)
+    created = monitoring_service.create_webhook(webhook)
+    await event_broadcaster.publish(["webhooks"])
+    return created
 
 
 @router.post(
@@ -166,9 +182,14 @@ async def test_webhook(
     monitoring_service: MonitoringService = Depends(
         Provide[Container.monitoring_service]
     ),
+    event_broadcaster: ProviderEventBroadcaster = Depends(
+        Provide[Container.provider_event_broadcaster]
+    ),
 ) -> WebhookTestResponse:
     try:
-        return await monitoring_service.test_webhook(webhook_id)
+        result = await monitoring_service.test_webhook(webhook_id)
+        await event_broadcaster.publish(["webhooks"])
+        return result
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

@@ -3,7 +3,7 @@ import React from "react";
 import { useRouter } from "next/navigation";
 import { Card, Tracker } from "@tremor/react";
 import { RiCheckboxCircleFill, RiErrorWarningFill, RiCloseCircleFill, RiTimeFill } from "@remixicon/react";
-import { humanDuration } from "../../lib/streams";
+import { humanDuration, isTerminatedStream } from "../../lib/streams";
 import { parseHumanDuration } from "../../lib/time";
 import { Spinner } from "@golem/ui";
 
@@ -17,7 +17,7 @@ export type StreamCardProps = {
   title?: string;
   streamId?: string | number | null;
   chain: {
-    token: string; recipient: string; startTime?: bigint; stopTime?: bigint; ratePerSecond: bigint; deposit: bigint; withdrawn: bigint; halted: boolean;
+    token: string; recipient: string; startTime?: bigint; stopTime?: bigint; ratePerSecond: bigint; deposit: bigint; withdrawn: bigint;
   };
   remaining: number; // seconds
   meta: StreamMeta;
@@ -44,7 +44,8 @@ export function StreamCard({ title, streamId, chain, remaining, meta, displayCur
   const currentSec = Math.floor(Date.now() / 1000);
   const startSec = Number(chain.startTime || 0n);
   const stopSec = Number(chain.stopTime || 0n);
-  const effectiveSec = chain.halted ? stopSec : Math.min(currentSec, stopSec);
+  const terminated = isTerminatedStream(chain);
+  const effectiveSec = terminated ? stopSec : Math.min(currentSec, stopSec);
   const elapsedSec = Math.max(0, effectiveSec - startSec);
   const spentTok = startSec && stopSec
     ? Math.max(0, Math.min(dep, elapsedSec * rps))
@@ -60,17 +61,17 @@ export function StreamCard({ title, streamId, chain, remaining, meta, displayCur
     ? `$${(reqRemainingTok * meta.usdPrice).toFixed(2)}`
     : `${reqRemainingTok.toFixed(6)} ${meta.tokenSymbol}`;
 
-  const outOfFunds = !chain.halted && (localRemaining <= 0 || reqRemainingTok <= 0);
-  const needsTopUp = !chain.halted && !outOfFunds && remaining < 3600; // < 1h runway
-  const accent = chain.halted ? 'bg-red-500' : outOfFunds ? 'bg-red-500' : needsTopUp ? 'bg-amber-500' : 'bg-emerald-500';
-  const statusColor = chain.halted ? 'text-red-600' : outOfFunds ? 'text-red-600' : needsTopUp ? 'text-amber-600' : 'text-emerald-600';
-  const StatusIcon = chain.halted ? RiCloseCircleFill : outOfFunds ? RiCloseCircleFill : needsTopUp ? RiErrorWarningFill : RiCheckboxCircleFill;
-  const statusText = chain.halted ? 'Halted' : outOfFunds ? 'Out of funds' : needsTopUp ? 'Needs top-up' : 'Active';
+  const outOfFunds = !terminated && (localRemaining <= 0 || reqRemainingTok <= 0);
+  const needsTopUp = !terminated && !outOfFunds && remaining < 3600; // < 1h runway
+  const accent = terminated ? 'bg-red-500' : outOfFunds ? 'bg-red-500' : needsTopUp ? 'bg-amber-500' : 'bg-emerald-500';
+  const statusColor = terminated ? 'text-red-600' : outOfFunds ? 'text-red-600' : needsTopUp ? 'text-amber-600' : 'text-emerald-600';
+  const StatusIcon = terminated ? RiCloseCircleFill : outOfFunds ? RiCloseCircleFill : needsTopUp ? RiErrorWarningFill : RiCheckboxCircleFill;
+  const statusText = terminated ? 'Terminated' : outOfFunds ? 'Out of funds' : needsTopUp ? 'Needs top-up' : 'Active';
   // Green/gray bars represent % RUNWAY time left
   const totalSegments = 60;
   const totalDurationSec = rps > 0 ? Math.max(1, Math.floor(dep / rps)) : 0; // seconds
   const pctRunway = totalDurationSec > 0 ? Math.max(0, Math.min(1, remaining / totalDurationSec)) : 0;
-  const remainingSeg = (chain.halted || outOfFunds)
+  const remainingSeg = (terminated || outOfFunds)
     ? 0
     : Math.min(totalSegments, Math.max(0, Math.floor(pctRunway * totalSegments)));
   const trackerData = [
@@ -81,12 +82,12 @@ export function StreamCard({ title, streamId, chain, remaining, meta, displayCur
   // Keep local countdown even if parent doesn't tick
   React.useEffect(() => { setLocalRemaining(remaining); }, [remaining]);
   React.useEffect(() => {
-    if (chain.halted) return;
+    if (terminated) return;
     const t = setInterval(() => {
       setLocalRemaining((x) => (x > 0 ? x - 1 : 0));
     }, 1000);
     return () => clearInterval(t);
-  }, [chain.halted]);
+  }, [terminated]);
 
   // Custom human input for top-up like "1h30m", "45m"
   const [customInput, setCustomInput] = React.useState<string>("");
@@ -146,7 +147,7 @@ export function StreamCard({ title, streamId, chain, remaining, meta, displayCur
           <Tracker data={trackerData.slice(0, 30)} className="mt-5 flex sm:hidden" />
 
           <div className="mt-5 pt-4 border-t border-gray-100 flex flex-wrap items-center gap-3" onClick={(e) => e.stopPropagation()}>
-            {onTopUp && !chain.halted && (
+            {onTopUp && !terminated && (
               <>
                 {actionsDisabledReason && (
                   <div className="w-full text-sm text-amber-800">{actionsDisabledReason}</div>

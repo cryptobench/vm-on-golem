@@ -5,7 +5,6 @@ This package provides a minimal GLM streaming payments contract.
 - Rate-per-second vesting funded up front with GLM
 - Recipient can withdraw vested funds
 - Sender or recipient can terminate and settle the stream
-- Oracle can halt a stream
 - Sender can extend runtime with `topUp(streamId, amount)`
 
 The contract is deployed with one GLM ERC20 address and only accepts streams
@@ -13,25 +12,25 @@ for that token.
 
 Core interfaces
 
-- `createStream(address token, address recipient, uint256 deposit, uint128 ratePerSecond) -> streamId`
-  - `token` must match the deployed GLM token address
+- `createStream(address recipient, uint256 deposit, uint128 ratePerSecond, bytes32 leaseId, bytes32 termsHash, uint128 quoteExpiresAt, bytes providerSignature) -> streamId`
+  - provider signature must authorize the exact lease terms
+  - `leaseId` must be unique
   - caller must approve `deposit` GLM before calling
 - `withdraw(uint256 streamId)`
 - `terminate(uint256 streamId)`
-- `haltStream(uint256 streamId)`
 - `topUp(uint256 streamId, uint256 amount)`
   - caller must approve `amount` GLM before calling
-- `streams(uint256 id) -> (token, sender, recipient, startTime, stopTime, ratePerSecond, deposit, withdrawn, halted)`
+- `streams(uint256 id) -> (token, sender, recipient, startTime, stopTime, ratePerSecond, deposit, withdrawn, leaseId, termsHash)`
 
 Recommended flow
 
-1. Requestor computes `ratePerSecond` in GLM base units from provider USD pricing and current GLM/USD.
-2. Requestor approves and deposits initial GLM coverage, for example `rate * 3600` for one hour.
-3. Requestor calls provider `POST /api/v1/vms` with `stream_id`.
+1. Requestor fetches a provider-signed lease quote from `POST /api/v1/payments/lease-quotes`.
+2. Requestor approves and deposits the quoted GLM coverage.
+3. Requestor calls provider `POST /api/v1/vms` with `stream_id`, `lease_id`, and `terms_hash`.
 4. Requestor can call `topUp` periodically to keep the rental running.
 5. Stopping a VM does not settle payment; billing continues while the stream remains active.
 6. Terminating a rental calls `terminate(streamId)`, paying vested GLM to the provider and refunding unvested deposit to the requestor.
-7. Provider can withdraw vested GLM during active rentals and deletes VMs when streams run out or halt.
+7. Provider can withdraw vested GLM during active rentals and deletes VMs when streams run out or terminate.
 
 Deployment
 
@@ -53,7 +52,7 @@ npx hardhat run scripts/deploy.js --network sepolia
 Deploy to Ethereum Hoodi using tGLM:
 
 ```bash
-HOODI_RPC_URL=https://ethereum-hoodi-rpc.publicnode.com \
+HOODI_RPC_URL=https://rpc.hoodi.ethpandaops.io \
 GLM_TOKEN_ADDRESS=0x55555555555556AcFf9C332Ed151758858bd7a26 \
 PRIVATE_KEY=0x... \
 npx hardhat run scripts/deploy.js --network hoodi
@@ -72,7 +71,7 @@ PRIVATE_KEY=0x... node - <<'NODE'
 (async () => {
   const { ethers } = require("ethers");
 
-  const rpc = "https://ethereum-hoodi-rpc.publicnode.com";
+  const rpc = "https://rpc.hoodi.ethpandaops.io";
   const provider = new ethers.JsonRpcProvider(rpc);
   const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
 

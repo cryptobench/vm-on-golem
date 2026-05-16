@@ -2,7 +2,10 @@ import asyncio
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from provider.live.service import HostLiveService, VMLiveService
+from fastapi import WebSocketDisconnect
+
+from provider.live.events import ProviderEventBroadcaster
+from provider.live.service import HostLiveService, ProviderLiveService, VMLiveService
 from provider.monitoring.domain import (
     GuestMetricPayload,
     MetricSample,
@@ -20,6 +23,7 @@ class FakeWebSocket:
     def __init__(self):
         self.accepted = False
         self.sent: asyncio.Queue[dict] = asyncio.Queue()
+        self.received: asyncio.Queue[dict] = asyncio.Queue()
 
     async def accept(self):
         self.accepted = True
@@ -28,10 +32,18 @@ class FakeWebSocket:
         await self.sent.put(payload)
 
     async def receive_json(self):
-        await asyncio.Future()
+        return await self.received.get()
+
+
+class DisconnectingWebSocket(FakeWebSocket):
+    async def send_json(self, payload):
+        raise WebSocketDisconnect()
 
 
 class FakeVmApp:
+    async def list_vms(self):
+        return [await self.get_vm_status("vm-a")]
+
     async def get_vm_status(self, vm_id):
         return VMInfo(
             id=vm_id,
@@ -67,8 +79,66 @@ class FakeProviderInfo:
 
 
 class FakeStreamStatus:
+    async def list_stream_statuses(self):
+        return []
+
     async def get_vm_stream_status(self, vm_id):
         raise StreamNotFoundError("no stream mapped for this VM")
+
+
+class FakeSummary:
+    async def get_summary(self):
+        from provider.summary.domain import ProviderSummary
+
+        return ProviderSummary(
+            status="running",
+            resources={"total": {}, "available": {}},
+            pricing={},
+            vms=[],
+            env={},
+        )
+
+
+class FailingSummary:
+    async def get_summary(self):
+        raise RuntimeError("summary unavailable")
+
+
+class FakeMonitoring:
+    async def overview(self):
+        from provider.monitoring.domain import MonitoringOverview
+
+        return MonitoringOverview(
+            status="healthy",
+            host={},
+            vms=[],
+            active_alerts=[],
+        )
+
+    def latest(self):
+        from datetime import datetime, timezone
+
+        from provider.monitoring.domain import MetricsLatestResponse
+
+        return MetricsLatestResponse(
+            host={},
+            vms={},
+            generated_at=datetime(2026, 5, 14, tzinfo=timezone.utc),
+        )
+
+    def history(self, **kwargs):
+        from provider.monitoring.domain import MetricsHistoryResponse
+
+        return MetricsHistoryResponse(samples=[])
+
+    def active_alerts(self):
+        return []
+
+    def list_alert_rules(self):
+        return []
+
+    def list_webhooks(self):
+        return []
 
 
 def test_vm_live_stream_sends_hello_snapshot_and_metric_update(tmp_path: Path):
@@ -116,6 +186,31 @@ def test_vm_live_stream_sends_hello_snapshot_and_metric_update(tmp_path: Path):
     asyncio.run(run())
 
 
+def test_vm_live_stream_treats_early_disconnect_as_normal_close(tmp_path: Path):
+    async def run():
+        repo = MonitoringRepository(str(tmp_path / "monitoring.sqlite"))
+        repo.init_schema()
+        monitoring = MonitoringService(
+            {"MONITORING_LIVE_ACTIVE_INTERVAL_SECONDS": 1},
+            repo,
+            MagicMock(),
+            MagicMock(),
+        )
+        service = VMLiveService(
+            monitoring,
+            FakeVmApp(),
+            FakeProviderInfo(),
+            FakeStreamStatus(),
+        )
+        websocket = DisconnectingWebSocket()
+
+        await asyncio.wait_for(service.stream_vm(websocket, "vm-a"), timeout=1)
+
+        assert websocket.accepted is True
+
+    asyncio.run(run())
+
+
 def test_host_live_stream_sends_hello_snapshot_and_metric_update(tmp_path: Path):
     async def run():
         repo = MonitoringRepository(str(tmp_path / "monitoring.sqlite"))
@@ -157,6 +252,67 @@ def test_host_live_stream_sends_hello_snapshot_and_metric_update(tmp_path: Path)
         assert update["scope"] == "metrics"
         assert update["data"]["latest"]["host"]["cpu_percent"]["value"] == 42
         assert has_explicit_timezone(update["data"]["samples"][0]["timestamp"])
+
+    asyncio.run(run())
+
+
+def test_provider_live_stream_sends_snapshot_and_invalidation_update():
+    async def run():
+        broadcaster = ProviderEventBroadcaster()
+        service = ProviderLiveService(
+            broadcaster=broadcaster,
+            provider_info_service=FakeProviderInfo(),
+            summary_service=FakeSummary(),
+            vm_application_service=FakeVmApp(),
+            stream_status_service=FakeStreamStatus(),
+            monitoring_service=FakeMonitoring(),
+        )
+        websocket = FakeWebSocket()
+        task = asyncio.create_task(service.stream_provider(websocket))
+        try:
+            hello = await asyncio.wait_for(websocket.sent.get(), timeout=1)
+            snapshot = await asyncio.wait_for(websocket.sent.get(), timeout=1)
+            await broadcaster.publish(["vms"])
+            update = await asyncio.wait_for(websocket.sent.get(), timeout=1)
+        finally:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+        assert websocket.accepted is True
+        assert hello["data"]["protocol"] == "provider-live.v1"
+        assert snapshot["type"] == "snapshot"
+        assert snapshot["data"]["vms"][0]["id"] == "vm-a"
+        assert update["type"] == "update"
+        assert update["scope"] == "vms"
+        assert update["data"]["vms"][0]["status"] == "running"
+
+    asyncio.run(run())
+
+
+def test_provider_live_stream_sends_scoped_error():
+    async def run():
+        service = ProviderLiveService(
+            broadcaster=ProviderEventBroadcaster(),
+            provider_info_service=FakeProviderInfo(),
+            summary_service=FailingSummary(),
+            vm_application_service=FakeVmApp(),
+            stream_status_service=FakeStreamStatus(),
+            monitoring_service=FakeMonitoring(),
+        )
+        websocket = FakeWebSocket()
+        task = asyncio.create_task(service.stream_provider(websocket))
+        try:
+            await asyncio.wait_for(websocket.sent.get(), timeout=1)
+            await asyncio.wait_for(websocket.sent.get(), timeout=1)
+            await websocket.received.put({"type": "refresh", "scopes": ["summary"]})
+            event = await asyncio.wait_for(websocket.sent.get(), timeout=1)
+        finally:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+        assert event["type"] == "error"
+        assert event["scope"] == "summary"
+        assert event["error"] == "summary unavailable"
 
     asyncio.run(run())
 

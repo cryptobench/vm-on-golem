@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse
 
 from provider.container import Container
+from provider.payments.auth import requestor_action_signer
 from provider.vm.application_service import VMApplicationService
 from provider.vm.domain import CreateVMCommand
 from provider.vm.models import (
@@ -44,6 +45,7 @@ async def list_images(
 @inject
 async def create_vm(
     request: CreateVMRequest,
+    action_signer: str | None = Depends(requestor_action_signer),
     vm_app_service: VMApplicationService = Depends(
         Provide[Container.vm_application_service]
     ),
@@ -56,7 +58,8 @@ async def create_vm(
             image=request.image,
             resources=resources,
             ssh_key=request.ssh_key,
-            stream_id=request.stream_id,
+            payment=request.payment,
+            action_signer=action_signer,
             async_mode=async_mode,
         )
     )
@@ -120,55 +123,60 @@ async def get_vm_access(
 @inject
 async def stop_vm(
     requestor_name: str,
+    action_signer: str | None = Depends(requestor_action_signer),
     vm_app_service: VMApplicationService = Depends(
         Provide[Container.vm_application_service]
     ),
 ) -> VMInfo:
-    return await vm_app_service.stop_vm(requestor_name)
+    return await vm_app_service.stop_vm(requestor_name, action_signer)
 
 
 @router.post("/vms/{requestor_name}/start", response_model=VMInfo)
 @inject
 async def start_vm(
     requestor_name: str,
+    action_signer: str | None = Depends(requestor_action_signer),
     vm_app_service: VMApplicationService = Depends(
         Provide[Container.vm_application_service]
     ),
 ) -> VMInfo:
-    return await vm_app_service.start_vm(requestor_name)
+    return await vm_app_service.start_vm(requestor_name, action_signer)
 
 
 @router.post("/vms/{requestor_name}/restart", response_model=VMInfo)
 @inject
 async def restart_vm(
     requestor_name: str,
+    action_signer: str | None = Depends(requestor_action_signer),
     vm_app_service: VMApplicationService = Depends(
         Provide[Container.vm_application_service]
     ),
 ) -> VMInfo:
-    return await vm_app_service.restart_vm(requestor_name)
+    return await vm_app_service.restart_vm(requestor_name, action_signer)
 
 
 @router.post("/vms/{requestor_name}/suspend", response_model=VMInfo)
 @inject
 async def suspend_vm(
     requestor_name: str,
+    action_signer: str | None = Depends(requestor_action_signer),
     vm_app_service: VMApplicationService = Depends(
         Provide[Container.vm_application_service]
     ),
 ) -> VMInfo:
-    return await vm_app_service.suspend_vm(requestor_name)
+    return await vm_app_service.suspend_vm(requestor_name, action_signer)
 
 
 @router.post("/vms/{requestor_name}/resume", response_model=VMInfo)
 @inject
 async def resume_vm(
     requestor_name: str,
+    action_signer: str | None = Depends(requestor_action_signer),
     vm_app_service: VMApplicationService = Depends(
         Provide[Container.vm_application_service]
     ),
 ) -> VMInfo:
-    return await vm_app_service.start_vm(requestor_name)
+    return await vm_app_service.start_vm(requestor_name, action_signer)
 
 
 @router.post("/vms/{requestor_name}/resize", response_model=VMInfo)
@@ -176,11 +184,14 @@ async def resume_vm(
 async def resize_vm(
     requestor_name: str,
     request: ResizeVMRequest,
+    action_signer: str | None = Depends(requestor_action_signer),
     vm_app_service: VMApplicationService = Depends(
         Provide[Container.vm_application_service]
     ),
 ) -> VMInfo:
-    return await vm_app_service.resize_vm(requestor_name, request.resources)
+    return await vm_app_service.resize_vm(
+        requestor_name, request.resources, action_signer
+    )
 
 
 @router.get("/vms/{requestor_name}/snapshots", response_model=list[VMSnapshot])
@@ -199,12 +210,13 @@ async def list_snapshots(
 async def create_snapshot(
     requestor_name: str,
     request: CreateSnapshotRequest,
+    action_signer: str | None = Depends(requestor_action_signer),
     vm_app_service: VMApplicationService = Depends(
         Provide[Container.vm_application_service]
     ),
 ) -> VMSnapshot:
     return await vm_app_service.create_snapshot(
-        requestor_name, request.name, request.comment
+        requestor_name, request.name, request.comment, action_signer
     )
 
 
@@ -215,11 +227,14 @@ async def create_snapshot(
 async def restore_snapshot(
     requestor_name: str,
     snapshot_name: str,
+    action_signer: str | None = Depends(requestor_action_signer),
     vm_app_service: VMApplicationService = Depends(
         Provide[Container.vm_application_service]
     ),
 ) -> VMInfo:
-    return await vm_app_service.restore_snapshot(requestor_name, snapshot_name)
+    return await vm_app_service.restore_snapshot(
+        requestor_name, snapshot_name, action_signer
+    )
 
 
 @router.delete("/vms/{requestor_name}/snapshots/{snapshot_name}")
@@ -227,11 +242,12 @@ async def restore_snapshot(
 async def delete_snapshot(
     requestor_name: str,
     snapshot_name: str,
+    action_signer: str | None = Depends(requestor_action_signer),
     vm_app_service: VMApplicationService = Depends(
         Provide[Container.vm_application_service]
     ),
 ) -> None:
-    await vm_app_service.delete_snapshot(requestor_name, snapshot_name)
+    await vm_app_service.delete_snapshot(requestor_name, snapshot_name, action_signer)
 
 
 @router.post("/vms/{requestor_name}/clone", response_model=VMInfo)
@@ -239,19 +255,21 @@ async def delete_snapshot(
 async def clone_vm(
     requestor_name: str,
     request: CloneVMRequest,
+    action_signer: str | None = Depends(requestor_action_signer),
     vm_app_service: VMApplicationService = Depends(
         Provide[Container.vm_application_service]
     ),
 ) -> VMInfo:
-    return await vm_app_service.clone_vm(requestor_name, request.name)
+    return await vm_app_service.clone_vm(requestor_name, request.name, action_signer)
 
 
 @router.delete("/vms/{requestor_name}")
 @inject
 async def delete_vm(
     requestor_name: str,
+    action_signer: str | None = Depends(requestor_action_signer),
     vm_app_service: VMApplicationService = Depends(
         Provide[Container.vm_application_service]
     ),
 ) -> None:
-    await vm_app_service.delete_vm(requestor_name)
+    await vm_app_service.delete_vm(requestor_name, action_signer)

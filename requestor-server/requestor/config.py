@@ -434,7 +434,7 @@ class RequestorConfig(BaseSettings):
                 "gas_symbol": "ETH",
             },
             "hoodi": {
-                "rpc_url": "https://ethereum-hoodi-rpc.publicnode.com",
+                "rpc_url": "https://rpc.hoodi.ethpandaops.io",
                 "faucet_url": "",
                 "faucet_enabled": False,
                 "glm_token_address": "0x55555555555556AcFf9C332Ed151758858bd7a26",

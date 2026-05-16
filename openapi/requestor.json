@@ -33,21 +33,45 @@
             "title": "Deposit Wei",
             "type": "integer"
           },
+          "lease_id": {
+            "minLength": 1,
+            "title": "Lease Id",
+            "type": "string"
+          },
           "provider_address": {
             "minLength": 1,
             "title": "Provider Address",
             "type": "string"
           },
+          "provider_signature": {
+            "minLength": 1,
+            "title": "Provider Signature",
+            "type": "string"
+          },
+          "quote_expires_at": {
+            "minimum": 1.0,
+            "title": "Quote Expires At",
+            "type": "integer"
+          },
           "rate_per_second_wei": {
             "minimum": 1.0,
             "title": "Rate Per Second Wei",
             "type": "integer"
+          },
+          "terms_hash": {
+            "minLength": 1,
+            "title": "Terms Hash",
+            "type": "string"
           }
         },
         "required": [
           "provider_address",
           "deposit_wei",
-          "rate_per_second_wei"
+          "rate_per_second_wei",
+          "lease_id",
+          "terms_hash",
+          "quote_expires_at",
+          "provider_signature"
         ],
         "title": "CreateStreamCommand",
         "type": "object"
@@ -68,6 +92,18 @@
             "minLength": 1,
             "title": "Name",
             "type": "string"
+          },
+          "payment": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment"
           },
           "provider_id": {
             "minLength": 1,

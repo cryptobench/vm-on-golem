@@ -109,7 +109,7 @@ class VMApplicationService:
                     memory=command.memory,
                     storage=command.storage,
                     ssh_key=command.ssh_key,
-                    stream_id=command.stream_id,
+                    payment=command.payment,
                 )
                 logger.info(
                     "Provider accepted VM create request",
@@ -125,8 +125,8 @@ class VMApplicationService:
                         "memory": command.memory,
                         "storage": command.storage,
                         **(
-                            {"stream_id": command.stream_id}
-                            if command.stream_id is not None
+                            {"stream_id": command.payment.get("stream_id")}
+                            if command.payment is not None
                             else {}
                         ),
                         **(
@@ -157,8 +157,8 @@ class VMApplicationService:
             "ssh_port": access.get("ssh_port"),
             "ssh_user": require_ssh_user(access),
             **(
-                {"stream_id": command.stream_id}
-                if command.stream_id is not None
+                {"stream_id": command.payment.get("stream_id")}
+                if command.payment is not None
                 else {}
             ),
             **(

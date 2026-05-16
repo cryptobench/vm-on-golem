@@ -21,8 +21,13 @@ def mock_vm_service() -> VMService:
 
 @pytest.fixture(autouse=True)
 def override_container(mock_vm_service: VMService):
+    class EmptyJobStore:
+        async def active_recent_jobs(self):
+            return []
+
     with app.container.vm_service.override(mock_vm_service):
-        yield
+        with app.container.job_store.override(EmptyJobStore()):
+            yield
 
 
 def test_create_vm_happy_path(client: TestClient, mock_vm_service: VMService):

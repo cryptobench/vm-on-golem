@@ -137,14 +137,14 @@ export interface CreateVMJobStatus {
   vm_id: string;
 }
 
+/**
+ * V2 lease-bound on-chain StreamPayment proof used to fund this VM
+ */
+export type CreateVMRequestPayment = LeasePayment | null;
+
 export type CreateVMRequestResources = VMResources | null;
 
 export type CreateVMRequestSize = VMSize | null;
-
-/**
- * On-chain StreamPayment stream id used to fund this VM
- */
-export type CreateVMRequestStreamId = number | null;
 
 /**
  * Request model for creating a VM.
@@ -157,6 +157,8 @@ export interface CreateVMRequest {
    * @pattern ^[a-z0-9][a-z0-9-]*[a-z0-9]$
    */
   name: string;
+  /** V2 lease-bound on-chain StreamPayment proof used to fund this VM */
+  payment?: CreateVMRequestPayment;
   resources?: CreateVMRequestResources;
   size?: CreateVMRequestSize;
   /**
@@ -164,8 +166,6 @@ export interface CreateVMRequest {
    * @pattern ^(ssh-rsa|ssh-ed25519)
    */
   ssh_key: string;
-  /** On-chain StreamPayment stream id used to fund this VM */
-  stream_id?: CreateVMRequestStreamId;
 }
 
 export interface GuestMetricAccepted {
@@ -208,6 +208,42 @@ export interface GuestMetricPayload {
 
 export interface HTTPValidationError {
   detail?: ValidationError[];
+}
+
+export type LeasePaymentDurationSeconds = number | null;
+
+export interface LeasePayment {
+  duration_seconds?: LeasePaymentDurationSeconds;
+  lease_id: string;
+  rate_per_second_wei: number;
+  stream_id: number;
+  terms_hash: string;
+}
+
+export interface LeaseQuote {
+  chain_id: number;
+  contract_address: string;
+  glm_token_address: string;
+  lease_id: string;
+  min_deposit_wei: number;
+  min_runway_seconds: number;
+  provider_address: string;
+  quote_expires_at: number;
+  rate_per_second_wei: number;
+  signature: string;
+  terms_hash: string;
+}
+
+export type LeaseQuoteCommandImage = string | null;
+
+export interface LeaseQuoteCommand {
+  cpu: number;
+  duration_seconds: number;
+  image?: LeaseQuoteCommandImage;
+  memory: number;
+  requestor_address: string;
+  storage: number;
+  vm_name: string;
 }
 
 export type MetricSampleVmId = string | null;
@@ -324,12 +360,13 @@ export interface StreamComputed {
 
 export interface StreamOnChain {
   deposit: number;
-  halted: boolean;
+  leaseId: string;
   ratePerSecond: number;
   recipient: string;
   sender: string;
   startTime: number;
   stopTime: number;
+  termsHash: string;
   token: string;
   withdrawn: number;
 }
@@ -337,6 +374,7 @@ export interface StreamOnChain {
 export interface StreamStatus {
   chain: StreamOnChain;
   computed: StreamComputed;
+  payment_state?: string;
   reason: string;
   stream_id: number;
   verified: boolean;
@@ -446,7 +484,7 @@ export interface VMResources {
   memory: number;
   /**
    * Storage in GB
-   * @minimum 1
+   * @minimum 10
    */
   storage: number;
 }
@@ -1039,6 +1077,51 @@ export const testWebhookApiV1MonitoringWebhooksWebhookIdTestPost = async (
     {
       ...options,
       method: "POST",
+    },
+  );
+};
+
+/**
+ * @summary Create Lease Quote
+ */
+export type createLeaseQuoteApiV1PaymentsLeaseQuotesPostResponse200 = {
+  data: LeaseQuote;
+  status: 200;
+};
+
+export type createLeaseQuoteApiV1PaymentsLeaseQuotesPostResponse422 = {
+  data: HTTPValidationError;
+  status: 422;
+};
+
+export type createLeaseQuoteApiV1PaymentsLeaseQuotesPostResponseSuccess =
+  createLeaseQuoteApiV1PaymentsLeaseQuotesPostResponse200 & {
+    headers: Headers;
+  };
+export type createLeaseQuoteApiV1PaymentsLeaseQuotesPostResponseError =
+  createLeaseQuoteApiV1PaymentsLeaseQuotesPostResponse422 & {
+    headers: Headers;
+  };
+
+export type createLeaseQuoteApiV1PaymentsLeaseQuotesPostResponse =
+  | createLeaseQuoteApiV1PaymentsLeaseQuotesPostResponseSuccess
+  | createLeaseQuoteApiV1PaymentsLeaseQuotesPostResponseError;
+
+export const getCreateLeaseQuoteApiV1PaymentsLeaseQuotesPostUrl = () => {
+  return `/api/v1/payments/lease-quotes`;
+};
+
+export const createLeaseQuoteApiV1PaymentsLeaseQuotesPost = async (
+  leaseQuoteCommand: LeaseQuoteCommand,
+  options?: RequestInit,
+): Promise<createLeaseQuoteApiV1PaymentsLeaseQuotesPostResponse> => {
+  return orvalFetch<createLeaseQuoteApiV1PaymentsLeaseQuotesPostResponse>(
+    getCreateLeaseQuoteApiV1PaymentsLeaseQuotesPostUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(leaseQuoteCommand),
     },
   );
 };

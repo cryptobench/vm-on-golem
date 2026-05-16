@@ -40,6 +40,10 @@ class RequestorPaymentService:
                 command.provider_address,
                 command.deposit_wei,
                 command.rate_per_second_wei,
+                command.lease_id,
+                command.terms_hash,
+                command.quote_expires_at,
+                command.provider_signature,
             )
         except Exception as exc:
             logger.error("Requestor payment stream creation failed", exc_info=True)

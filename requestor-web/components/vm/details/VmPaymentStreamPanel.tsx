@@ -3,7 +3,7 @@
 import React from "react";
 import { RiArrowDownSLine, RiExternalLinkLine } from "@remixicon/react";
 import type { ChainStream } from "../../../lib/streams";
-import { humanDuration } from "../../../lib/streams";
+import { humanDuration, isTerminatedStream } from "../../../lib/streams";
 import { formatUnixSecondsDateTime } from "../../../lib/time";
 import { Button } from "@golem/ui";
 import {
@@ -49,7 +49,8 @@ export function VmPaymentStreamPanel({
     tokenSymbol,
     usdPrice,
   );
-  const disabled = !!busy || !!actionsDisabled || stream.halted;
+  const terminated = isTerminatedStream(stream);
+  const disabled = !!busy || !!actionsDisabled || terminated;
 
   return (
     <DetailPanel className="vm-page-enter">
@@ -57,7 +58,7 @@ export function VmPaymentStreamPanel({
         title="Payment stream"
         trailing={
           <span className="rounded-md bg-success-soft px-2 py-1 text-xs font-medium text-success">
-            {stream.halted ? "Halted" : "Active"}
+            {terminated ? "Terminated" : "Active"}
           </span>
         }
       />
@@ -221,7 +222,7 @@ function streamValues(
   const startTime = Number(stream.startTime || 0n);
   const stopTime = Number(stream.stopTime || 0n);
   const nowSec = Math.floor(Date.now() / 1000);
-  const effectiveTime = stream.halted ? stopTime : Math.min(nowSec, stopTime);
+  const effectiveTime = isTerminatedStream(stream) ? stopTime : Math.min(nowSec, stopTime);
   const elapsedSeconds = Math.max(0, effectiveTime - startTime);
   const spentToken = Math.max(0, Math.min(deposit, elapsedSeconds * rateToken));
   const hourlyUsd = usdPrice == null ? null : hourlyToken * usdPrice;

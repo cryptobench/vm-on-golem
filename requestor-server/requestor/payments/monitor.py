@@ -5,7 +5,11 @@ from ..config import config
 from ..provider.client import ProviderClient
 from ..services.database_service import DatabaseService
 from ..utils.logging import setup_logger
-from .blockchain_service import StreamPaymentClient, StreamPaymentConfig
+from .blockchain_service import (
+    StreamPaymentClient,
+    StreamPaymentConfig,
+    parse_stream_tuple,
+)
 
 
 class RequestorStreamMonitor:
@@ -84,25 +88,19 @@ class RequestorStreamMonitor:
                         continue
                     # Read on-chain stream tuple via contract
                     try:
-                        (
-                            token,
-                            sender,
-                            recipient,
-                            startTime,
-                            stopTime,
-                            ratePerSecond,
-                            deposit,
-                            withdrawn,
-                            halted,
-                        ) = self._sp.contract.functions.streams(int(stream_id)).call()
+                        stream = parse_stream_tuple(
+                            self._sp.contract.functions.streams(int(stream_id)).call()
+                        )
                     except Exception as e:
                         self._logger.warning(
                             f"stream lookup failed for {stream_id}: {e}"
                         )
                         continue
-                    if bool(halted):
+                    if stream["halted"] or str(stream["recipient"]).lower() == (
+                        "0x0000000000000000000000000000000000000000"
+                    ):
                         # Respect terminated streams
-                        self._logger.debug(f"skip stream {stream_id} halted=true")
+                        self._logger.debug(f"skip stream {stream_id} terminated=true")
                         continue
                     # Compute remaining seconds using chain time
                     try:
@@ -110,14 +108,14 @@ class RequestorStreamMonitor:
                     except Exception as e:
                         self._logger.warning(f"could not get chain time: {e}")
                         continue
-                    remaining = max(int(stopTime) - now, 0)
+                    remaining = max(int(stream["stopTime"]) - now, 0)
                     self._logger.debug(
-                        f"VM {vm.get('name')} stream {stream_id}: remaining={remaining}s rate={int(ratePerSecond)}"
+                        f"VM {vm.get('name')} stream {stream_id}: remaining={remaining}s rate={int(stream['ratePerSecond'])}"
                     )
                     if remaining < min_remaining:
                         # Top up to reach target_seconds of runway
                         deficit = max(target_seconds - remaining, 0)
-                        add_wei = int(deficit) * int(ratePerSecond)
+                        add_wei = int(deficit) * int(stream["ratePerSecond"])
                         if add_wei <= 0:
                             continue
                         try:

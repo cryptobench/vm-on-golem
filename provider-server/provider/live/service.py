@@ -5,11 +5,14 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import WebSocket, WebSocketDisconnect
+from fastapi.encoders import jsonable_encoder
+from websockets.exceptions import ConnectionClosed
 
 from provider.monitoring.domain import MetricScope
 from provider.utils.time import ensure_utc
 
 from .domain import LiveScope, LiveSnapshot
+from .events import ProviderEventBroadcaster
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +26,35 @@ SNAPSHOT_SCOPES: tuple[LiveScope, ...] = (
     "stream",
     "metrics",
 )
+PROVIDER_LIVE_SCOPES: tuple[str, ...] = (
+    "provider_info",
+    "summary",
+    "vms",
+    "streams",
+    "monitoring",
+    "metrics",
+    "alerts",
+    "alert_rules",
+    "webhooks",
+)
+
+
+def _is_websocket_disconnect(exc: BaseException | None) -> bool:
+    if exc is None:
+        return False
+    if isinstance(exc, (WebSocketDisconnect, ConnectionClosed)):
+        return True
+    message = str(exc)
+    return isinstance(exc, RuntimeError) and (
+        'Cannot call "send"' in message or "Unexpected ASGI message" in message
+    )
+
+
+def _task_exception(task: asyncio.Task[Any]) -> BaseException | None:
+    try:
+        return task.exception()
+    except asyncio.CancelledError:
+        return None
 
 
 class VMLiveService:
@@ -53,57 +85,63 @@ class VMLiveService:
             "VM live stream opened",
             extra={"vm_id": vm_id, "history_range": history_range, "job_id": job_id},
         )
-        async with self.monitoring_service.watch_vm(vm_id):
-            await self._send(
-                websocket,
-                "hello",
-                data={
-                    "protocol": "vm-live.v1",
-                    "capabilities": {
-                        "scopes": list(SNAPSHOT_SCOPES),
-                        "client_events": ["set_history_range", "refresh", "ping"],
+        try:
+            async with self.monitoring_service.watch_vm(vm_id):
+                await self._send(
+                    websocket,
+                    "hello",
+                    data={
+                        "protocol": "vm-live.v1",
+                        "capabilities": {
+                            "scopes": list(SNAPSHOT_SCOPES),
+                            "client_events": ["set_history_range", "refresh", "ping"],
+                        },
+                        "server_time": self._now(),
+                        "guest_interval_seconds": self.monitoring_service.guest_sample_interval(
+                            vm_id
+                        ),
+                        "live_mode": self.monitoring_service.is_vm_live(vm_id),
                     },
-                    "server_time": self._now(),
-                    "guest_interval_seconds": self.monitoring_service.guest_sample_interval(
-                        vm_id
-                    ),
-                    "live_mode": self.monitoring_service.is_vm_live(vm_id),
-                },
-            )
-            await self._send_snapshot(websocket, vm_id, history_range, job_id)
-            async with self.monitoring_service.subscribe_vm_metrics(vm_id) as queue:
-                tasks = [
-                    asyncio.create_task(
-                        self._receive_loop(websocket, vm_id, history_range, job_id),
-                        name=f"vm-live-recv:{vm_id}",
-                    ),
-                    asyncio.create_task(
-                        self._metrics_loop(websocket, queue),
-                        name=f"vm-live-metrics:{vm_id}",
-                    ),
-                    asyncio.create_task(
-                        self._poll_loop(websocket, vm_id, job_id),
-                        name=f"vm-live-poll:{vm_id}",
-                    ),
-                    asyncio.create_task(
-                        self._heartbeat_loop(websocket),
-                        name=f"vm-live-heartbeat:{vm_id}",
-                    ),
-                ]
-                done, pending = await asyncio.wait(
-                    tasks, return_when=asyncio.FIRST_COMPLETED
                 )
-                for task in pending:
-                    task.cancel()
-                await asyncio.gather(*pending, return_exceptions=True)
-                for task in done:
-                    exc = task.exception()
-                    if exc and not isinstance(exc, WebSocketDisconnect):
-                        logger.debug(
-                            "VM live task ended",
-                            exc_info=(type(exc), exc, exc.__traceback__),
-                        )
-        logger.info("VM live stream closed", extra={"vm_id": vm_id})
+                await self._send_snapshot(websocket, vm_id, history_range, job_id)
+                async with self.monitoring_service.subscribe_vm_metrics(vm_id) as queue:
+                    tasks = [
+                        asyncio.create_task(
+                            self._receive_loop(websocket, vm_id, history_range, job_id),
+                            name=f"vm-live-recv:{vm_id}",
+                        ),
+                        asyncio.create_task(
+                            self._metrics_loop(websocket, queue),
+                            name=f"vm-live-metrics:{vm_id}",
+                        ),
+                        asyncio.create_task(
+                            self._poll_loop(websocket, vm_id, job_id),
+                            name=f"vm-live-poll:{vm_id}",
+                        ),
+                        asyncio.create_task(
+                            self._heartbeat_loop(websocket),
+                            name=f"vm-live-heartbeat:{vm_id}",
+                        ),
+                    ]
+                    done, pending = await asyncio.wait(
+                        tasks, return_when=asyncio.FIRST_COMPLETED
+                    )
+                    for task in pending:
+                        task.cancel()
+                    await asyncio.gather(*pending, return_exceptions=True)
+                    for task in done:
+                        exc = _task_exception(task)
+                        if exc and not _is_websocket_disconnect(exc):
+                            logger.debug(
+                                "VM live task ended",
+                                exc_info=(type(exc), exc, exc.__traceback__),
+                            )
+                        if _is_websocket_disconnect(exc):
+                            break
+        except WebSocketDisconnect:
+            logger.debug("VM live stream disconnected", extra={"vm_id": vm_id})
+        finally:
+            logger.info("VM live stream closed", extra={"vm_id": vm_id})
 
     async def _receive_loop(
         self,
@@ -309,19 +347,286 @@ class VMLiveService:
         data: dict[str, Any] | list[Any] | None = None,
         error: str | None = None,
     ) -> None:
-        await websocket.send_json(
-            {
-                "type": event_type,
-                "generated_at": self._now(),
-                "scope": scope,
-                "data": data,
-                "error": error,
-            }
-        )
+        try:
+            await websocket.send_json(
+                {
+                    "type": event_type,
+                    "generated_at": self._now(),
+                    "scope": scope,
+                    "data": data,
+                    "error": error,
+                }
+            )
+        except Exception as exc:
+            if _is_websocket_disconnect(exc):
+                raise WebSocketDisconnect() from exc
+            raise
 
     @staticmethod
     def _normalize_history_range(history_range: str) -> str:
         return history_range if history_range in VALID_HISTORY_RANGES else "1h"
+
+    @staticmethod
+    def _now() -> str:
+        return datetime.now(timezone.utc).isoformat()
+
+
+class ProviderLiveService:
+    """Build and stream the provider desktop live dashboard read model."""
+
+    def __init__(
+        self,
+        *,
+        broadcaster: ProviderEventBroadcaster,
+        provider_info_service: Any,
+        summary_service: Any,
+        vm_application_service: Any,
+        stream_status_service: Any,
+        monitoring_service: Any,
+    ):
+        self.broadcaster = broadcaster
+        self.provider_info_service = provider_info_service
+        self.summary_service = summary_service
+        self.vm_application_service = vm_application_service
+        self.stream_status_service = stream_status_service
+        self.monitoring_service = monitoring_service
+
+    async def stream_provider(self, websocket: WebSocket) -> None:
+        await websocket.accept()
+        logger.info("Provider live stream opened")
+        try:
+            await self._send(
+                websocket,
+                "hello",
+                data={
+                    "protocol": "provider-live.v1",
+                    "capabilities": {
+                        "scopes": list(PROVIDER_LIVE_SCOPES),
+                        "client_events": ["refresh", "ping"],
+                    },
+                    "server_time": self._now(),
+                },
+            )
+            await self._send_snapshot(websocket)
+            async with self.broadcaster.subscribe() as queue:
+                tasks = [
+                    asyncio.create_task(
+                        self._receive_loop(websocket), name="provider-live-recv"
+                    ),
+                    asyncio.create_task(
+                        self._invalidation_loop(websocket, queue),
+                        name="provider-live-invalidations",
+                    ),
+                    asyncio.create_task(
+                        self._poll_loop(websocket), name="provider-live-reconcile"
+                    ),
+                    asyncio.create_task(
+                        self._heartbeat_loop(websocket), name="provider-live-heartbeat"
+                    ),
+                ]
+                done, pending = await asyncio.wait(
+                    tasks, return_when=asyncio.FIRST_COMPLETED
+                )
+                for task in pending:
+                    task.cancel()
+                await asyncio.gather(*pending, return_exceptions=True)
+                for task in done:
+                    exc = _task_exception(task)
+                    if exc and not _is_websocket_disconnect(exc):
+                        logger.debug(
+                            "Provider live task ended",
+                            exc_info=(type(exc), exc, exc.__traceback__),
+                        )
+                    if _is_websocket_disconnect(exc):
+                        break
+        except WebSocketDisconnect:
+            logger.debug("Provider live stream disconnected")
+        finally:
+            logger.info("Provider live stream closed")
+
+    async def _receive_loop(self, websocket: WebSocket) -> None:
+        while True:
+            message = await websocket.receive_json()
+            event_type = str(message.get("type") or "")
+            if event_type == "ping":
+                await self._send(
+                    websocket, "heartbeat", data={"server_time": self._now()}
+                )
+            elif event_type == "refresh":
+                scopes = self._normalize_scopes(message.get("scopes"))
+                await self._refresh_scopes(websocket, scopes)
+            else:
+                logger.warning(
+                    "Unsupported provider live event",
+                    extra={"event_type": event_type},
+                )
+                await self._send(
+                    websocket,
+                    "error",
+                    error=f"unsupported live event: {event_type or 'unknown'}",
+                )
+
+    async def _invalidation_loop(
+        self, websocket: WebSocket, queue: asyncio.Queue[set[str]]
+    ) -> None:
+        while True:
+            scopes = await queue.get()
+            await self._refresh_scopes(websocket, sorted(scopes))
+
+    async def _poll_loop(self, websocket: WebSocket) -> None:
+        previous: dict[str, str] = {}
+        while True:
+            await asyncio.sleep(2)
+            for scope in PROVIDER_LIVE_SCOPES:
+                try:
+                    data = await self._scope_data(scope)
+                    fingerprint = json.dumps(data, sort_keys=True, default=str)
+                    if previous.get(scope) != fingerprint:
+                        previous[scope] = fingerprint
+                        await self._send_update(websocket, scope, data)
+                except Exception as exc:
+                    fingerprint = f"error:{exc}"
+                    if previous.get(scope) != fingerprint:
+                        previous[scope] = fingerprint
+                        await self._send_error(websocket, scope, exc)
+
+    async def _heartbeat_loop(self, websocket: WebSocket) -> None:
+        while True:
+            await asyncio.sleep(15)
+            await self._send(websocket, "heartbeat", data={"server_time": self._now()})
+
+    async def _send_snapshot(self, websocket: WebSocket) -> None:
+        await self._send(websocket, "snapshot", data=await self._snapshot())
+
+    async def _snapshot(self) -> dict[str, Any]:
+        data: dict[str, Any] = {"errors": {}}
+        for scope in PROVIDER_LIVE_SCOPES:
+            try:
+                data.update(self._dashboard_patch(scope, await self._scope_data(scope)))
+            except Exception as exc:
+                data["errors"][scope] = str(exc)
+        return data
+
+    async def _refresh_scopes(self, websocket: WebSocket, scopes: list[str]) -> None:
+        for scope in scopes:
+            if scope not in PROVIDER_LIVE_SCOPES:
+                await self._send(
+                    websocket, "error", error=f"unsupported scope: {scope}"
+                )
+                continue
+            try:
+                await self._send_update(websocket, scope, await self._scope_data(scope))
+            except Exception as exc:
+                await self._send_error(websocket, scope, exc)
+
+    async def _scope_data(self, scope: str) -> Any:
+        if scope == "provider_info":
+            return self.provider_info_service.get_info().model_dump(mode="json")
+        if scope == "summary":
+            return (await self.summary_service.get_summary()).model_dump(mode="json")
+        if scope == "vms":
+            return [
+                vm.model_dump(mode="json")
+                for vm in await self.vm_application_service.list_vms()
+            ]
+        if scope == "streams":
+            return [
+                stream.model_dump(mode="json")
+                for stream in await self.stream_status_service.list_stream_statuses()
+            ]
+        if scope == "monitoring":
+            return (await self.monitoring_service.overview()).model_dump(mode="json")
+        if scope == "metrics":
+            history = self.monitoring_service.history(
+                scope=MetricScope.HOST,
+                range_name="1h",
+            ).model_dump(mode="json")
+            return {
+                "latestMetrics": self.monitoring_service.latest().model_dump(
+                    mode="json"
+                ),
+                "hostCpuHistory": history,
+                "hostMemoryHistory": history,
+            }
+        if scope == "alerts":
+            return self.monitoring_service.active_alerts()
+        if scope == "alert_rules":
+            return [
+                rule.model_dump(mode="json")
+                for rule in self.monitoring_service.list_alert_rules()
+            ]
+        if scope == "webhooks":
+            return [
+                webhook.model_dump(mode="json")
+                for webhook in self.monitoring_service.list_webhooks()
+            ]
+        raise ValueError(f"unsupported scope: {scope}")
+
+    def _dashboard_patch(self, scope: str, data: Any) -> dict[str, Any]:
+        if scope == "provider_info":
+            return {"info": data}
+        if scope == "summary":
+            return {"summary": data}
+        if scope == "vms":
+            return {"vms": data}
+        if scope == "streams":
+            return {"streams": data}
+        if scope == "monitoring":
+            return {"monitoring": data}
+        if scope == "metrics":
+            return dict(data)
+        if scope == "alerts":
+            return {"alerts": data}
+        if scope == "alert_rules":
+            return {"alertRules": data}
+        if scope == "webhooks":
+            return {"webhooks": data}
+        return {}
+
+    async def _send_update(self, websocket: WebSocket, scope: str, data: Any) -> None:
+        await self._send(
+            websocket,
+            "update",
+            scope=scope,
+            data=self._dashboard_patch(scope, data),
+        )
+
+    async def _send_error(
+        self, websocket: WebSocket, scope: str, exc: Exception
+    ) -> None:
+        await self._send(websocket, "error", scope=scope, error=str(exc))
+
+    async def _send(
+        self,
+        websocket: WebSocket,
+        event_type: str,
+        *,
+        scope: str | None = None,
+        data: Any = None,
+        error: str | None = None,
+    ) -> None:
+        try:
+            await websocket.send_json(
+                jsonable_encoder(
+                    {
+                        "type": event_type,
+                        "generated_at": self._now(),
+                        "scope": scope,
+                        "data": data,
+                        "error": error,
+                    }
+                )
+            )
+        except Exception as exc:
+            if _is_websocket_disconnect(exc):
+                raise WebSocketDisconnect() from exc
+            raise
+
+    @staticmethod
+    def _normalize_scopes(scopes: Any) -> list[str]:
+        if not scopes:
+            return list(PROVIDER_LIVE_SCOPES)
+        return [str(scope) for scope in scopes]
 
     @staticmethod
     def _now() -> str:
@@ -342,51 +647,57 @@ class HostLiveService:
         history_range = self._normalize_history_range(history_range)
         await websocket.accept()
         logger.info("Host live stream opened", extra={"history_range": history_range})
-        await self._send(
-            websocket,
-            "hello",
-            data={
-                "protocol": "provider-host-live.v1",
-                "capabilities": {
-                    "scopes": ["metrics"],
-                    "client_events": ["set_history_range", "refresh", "ping"],
+        try:
+            await self._send(
+                websocket,
+                "hello",
+                data={
+                    "protocol": "provider-host-live.v1",
+                    "capabilities": {
+                        "scopes": ["metrics"],
+                        "client_events": ["set_history_range", "refresh", "ping"],
+                    },
+                    "server_time": self._now(),
+                    "sample_interval_seconds": (
+                        self.monitoring_service.live_sample_interval_seconds()
+                    ),
                 },
-                "server_time": self._now(),
-                "sample_interval_seconds": (
-                    self.monitoring_service.live_sample_interval_seconds()
-                ),
-            },
-        )
-        await self._send_snapshot(websocket, history_range)
-        async with self.monitoring_service.subscribe_host_metrics() as queue:
-            tasks = [
-                asyncio.create_task(
-                    self._receive_loop(websocket, history_range),
-                    name="host-live-recv",
-                ),
-                asyncio.create_task(
-                    self._metrics_loop(websocket, queue),
-                    name="host-live-metrics",
-                ),
-                asyncio.create_task(
-                    self._heartbeat_loop(websocket),
-                    name="host-live-heartbeat",
-                ),
-            ]
-            done, pending = await asyncio.wait(
-                tasks, return_when=asyncio.FIRST_COMPLETED
             )
-            for task in pending:
-                task.cancel()
-            await asyncio.gather(*pending, return_exceptions=True)
-            for task in done:
-                exc = task.exception()
-                if exc and not isinstance(exc, WebSocketDisconnect):
-                    logger.debug(
-                        "Host live task ended",
-                        exc_info=(type(exc), exc, exc.__traceback__),
-                    )
-        logger.info("Host live stream closed")
+            await self._send_snapshot(websocket, history_range)
+            async with self.monitoring_service.subscribe_host_metrics() as queue:
+                tasks = [
+                    asyncio.create_task(
+                        self._receive_loop(websocket, history_range),
+                        name="host-live-recv",
+                    ),
+                    asyncio.create_task(
+                        self._metrics_loop(websocket, queue),
+                        name="host-live-metrics",
+                    ),
+                    asyncio.create_task(
+                        self._heartbeat_loop(websocket),
+                        name="host-live-heartbeat",
+                    ),
+                ]
+                done, pending = await asyncio.wait(
+                    tasks, return_when=asyncio.FIRST_COMPLETED
+                )
+                for task in pending:
+                    task.cancel()
+                await asyncio.gather(*pending, return_exceptions=True)
+                for task in done:
+                    exc = _task_exception(task)
+                    if exc and not _is_websocket_disconnect(exc):
+                        logger.debug(
+                            "Host live task ended",
+                            exc_info=(type(exc), exc, exc.__traceback__),
+                        )
+                    if _is_websocket_disconnect(exc):
+                        break
+        except WebSocketDisconnect:
+            logger.debug("Host live stream disconnected")
+        finally:
+            logger.info("Host live stream closed")
 
     async def _receive_loop(self, websocket: WebSocket, history_range: str) -> None:
         current_range = history_range
@@ -472,15 +783,20 @@ class HostLiveService:
         data: dict[str, Any] | list[Any] | None = None,
         error: str | None = None,
     ) -> None:
-        await websocket.send_json(
-            {
-                "type": event_type,
-                "generated_at": self._now(),
-                "scope": scope,
-                "data": data,
-                "error": error,
-            }
-        )
+        try:
+            await websocket.send_json(
+                {
+                    "type": event_type,
+                    "generated_at": self._now(),
+                    "scope": scope,
+                    "data": data,
+                    "error": error,
+                }
+            )
+        except Exception as exc:
+            if _is_websocket_disconnect(exc):
+                raise WebSocketDisconnect() from exc
+            raise
 
     @staticmethod
     def _normalize_history_range(history_range: str) -> str:

@@ -1,18 +1,18 @@
 STREAM_PAYMENT_ABI = [
     {
-        "inputs": [
-            {"internalType": "address", "name": "_oracle", "type": "address"},
-            {"internalType": "address", "name": "_glmToken", "type": "address"},
-        ],
+        "inputs": [{"internalType": "address", "name": "_glmToken", "type": "address"}],
         "stateMutability": "nonpayable",
         "type": "constructor",
     },
     {
         "inputs": [
-            {"internalType": "address", "name": "token", "type": "address"},
             {"internalType": "address", "name": "recipient", "type": "address"},
             {"internalType": "uint256", "name": "deposit", "type": "uint256"},
             {"internalType": "uint128", "name": "ratePerSecond", "type": "uint128"},
+            {"internalType": "bytes32", "name": "leaseId", "type": "bytes32"},
+            {"internalType": "bytes32", "name": "termsHash", "type": "bytes32"},
+            {"internalType": "uint128", "name": "quoteExpiresAt", "type": "uint128"},
+            {"internalType": "bytes", "name": "providerSignature", "type": "bytes"},
         ],
         "name": "createStream",
         "outputs": [{"internalType": "uint256", "name": "streamId", "type": "uint256"}],
@@ -62,10 +62,18 @@ STREAM_PAYMENT_ABI = [
             {"internalType": "uint128", "name": "ratePerSecond", "type": "uint128"},
             {"internalType": "uint256", "name": "deposit", "type": "uint256"},
             {"internalType": "uint256", "name": "withdrawn", "type": "uint256"},
-            {"internalType": "bool", "name": "halted", "type": "bool"}
+            {"internalType": "bytes32", "name": "leaseId", "type": "bytes32"},
+            {"internalType": "bytes32", "name": "termsHash", "type": "bytes32"},
         ],
         "stateMutability": "view",
-        "type": "function"
+        "type": "function",
+    },
+    {
+        "inputs": [{"internalType": "bytes32", "name": "", "type": "bytes32"}],
+        "name": "usedLeaseIds",
+        "outputs": [{"internalType": "bool", "name": "", "type": "bool"}],
+        "stateMutability": "view",
+        "type": "function",
     },
     {
         "anonymous": False,
@@ -78,6 +86,8 @@ STREAM_PAYMENT_ABI = [
             {"indexed": False, "internalType": "uint256", "name": "ratePerSecond", "type": "uint256"},
             {"indexed": False, "internalType": "uint256", "name": "startTime", "type": "uint256"},
             {"indexed": False, "internalType": "uint256", "name": "stopTime", "type": "uint256"},
+            {"indexed": False, "internalType": "bytes32", "name": "leaseId", "type": "bytes32"},
+            {"indexed": False, "internalType": "bytes32", "name": "termsHash", "type": "bytes32"},
         ],
         "name": "StreamCreated",
         "type": "event",

@@ -368,6 +368,17 @@
             "title": "Name",
             "type": "string"
           },
+          "payment": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LeasePayment"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "V2 lease-bound on-chain StreamPayment proof used to fund this VM"
+          },
           "resources": {
             "anyOf": [
               {
@@ -393,18 +404,6 @@
             "pattern": "^(ssh-rsa|ssh-ed25519) ",
             "title": "Ssh Key",
             "type": "string"
-          },
-          "stream_id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "On-chain StreamPayment stream id used to fund this VM",
-            "title": "Stream Id"
           }
         },
         "required": [
@@ -566,6 +565,157 @@
           }
         },
         "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "LeasePayment": {
+        "properties": {
+          "duration_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Seconds"
+          },
+          "lease_id": {
+            "title": "Lease Id",
+            "type": "string"
+          },
+          "rate_per_second_wei": {
+            "title": "Rate Per Second Wei",
+            "type": "integer"
+          },
+          "stream_id": {
+            "title": "Stream Id",
+            "type": "integer"
+          },
+          "terms_hash": {
+            "title": "Terms Hash",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stream_id",
+          "lease_id",
+          "terms_hash",
+          "rate_per_second_wei"
+        ],
+        "title": "LeasePayment",
+        "type": "object"
+      },
+      "LeaseQuote": {
+        "properties": {
+          "chain_id": {
+            "title": "Chain Id",
+            "type": "integer"
+          },
+          "contract_address": {
+            "title": "Contract Address",
+            "type": "string"
+          },
+          "glm_token_address": {
+            "title": "Glm Token Address",
+            "type": "string"
+          },
+          "lease_id": {
+            "title": "Lease Id",
+            "type": "string"
+          },
+          "min_deposit_wei": {
+            "title": "Min Deposit Wei",
+            "type": "integer"
+          },
+          "min_runway_seconds": {
+            "title": "Min Runway Seconds",
+            "type": "integer"
+          },
+          "provider_address": {
+            "title": "Provider Address",
+            "type": "string"
+          },
+          "quote_expires_at": {
+            "title": "Quote Expires At",
+            "type": "integer"
+          },
+          "rate_per_second_wei": {
+            "title": "Rate Per Second Wei",
+            "type": "integer"
+          },
+          "signature": {
+            "title": "Signature",
+            "type": "string"
+          },
+          "terms_hash": {
+            "title": "Terms Hash",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider_address",
+          "chain_id",
+          "contract_address",
+          "glm_token_address",
+          "lease_id",
+          "terms_hash",
+          "rate_per_second_wei",
+          "min_deposit_wei",
+          "min_runway_seconds",
+          "quote_expires_at",
+          "signature"
+        ],
+        "title": "LeaseQuote",
+        "type": "object"
+      },
+      "LeaseQuoteCommand": {
+        "properties": {
+          "cpu": {
+            "title": "Cpu",
+            "type": "integer"
+          },
+          "duration_seconds": {
+            "title": "Duration Seconds",
+            "type": "integer"
+          },
+          "image": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image"
+          },
+          "memory": {
+            "title": "Memory",
+            "type": "integer"
+          },
+          "requestor_address": {
+            "title": "Requestor Address",
+            "type": "string"
+          },
+          "storage": {
+            "title": "Storage",
+            "type": "integer"
+          },
+          "vm_name": {
+            "title": "Vm Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "vm_name",
+          "cpu",
+          "memory",
+          "storage",
+          "duration_seconds",
+          "requestor_address"
+        ],
+        "title": "LeaseQuoteCommand",
         "type": "object"
       },
       "MetricSample": {
@@ -894,9 +1044,9 @@
             "title": "Deposit",
             "type": "integer"
           },
-          "halted": {
-            "title": "Halted",
-            "type": "boolean"
+          "leaseId": {
+            "title": "Leaseid",
+            "type": "string"
           },
           "ratePerSecond": {
             "title": "Ratepersecond",
@@ -918,6 +1068,10 @@
             "title": "Stoptime",
             "type": "integer"
           },
+          "termsHash": {
+            "title": "Termshash",
+            "type": "string"
+          },
           "token": {
             "title": "Token",
             "type": "string"
@@ -936,7 +1090,8 @@
           "ratePerSecond",
           "deposit",
           "withdrawn",
-          "halted"
+          "leaseId",
+          "termsHash"
         ],
         "title": "StreamOnChain",
         "type": "object"
@@ -948,6 +1103,11 @@
           },
           "computed": {
             "$ref": "#/components/schemas/StreamComputed"
+          },
+          "payment_state": {
+            "default": "unknown",
+            "title": "Payment State",
+            "type": "string"
           },
           "reason": {
             "title": "Reason",
@@ -1232,7 +1392,7 @@
           },
           "storage": {
             "description": "Storage in GB",
-            "minimum": 1.0,
+            "minimum": 10.0,
             "title": "Storage",
             "type": "integer"
           }
@@ -1860,6 +2020,44 @@
         "summary": "Test Webhook"
       }
     },
+    "/api/v1/payments/lease-quotes": {
+      "post": {
+        "operationId": "create_lease_quote_api_v1_payments_lease_quotes_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LeaseQuoteCommand"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeaseQuote"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Lease Quote"
+      }
+    },
     "/api/v1/payments/streams": {
       "get": {
         "operationId": "list_stream_statuses_api_v1_payments_streams_get",
@@ -1950,6 +2148,70 @@
               "default": false,
               "title": "Async",
               "type": "boolean"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-golem-requestor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Golem-Requestor"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-golem-signature",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Golem-Signature"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-golem-nonce",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Golem-Nonce"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-golem-deadline",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Golem-Deadline"
             }
           }
         ],
@@ -2048,6 +2310,70 @@
             "schema": {
               "title": "Requestor Name",
               "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-golem-requestor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Golem-Requestor"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-golem-signature",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Golem-Signature"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-golem-nonce",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Golem-Nonce"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-golem-deadline",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Golem-Deadline"
             }
           }
         ],
@@ -2171,6 +2497,70 @@
             "schema": {
               "title": "Requestor Name",
               "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-golem-requestor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Golem-Requestor"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-golem-signature",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Golem-Signature"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-golem-nonce",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Golem-Nonce"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-golem-deadline",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Golem-Deadline"
             }
           }
         ],
@@ -2325,6 +2715,70 @@
               "title": "Requestor Name",
               "type": "string"
             }
+          },
+          {
+            "in": "header",
+            "name": "x-golem-requestor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Golem-Requestor"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-golem-signature",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Golem-Signature"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-golem-nonce",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Golem-Nonce"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-golem-deadline",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Golem-Deadline"
+            }
           }
         ],
         "requestBody": {
@@ -2374,6 +2828,70 @@
               "title": "Requestor Name",
               "type": "string"
             }
+          },
+          {
+            "in": "header",
+            "name": "x-golem-requestor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Golem-Requestor"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-golem-signature",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Golem-Signature"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-golem-nonce",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Golem-Nonce"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-golem-deadline",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Golem-Deadline"
+            }
           }
         ],
         "responses": {
@@ -2412,6 +2930,70 @@
             "schema": {
               "title": "Requestor Name",
               "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-golem-requestor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Golem-Requestor"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-golem-signature",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Golem-Signature"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-golem-nonce",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Golem-Nonce"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-golem-deadline",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Golem-Deadline"
             }
           }
         ],
@@ -2493,6 +3075,70 @@
               "title": "Requestor Name",
               "type": "string"
             }
+          },
+          {
+            "in": "header",
+            "name": "x-golem-requestor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Golem-Requestor"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-golem-signature",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Golem-Signature"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-golem-nonce",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Golem-Nonce"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-golem-deadline",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Golem-Deadline"
+            }
           }
         ],
         "requestBody": {
@@ -2551,6 +3197,70 @@
               "title": "Snapshot Name",
               "type": "string"
             }
+          },
+          {
+            "in": "header",
+            "name": "x-golem-requestor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Golem-Requestor"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-golem-signature",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Golem-Signature"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-golem-nonce",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Golem-Nonce"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-golem-deadline",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Golem-Deadline"
+            }
           }
         ],
         "responses": {
@@ -2597,6 +3307,70 @@
               "title": "Snapshot Name",
               "type": "string"
             }
+          },
+          {
+            "in": "header",
+            "name": "x-golem-requestor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Golem-Requestor"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-golem-signature",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Golem-Signature"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-golem-nonce",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Golem-Nonce"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-golem-deadline",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Golem-Deadline"
+            }
           }
         ],
         "responses": {
@@ -2636,6 +3410,70 @@
               "title": "Requestor Name",
               "type": "string"
             }
+          },
+          {
+            "in": "header",
+            "name": "x-golem-requestor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Golem-Requestor"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-golem-signature",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Golem-Signature"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-golem-nonce",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Golem-Nonce"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-golem-deadline",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Golem-Deadline"
+            }
           }
         ],
         "responses": {
@@ -2674,6 +3512,70 @@
             "schema": {
               "title": "Requestor Name",
               "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-golem-requestor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Golem-Requestor"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-golem-signature",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Golem-Signature"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-golem-nonce",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Golem-Nonce"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-golem-deadline",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Golem-Deadline"
             }
           }
         ],
@@ -2752,6 +3654,70 @@
             "schema": {
               "title": "Requestor Name",
               "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-golem-requestor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Golem-Requestor"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-golem-signature",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Golem-Signature"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-golem-nonce",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Golem-Nonce"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-golem-deadline",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Golem-Deadline"
             }
           }
         ],

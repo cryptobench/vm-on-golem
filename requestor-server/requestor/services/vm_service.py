@@ -36,6 +36,7 @@ class VMService:
         provider_ip: str,
         ssh_key: str,
         stream_id: int | None = None,
+        payment: dict | None = None,
         provider_endpoint_url: str | None = None,
     ) -> Dict:
         """Create a new VM with validation and error handling."""
@@ -56,7 +57,7 @@ class VMService:
                 memory=memory,
                 storage=storage,
                 ssh_key=ssh_key,
-                stream_id=stream_id,
+                payment=payment,
             )
             logger.info(
                 "Provider accepted legacy VM create request",
@@ -79,7 +80,11 @@ class VMService:
                         if provider_endpoint_url
                         else {}
                     ),
-                    **({"stream_id": stream_id} if stream_id is not None else {}),
+                    **(
+                        {"stream_id": payment.get("stream_id")}
+                        if payment is not None
+                        else ({"stream_id": stream_id} if stream_id is not None else {})
+                    ),
                 },
                 status="creating",
             )
@@ -128,7 +133,11 @@ class VMService:
                     if provider_endpoint_url
                     else {}
                 ),
-                **({"stream_id": stream_id} if stream_id is not None else {}),
+                **(
+                    {"stream_id": payment.get("stream_id")}
+                    if payment is not None
+                    else ({"stream_id": stream_id} if stream_id is not None else {})
+                ),
             }
             await self.db.save_vm(
                 name=name,

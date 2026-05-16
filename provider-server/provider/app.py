@@ -60,6 +60,7 @@ def _wire_container(container: Container) -> None:
             ".api.vm_routes",
             ".api.payments_routes",
             ".api.provider_routes",
+            ".api.settings_routes",
             ".api.summary_routes",
             ".api.monitoring_routes",
             ".api.live_routes",
@@ -76,6 +77,15 @@ def _configure_safe_defaults(container: Container) -> None:
             "PORT_RANGE_END": 50900,
             "PORT": 7466,
             "SKIP_PORT_VERIFICATION": True,
+            "OFFERED_CPU_CORES": 0,
+            "OFFERED_MEMORY_GB": 0,
+            "OFFERED_STORAGE_GB": 0,
+            "PRICE_USD_PER_CORE_MONTH": 5.0,
+            "PRICE_USD_PER_GB_RAM_MONTH": 2.0,
+            "PRICE_USD_PER_GB_STORAGE_MONTH": 0.1,
+            "PRICE_GLM_PER_CORE_MONTH": 0.0,
+            "PRICE_GLM_PER_GB_RAM_MONTH": 0.0,
+            "PRICE_GLM_PER_GB_STORAGE_MONTH": 0.0,
         }
     )
 

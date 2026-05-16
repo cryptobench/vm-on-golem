@@ -12,10 +12,9 @@ async function main() {
   if (!glm) {
     throw new Error("GLM_TOKEN_ADDRESS is required for GLM-only StreamPayment deployment");
   }
-  const oracle = process.env.ORACLE_ADDRESS || (await (await ethers.getSigners())[0].getAddress());
 
   const StreamPayment = await ethers.getContractFactory("StreamPayment");
-  const contract = await StreamPayment.deploy(oracle, glm);
+  const contract = await StreamPayment.deploy(glm);
   await contract.waitForDeployment();
   const address = await contract.getAddress();
   console.log("StreamPayment deployed to:", address);
@@ -29,7 +28,6 @@ async function main() {
     timestamp: new Date().toISOString(),
     StreamPayment: {
       address,
-      oracle,
       paymentToken: glm,
       glmToken: glm
     }

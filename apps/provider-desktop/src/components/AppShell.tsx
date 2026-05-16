@@ -8,14 +8,14 @@ import {
   RiLineChartLine,
   RiNodeTree,
   RiSettings3Line,
-  RiShutDownLine,
   RiStackLine,
   RiWebhookLine,
 } from "@remixicon/react";
-import { Button, SidebarLayout, StatusBadge, cn } from "@golem/ui";
+import { getVersion } from "@tauri-apps/api/app";
+import { useEffect, useState } from "react";
+import { Button, SidebarLayout, cn } from "@golem/ui";
 import type { DashboardData } from "../lib/useProviderData";
-import type { ProviderServiceStatus } from "../lib/types";
-import { shortAddress } from "../lib/format";
+import { EMPTY_VALUE } from "../lib/format";
 import type { NavigateTarget, PageId } from "./types";
 
 const NAV: Array<{ id: PageId; label: string; icon: typeof RiHome5Line }> = [
@@ -32,21 +32,48 @@ const NAV: Array<{ id: PageId; label: string; icon: typeof RiHome5Line }> = [
 export function AppShell({
   activePage,
   data,
-  serviceStatus,
-  busyAction,
   children,
   onNavigate,
-  onStopProvider,
 }: {
   activePage: PageId | "vm-detail";
   data: DashboardData | null;
-  serviceStatus: ProviderServiceStatus | null;
-  busyAction: "start" | "stop" | null;
   children: React.ReactNode;
   onNavigate: (target: NavigateTarget) => void;
-  onStopProvider: () => void;
 }) {
   const info = data?.info;
+  const providerId = info?.provider_id ?? "";
+  const [appVersion, setAppVersion] = useState<string>(EMPTY_VALUE);
+  const [copiedProviderId, setCopiedProviderId] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    getVersion()
+      .then((version) => {
+        if (mounted) setAppVersion(version);
+      })
+      .catch(() => {
+        if (mounted) setAppVersion(EMPTY_VALUE);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!copiedProviderId) return undefined;
+    const timeout = window.setTimeout(() => setCopiedProviderId(false), 1600);
+    return () => window.clearTimeout(timeout);
+  }, [copiedProviderId]);
+
+  async function copyProviderId() {
+    if (!providerId) return;
+    try {
+      await copyText(providerId);
+      setCopiedProviderId(true);
+    } catch {
+      setCopiedProviderId(false);
+    }
+  }
 
   return (
     <SidebarLayout
@@ -85,47 +112,30 @@ export function AppShell({
           </nav>
 
           <div className="border-t border-border px-6 py-5 text-sm text-text-secondary">
-            <div className="flex items-center justify-between gap-3">
-              <StatusBadge
-                tone={serviceStatus?.running ? "success" : "neutral"}
-                label={`Service: ${serviceStatus?.running ? "Running" : "Stopped"}`}
-              />
-              <Button
-                variant="secondary"
-                busy={busyAction === "stop"}
-                disabled={!serviceStatus?.running || busyAction !== null}
-                onClick={onStopProvider}
-                title="Stop provider"
-                aria-label="Stop provider"
-                className="h-8 w-8 px-0"
-              >
-                <RiShutDownLine className="h-4 w-4" aria-hidden />
-              </Button>
+            <div>
+              {appVersion === EMPTY_VALUE ? EMPTY_VALUE : `v${appVersion}`}
             </div>
-            <div className="mt-5">v0.9.4</div>
             <div className="mt-4 text-xs font-medium uppercase text-text-muted">
               Provider ID
             </div>
-            <button
-              type="button"
-              className="mt-1 inline-flex items-center gap-2 font-mono text-sm text-text-primary"
-              onClick={() => {
-                if (info?.provider_id) void navigator.clipboard.writeText(info.provider_id);
-              }}
-            >
-              {shortAddress(info?.provider_id)}
-              <RiFileCopyLine className="h-4 w-4 text-text-muted" aria-hidden />
-            </button>
-            <div className="mt-4 flex items-center gap-2 text-text-primary">
-              <span className="font-medium">{info?.country ?? "--"}</span>
-              <span className="text-border-strong">|</span>
-              <span>{info?.country === "SE" ? "Sweden" : info?.country ?? "--"}</span>
-            </div>
-            <div className="mt-4">
-              <span className="text-text-muted">IP</span>{" "}
-              <span className="font-mono text-text-primary">
-                {info?.ip_address ?? "--"}
-              </span>
+            <div className="mt-2 flex items-start gap-2">
+              <div className="min-w-0 flex-1 break-all font-mono text-sm leading-5 text-text-primary">
+                {providerId || EMPTY_VALUE}
+              </div>
+              <Button
+                variant="secondary"
+                className="h-8 w-8 shrink-0 px-0"
+                disabled={!providerId}
+                onClick={() => void copyProviderId()}
+                title={copiedProviderId ? "Copied provider ID" : "Copy provider ID"}
+                aria-label={copiedProviderId ? "Copied provider ID" : "Copy provider ID"}
+              >
+                {copiedProviderId ? (
+                  <RiCheckboxCircleLine className="h-4 w-4" aria-hidden />
+                ) : (
+                  <RiFileCopyLine className="h-4 w-4" aria-hidden />
+                )}
+              </Button>
             </div>
           </div>
         </div>
@@ -136,4 +146,28 @@ export function AppShell({
       </div>
     </SidebarLayout>
   );
+}
+
+async function copyText(value: string) {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(value);
+      return;
+    } catch {
+      // Fall through for WebViews where clipboard permissions are unavailable.
+    }
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = value;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.select();
+  try {
+    document.execCommand("copy");
+  } finally {
+    document.body.removeChild(textarea);
+  }
 }

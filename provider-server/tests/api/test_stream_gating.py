@@ -1,3 +1,4 @@
+import logging
 from unittest.mock import AsyncMock
 
 import pytest
@@ -5,6 +6,59 @@ from dependency_injector import providers
 from fastapi.testclient import TestClient
 
 from provider.main import app
+from provider.payments.auth import requestor_action_signer
+from provider.payments.lease_quote_service import LeaseQuoteService
+
+
+REQUESTOR = "0x3333333333333333333333333333333333333333"
+TOKEN = "0x4444444444444444444444444444444444444444"
+LEASE = "0x" + "11" * 32
+TERMS = "0x" + "22" * 32
+
+
+def payment(stream_id: int = 123, terms_hash: str = TERMS) -> dict:
+    return {
+        "stream_id": stream_id,
+        "lease_id": LEASE,
+        "terms_hash": terms_hash,
+        "rate_per_second_wei": 1,
+        "duration_seconds": 3600,
+    }
+
+
+def terms_hash(cfg: dict, vm_name: str = "test-vm") -> str:
+    return LeaseQuoteService._terms_hash(
+        provider_address=cfg["PROVIDER_ID"],
+        requestor_address=REQUESTOR,
+        vm_name=vm_name,
+        image="24.04",
+        cpu=1,
+        memory=1,
+        storage=10,
+        rate_per_second=1,
+        duration_seconds=3600,
+        contract_address=cfg["STREAM_PAYMENT_ADDRESS"],
+        glm_token_address=TOKEN,
+        chain_id=31337,
+        lease_id=LEASE,
+    )
+
+
+def stream(cfg: dict, terms: str | None = None, **overrides) -> dict:
+    base = {
+        "token": TOKEN,
+        "sender": REQUESTOR,
+        "recipient": cfg["PROVIDER_ID"],
+        "startTime": 100,
+        "stopTime": 200,
+        "ratePerSecond": 1,
+        "deposit": 100,
+        "withdrawn": 10,
+        "leaseId": LEASE,
+        "termsHash": terms or TERMS,
+    }
+    base.update(overrides)
+    return base
 
 
 @pytest.fixture
@@ -21,6 +75,10 @@ def test_create_vm_requires_stream_when_enabled(monkeypatch, client: TestClient)
             "STREAM_PAYMENT_ADDRESS": "0x1111111111111111111111111111111111111111",
             "POLYGON_RPC_URL": "http://localhost",
             "PROVIDER_ID": "0x2222222222222222222222222222222222222222",
+            "GLM_TOKEN_ADDRESS": TOKEN,
+            "PRICE_GLM_PER_CORE_MONTH": "0.000000000002628",
+            "PRICE_GLM_PER_GB_RAM_MONTH": "0",
+            "PRICE_GLM_PER_GB_STORAGE_MONTH": "0",
         }
     )
     try:
@@ -33,7 +91,7 @@ def test_create_vm_requires_stream_when_enabled(monkeypatch, client: TestClient)
         }
         resp = client.post("/api/v1/vms", json=request_data)
         assert resp.status_code == 400
-        assert "stream_id" in resp.json()["detail"]
+        assert "payment proof" in resp.json()["detail"]
     finally:
         app.container.config.override(old)
 
@@ -43,11 +101,15 @@ def test_create_vm_accepts_valid_stream(monkeypatch, client: TestClient):
     old = dict(app.container.config())
     cfg = dict(old)
     cfg.update(
-        {
-            "STREAM_PAYMENT_ADDRESS": "0x1111111111111111111111111111111111111111",
-            "POLYGON_RPC_URL": "http://localhost",
-            "PROVIDER_ID": "0x2222222222222222222222222222222222222222",
-        }
+            {
+                "STREAM_PAYMENT_ADDRESS": "0x1111111111111111111111111111111111111111",
+                "POLYGON_RPC_URL": "http://localhost",
+                "PROVIDER_ID": "0x2222222222222222222222222222222222222222",
+                "GLM_TOKEN_ADDRESS": TOKEN,
+                "PRICE_GLM_PER_CORE_MONTH": "0.000000000002628",
+                "PRICE_GLM_PER_GB_RAM_MONTH": "0",
+                "PRICE_GLM_PER_GB_STORAGE_MONTH": "0",
+            }
     )
     try:
         app.container.config.override(cfg)
@@ -60,22 +122,14 @@ def test_create_vm_accepts_valid_stream(monkeypatch, client: TestClient):
                 return True, "ok"
 
             def get_stream(self, *_):
-                return {
-                    "token": "0xT",
-                    "sender": "0xS",
-                    "recipient": cfg["PROVIDER_ID"],
-                    "startTime": 100,
-                    "stopTime": 200,
-                    "ratePerSecond": 1,
-                    "deposit": 100,
-                    "withdrawn": 10,
-                    "halted": False,
-                }
+                return stream(cfg, terms_hash(cfg))
 
             @property
             def web3(self):
                 class W3:
                     class Eth:
+                        chain_id = 31337
+
                         def get_block(self, *_):
                             return {"timestamp": 150}
 
@@ -84,6 +138,7 @@ def test_create_vm_accepts_valid_stream(monkeypatch, client: TestClient):
                 return W3()
 
         app.container.stream_reader.override(providers.Factory(DummyReader))
+        app.dependency_overrides[requestor_action_signer] = lambda: REQUESTOR
 
         # Patch vm service to return a dummy VM and capture stream_map.set
         from provider.vm.models import VMInfo, VMResources, VMStatus
@@ -118,7 +173,7 @@ def test_create_vm_accepts_valid_stream(monkeypatch, client: TestClient):
             "name": "test-vm",
             "ssh_key": "ssh-rsa AAA...",
             "resources": {"cpu": 1, "memory": 1, "storage": 10},
-            "stream_id": 123,
+            "payment": payment(123, terms_hash(cfg)),
         }
         resp = client.post("/api/v1/vms", json=request_data)
         assert resp.status_code == 200
@@ -128,6 +183,7 @@ def test_create_vm_accepts_valid_stream(monkeypatch, client: TestClient):
     finally:
         app.container.stream_reader.reset_override()
         app.container.stream_map.reset_override()
+        app.dependency_overrides.pop(requestor_action_signer, None)
         app.container.config.override(old)
 
 
@@ -135,11 +191,15 @@ def test_create_vm_rejects_invalid_stream(monkeypatch, client: TestClient):
     old = dict(app.container.config())
     cfg = dict(old)
     cfg.update(
-        {
-            "STREAM_PAYMENT_ADDRESS": "0x1111111111111111111111111111111111111111",
-            "POLYGON_RPC_URL": "http://localhost",
-            "PROVIDER_ID": "0x2222222222222222222222222222222222222222",
-        }
+            {
+                "STREAM_PAYMENT_ADDRESS": "0x1111111111111111111111111111111111111111",
+                "POLYGON_RPC_URL": "http://localhost",
+                "PROVIDER_ID": "0x2222222222222222222222222222222222222222",
+                "GLM_TOKEN_ADDRESS": TOKEN,
+                "PRICE_GLM_PER_CORE_MONTH": "0.000000000002628",
+                "PRICE_GLM_PER_GB_RAM_MONTH": "0",
+                "PRICE_GLM_PER_GB_STORAGE_MONTH": "0",
+            }
     )
     try:
         app.container.config.override(cfg)
@@ -148,8 +208,25 @@ def test_create_vm_rejects_invalid_stream(monkeypatch, client: TestClient):
             def __init__(self, *a, **kw):
                 pass
 
-            def verify_stream(self, stream_id, expected_recipient):
-                return False, "recipient mismatch"
+            def get_stream(self, *_):
+                return stream(
+                    cfg,
+                    terms_hash(cfg),
+                    recipient="0x9999999999999999999999999999999999999999",
+                )
+
+            @property
+            def web3(self):
+                class W3:
+                    class Eth:
+                        chain_id = 31337
+
+                        def get_block(self, *_):
+                            return {"timestamp": 150}
+
+                    eth = Eth()
+
+                return W3()
 
         app.container.stream_reader.override(providers.Factory(DummyReaderBad))
 
@@ -157,13 +234,15 @@ def test_create_vm_rejects_invalid_stream(monkeypatch, client: TestClient):
             "name": "test-vm",
             "ssh_key": "ssh-rsa AAA...",
             "resources": {"cpu": 1, "memory": 1, "storage": 10},
-            "stream_id": 123,
+            "payment": payment(123, terms_hash(cfg)),
         }
+        app.dependency_overrides[requestor_action_signer] = lambda: REQUESTOR
         resp = client.post("/api/v1/vms", json=request_data)
         assert resp.status_code == 400
         assert "invalid stream" in resp.json()["detail"]
     finally:
         app.container.stream_reader.reset_override()
+        app.dependency_overrides.pop(requestor_action_signer, None)
         app.container.config.override(old)
 
 
@@ -190,6 +269,35 @@ def test_create_vm_requires_stream_for_configured_payments_in_pytest(
         assert resp.status_code == 400
     finally:
         app.container.config.override(old)
+
+
+def test_lease_quote_logs_unexpected_failure(caplog):
+    class FailingLeaseQuoteService:
+        def create_quote(self, command):
+            raise RuntimeError("boom")
+
+    client = TestClient(app, raise_server_exceptions=False)
+    caplog.set_level(logging.ERROR, logger="provider.api.payments_routes")
+    app.container.lease_quote_service.override(FailingLeaseQuoteService())
+    try:
+        response = client.post(
+            "/api/v1/payments/lease-quotes",
+            json={
+                "vm_name": "test-vm",
+                "image": "24.04",
+                "cpu": 1,
+                "memory": 1,
+                "storage": 10,
+                "duration_seconds": 3600,
+                "requestor_address": REQUESTOR,
+            },
+        )
+    finally:
+        app.container.lease_quote_service.reset_override()
+
+    assert response.status_code == 500
+    assert "Lease quote creation failed" in caplog.text
+    assert "boom" in caplog.text
 
 
 def test_create_vm_gating_enforces_without_default_lookup(
@@ -271,11 +379,15 @@ def test_create_vm_logs_when_stream_map_set_fails(monkeypatch, client: TestClien
     old = dict(app.container.config())
     cfg = dict(old)
     cfg.update(
-        {
-            "STREAM_PAYMENT_ADDRESS": "0x1111111111111111111111111111111111111111",
-            "POLYGON_RPC_URL": "http://localhost",
-            "PROVIDER_ID": "0x2222222222222222222222222222222222222222",
-        }
+            {
+                "STREAM_PAYMENT_ADDRESS": "0x1111111111111111111111111111111111111111",
+                "POLYGON_RPC_URL": "http://localhost",
+                "PROVIDER_ID": "0x2222222222222222222222222222222222222222",
+                "GLM_TOKEN_ADDRESS": TOKEN,
+                "PRICE_GLM_PER_CORE_MONTH": "0.000000000002628",
+                "PRICE_GLM_PER_GB_RAM_MONTH": "0",
+                "PRICE_GLM_PER_GB_STORAGE_MONTH": "0",
+            }
     )
     try:
         app.container.config.override(cfg)
@@ -286,6 +398,22 @@ def test_create_vm_logs_when_stream_map_set_fails(monkeypatch, client: TestClien
 
             def verify_stream(self, *_):
                 return True, "ok"
+
+            def get_stream(self, *_):
+                return stream(cfg, terms_hash(cfg, "vmy"))
+
+            @property
+            def web3(self):
+                class W3:
+                    class Eth:
+                        chain_id = 31337
+
+                        def get_block(self, *_):
+                            return {"timestamp": 150}
+
+                    eth = Eth()
+
+                return W3()
 
         app.container.stream_reader.override(providers.Factory(Reader))
 
@@ -305,17 +433,22 @@ def test_create_vm_logs_when_stream_map_set_fails(monkeypatch, client: TestClien
             async def set(self, *_):
                 raise RuntimeError("fail")
 
+            async def all_items(self):
+                return {}
+
         app.container.stream_map.override(BadMap())
 
         req = {
             "name": "vmy",
             "ssh_key": "ssh-rsa AAA...",
             "resources": {"cpu": 1, "memory": 1, "storage": 10},
-            "stream_id": 9,
+            "payment": payment(9, terms_hash(cfg, "vmy")),
         }
+        app.dependency_overrides[requestor_action_signer] = lambda: REQUESTOR
         resp = client.post("/api/v1/vms", json=req)
         assert resp.status_code == 502
     finally:
         app.container.stream_reader.reset_override()
         app.container.stream_map.reset_override()
+        app.dependency_overrides.pop(requestor_action_signer, None)
         app.container.config.override(old)

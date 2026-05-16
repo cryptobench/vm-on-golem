@@ -8,7 +8,8 @@ import {
   useVmStatusSafe,
   useVmStreamStatus,
 } from "../../hooks/useApiSWR";
-import type { Rental, VMResources } from "../../lib/api";
+import { useVmLive } from "../../hooks/useVmLive";
+import { loadRentals, saveRentals, type Rental, type VMResources } from "../../lib/api";
 import { formatUnixSecondsDateTime } from "../../lib/time";
 import { vmDetailsHref } from "../../lib/routes";
 import { humanDuration } from "../../lib/streams";
@@ -66,28 +67,38 @@ export function RentalRowWithData({
   const router = useRouter();
   const storedStatus = String(rental.status || "").toLowerCase();
   const storedTerminal = terminalStatus(storedStatus) || !!terminated;
+  const live = useVmLive(
+    storedTerminal ? null : rental.provider_endpoint_url,
+    storedTerminal ? null : rental.vm_id,
+    storedTerminal ? null : rental.creation_job_id,
+  );
+  const liveConnected = live.connected;
   const { data: provider } = useProviderInfo(rental.provider_endpoint_url, {
     refreshInterval: 30000,
   });
   const { data: access, error: accessError } = useVmAccess(
     storedTerminal ? null : rental.provider_endpoint_url,
     storedTerminal ? null : rental.vm_id,
-    { refreshInterval: 8000 },
+    { refreshInterval: liveConnected ? 0 : 8000 },
   );
   const { data: status, error: statusError } = useVmStatusSafe(
     storedTerminal ? null : rental.provider_endpoint_url,
     storedTerminal ? null : rental.vm_id,
-    { refreshInterval: 8000 },
+    { refreshInterval: liveConnected ? 0 : 8000 },
   );
   const { data: stream } = useVmStreamStatus(
     storedTerminal || !rental.stream_id ? null : rental.provider_endpoint_url,
     storedTerminal || !rental.stream_id ? null : rental.vm_id,
-    { refreshInterval: 15000 },
+    { refreshInterval: liveConnected ? 0 : 15000 },
   );
 
+  const liveLifecycle = live.state.lifecycle;
+  const liveAccess = live.state.access;
   const statusPayload = ((status as { data?: unknown } | null)?.data ||
     null) as Record<string, unknown> | null;
-  const lifecycleSource = statusPayload?.status
+  const lifecycleSource = liveLifecycle?.status
+    ? liveLifecycle
+    : statusPayload?.status
     ? statusPayload
     : (access as { status?: string } | null)?.status
       ? (access as unknown as Record<string, unknown>)
@@ -109,6 +120,34 @@ export function RentalRowWithData({
         accessError,
       });
   const liveStatus = lifecycle.status;
+  React.useEffect(() => {
+    if (!liveLifecycle?.status) return;
+    const nextStatus = String(liveLifecycle.status);
+    if (nextStatus === rental.status) return;
+    const current = loadRentals();
+    const next = current.map((item) =>
+      item.vm_id === rental.vm_id && item.provider_id === rental.provider_id
+        ? {
+            ...item,
+            status: nextStatus,
+            lifecycle_stage:
+              String(liveLifecycle.lifecycle_stage || item.lifecycle_stage || ""),
+            status_message:
+              String(liveLifecycle.status_message || item.status_message || ""),
+            progress:
+              typeof liveLifecycle.progress === "number"
+                ? liveLifecycle.progress
+                : item.progress,
+            transitioning:
+              typeof liveLifecycle.transitioning === "boolean"
+                ? liveLifecycle.transitioning
+                : item.transitioning,
+          }
+        : item,
+    );
+    saveRentals(next);
+  }, [liveLifecycle, rental.provider_id, rental.status, rental.vm_id]);
+
   const isTerminated = terminalStatus(liveStatus);
   const country = (provider as { country?: string } | null)?.country || "";
   const flag = countryFlagEmoji(country);
@@ -122,6 +161,7 @@ export function RentalRowWithData({
   const providerIp =
     (provider as { ip_address?: string | null } | null)?.ip_address ||
     rental.provider_ip ||
+    (liveAccess as { ssh_host?: string | null } | null)?.ssh_host ||
     (access as { ssh_host?: string | null } | null)?.ssh_host ||
     "";
   const remainingSeconds = (

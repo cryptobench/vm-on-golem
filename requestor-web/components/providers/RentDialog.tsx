@@ -25,6 +25,7 @@ import { vmDetailsHref } from "../../lib/routes";
 import { getRequestorRuntimeConfig } from "../../lib/runtimeConfig";
 import { terminateStreamWithWallet } from "../../lib/streams";
 import { parseHumanDuration } from "../../lib/time";
+import { walletDebug, walletWarn } from "../../lib/walletDebug";
 import { useWallet } from "../../context/WalletContext";
 import { useProjects } from "../../context/ProjectsContext";
 import { Alert } from "@golem/ui";
@@ -100,6 +101,7 @@ export function RentDialog({
   const [streamId, setStreamId] = React.useState<string | null>(null);
   const [openedStreamPaymentAddress, setOpenedStreamPaymentAddress] =
     React.useState<string>("");
+  const [openedPayment, setOpenedPayment] = React.useState<any>(null);
   const [step, setStep] = React.useState(0);
   const [preset, setPreset] = React.useState<RentDurationPreset>("30d");
   const [customInput, setCustomInput] = React.useState("");
@@ -109,6 +111,7 @@ export function RentDialog({
     setName(`vm-${provider.provider_id.slice(-4).toLowerCase()}`);
     setStreamId(null);
     setOpenedStreamPaymentAddress("");
+    setOpenedPayment(null);
     setError(null);
     setPhase("");
     setStep(0);
@@ -165,8 +168,20 @@ export function RentDialog({
   const openStream = async (): Promise<{
     id: string;
     contractAddress: string;
+    payment: {
+      stream_id: number;
+      lease_id: string;
+      terms_hash: string;
+      rate_per_second_wei: number;
+      duration_seconds: number;
+    };
   }> => {
     setError(null);
+    walletDebug("rent-dialog:open-stream:start", {
+      providerId: provider.provider_id,
+      durationSeconds,
+      spec,
+    });
     const opened = await openPaymentStream({
       provider,
       resources: spec,
@@ -178,6 +193,12 @@ export function RentDialog({
     });
     setStreamId(opened.id);
     setOpenedStreamPaymentAddress(opened.contractAddress);
+    setOpenedPayment(opened.payment);
+    walletDebug("rent-dialog:open-stream:done", {
+      providerId: provider.provider_id,
+      streamId: opened.id,
+      hasPayment: Boolean(opened.payment),
+    });
     return opened;
   };
 
@@ -186,6 +207,12 @@ export function RentDialog({
     let activeStreamPaymentAddress = "";
     try {
       const endpointUrl = providerEndpointUrl(provider);
+      walletDebug("rent-dialog:create:start", {
+        providerId: provider.provider_id,
+        endpointUrl,
+        paymentReady,
+        hasExistingStream: Boolean(streamId),
+      });
       setCreating(true);
       setError(null);
       setPhase(paymentReady ? "Preparing VM rental" : "Preparing wallet");
@@ -198,6 +225,7 @@ export function RentDialog({
               getRequestorRuntimeConfig().streamPaymentAddress ||
               ""
             ).trim(),
+            payment: openedPayment,
           }
         : await openStream();
       const activeStreamId = opened.id;
@@ -207,8 +235,8 @@ export function RentDialog({
         name: name.trim(),
         resources: spec,
         ssh_key: sshKey,
-        stream_id: Number(activeStreamId),
-      };
+        payment: opened.payment,
+      } as CreateVMRequest;
       pendingEntry = {
         name: payload.name,
         provider_id: provider.provider_id,
@@ -232,7 +260,17 @@ export function RentDialog({
         settlement_status: "pending",
       };
       upsertRental(pendingEntry);
+      walletDebug("rent-dialog:create-vm:start", {
+        providerId: provider.provider_id,
+        endpointUrl,
+        streamId: String(activeStreamId),
+      });
       const vm = await createVm(endpointUrl, payload);
+      walletDebug("rent-dialog:create-vm:done", {
+        providerId: provider.provider_id,
+        hasJobId: Boolean((vm as any)?.job_id),
+        vmId: (vm as any)?.vm_id || (vm as any)?.id || null,
+      });
       const jobId = (vm as any)?.job_id || null;
       let vmId = (vm as any)?.vm_id || (vm as any)?.id || null;
       if (!vmId && jobId) {
@@ -305,6 +343,11 @@ export function RentDialog({
       onClose();
       router.push(vmDetailsHref(vmId));
     } catch (createError: any) {
+      walletWarn("rent-dialog:create:failed", createError, {
+        providerId: provider.provider_id,
+        hasPendingEntry: Boolean(pendingEntry),
+        hasActiveStreamPaymentAddress: Boolean(activeStreamPaymentAddress),
+      });
       if (pendingEntry && activeStreamPaymentAddress) {
         try {
           await settleFailedCreate(pendingEntry, activeStreamPaymentAddress);
@@ -331,7 +374,8 @@ export function RentDialog({
             "VM creation failed; stream settlement address missing",
         });
       }
-      setError(getPaymentNetworkErrorMessage(createError, expectedChain));
+      const message = getPaymentNetworkErrorMessage(createError, expectedChain);
+      setError(message && message !== "[object Object]" ? message : "VM creation failed. Check the browser console for wallet details.");
     } finally {
       setCreating(false);
       setPhase("");

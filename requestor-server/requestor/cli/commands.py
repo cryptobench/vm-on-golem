@@ -506,34 +506,32 @@ async def create_vm(
                 # Initialize VM service
                 provider_url = _provider_url_for_advertisement(provider)
                 async with ProviderClient(provider_url) as client:
-                    # Fetch provider info if available (for preferred contract addresses); proceed regardless
-                    info = None
-                    try:
-                        info = await client.get_provider_info()
-                    except Exception:
-                        info = None
+                    # Fetch provider-authoritative lease quote before creating a stream.
+                    from eth_account import Account
+
+                    requestor_account = Account.from_key(config.ethereum_private_key)
                     # Always auto-open a stream when none provided (assume streaming required by default)
+                    payment = None
                     if stream_id is None:
-                        # Compute rate from provider pricing
-                        est = provider_service.compute_estimate(
-                            provider, (cpu, memory, storage)
+                        quote = await client.create_lease_quote(
+                            {
+                                "vm_name": name,
+                                "image": "24.04",
+                                "cpu": cpu,
+                                "memory": memory,
+                                "storage": storage,
+                                "duration_seconds": int(hours) * 3600,
+                                "requestor_address": requestor_account.address,
+                            }
                         )
-                        if not est or est.get("usd_per_month") is None:
-                            raise RequestorError(
-                                "Provider requires streaming but does not advertise USD pricing; cannot compute GLM ratePerSecond"
-                            )
-                        rate_per_second_wei, deposit_wei = _glm_stream_amounts_from_usd(
-                            est["usd_per_month"], int(hours)
-                        )
+                        rate_per_second_wei = int(quote["rate_per_second_wei"])
+                        deposit_wei = int(quote["min_deposit_wei"])
                         # Auto-fund via faucet if needed (testnets), then create stream
                         try:
-                            from eth_account import Account
-
                             from ..security.faucet import L2FaucetService
 
-                            acct = Account.from_key(config.ethereum_private_key)
                             faucet = L2FaucetService(config)
-                            await faucet.request_funds(acct.address)
+                            await faucet.request_funds(requestor_account.address)
                         except Exception:
                             # Non-fatal; stream creation may still succeed if already funded
                             pass
@@ -546,23 +544,36 @@ async def create_vm(
                         spc = StreamPaymentConfig(
                             rpc_url=config.polygon_rpc_url,
                             contract_address=(
-                                info.get("stream_payment_address") if info else None
+                                quote.get("contract_address") if quote else None
                             )
                             or config.stream_payment_address,
                             glm_token_address=(
-                                info.get("glm_token_address") if info else None
+                                quote.get("glm_token_address") if quote else None
                             )
                             or config.glm_token_address,
                             private_key=config.ethereum_private_key,
                         )
                         sp_client = StreamPaymentClient(spc)
                         recipient = (
-                            info.get("provider_id") if info else None
+                            quote.get("provider_address") if quote else None
                         ) or provider_id
                         stream_id = sp_client.create_stream(
-                            recipient, int(deposit_wei), int(rate_per_second_wei)
+                            recipient,
+                            int(deposit_wei),
+                            int(rate_per_second_wei),
+                            quote["lease_id"],
+                            quote["terms_hash"],
+                            int(quote["quote_expires_at"]),
+                            quote["signature"],
                         )
                         logger.success(f"Opened stream id={stream_id} (hours={hours})")
+                        payment = {
+                            "stream_id": int(stream_id),
+                            "lease_id": quote["lease_id"],
+                            "terms_hash": quote["terms_hash"],
+                            "rate_per_second_wei": rate_per_second_wei,
+                            "duration_seconds": int(quote["min_runway_seconds"]),
+                        }
 
                     vm_service = VMService(db_service, ssh_service, client)
                     # Create VM
@@ -574,9 +585,8 @@ async def create_vm(
                         provider_ip=provider_ip,
                         ssh_key=key_pair.public_key_content,
                         stream_id=stream_id,
-                        provider_endpoint_url=_provider_url_for_advertisement(
-                            provider
-                        ),
+                        payment=payment,
+                        provider_endpoint_url=_provider_url_for_advertisement(provider),
                     )
 
                     # Get access info from config
@@ -779,15 +789,6 @@ async def stream_open(
         provider_service = ProviderService()
         async with provider_service:
             provider = await provider_service.verify_provider(provider_id)
-            est = provider_service.compute_estimate(provider, (cpu, memory, storage))
-            if not est or est.get("usd_per_month") is None:
-                raise RequestorError(
-                    "Provider does not advertise USD pricing; cannot compute GLM ratePerSecond"
-                )
-            rate_per_second_wei, deposit_wei = _glm_stream_amounts_from_usd(
-                est["usd_per_month"], int(hours)
-            )
-
             provider_ip = (
                 "localhost"
                 if config.environment == "development"
@@ -797,26 +798,50 @@ async def stream_open(
                 raise RequestorError("Provider IP address not found in advertisement")
             provider_url = _provider_url_for_advertisement(provider)
             async with ProviderClient(provider_url) as client:
-                info = await client.get_provider_info()
-                recipient = info["provider_id"]
+                from eth_account import Account
+
+                requestor_account = Account.from_key(config.ethereum_private_key)
+                quote = await client.create_lease_quote(
+                    {
+                        "vm_name": "planned-vm",
+                        "image": "24.04",
+                        "cpu": cpu,
+                        "memory": memory,
+                        "storage": storage,
+                        "duration_seconds": int(hours) * 3600,
+                        "requestor_address": requestor_account.address,
+                    }
+                )
+                recipient = quote["provider_address"]
 
             # Prefer provider-advertised contract addresses to avoid mismatches
             spc = StreamPaymentConfig(
                 rpc_url=config.polygon_rpc_url,
-                contract_address=info.get("stream_payment_address")
+                contract_address=quote.get("contract_address")
                 or config.stream_payment_address,
-                glm_token_address=info.get("glm_token_address")
+                glm_token_address=quote.get("glm_token_address")
                 or config.glm_token_address,
                 private_key=config.ethereum_private_key,
             )
             sp = StreamPaymentClient(spc)
-            stream_id = sp.create_stream(recipient, deposit_wei, rate_per_second_wei)
+            stream_id = sp.create_stream(
+                recipient,
+                int(quote["min_deposit_wei"]),
+                int(quote["rate_per_second_wei"]),
+                quote["lease_id"],
+                quote["terms_hash"],
+                int(quote["quote_expires_at"]),
+                quote["signature"],
+            )
             click.echo(
                 json.dumps(
                     {
                         "stream_id": stream_id,
-                        "rate_per_second_wei": rate_per_second_wei,
-                        "deposit_wei": deposit_wei,
+                        "lease_id": quote["lease_id"],
+                        "terms_hash": quote["terms_hash"],
+                        "rate_per_second_wei": quote["rate_per_second_wei"],
+                        "duration_seconds": quote["min_runway_seconds"],
+                        "deposit_wei": quote["min_deposit_wei"],
                     },
                     indent=2,
                 )
@@ -835,7 +860,11 @@ async def stream_open(
 @async_command
 async def stream_topup(stream_id: int, glm: float | None, hours: int | None):
     """Top up a stream. Provide either --glm or --hours (using prior rate)."""
-    from ..payments.blockchain_service import StreamPaymentClient, StreamPaymentConfig
+    from ..payments.blockchain_service import (
+        StreamPaymentClient,
+        StreamPaymentConfig,
+        parse_stream_tuple,
+    )
 
     try:
         spc = StreamPaymentConfig(
@@ -850,9 +879,10 @@ async def stream_topup(stream_id: int, glm: float | None, hours: int | None):
             add_wei = int(Decimal(str(glm)) * (Decimal(10) ** 18))
         elif hours is not None:
             # naive: use last known rate by reading on-chain stream
-            rate = sp.contract.functions.streams(int(stream_id)).call()[
-                5
-            ]  # ratePerSecond
+            stream = parse_stream_tuple(
+                sp.contract.functions.streams(int(stream_id)).call()
+            )
+            rate = stream["ratePerSecond"]
             add_wei = int(rate) * int(hours) * 3600
         else:
             raise RequestorError("Provide either --glm or --hours")
@@ -907,7 +937,7 @@ async def stream_status(name: str, as_json: bool):
             f"    startTime   : {c.get('startTime')}  stopTime: {c.get('stopTime')}"
         )
         click.echo(
-            f"    rate/second : {c.get('ratePerSecond')}  deposit: {c.get('deposit')}  withdrawn: {c.get('withdrawn')}  halted: {c.get('halted')}"
+            f"    rate/second : {c.get('ratePerSecond')}  deposit: {c.get('deposit')}  withdrawn: {c.get('withdrawn')}"
         )
         click.echo("  Computed      :")
         click.echo(
@@ -939,40 +969,24 @@ async def stream_inspect(stream_id: int, as_json: bool):
             os.environ["GOLEM_SILENCE_LOGS"] = "1"
         from golem_streaming_abi import STREAM_PAYMENT_ABI
         from web3 import Web3
+        from ..payments.blockchain_service import parse_stream_tuple
 
         w3 = Web3(Web3.HTTPProvider(config.polygon_rpc_url))
         contract = w3.eth.contract(
             address=Web3.to_checksum_address(config.stream_payment_address),
             abi=STREAM_PAYMENT_ABI,
         )
-        (
-            token,
-            sender,
-            recipient,
-            startTime,
-            stopTime,
-            ratePerSecond,
-            deposit,
-            withdrawn,
-            halted,
-        ) = contract.functions.streams(int(stream_id)).call()
+        stream = parse_stream_tuple(contract.functions.streams(int(stream_id)).call())
         now = int(w3.eth.get_block("latest")["timestamp"])
-        vested = max(min(now, int(stopTime)) - int(startTime), 0) * int(ratePerSecond)
-        withdrawable = max(int(vested) - int(withdrawn), 0)
-        remaining = max(int(stopTime) - now, 0)
+        vested = (
+            max(min(now, stream["stopTime"]) - stream["startTime"], 0)
+            * stream["ratePerSecond"]
+        )
+        withdrawable = max(int(vested) - stream["withdrawn"], 0)
+        remaining = max(stream["stopTime"] - now, 0)
         out = {
             "stream_id": int(stream_id),
-            "chain": {
-                "token": token,
-                "sender": sender,
-                "recipient": recipient,
-                "startTime": int(startTime),
-                "stopTime": int(stopTime),
-                "ratePerSecond": int(ratePerSecond),
-                "deposit": int(deposit),
-                "withdrawn": int(withdrawn),
-                "halted": bool(halted),
-            },
+            "chain": stream,
             "computed": {
                 "now": now,
                 "remaining_seconds": remaining,
@@ -990,12 +1004,12 @@ async def stream_inspect(stream_id: int, as_json: bool):
                 )
             )
             click.echo("─" * 60)
-            click.echo(f"  recipient     : {recipient}")
+            click.echo(f"  recipient     : {stream['recipient']}")
             click.echo(
-                f"  startTime     : {int(startTime)}  stopTime: {int(stopTime)}  now: {now}  remaining: {remaining}s"
+                f"  startTime     : {stream['startTime']}  stopTime: {stream['stopTime']}  now: {now}  remaining: {remaining}s"
             )
             click.echo(
-                f"  rate/second   : {int(ratePerSecond)}  deposit: {int(deposit)}  withdrawn: {int(withdrawn)}  halted: {bool(halted)}"
+                f"  rate/second   : {stream['ratePerSecond']}  deposit: {stream['deposit']}  withdrawn: {stream['withdrawn']}"
             )
             click.echo(
                 f"  vested        : {int(vested)}  withdrawable: {int(withdrawable)}"

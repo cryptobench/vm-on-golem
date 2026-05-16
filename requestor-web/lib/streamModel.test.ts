@@ -19,13 +19,13 @@ test("stream accounting reports live spent and remaining balances", () => {
   assert.equal(remainingTokenBalance(row, 130), 70);
 });
 
-test("stream accounting stops spending at halted stop time", () => {
+test("stream accounting stops spending at terminated stop time", () => {
   const row = streamRow({
+    recipient: "0x0000000000000000000000000000000000000000",
     startTime: 100n,
     stopTime: 150n,
     ratePerSecond: 1_000_000n,
     deposit: 100_000_000n,
-    halted: true,
   });
 
   assert.equal(spentTokenBalance(row, 180), 50);
@@ -51,7 +51,6 @@ function streamRow(chain: Partial<StreamRow["chain"]>): StreamRow {
       ratePerSecond: 0n,
       deposit: 0n,
       withdrawn: 0n,
-      halted: false,
       ...chain,
     },
     tokenSymbol: "GLM",

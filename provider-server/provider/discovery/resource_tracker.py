@@ -15,15 +15,27 @@ class ResourceTracker:
         """Initialize resource tracker."""
         from .resource_monitor import ResourceMonitor
 
-        self.total_resources = {
+        self.detected_resources = {
             "cpu": ResourceMonitor.get_cpu_count(),
             "memory": ResourceMonitor.get_memory_gb(),
             "storage": ResourceMonitor.get_storage_gb(),
         }
+        self.total_resources = self._configured_offered_resources()
         self.allocated_resources = {"cpu": 0, "memory": 0, "storage": 0}
         self._lock = asyncio.Lock()
         self._update_callbacks: List[Callable] = []
         self._allocated_vms: Dict[str, VMResources] = {}
+
+    def _configured_offered_resources(self) -> Dict[str, int]:
+        configured = {
+            "cpu": int(getattr(settings, "OFFERED_CPU_CORES", 0) or 0),
+            "memory": int(getattr(settings, "OFFERED_MEMORY_GB", 0) or 0),
+            "storage": int(getattr(settings, "OFFERED_STORAGE_GB", 0) or 0),
+        }
+        return {
+            key: min(configured[key], detected) if configured[key] > 0 else detected
+            for key, detected in self.detected_resources.items()
+        }
 
     def _can_allocate(self, resources: VMResources) -> bool:
         """Check if resources can be allocated."""
@@ -192,4 +204,20 @@ class ResourceTracker:
                 f"Storage={self.allocated_resources['storage']}GB"
             )
 
+            await self._notify_update()
+
+    async def set_offered_resources(self, resources: Dict[str, int]) -> None:
+        """Update provider-offered resource caps for future allocations."""
+        async with self._lock:
+            self.total_resources = {
+                "cpu": int(resources["cpu"]),
+                "memory": int(resources["memory"]),
+                "storage": int(resources["storage"]),
+            }
+            logger.info(
+                "Updated offered resources: CPU=%s Memory=%sGB Storage=%sGB",
+                self.total_resources["cpu"],
+                self.total_resources["memory"],
+                self.total_resources["storage"],
+            )
             await self._notify_update()

@@ -6,6 +6,7 @@ import { RiMoreFill, RiUbuntuLine, RiWindowsLine } from "@remixicon/react";
 import type { Rental, VMResources } from "../../lib/api";
 import { vmDetailsHref } from "../../lib/routes";
 import { humanDuration } from "../../lib/streams";
+import { useVmLive } from "../../hooks/useVmLive";
 import { DashboardStatus } from "./DashboardStatus";
 
 export type DashboardStreamRow = {
@@ -15,7 +16,7 @@ export type DashboardStreamRow = {
   remainingBalance: string | null;
   hourlyRate: string | null;
   tokenSymbol: string;
-  status: "Active" | "Halted" | "Unavailable";
+  status: "Active" | "Terminated" | "Unavailable";
 };
 
 function shortId(value?: string | number | null) {
@@ -55,40 +56,52 @@ export function ActiveVmsTable({ rentals }: { rentals: Rental[] }) {
           </tr>
         </thead>
         <tbody>
-          {rentals.map((rental) => {
-            const platform = platformLabel(rental.platform);
-            const PlatformIcon = platform.Icon;
-            return (
-              <tr key={rental.vm_id} className="border-b border-border last:border-b-0">
-                <td className="py-4 pr-4 font-medium text-text-primary">
-                  <Link className="hover:text-primary" href={vmDetailsHref(rental.vm_id)}>
-                    {rental.name}
-                  </Link>
-                </td>
-                <td className="px-4 py-4"><DashboardStatus status={rental.status} /></td>
-                <td className="px-4 py-4 font-mono text-text-primary">{shortId(rental.provider_id)}</td>
-                <td className="px-4 py-4 font-mono text-text-primary">{shortId(rental.vm_id)}</td>
-                <td className="px-4 py-4">
-                  <span className="inline-flex items-center gap-2">
-                    <PlatformIcon className="h-4 w-4 text-primary" aria-hidden />
-                    {platform.label}
-                  </span>
-                </td>
-                <td className="px-4 py-4">{resourceValue(rental.resources, "cpu")}</td>
-                <td className="px-4 py-4">{resourceValue(rental.resources, "memory")} GB</td>
-                <td className="px-4 py-4">{resourceValue(rental.resources, "storage")} GB</td>
-                <td className="px-4 py-4">{rental.provider_ip || "-"}</td>
-                <td className="py-4 pl-4 text-right">
-                  <button className="rounded-md p-1 text-text-primary hover:bg-surface-muted" type="button" aria-label={`Actions for ${rental.name}`}>
-                    <RiMoreFill className="h-5 w-5" aria-hidden />
-                  </button>
-                </td>
-              </tr>
-            );
-          })}
+          {rentals.map((rental) => (
+            <ActiveVmRow key={rental.vm_id} rental={rental} />
+          ))}
         </tbody>
       </table>
     </div>
+  );
+}
+
+function ActiveVmRow({ rental }: { rental: Rental }) {
+  const live = useVmLive(
+    rental.provider_endpoint_url,
+    rental.vm_id,
+    rental.creation_job_id,
+  );
+  const liveLifecycle = live.state.lifecycle;
+  const platform = platformLabel(rental.platform);
+  const PlatformIcon = platform.Icon;
+  const status = String(liveLifecycle?.status || rental.status);
+
+  return (
+    <tr className="border-b border-border last:border-b-0">
+      <td className="py-4 pr-4 font-medium text-text-primary">
+        <Link className="hover:text-primary" href={vmDetailsHref(rental.vm_id)}>
+          {rental.name}
+        </Link>
+      </td>
+      <td className="px-4 py-4"><DashboardStatus status={status} /></td>
+      <td className="px-4 py-4 font-mono text-text-primary">{shortId(rental.provider_id)}</td>
+      <td className="px-4 py-4 font-mono text-text-primary">{shortId(rental.vm_id)}</td>
+      <td className="px-4 py-4">
+        <span className="inline-flex items-center gap-2">
+          <PlatformIcon className="h-4 w-4 text-primary" aria-hidden />
+          {platform.label}
+        </span>
+      </td>
+      <td className="px-4 py-4">{resourceValue(rental.resources, "cpu")}</td>
+      <td className="px-4 py-4">{resourceValue(rental.resources, "memory")} GB</td>
+      <td className="px-4 py-4">{resourceValue(rental.resources, "storage")} GB</td>
+      <td className="px-4 py-4">{rental.provider_ip || "-"}</td>
+      <td className="py-4 pl-4 text-right">
+        <button className="rounded-md p-1 text-text-primary hover:bg-surface-muted" type="button" aria-label={`Actions for ${rental.name}`}>
+          <RiMoreFill className="h-5 w-5" aria-hidden />
+        </button>
+      </td>
+    </tr>
   );
 }
 

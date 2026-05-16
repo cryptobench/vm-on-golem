@@ -6,7 +6,7 @@ import { getPaymentNetworkErrorMessage } from "../../lib/chain";
 import { useWallet } from "../../context/WalletContext";
 import { vmDetailsHref } from "../../lib/routes";
 import { getRequestorRuntimeConfig } from "../../lib/runtimeConfig";
-import { fetchStreamWithMeta } from "../../lib/streams";
+import { fetchStreamWithMeta, isTerminatedStream } from "../../lib/streams";
 import { StreamCard } from "../streams/StreamCard";
 import { useStreamActions } from "../../hooks/useStreamActions";
 
@@ -33,8 +33,8 @@ export function StreamsMini({ projectId }: { projectId: string }) {
           return { ok: false, r, error: getPaymentNetworkErrorMessage(e) };
         }
       }));
-      // Dashboard: show only active (not halted and remaining > 0)
-      const filtered = list.filter(row => row.ok && row.data && !row.data.chain.halted && (row.data.remaining > 0));
+      // Dashboard: show only active streams with runway.
+      const filtered = list.filter(row => row.ok && row.data && !isTerminatedStream(row.data.chain) && (row.data.remaining > 0));
       setRows(filtered);
     } catch (e: any) { setError(getPaymentNetworkErrorMessage(e)); }
   };

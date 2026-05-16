@@ -293,7 +293,7 @@ function StreamTab({ data }: { data: ReturnType<typeof useVmDetail>["data"] }) {
               { key: "token", label: "Token address", value: shortAddress(stream.chain.token) },
               { key: "sender", label: "Sender", value: shortAddress(stream.chain.sender) },
               { key: "recipient", label: "Recipient", value: shortAddress(stream.chain.recipient) },
-              { key: "halted", label: "Halted", value: String(stream.chain.halted) },
+              { key: "state", label: "Payment state", value: stream.payment_state ?? "unknown" },
             ]}
           />
         </CardBody>

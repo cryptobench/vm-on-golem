@@ -90,7 +90,8 @@ class StreamPaymentReader:
             ratePerSecond,
             deposit,
             withdrawn,
-            halted,
+            leaseId,
+            termsHash,
         ) = self.contract.functions.streams(int(stream_id)).call()
         return {
             "token": token,
@@ -101,7 +102,8 @@ class StreamPaymentReader:
             "ratePerSecond": int(ratePerSecond),
             "deposit": int(deposit),
             "withdrawn": int(withdrawn),
-            "halted": bool(halted),
+            "leaseId": _bytes32_hex(leaseId),
+            "termsHash": _bytes32_hex(termsHash),
         }
 
     def verify_stream(
@@ -111,6 +113,8 @@ class StreamPaymentReader:
             s = self.get_stream(stream_id)
         except Exception as e:
             return False, f"stream lookup failed: {e}"
+        if s["recipient"].lower() == "0x0000000000000000000000000000000000000000":
+            return False, "stream terminated"
         if s["recipient"].lower() != expected_recipient.lower():
             return False, "recipient mismatch"
         if s["deposit"] <= 0:
@@ -118,8 +122,17 @@ class StreamPaymentReader:
         now = int(self.web3.eth.get_block("latest")["timestamp"])
         if s["startTime"] > now:
             return False, "stream not started"
-        if s["halted"]:
-            return False, "stream halted"
+        if s["stopTime"] <= now:
+            return False, "stream expired"
         return True, "ok"
 
     # Reader should remain read-only; no terminate here
+
+
+def _bytes32_hex(value: Any) -> str:
+    if isinstance(value, str):
+        return value if value.startswith("0x") else f"0x{value}"
+    if hasattr(value, "hex"):
+        raw = value.hex()
+        return raw if raw.startswith("0x") else f"0x{raw}"
+    return str(value)

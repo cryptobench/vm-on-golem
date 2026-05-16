@@ -15,6 +15,7 @@ import subprocess
 import sys
 import threading
 import time
+import textwrap
 import urllib.error
 import urllib.request
 import webbrowser
@@ -55,10 +56,9 @@ WEB_URL = f"http://{WEB_HOST}:{WEB_PORT}"
 PROVIDER_DESKTOP_URL = f"http://{PROVIDER_DESKTOP_HOST}:{PROVIDER_DESKTOP_PORT}"
 ARKIV_RPC_URL = "https://kaolin.hoodi.arkiv.network/rpc"
 ARKIV_WS_URL = "wss://kaolin.hoodi.arkiv.network/rpc/ws"
-L2_RPC_URL = "https://ethereum-hoodi-rpc.publicnode.com"
+L2_RPC_URL = "https://rpc.hoodi.ethpandaops.io"
 L2_RPC_FALLBACK_URLS = [
     L2_RPC_URL,
-    "https://rpc.hoodi.ethpandaops.io",
 ]
 L2_WS_URL = ""
 L2_FAUCET_URL = ""
@@ -86,6 +86,7 @@ class Service:
     cwd: Path = ROOT
     ready: Callable[[], bool] | None = None
     fatal: bool = True
+    write_service_log: bool = True
     process: subprocess.Popen[str] | None = None
 
 
@@ -207,11 +208,18 @@ def log_setup(message: str) -> None:
         _stack_logs.write("setup", message)
 
 
-def log_service(service_name: str, message: str, *, echo: bool = True) -> None:
+def log_service(
+    service_name: str,
+    message: str,
+    *,
+    echo: bool = True,
+    write_service_log: bool = True,
+) -> None:
     if echo:
         print(message, flush=True)
     if _stack_logs is not None:
-        _stack_logs.write(service_name, message)
+        log_name = service_name if write_service_log else "local-stack"
+        _stack_logs.write(log_name, message)
 
 
 def stack_log_env() -> dict[str, str]:
@@ -220,6 +228,7 @@ def stack_log_env() -> dict[str, str]:
         "GOLEM_LOCAL_STACK_LOG_DIR": str(config.log_dir),
         "GOLEM_LOCAL_STACK_LOG_MAX_BYTES": str(config.max_bytes),
         "GOLEM_LOCAL_STACK_LOG_BACKUPS": str(config.backups),
+        "PYTHONUNBUFFERED": "1",
     }
 
 
@@ -665,7 +674,11 @@ def stream_output(service: Service) -> None:
     assert service.process is not None
     assert service.process.stdout is not None
     for line in service.process.stdout:
-        log_service(service.name, f"[{service.name}] {line.rstrip()}")
+        log_service(
+            service.name,
+            f"[{service.name}] {line.rstrip()}",
+            write_service_log=service.write_service_log,
+        )
 
 
 def start_service(service: Service, timeout: int) -> None:
@@ -987,6 +1000,49 @@ def build_services(
     )
 
     if start_provider_desktop:
+        provider_log_path = current_log_config().log_dir / "provider.log"
+        services.append(
+            Service(
+                name="provider",
+                command=[
+                    sys.executable,
+                    "-u",
+                    "-c",
+                    textwrap.dedent(
+                        """
+                        import pathlib
+                        import sys
+                        import time
+
+                        path = pathlib.Path(sys.argv[1])
+                        offset = 0
+                        while True:
+                            try:
+                                if path.exists():
+                                    size = path.stat().st_size
+                                    if size < offset:
+                                        offset = 0
+                                    with path.open("r", encoding="utf-8", errors="replace") as handle:
+                                        handle.seek(offset)
+                                        while True:
+                                            line = handle.readline()
+                                            if not line:
+                                                offset = handle.tell()
+                                                break
+                                            print(line.rstrip("\\n"), flush=True)
+                            except Exception as exc:
+                                print(f"[provider-log-tail] {exc}", flush=True)
+                            time.sleep(0.25)
+                        """
+                    ),
+                    str(provider_log_path),
+                ],
+                env=stack_log_env(),
+                ready=None,
+                fatal=False,
+                write_service_log=False,
+            )
+        )
         services.append(
             Service(
                 name="provider-desktop",
