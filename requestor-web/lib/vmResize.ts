@@ -1,6 +1,6 @@
 "use client";
 
-import type { ProviderSummary, VMResources } from "./api";
+import type { VMResources } from "./api";
 
 export type ResizeLimits = {
   cpu: number;
@@ -10,7 +10,12 @@ export type ResizeLimits = {
 
 export function computeResizeLimits(
   current: VMResources,
-  summary?: ProviderSummary | null,
+  summary?: {
+    resources?: {
+      available?: unknown;
+      total?: unknown;
+    };
+  } | null,
 ): ResizeLimits {
   const available = readResourceBucket(summary?.resources?.available);
   const total = readResourceBucket(summary?.resources?.total);

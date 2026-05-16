@@ -235,10 +235,15 @@ export function useDashboardData(serviceRunning: boolean | undefined) {
     const connect = async () => {
       setLoading((current) => current || data == null);
       try {
-        const socket = new WebSocket(await providerApi.providerLiveUrl());
+        const [url, token] = await Promise.all([
+          providerApi.providerLiveUrl(),
+          providerApi.adminToken(),
+        ]);
+        const socket = new WebSocket(url);
         socketRef.current = socket;
         socket.onopen = () => {
           retryDelay = 1000;
+          socket.send(JSON.stringify({ type: "auth", token }));
         };
         socket.onmessage = (message) => {
           const event = JSON.parse(String(message.data)) as ProviderLiveEvent;
@@ -407,11 +412,16 @@ export type VmDetailData = {
   access: VMAccessInfo | null;
   stream: StreamStatus | null;
   latest: MetricsLatestResponse | null;
-  history: MetricsHistoryResponse | null;
   errors: Record<string, string>;
 };
 
-export function useVmDetail(vmId: string | null, range: HistoryRange) {
+export type VmMetricHistoryState = {
+  history: MetricsHistoryResponse | null;
+  loading: boolean;
+  error: string | null;
+};
+
+export function useVmDetail(vmId: string | null) {
   const [data, setData] = React.useState<VmDetailData | null>(null);
   const [loading, setLoading] = React.useState(false);
 
@@ -421,12 +431,11 @@ export function useVmDetail(vmId: string | null, range: HistoryRange) {
       return;
     }
     setLoading(true);
-    const [vm, access, stream, latest, history] = await Promise.all([
+    const [vm, access, stream, latest] = await Promise.all([
       capture(() => providerApi.vm(vmId)),
       capture(() => providerApi.vmAccess(vmId)),
       capture(() => providerApi.vmStream(vmId)),
       capture(() => providerApi.vmMetricsLatest(vmId)),
-      capture(() => providerApi.vmMetricsHistory(vmId, range)),
     ]);
     const errors = Object.fromEntries(
       Object.entries({
@@ -434,7 +443,6 @@ export function useVmDetail(vmId: string | null, range: HistoryRange) {
         access: access.error,
         stream: stream.error,
         latest: latest.error,
-        history: history.error,
       }).filter(([, error]) => error != null),
     ) as Record<string, string>;
     setData({
@@ -442,15 +450,56 @@ export function useVmDetail(vmId: string | null, range: HistoryRange) {
       access: access.value,
       stream: stream.value,
       latest: latest.value,
-      history: history.value,
       errors,
     });
     setLoading(false);
-  }, [range, vmId]);
+  }, [vmId]);
 
   React.useEffect(() => {
     void refresh();
   }, [refresh]);
 
   return { data, loading, refresh };
+}
+
+export function useVmMetricHistory(
+  vmId: string | null,
+  range: HistoryRange,
+): VmMetricHistoryState {
+  const [state, setState] = React.useState<VmMetricHistoryState>({
+    history: null,
+    loading: false,
+    error: null,
+  });
+
+  React.useEffect(() => {
+    if (!vmId) {
+      setState({ history: null, loading: false, error: null });
+      return;
+    }
+
+    let active = true;
+    setState((current) => ({ ...current, loading: true, error: null }));
+
+    providerApi
+      .vmMetricsHistory(vmId, range)
+      .then((history) => {
+        if (!active) return;
+        setState({ history, loading: false, error: null });
+      })
+      .catch((error) => {
+        if (!active) return;
+        setState((current) => ({
+          ...current,
+          loading: false,
+          error: error instanceof Error ? error.message : String(error),
+        }));
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [range, vmId]);
+
+  return state;
 }

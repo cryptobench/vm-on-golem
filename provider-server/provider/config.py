@@ -78,6 +78,14 @@ class Settings(BaseSettings):
     HOST: str = "0.0.0.0"
     PORT: int = 7466
     SKIP_PORT_VERIFICATION: bool = False
+    REQUESTOR_SESSION_SECRET: str = Field(
+        default="",
+        description="Optional signing secret for provider-issued requestor VM sessions.",
+    )
+    PROVIDER_ADMIN_TOKEN: str = Field(
+        default="",
+        description="Optional bearer token for provider-owner/admin API access.",
+    )
     ENVIRONMENT: str = "production"
     # Logical network selector for advertisement scope and client defaults
     # If not explicitly provided, computed by validator below (dev -> testnet, else -> mainnet)

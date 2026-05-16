@@ -5,7 +5,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "provider-server"))
-sys.path.insert(0, str(ROOT / "requestor-server"))
 
 # Provide safe environment for provider settings during test collection
 os.environ.setdefault("GOLEM_PROVIDER_SKIP_BOOTSTRAP", "1")

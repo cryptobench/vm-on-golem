@@ -17,12 +17,12 @@ Over the last seven years, Golem has explored multiple approaches to decentraliz
 
 VM on Golem is a focused response to that feedback. It delivers standard Ubuntu virtual machines with the predictability developers expect from mainstream clouds, while retaining the advantages of an open, decentralized marketplace.
 
-The goal is to make the first ten minutes on Golem effortless. A user should be able to discover a provider, create a VM, and connect via SSH with three self-explanatory commands:
+The goal is to make the first ten minutes on Golem effortless. A user should be able to discover a provider, create a VM, and connect via SSH through three self-explanatory steps:
 
 ```
-golem vm providers                                              # List available providers
-golem vm create --provider-id <id> --cpu 2 --memory 4 --disk 20 # Provision a VM
-golem vm ssh <name>                                             # Connect instantly
+requestor web: list providers
+requestor web: rent VM
+requestor web: show SSH connection details
 ```
 
 This principle extends to providers as well. After installation, a provider can join the network with:
@@ -151,7 +151,7 @@ Accepting payment in GLM reflects confidence that this work will drive adoption,
 |-------|------|--------|--------|--------------|
 | ~~1~~ | ~~Discovery Service~~ | ~~Feb 2025~~ | Complete | - |
 | ~~2~~ | ~~Provider API~~ | ~~Feb 2025~~ | Complete | - |
-| ~~3~~ | ~~Requestor API~~ | ~~Feb 2025~~ | Complete | - |
+| ~~3~~ | ~~Requestor Web Orchestration~~ | ~~Feb 2025~~ | Complete | - |
 | ~~4~~ | ~~Arkiv Integration~~ | ~~Feb 2025~~ | Complete | - |
 | ~~5~~ | ~~Smart Contract Payments~~ | ~~Mar 2025~~ | Complete | - |
 | 6 | Requestor GUI Marketplace | January 2026 | Planned | 95,238 |
@@ -206,21 +206,21 @@ Built the provider-side server enabling providers to manage VMs via Multipass, t
 
 ---
 
-### ~~Phase 3: Requestor API~~
+### ~~Phase 3: Requestor Web Orchestration~~
 
 **Completed:** February 2025
 **Focus:** Full requestor-side VM lifecycle management
 
 #### Description
 
-Developed the requestor-side CLI and API enabling users to provision VMs on providers, manage active rentals, and connect via SSH.
+Developed requestor-side web and API flows enabling users to provision VMs on providers, manage active rentals, and connect via SSH.
 
 #### Acceptance Criteria
 
-- [x] CLI supports full VM lifecycle (`golem vm create/list/info/destroy/start/stop`)
-- [x] Provider discovery integration (`golem vm providers`)
+- [x] Requestor web supports VM lifecycle management
+- [x] Provider discovery integration in requestor web
 - [x] Provider filtering by CPU, memory, storage, country, and platform
-- [x] SSH key management and secure VM access (`golem vm ssh`)
+- [x] SSH key management and secure VM access details
 - [x] Local database persistence of VM metadata (SQLite)
 - [x] Async provisioning with timeout handling
 - [x] Port allocation for SSH access (port range 50800-50900)
@@ -257,7 +257,7 @@ Implemented on-chain streaming payment infrastructure enabling continuous per-se
 - [x] Requestor can top-up streams to extend runway (`topUp`)
 - [x] Either party can terminate streams (`terminate`)
 - [x] Stream verification validates recipient, deposit, and halted status
-- [x] CLI commands for stream management (`golem vm stream open/topup/status/inspect/list`)
+- [x] Requestor web stream management
 - [x] Auto-stream creation during VM provisioning with configurable hours
 - [x] ERC20 token approval flow for GLM payments
 - [x] StreamCreated events emitted and parseable on-chain
@@ -274,9 +274,9 @@ Implemented on-chain streaming payment infrastructure enabling continuous per-se
 
 #### Description
 
-Deliver a browser-native marketplace that brings the full VM lifecycle into a MetaMask-enabled dashboard. Instead of bootstrapping with CLI tooling, requestors open a single page, connect their wallet, and step through discovery, provisioning, and management without leaving the browser.
+Deliver a browser-native marketplace that brings the full VM lifecycle into a MetaMask-enabled dashboard. Requestors open a single page, connect their wallet, and step through discovery, provisioning, and management without leaving the browser.
 
-The experience translates the "three commands" promise into a point-and-click workflow: land on the dashboard, launch the rent wizard, approve the payment stream, receive SSH details, and monitor runtime from the same tab.
+The experience translates the simple rental promise into a point-and-click workflow: land on the dashboard, launch the rent wizard, approve the payment stream, receive SSH details, and monitor runtime from the same tab.
 
 #### High-Level Acceptance Criteria
 
@@ -554,4 +554,3 @@ This layered model delivers a zero-trust lifecycle: secrets remain private while
 - [ ] End-to-end: requestor provisions confidential VM → attestation passes → VM runs with protected memory/disk
 - [ ] Demonstrated that provider cannot access VM contents
 - [ ] At least one provider offering confidential compute on testnet
-

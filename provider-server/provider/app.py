@@ -1,11 +1,13 @@
 import logging
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
 
 from .api import routes
+from .auth.dependencies import require_provider_admin
+from .auth.errors import ForbiddenError, UnauthorizedError
 from .container import Container
 from .errors import (
     ConflictError,
@@ -45,7 +47,7 @@ def create_app() -> FastAPI:
 
 def _register_prometheus_route(app: FastAPI) -> None:
     @app.get("/metrics")
-    async def prometheus_metrics():
+    async def prometheus_metrics(_admin=Depends(require_provider_admin)):
         monitoring_service = app.container.monitoring_service()
         return PlainTextResponse(
             await monitoring_service.prometheus_metrics(),
@@ -57,6 +59,8 @@ def _wire_container(container: Container) -> None:
     container.wire(
         modules=[
             ".api.routes",
+            ".auth.api",
+            ".auth.dependencies",
             ".api.vm_routes",
             ".api.payments_routes",
             ".api.provider_routes",
@@ -108,6 +112,14 @@ def _register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(ValidationError)
     async def validation_exception_handler(request: Request, exc: ValidationError):
         return JSONResponse(status_code=400, content={"detail": str(exc)})
+
+    @app.exception_handler(UnauthorizedError)
+    async def unauthorized_exception_handler(request: Request, exc: UnauthorizedError):
+        return JSONResponse(status_code=401, content={"detail": str(exc)})
+
+    @app.exception_handler(ForbiddenError)
+    async def forbidden_exception_handler(request: Request, exc: ForbiddenError):
+        return JSONResponse(status_code=403, content={"detail": str(exc)})
 
     @app.exception_handler(PaymentsDisabledError)
     async def payments_disabled_exception_handler(

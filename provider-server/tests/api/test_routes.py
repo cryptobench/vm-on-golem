@@ -30,7 +30,9 @@ def override_container(mock_vm_service: VMService):
             yield
 
 
-def test_create_vm_happy_path(client: TestClient, mock_vm_service: VMService):
+def test_create_vm_without_payment_is_rejected(
+    client: TestClient, mock_vm_service: VMService
+):
     # Arrange
     vm_info = VMInfo(
         id="test-vm",
@@ -49,8 +51,8 @@ def test_create_vm_happy_path(client: TestClient, mock_vm_service: VMService):
     response = client.post("/api/v1/vms", json=request_data)
 
     # Assert
-    assert response.status_code == 200
-    assert response.json()["name"] == "test-vm"
+    assert response.status_code == 400
+    assert "payment" in response.json()["detail"]
 
 
 def test_list_vms_happy_path(client: TestClient, mock_vm_service: VMService):
@@ -88,6 +90,18 @@ def test_get_vm_status_happy_path(client: TestClient, mock_vm_service: VMService
     # Assert
     assert response.status_code == 200
     assert response.json()["name"] == "test-vm"
+
+
+def test_monitoring_history_rejects_invalid_range(client: TestClient):
+    response = client.get("/api/v1/monitoring/metrics/history?range=bogus")
+
+    assert response.status_code == 422
+
+
+def test_vm_metrics_history_rejects_invalid_range(client: TestClient):
+    response = client.get("/api/v1/vms/test-vm/metrics/history?range=bogus")
+
+    assert response.status_code == 422
 
 
 def test_delete_vm_happy_path(client: TestClient, mock_vm_service: VMService):
@@ -187,8 +201,8 @@ def test_create_vm_service_exception(client: TestClient, mock_vm_service: VMServ
     response = client.post("/api/v1/vms", json=request_data)
 
     # Assert
-    assert response.status_code == 502
-    assert "failed to create VM" in response.json()["detail"]
+    assert response.status_code == 400
+    assert "payment" in response.json()["detail"]
 
 
 def test_get_vm_status_service_exception(

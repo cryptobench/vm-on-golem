@@ -40,25 +40,16 @@ host display, but it is not a provider API fallback.
 
 ## Requestor Flow
 
-Requestor-side provider lookup is selected with:
+Requestor web provider lookup is selected with:
 
 ```bash
-GOLEM_REQUESTOR_DISCOVERY_BACKEND=central # default
-GOLEM_REQUESTOR_DISCOVERY_BACKEND=arkiv
+NEXT_PUBLIC_DISCOVERY_MODE=central # default
+NEXT_PUBLIC_DISCOVERY_MODE=arkiv
 ```
 
-Legacy `GOLEM_REQUESTOR_DISCOVERY_DRIVER=golem-base|central` is still accepted.
-
-Canonical requestor clients:
-
-- `ArkivDiscoveryClient` queries Arkiv annotations.
-- `CentralDiscoveryClient` queries `/api/v1/advertisements`.
-- `ProviderService` delegates discovery lookup to the selected client and keeps higher-level provider operations stable.
-
-Requestor web hides advertisements without a usable `endpoint_url`. Requestor
-server and CLI commands fail clearly when a selected provider or stored VM does
-not have one. HTTP endpoints are accepted only in development; production
-requestor clients require HTTPS.
+Requestor web hides advertisements without a usable `endpoint_url`. HTTP
+endpoints are accepted only in development; production requestor clients require
+HTTPS.
 
 ## Naming
 

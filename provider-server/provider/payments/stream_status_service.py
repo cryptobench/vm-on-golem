@@ -113,10 +113,14 @@ class StreamStatusService:
             )
         checks = [
             (
-                stream["recipient"].lower() != "0x0000000000000000000000000000000000000000",
+                stream["recipient"].lower()
+                != "0x0000000000000000000000000000000000000000",
                 "stream terminated",
             ),
-            (stream["recipient"].lower() == expected_recipient.lower(), "recipient mismatch"),
+            (
+                stream["recipient"].lower() == expected_recipient.lower(),
+                "recipient mismatch",
+            ),
             (stream["sender"].lower() == requestor_address.lower(), "sender mismatch"),
             (stream["token"].lower() == expected_token.lower(), "token mismatch"),
             (int(stream["stopTime"]) > now, "stream expired"),
@@ -150,7 +154,10 @@ class StreamStatusService:
 
         mapped = await self.stream_map.all_items()
         for vm_id, mapped_stream_id in mapped.items():
-            if int(mapped_stream_id) == int(payment.stream_id) and vm_id != current_vm_id:
+            if (
+                int(mapped_stream_id) == int(payment.stream_id)
+                and vm_id != current_vm_id
+            ):
                 raise InvalidStreamError("stream already mapped to another VM")
 
     async def require_vm_action_authorized(

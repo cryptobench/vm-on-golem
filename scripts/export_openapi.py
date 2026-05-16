@@ -29,11 +29,6 @@ SERVICES = {
         "module": "provider.app",
         "factory": "create_app",
     },
-    "requestor": {
-        "path": ROOT / "requestor-server",
-        "module": "requestor.api.main",
-        "app": "app",
-    },
 }
 
 

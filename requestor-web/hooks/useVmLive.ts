@@ -8,6 +8,7 @@ import {
   type VmMonitoringHistory,
   type VmMonitoringLatest,
 } from "../lib/api";
+import { getProviderVmSession } from "../lib/providerSession";
 
 type ConnectionState = "idle" | "connecting" | "connected" | "degraded";
 
@@ -143,7 +144,17 @@ export function useVmLive(
     socketRef.current = socket;
     dispatch({ type: "connecting" });
 
-    socket.onopen = () => dispatch({ type: "connected" });
+    socket.onopen = async () => {
+      try {
+        const token = await getProviderVmSession(providerEndpointUrl, vmId);
+        if (socket.readyState !== WebSocket.OPEN) return;
+        socket.send(JSON.stringify({ type: "auth", token }));
+        dispatch({ type: "connected" });
+      } catch (error) {
+        dispatch({ type: "degraded", error: String(error) });
+        socket.close();
+      }
+    };
     socket.onmessage = (message) => {
       try {
         const event = JSON.parse(String(message.data)) as VmLiveEvent;

@@ -6,6 +6,7 @@ import type {
   MetricsHistoryResponse,
   MetricsLatestResponse,
 } from "../../lib/types";
+import { providerAdminToken } from "../../lib/providerApi";
 
 type ConnectionState = "idle" | "connecting" | "connected" | "degraded";
 
@@ -43,6 +44,7 @@ type Action =
   | { type: "connected" }
   | { type: "degraded"; error?: string }
   | { type: "snapshot"; data: HostMetricsLivePayload }
+  | { type: "history"; data: HostMetricsLivePayload }
   | { type: "update"; data: HostMetricsLivePayload }
   | { type: "error"; error: string };
 
@@ -82,15 +84,30 @@ function hostLiveReducer(
   if (action.type === "snapshot") {
     return mergePayload(state, action.data, true);
   }
+  if (action.type === "history") {
+    return mergeHistoryPayload(state, action.data);
+  }
   if (action.type === "update") {
     return mergePayload(state, action.data, false);
   }
   return state;
 }
 
-export function useHostMonitoringLive(range: HistoryRange) {
+export function useHostMonitoringLive() {
   const [state, dispatch] = React.useReducer(hostLiveReducer, initialState);
   const socketRef = React.useRef<WebSocket | null>(null);
+  const historyRangeRef = React.useRef<HistoryRange>("1h");
+  const historyRangeUpdatePendingRef = React.useRef(false);
+
+  const setHistoryRange = React.useCallback((range: HistoryRange) => {
+    if (historyRangeRef.current === range) return;
+    historyRangeRef.current = range;
+    const socket = socketRef.current;
+    if (socket?.readyState === WebSocket.OPEN) {
+      historyRangeUpdatePendingRef.current = true;
+      socket.send(JSON.stringify({ type: "set_history_range", history_range: range }));
+    }
+  }, []);
 
   React.useEffect(() => {
     if (typeof window === "undefined") return;
@@ -98,12 +115,24 @@ export function useHostMonitoringLive(range: HistoryRange) {
     let socket: WebSocket | null = null;
     dispatch({ type: "connecting" });
 
-    hostMetricsLiveUrl(range)
-      .then((url) => {
+    Promise.all([hostMetricsLiveUrl(historyRangeRef.current), providerAdminToken()])
+      .then(([url, token]) => {
         if (cancelled) return;
         socket = new WebSocket(url);
         socketRef.current = socket;
-        socket.onopen = () => dispatch({ type: "connected" });
+        socket.onopen = () => {
+          socket?.send(JSON.stringify({ type: "auth", token }));
+          if (historyRangeRef.current !== "1h") {
+            historyRangeUpdatePendingRef.current = true;
+            socket?.send(
+              JSON.stringify({
+                type: "set_history_range",
+                history_range: historyRangeRef.current,
+              }),
+            );
+          }
+          dispatch({ type: "connected" });
+        };
         socket.onmessage = (message) => {
           try {
             const event = JSON.parse(String(message.data)) as HostMetricsLiveEvent;
@@ -114,8 +143,14 @@ export function useHostMonitoringLive(range: HistoryRange) {
               event.scope === "metrics" &&
               event.data
             ) {
-              dispatch({ type: "update", data: event.data });
+              if (historyRangeUpdatePendingRef.current && hasHistory(event.data)) {
+                historyRangeUpdatePendingRef.current = false;
+                dispatch({ type: "history", data: event.data });
+              } else {
+                dispatch({ type: "update", data: event.data });
+              }
             } else if (event.type === "error") {
+              historyRangeUpdatePendingRef.current = false;
               dispatch({ type: "error", error: event.error || "Live stream error" });
             }
           } catch (error) {
@@ -143,7 +178,7 @@ export function useHostMonitoringLive(range: HistoryRange) {
       socketRef.current = null;
       socket?.close();
     };
-  }, [range]);
+  }, []);
 
   React.useEffect(() => {
     if (state.connection !== "connected" || typeof window === "undefined") return;
@@ -170,6 +205,7 @@ export function useHostMonitoringLive(range: HistoryRange) {
     state,
     connected: state.connection === "connected",
     error,
+    setHistoryRange,
   };
 }
 
@@ -179,6 +215,19 @@ async function hostMetricsLiveUrl(range: HistoryRange) {
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
   url.searchParams.set("history_range", range);
   return url.toString();
+}
+
+function mergeHistoryPayload(
+  state: HostMonitoringLiveState,
+  payload: HostMetricsLivePayload,
+): HostMonitoringLiveState {
+  const history = payload.metrics_history ?? payload.history;
+  return {
+    ...state,
+    metricsHistory: history ?? state.metricsHistory,
+    lastEventAt: Date.now(),
+    errors: payload.errors ?? state.errors,
+  };
 }
 
 function mergePayload(
@@ -202,6 +251,10 @@ function mergePayload(
     lastEventAt: Date.now(),
     errors: payload.errors ?? state.errors,
   };
+}
+
+function hasHistory(payload: HostMetricsLivePayload) {
+  return Boolean(payload.metrics_history ?? payload.history);
 }
 
 function mergeMetricSamples(

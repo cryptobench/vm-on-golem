@@ -62,7 +62,7 @@ Our command-line interface is designed to be **self-explanatory**. Each command 
 **Example:**  
 Creating a new virtual machine is as simple as:  
 ```bash
-golem vm create my-webserver --size small
+requestor web: create my-webserver with size small
 ```  
 This command clearly defines the action (**create**), the resource (**vm**), the name (**my-webserver**), and the size (**small**).  
 
@@ -72,7 +72,7 @@ We align our command syntax with **familiar patterns** from traditional cloud pr
 **Example:**  
 Listing available VM sizes is straightforward:  
 ```bash
-golem vm list-sizes
+requestor web: browse VM sizes
 ```  
 This follows the same intuitive structure found in other cloud platforms.  
 
@@ -113,7 +113,7 @@ This setup **takes time, requires learning new tools, and adds friction for deve
 With **VM on Golem**, the entire process is reduced to **one command**.  
 
 ```bash
-golem vm create my-webserver --size small
+requestor web: create my-webserver with size small
 ```  
 
 The VM **already includes SSH** and is **ready to use immediately**. No SDKs, no scripting, no manual setup.  
@@ -160,7 +160,7 @@ VM on Golem enables seamless adoption by using the same tools and workflows deve
   **Example:** A web application running on AWS can be migrated to VM on Golem without any reconfiguration. Deploying it is as simple as switching cloud providers, ensuring a smooth transition without extra work.  
 
 - **Instant Familiarity, No Learning Curve**  
-  - The CLI and interface mirror traditional cloud environments, making it instantly recognizable for developers.  
+  - The web interface mirrors traditional cloud environments, making it instantly recognizable for developers.  
   - No steep onboarding. Anyone familiar with VMs can start using it immediately.  
 
 By removing friction and eliminating the need for relearning, VM on Golem makes decentralized cloud computing as accessible as any traditional cloud provider.
@@ -204,7 +204,7 @@ I hope you are just as excited about **VM on Golem** as I am. This is more than 
 
 If this vision resonates with you, I would love for you to be part of it. Whether you come from **engineering, design, finance, marketing, security, or are simply interested in decentralized technology**, there are many ways to get involved.  
 
-- **If you are a developer**, you can explore the code, share feedback, or help refine the CLI.  
+- **If you are a developer**, you can explore the code, share feedback, or help refine the web experience.  
 - **If you are a designer**, your ideas can help shape a seamless and intuitive experience.  
 - **If you love writing**, you can help make documentation and guides clearer for new users.  
 - **If you enjoy marketing or community building**, you can help spread the word and grow our network.  

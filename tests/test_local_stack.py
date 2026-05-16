@@ -129,7 +129,6 @@ def test_local_stack_build_services_passes_log_env_to_every_service(tmp_path):
         "central-discovery",
         "provider",
         "central-advertisement",
-        "requestor-api",
         "port-checker",
         "requestor-web",
         "provider-desktop",
@@ -149,9 +148,6 @@ def test_local_stack_build_services_passes_log_env_to_every_service(tmp_path):
     port_checker = next(
         service for service in services if service.name == "port-checker"
     )
-    requestor_api = next(
-        service for service in services if service.name == "requestor-api"
-    )
     central = next(
         service for service in services if service.name == "central-discovery"
     )
@@ -163,7 +159,6 @@ def test_local_stack_build_services_passes_log_env_to_every_service(tmp_path):
     assert any(service.write_service_log is False for service in providers)
     assert provider_desktop.env["GOLEM_PROVIDER_LOG_DIR"] == str(tmp_path)
     assert port_checker.env["PORT_CHECKER_LOG_DIR"] == str(tmp_path)
-    assert requestor_api.env["GOLEM_REQUESTOR_LOG_DIR"] == str(tmp_path)
     assert central.env["GOLEM_CENTRAL_DISCOVERY_LOG_DIR"] == str(tmp_path)
     assert requestor_web.command == [
         "npm",

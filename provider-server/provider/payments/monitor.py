@@ -86,7 +86,10 @@ class StreamMonitor:
                         f"rate={s['ratePerSecond']} withdrawn={s['withdrawn']} remaining={remaining}s"
                     )
                     # If stream is terminated, delete immediately to free all resources.
-                    if str(s.get("recipient", "")).lower() == "0x0000000000000000000000000000000000000000":
+                    if (
+                        str(s.get("recipient", "")).lower()
+                        == "0x0000000000000000000000000000000000000000"
+                    ):
                         logger.info(
                             f"Deleting VM {vm_id} due to terminated stream (id={stream_id}, now={now})"
                         )

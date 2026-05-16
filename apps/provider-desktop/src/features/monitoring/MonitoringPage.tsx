@@ -13,7 +13,7 @@ import { EndpointErrors, LoadingGrid } from "../../components/StateViews";
 import { metricChartPoints } from "../../components/metricChartPoints";
 import { RangePicker } from "../../components/RangePicker";
 import { EMPTY_VALUE, formatBytes, formatPercent } from "../../lib/format";
-import type { HistoryRange } from "../../lib/types";
+import type { HistoryRange, MetricsHistoryResponse } from "../../lib/types";
 import type { DashboardData } from "../../lib/useProviderData";
 import { useHostMonitoringLive } from "./useHostMonitoringLive";
 
@@ -24,8 +24,7 @@ export function MonitoringPage({
   data: DashboardData | null;
   loading: boolean;
 }) {
-  const [range, setRange] = React.useState<HistoryRange>("1h");
-  const live = useHostMonitoringLive(range);
+  const live = useHostMonitoringLive();
 
   if (loading && !data && !live.state.metricsLatest) return <LoadingGrid />;
   const host = live.state.metricsLatest?.host ?? {};
@@ -36,7 +35,6 @@ export function MonitoringPage({
   const diskTotal = metricNumber(host, "disk_total_bytes");
   const networkRx = metricNumber(host, "network_rx_bytes");
   const networkTx = metricNumber(host, "network_tx_bytes");
-  const effectiveHistory = live.state.metricsHistory;
 
   return (
     <div className="space-y-6">
@@ -63,30 +61,10 @@ export function MonitoringPage({
         <StatCard label="Network TX" value={formatBytes(networkTx)} detail="Total transmitted" icon={<RiUploadLine className="h-5 w-5" />} tone="success" />
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-2">
-        <Card>
-          <CardBody>
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <h2 className="text-base font-semibold text-text-primary">Host CPU Usage</h2>
-              <RangePicker value={range} onChange={setRange} />
-            </div>
-            <LineAreaChart data={metricChartPoints(effectiveHistory, "cpu_percent")} yUnit="%" height={240} />
-          </CardBody>
-        </Card>
-        <Card>
-          <CardBody>
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <h2 className="text-base font-semibold text-text-primary">Host Memory Usage</h2>
-              <RangePicker value={range} onChange={setRange} />
-            </div>
-            <LineAreaChart
-              data={metricChartPoints(effectiveHistory, "memory_used_bytes")}
-              height={240}
-              valueFormatter={formatBytes}
-            />
-          </CardBody>
-        </Card>
-      </div>
+      <HostUsageCharts
+        history={live.state.metricsHistory}
+        onRangeChange={live.setHistoryRange}
+      />
 
       <Card>
         <CardBody className="p-0">
@@ -126,6 +104,52 @@ export function MonitoringPage({
               },
               { key: "agent", header: "Agent Version", render: (row) => String(row.agent_version ?? EMPTY_VALUE) },
             ]}
+          />
+        </CardBody>
+      </Card>
+    </div>
+  );
+}
+
+function HostUsageCharts({
+  history,
+  onRangeChange,
+}: {
+  history: MetricsHistoryResponse | null;
+  onRangeChange: (range: HistoryRange) => void;
+}) {
+  const [range, setRange] = React.useState<HistoryRange>("1h");
+
+  const handleRangeChange = React.useCallback(
+    (nextRange: HistoryRange) => {
+      if (nextRange === range) return;
+      setRange(nextRange);
+      onRangeChange(nextRange);
+    },
+    [onRangeChange, range],
+  );
+
+  return (
+    <div className="grid gap-4 xl:grid-cols-2">
+      <Card>
+        <CardBody>
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <h2 className="text-base font-semibold text-text-primary">Host CPU Usage</h2>
+            <RangePicker value={range} onChange={handleRangeChange} />
+          </div>
+          <LineAreaChart data={metricChartPoints(history, "cpu_percent")} yUnit="%" height={240} />
+        </CardBody>
+      </Card>
+      <Card>
+        <CardBody>
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <h2 className="text-base font-semibold text-text-primary">Host Memory Usage</h2>
+            <RangePicker value={range} onChange={handleRangeChange} />
+          </div>
+          <LineAreaChart
+            data={metricChartPoints(history, "memory_used_bytes")}
+            height={240}
+            valueFormatter={formatBytes}
           />
         </CardBody>
       </Card>

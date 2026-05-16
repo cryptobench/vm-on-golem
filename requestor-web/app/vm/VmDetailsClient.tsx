@@ -50,7 +50,6 @@ import { openPaymentStream } from "../../lib/paymentStreams";
 import { clampResizeResources, computeResizeLimits } from "../../lib/vmResize";
 import {
   useProviderInfo,
-  useProviderSummary,
   useVmAccess,
   useVmCreateJobStatus,
   useVmStatusSafe,
@@ -194,9 +193,6 @@ export default function VmDetailsClient({ vmId: vmIdProp }: VmDetailsClientProps
   const { data: swrProvider } = useProviderInfo(vm?.provider_endpoint_url, {
     refreshInterval: liveConnected ? 0 : 30000,
   });
-  const { data: swrProviderSummary } = useProviderSummary(vm?.provider_endpoint_url, {
-    refreshInterval: liveConnected ? 0 : 10000,
-  });
   const { data: swrAccess, error: swrAccessError } = useVmAccess(
     vm?.provider_endpoint_url,
     vm?.vm_id,
@@ -207,6 +203,7 @@ export default function VmDetailsClient({ vmId: vmIdProp }: VmDetailsClientProps
   const { data: swrJob } = useVmCreateJobStatus(
     vm?.provider_endpoint_url,
     vm?.creation_job_id,
+    vm?.vm_id,
     { refreshInterval: liveConnected ? 0 : 2000 },
   );
   const { data: swrStatus, isValidating: swrStatusValidating } =
@@ -237,6 +234,13 @@ export default function VmDetailsClient({ vmId: vmIdProp }: VmDetailsClientProps
   const vmData = live.state.lifecycle || swrVm;
   const metricsData = live.state.metricsLatest || swrMetrics;
   const metricsHistoryData = live.state.metricsHistory || swrMetricsHistory;
+  const providerCapacity = React.useMemo(
+    () =>
+      vm?.provider_available_resources
+        ? { resources: { available: vm.provider_available_resources } }
+        : null,
+    [vm?.provider_available_resources],
+  );
   const authoritativeStatusKey = vm
     ? [
         vm.provider_endpoint_url,
@@ -482,13 +486,13 @@ export default function VmDetailsClient({ vmId: vmIdProp }: VmDetailsClientProps
     const next = clampResizeResources(
       resources,
       resources,
-      computeResizeLimits(resources, swrProviderSummary),
+      computeResizeLimits(resources, providerCapacity),
     );
     setResizeCpu(next.cpu);
     setResizeMemory(next.memory);
     setResizeStorage(next.storage);
     setResizeInitializedKey(key);
-  }, [vmData, vm, resizeInitializedKey, swrProviderSummary]);
+  }, [vmData, vm, resizeInitializedKey, providerCapacity]);
 
   if (
     !mounted ||
@@ -811,7 +815,7 @@ export default function VmDetailsClient({ vmId: vmIdProp }: VmDetailsClientProps
       if (previousStreamId != null && previousStreamId !== "") {
         const durationSeconds = await getResizeStreamDurationSeconds();
         replacementStream = await openPaymentStream({
-          provider: buildResizePaymentProvider(vm, swrProviderSummary),
+          provider: buildResizePaymentProvider(vm),
           resources: targetResources,
           durationSeconds,
           ads,
@@ -945,7 +949,7 @@ export default function VmDetailsClient({ vmId: vmIdProp }: VmDetailsClientProps
   };
   const resizeLimits = computeResizeLimits(
     currentResources,
-    swrProviderSummary,
+    providerCapacity,
   );
   const resizeNext = {
     cpu: resizeCpu,
@@ -1234,9 +1238,8 @@ function mergeVmStatus(vm: Rental, payload: unknown): Rental | null {
 
 function buildResizePaymentProvider(
   vm: Rental,
-  summary: unknown,
 ): Pick<ProviderAd, "provider_id" | "pricing" | "endpoint_url"> {
-  const pricing = ((summary as any)?.pricing || {}) as ProviderAd["pricing"];
+  const pricing = (vm.provider_pricing || {}) as ProviderAd["pricing"];
   const hasUsdPricing = [
     pricing?.usd_per_core_month,
     pricing?.usd_per_gb_ram_month,
@@ -1250,7 +1253,7 @@ function buildResizePaymentProvider(
 
   if (!hasUsdPricing && !hasGlmPricing) {
     throw new Error(
-      "Provider pricing unavailable. Refresh provider status before resizing.",
+      "Provider pricing unavailable. Recreate the rental from current discovery data before resizing.",
     );
   }
 

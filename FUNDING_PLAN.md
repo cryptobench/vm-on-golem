@@ -17,7 +17,7 @@
 
 Over the last seven years, Golem has explored multiple approaches to decentralized compute and built up a wealth of knowledge. Along this journey, one message has come through consistently from both the community and new users: they want something simple.
 
-When newcomers open the documentation, many feel overwhelmed. They often expect to begin with a few straightforward commands, but instead face a steep learning curve. I’ve seen this sentiment repeated time and again in conversations over the years.
+When newcomers open the documentation, many feel overwhelmed. They often expect to begin with a few straightforward steps, but instead face a steep learning curve. I’ve seen this sentiment repeated time and again in conversations over the years.
 
 VM on Golem is a focused response to that feedback. It delivers standard Ubuntu virtual machines with the predictability developers expect from mainstream clouds, while retaining the advantages of an open, decentralized marketplace.
 
@@ -27,23 +27,22 @@ With this approach of provisioning a plain, standard VM, people get exactly what
 
 This principle also guides our own operations. Our Golem DB infrastructure currently runs on Hetzner, and we are actively testing other clouds to ensure we can bring our systems online quickly if Hetzner ever changes its policies. What matters most to us, and to other builders, is the ability to move workloads directly onto new infrastructure without adapting to a bespoke stack. That is the exact challenge VM on Golem is built to solve.
 
-The goal of this project is to make the first ten minutes on Golem effortless. A user should be able to discover a provider, create a VM, and connect via SSH with three self-explanatory commands. The flow is designed so most users can begin without reading documentation, keeping the focus on building rather than learning new concepts.
+The goal of this project is to make the first ten minutes on Golem effortless. A user should be able to discover a provider, create a VM, and connect via SSH through three self-explanatory steps. The flow is designed so most users can begin without reading documentation, keeping the focus on building rather than learning new concepts.
 
 ---
 
 ### **2. The Solution: Focused on Simplicity**
 
-It has become clear that users expect a simple entry point to Golem: run a few commands and get a virtual machine. VM on Golem is designed to meet this expectation directly by providing an exact 1:1 clone of a virtual machine, just as if it were rented from any other cloud provider.
+It has become clear that users expect a simple entry point to Golem: complete a few steps and get a virtual machine. VM on Golem is designed to meet this expectation directly by providing an exact 1:1 clone of a virtual machine, just as if it were rented from any other cloud provider.
 
 This commitment to simplicity gives builders the freedom to run what they want, using the tools they already know. They are not locked into a specific SDK or a novel method of distributing work. Instead, they get a standard, reliable building block that the entire industry uses. Existing data pipelines, web servers, or Kubernetes clusters can be moved from any other cloud to VM on Golem and are expected to work out of the box.
 
-Getting started is as simple as it should be. Install the CLI once, then rent a machine with three self-explanatory commands:
+Getting started is as simple as it should be. Open the requestor web app, then
+rent a machine through three self-explanatory steps:
 
--   `pip install request-vm-on-golem` to install the requestor toolkit.
-
-1.  `golem vm providers` to list all available providers and their specs.
-2.  `golem vm create --provider-id ... --cores 2 --memory 2 --disk 10` to provision the machine.
-3.  `golem vm ssh vm_name` to gain instant access once it's ready.
+1.  Use the requestor web provider table to list available providers and specs.
+2.  Use the requestor web rent flow to provision the machine.
+3.  Use the SSH details shown by the requestor web app once the VM is ready.
 
 No lengthy explanations are needed. This is the user experience people expect.
 
@@ -80,7 +79,7 @@ The architecture of VM on Golem is deliberately simple. Providers expose a stabl
 
 ```mermaid
 sequenceDiagram
-    participant Req as "Requestor CLI / GUI"
+    participant Req as "Requestor web app"
     participant Wallet as "Wallet Client"
     participant GB as "Golem Base"
     participant Prov as "Provider API"
@@ -170,7 +169,7 @@ To prevent abuse, we are designing a **verifiable execution layer** powered by v
 
 ```mermaid
 sequenceDiagram
-    participant R as Requestor CLI
+    participant R as Requestor web app
     participant SC as Stream Contract (Polygon)
     participant PV as Provider Node
     participant VN as Verifier Nodes
@@ -282,45 +281,44 @@ The result is resilient DNS that works even for providers on dynamic IPs—witho
 
 ### **5.1. Requestor Workflow**
 
-The requestor experience stays true to the **“three commands to a VM”** promise:
+The requestor experience stays true to a simple VM rental promise:
 
-1.  `golem vm providers` — query Golem Base for available providers, filter by resources or location.
-2.  `golem vm create --provider-id <id> --cores <n> --memory <gb> --disk <gb>` — the CLI deposits funds into the stream, shares the ID with the provider, and triggers provisioning once confirmed.
-3.  `golem vm ssh <name>` — connect directly to the machine through the provider’s forwarded port.
+1.  The requestor web app queries discovery for available providers and filters by resources or location.
+2.  The requestor web rent flow deposits funds into the stream, shares the ID with the provider, and triggers provisioning once confirmed.
+3.  The requestor web app shows SSH details for connecting through the provider’s forwarded port.
 
 Connection details are stored locally, so reconnecting or tearing down later takes just one command.
 
-### **5.2. Command Journey**
+### **5.2. Requestor Journey**
 
 ```mermaid
 sequenceDiagram
     participant User as "Developer"
-    participant CLI as "golem CLI"
+    participant Web as "Requestor web"
     participant GB as "Golem Base"
     participant SC as "Stream Contract"
     participant API as "Provider API"
     participant VM as "Provisioned VM"
 
-    User->>CLI: Run `golem vm providers`
-    CLI->>GB: Fetch provider advertisements
-    GB-->>CLI: Return listings + pricing
-    CLI-->>User: Present sorted providers
-    User->>CLI: Run `golem vm create`
-    CLI->>SC: Create or top up payment stream
+    User->>Web: Open provider list
+    Web->>GB: Fetch provider advertisements
+    GB-->>Web: Return listings + pricing
+    Web-->>User: Present sorted providers
+    User->>Web: Confirm rent flow
+    Web->>SC: Create or top up payment stream
     SC-->>API: Emit funding authorization
-    CLI->>API: Submit VM specification
-    API-->>CLI: Respond with VM ready details
-    User->>CLI: Run `golem vm ssh`
-    CLI->>VM: Establish SSH via provider proxy
-    VM-->>CLI: Open shell session
-    CLI-->>User: Interactive access
-    User->>CLI: Optional `topup` or `stop`
-    CLI->>SC: Adjust or close stream
+    Web->>API: Submit VM specification
+    API-->>Web: Respond with VM ready details
+    User->>Web: Read SSH connection details
+    User->>VM: Establish SSH via provider proxy
+    VM-->>User: Open shell session
+    User->>Web: Optional top-up or stop
+    Web->>SC: Adjust or close stream
 ```
 
 ### **5.3. Requestor Web Marketplace Plan**
 
-We are building a browser-native marketplace that brings the full VM lifecycle into a MetaMask-enabled dashboard. Instead of bootstrapping with CLI tooling, requestors will open a single page, connect their wallet, and step through discovery, provisioning, and management without leaving the browser.
+We are building a browser-native marketplace that brings the full VM lifecycle into a MetaMask-enabled dashboard. Requestors will open a single page, connect their wallet, and step through discovery, provisioning, and management without leaving the browser.
 
 The experience is organized into a handful of focused surfaces:
 
@@ -332,7 +330,7 @@ The experience is organized into a handful of focused surfaces:
 -   The **settings workspace** stores discovery profiles, contract overrides, currency display preferences, and SSH keys so the web client stays in sync with the rest of the stack.
 -   A detailed **VM page** consolidates provider metadata, access information, stream state, and lifecycle actions for each instance.
 
-Together, these surfaces translate the "three commands" promise into a point-and-click workflow: land on the dashboard, launch the wizard, approve the payment stream, receive SSH details, and monitor runtime from the same tab.
+Together, these surfaces translate that promise into a point-and-click workflow: land on the dashboard, launch the wizard, approve the payment stream, receive SSH details, and monitor runtime from the same tab.
 
 ---
 
@@ -485,7 +483,7 @@ Sources:
 
 This proposal seeks funding for Phases 6 through 11, building on the foundation already completed in Phases 1–5. The model combines a fixed monthly salary in EUR with milestone-based rewards paid in GLM tokens. The salary ensures sustained focus, while milestone rewards are unlocked in stages tied to clear, verifiable outcomes.
 
-The aim of this funding is simple: to bring Golem to adoption. After more than eight years of development, users are still asking for the same thing — a standard VM they can rent in a few commands. VM on Golem is designed to deliver exactly that, removing unnecessary complexity and providing the entry point the community has been waiting for.
+The aim of this funding is simple: to bring Golem to adoption. After more than eight years of development, users are still asking for the same thing — a standard VM they can rent in a few steps. VM on Golem is designed to deliver exactly that, removing unnecessary complexity and providing the entry point the community has been waiting for.
 
 *Note: All GLM token rewards are calculated at a reference rate of €0.21 per GLM. Final amounts may be adjusted to reflect the prevailing market rate at the time of agreement.*
 
@@ -501,9 +499,9 @@ This provides baseline stability. The majority of rewards are tied to milestone 
 
 | Phase        | Focus                         | Timeline     | Status        | Payout (GLM)      | Success Criteria                                                                                                                                                                                                                          |
 | :----------- | :---------------------------- | :----------- | :------------ | :---------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Phase 1**  | Core Infrastructure           | Feb 2025     | Complete      |                   | CLI can provision a VM on testnet (`golem vm create`) and connect via SSH (`golem vm ssh`); teardown works end-to-end.                                                                                                                    |
+| **Phase 1**  | Core Infrastructure           | Feb 2025     | Complete      |                   | Requestor web can provision a VM on testnet and expose SSH connection details; teardown works end-to-end.                                                                                                                    |
 | **Phase 2**  | Provider API Hardening        | Feb 2025     | Complete      |                   | Provider node runs 24/7 without manual restarts; health checks and watchdog auto-recovery in place; readiness/liveness endpoints exposed.                                                                                                 |
-| **Phase 3**  | Requestor API & Orchestration | Feb 2025     | Complete      |                   | API supports create/list/stop/destroy; audit events recorded immutably; flows match CLI parity; idempotent retries confirmed.                                                                                                             |
+| **Phase 3**  | Requestor Web Orchestration   | Feb 2025     | Complete      |                   | Web flows support create/list/stop/destroy; audit events recorded immutably; flows are idempotent and retryable.                                                                                                                          |
 | **Phase 4**  | Golem DB Integration          | Feb 2025     | Complete      |                   | Providers publish ads with live capacity and pricing; requestors can filter and fetch ads; propagation < 10 seconds.                                                                                                                      |
 | **Phase 5**  | Smart-Contract Payments       | Mar 2025     | Testnet-ready |                   | Per-second payment streaming live on testnet; top-up extends runway; closing stream halts accrual; events visible on-chain.                                                                                                               |
 | **Phase 6**  | Requestor GUI Marketplace     | **Dec 2025** | Next          | **95,238 GLM**    | Public web app: wallet connect, provider search with filters, rent wizard (region, sizing, SSH key), rentals list with lifecycle actions, stream top-up/close.                                                                            |

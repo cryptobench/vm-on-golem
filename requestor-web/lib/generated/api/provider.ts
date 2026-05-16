@@ -246,6 +246,18 @@ export interface LeaseQuoteCommand {
   vm_name: string;
 }
 
+export type MetricHistoryRange =
+  (typeof MetricHistoryRange)[keyof typeof MetricHistoryRange];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const MetricHistoryRange = {
+  "1h": "1h",
+  "6h": "6h",
+  "24h": "24h",
+  "7d": "7d",
+  "30d": "30d",
+} as const;
+
 export type MetricSampleVmId = string | null;
 
 export interface MetricSample {
@@ -306,6 +318,24 @@ export interface MonitoringOverview {
   vms: MonitoringOverviewVmsItem[];
 }
 
+export type PricingSettingsWarning = string | null;
+
+export interface PricingSettings {
+  /** @minimum 0 */
+  glm_per_core_month: number;
+  /** @minimum 0 */
+  glm_per_gb_ram_month: number;
+  /** @minimum 0 */
+  glm_per_gb_storage_month: number;
+  /** @minimum 0 */
+  usd_per_core_month: number;
+  /** @minimum 0 */
+  usd_per_gb_ram_month: number;
+  /** @minimum 0 */
+  usd_per_gb_storage_month: number;
+  warning?: PricingSettingsWarning;
+}
+
 export type ProviderInfoCountry = string | null;
 
 export type ProviderInfoEndpointUrl = string | null;
@@ -323,6 +353,15 @@ export interface ProviderInfo {
   platform?: ProviderInfoPlatform;
   provider_id: string;
   stream_payment_address: string;
+}
+
+export interface ProviderSettings {
+  allocated_resources: ResourceSettings;
+  available_resources: ResourceSettings;
+  detected_resources: ResourceSettings;
+  minimum_configurable_resources: ResourceSettings;
+  offered_resources: ResourceSettings;
+  pricing: PricingSettings;
 }
 
 export type ProviderSummaryCertificate = CertificateStatus | null;
@@ -344,11 +383,45 @@ export interface ProviderSummary {
   vms: ProviderSummaryVmsItem[];
 }
 
+export interface RequestorSession {
+  access_token: string;
+  expires_at: number;
+  requestor_address: string;
+  token_type?: string;
+  vm_id: string;
+}
+
+export interface RequestorSessionCommand {
+  deadline: number;
+  /**
+   * @minLength 8
+   * @maxLength 128
+   */
+  nonce: string;
+  requestor_address: string;
+  scope?: string;
+  signature: string;
+  /**
+   * @minLength 3
+   * @maxLength 64
+   */
+  vm_id: string;
+}
+
 /**
  * Request to resize an existing VM.
  */
 export interface ResizeVMRequest {
   resources: VMResources;
+}
+
+export interface ResourceSettings {
+  /** @minimum 0 */
+  cpu: number;
+  /** @minimum 0 */
+  memory: number;
+  /** @minimum 0 */
+  storage: number;
 }
 
 export interface StreamComputed {
@@ -379,6 +452,24 @@ export interface StreamStatus {
   stream_id: number;
   verified: boolean;
   vm_id: string;
+}
+
+export interface UpdatePricingSettings {
+  /** @minimum 0 */
+  usd_per_core_month: number;
+  /** @minimum 0 */
+  usd_per_gb_ram_month: number;
+  /** @minimum 0 */
+  usd_per_gb_storage_month: number;
+}
+
+export interface UpdateResourceSettings {
+  /** @minimum 1 */
+  cpu: number;
+  /** @minimum 1 */
+  memory: number;
+  /** @minimum 1 */
+  storage: number;
 }
 
 /**
@@ -579,7 +670,7 @@ export type ActiveAlertsApiV1MonitoringAlertsGet200Item = {
 
 export type MonitoringHistoryApiV1MonitoringMetricsHistoryGetParams = {
   scope?: MetricScope;
-  range?: string;
+  range?: MetricHistoryRange;
   vm_id?: string | null;
   source?: MetricSource | null;
 };
@@ -589,7 +680,7 @@ export type CreateVmApiV1VmsPostParams = {
 };
 
 export type VmMetricsHistoryApiV1VmsRequestorNameMetricsHistoryGetParams = {
-  range?: string;
+  range?: MetricHistoryRange;
   source?: MetricSource | null;
 };
 
@@ -620,6 +711,52 @@ export const adminShutdownApiV1AdminShutdownPost = async (
     {
       ...options,
       method: "POST",
+    },
+  );
+};
+
+/**
+ * @summary Create Requestor Session
+ */
+export type createRequestorSessionApiV1AuthRequestorSessionsPostResponse200 = {
+  data: RequestorSession;
+  status: 200;
+};
+
+export type createRequestorSessionApiV1AuthRequestorSessionsPostResponse422 = {
+  data: HTTPValidationError;
+  status: 422;
+};
+
+export type createRequestorSessionApiV1AuthRequestorSessionsPostResponseSuccess =
+  createRequestorSessionApiV1AuthRequestorSessionsPostResponse200 & {
+    headers: Headers;
+  };
+export type createRequestorSessionApiV1AuthRequestorSessionsPostResponseError =
+  createRequestorSessionApiV1AuthRequestorSessionsPostResponse422 & {
+    headers: Headers;
+  };
+
+export type createRequestorSessionApiV1AuthRequestorSessionsPostResponse =
+  | createRequestorSessionApiV1AuthRequestorSessionsPostResponseSuccess
+  | createRequestorSessionApiV1AuthRequestorSessionsPostResponseError;
+
+export const getCreateRequestorSessionApiV1AuthRequestorSessionsPostUrl =
+  () => {
+    return `/api/v1/auth/requestor-sessions`;
+  };
+
+export const createRequestorSessionApiV1AuthRequestorSessionsPost = async (
+  requestorSessionCommand: RequestorSessionCommand,
+  options?: RequestInit,
+): Promise<createRequestorSessionApiV1AuthRequestorSessionsPostResponse> => {
+  return orvalFetch<createRequestorSessionApiV1AuthRequestorSessionsPostResponse>(
+    getCreateRequestorSessionApiV1AuthRequestorSessionsPostUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(requestorSessionCommand),
     },
   );
 };
@@ -1187,6 +1324,134 @@ export const providerInfoApiV1ProviderInfoGet = async (
     },
   );
 };
+
+/**
+ * @summary Provider Settings
+ */
+export type providerSettingsApiV1ProviderSettingsGetResponse200 = {
+  data: ProviderSettings;
+  status: 200;
+};
+
+export type providerSettingsApiV1ProviderSettingsGetResponseSuccess =
+  providerSettingsApiV1ProviderSettingsGetResponse200 & {
+    headers: Headers;
+  };
+export type providerSettingsApiV1ProviderSettingsGetResponse =
+  providerSettingsApiV1ProviderSettingsGetResponseSuccess;
+
+export const getProviderSettingsApiV1ProviderSettingsGetUrl = () => {
+  return `/api/v1/provider/settings`;
+};
+
+export const providerSettingsApiV1ProviderSettingsGet = async (
+  options?: RequestInit,
+): Promise<providerSettingsApiV1ProviderSettingsGetResponse> => {
+  return orvalFetch<providerSettingsApiV1ProviderSettingsGetResponse>(
+    getProviderSettingsApiV1ProviderSettingsGetUrl(),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+/**
+ * @summary Update Provider Pricing
+ */
+export type updateProviderPricingApiV1ProviderSettingsPricingPatchResponse200 =
+  {
+    data: ProviderSettings;
+    status: 200;
+  };
+
+export type updateProviderPricingApiV1ProviderSettingsPricingPatchResponse422 =
+  {
+    data: HTTPValidationError;
+    status: 422;
+  };
+
+export type updateProviderPricingApiV1ProviderSettingsPricingPatchResponseSuccess =
+  updateProviderPricingApiV1ProviderSettingsPricingPatchResponse200 & {
+    headers: Headers;
+  };
+export type updateProviderPricingApiV1ProviderSettingsPricingPatchResponseError =
+  updateProviderPricingApiV1ProviderSettingsPricingPatchResponse422 & {
+    headers: Headers;
+  };
+
+export type updateProviderPricingApiV1ProviderSettingsPricingPatchResponse =
+  | updateProviderPricingApiV1ProviderSettingsPricingPatchResponseSuccess
+  | updateProviderPricingApiV1ProviderSettingsPricingPatchResponseError;
+
+export const getUpdateProviderPricingApiV1ProviderSettingsPricingPatchUrl =
+  () => {
+    return `/api/v1/provider/settings/pricing`;
+  };
+
+export const updateProviderPricingApiV1ProviderSettingsPricingPatch = async (
+  updatePricingSettings: UpdatePricingSettings,
+  options?: RequestInit,
+): Promise<updateProviderPricingApiV1ProviderSettingsPricingPatchResponse> => {
+  return orvalFetch<updateProviderPricingApiV1ProviderSettingsPricingPatchResponse>(
+    getUpdateProviderPricingApiV1ProviderSettingsPricingPatchUrl(),
+    {
+      ...options,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(updatePricingSettings),
+    },
+  );
+};
+
+/**
+ * @summary Update Provider Resources
+ */
+export type updateProviderResourcesApiV1ProviderSettingsResourcesPatchResponse200 =
+  {
+    data: ProviderSettings;
+    status: 200;
+  };
+
+export type updateProviderResourcesApiV1ProviderSettingsResourcesPatchResponse422 =
+  {
+    data: HTTPValidationError;
+    status: 422;
+  };
+
+export type updateProviderResourcesApiV1ProviderSettingsResourcesPatchResponseSuccess =
+  updateProviderResourcesApiV1ProviderSettingsResourcesPatchResponse200 & {
+    headers: Headers;
+  };
+export type updateProviderResourcesApiV1ProviderSettingsResourcesPatchResponseError =
+  updateProviderResourcesApiV1ProviderSettingsResourcesPatchResponse422 & {
+    headers: Headers;
+  };
+
+export type updateProviderResourcesApiV1ProviderSettingsResourcesPatchResponse =
+  | updateProviderResourcesApiV1ProviderSettingsResourcesPatchResponseSuccess
+  | updateProviderResourcesApiV1ProviderSettingsResourcesPatchResponseError;
+
+export const getUpdateProviderResourcesApiV1ProviderSettingsResourcesPatchUrl =
+  () => {
+    return `/api/v1/provider/settings/resources`;
+  };
+
+export const updateProviderResourcesApiV1ProviderSettingsResourcesPatch =
+  async (
+    updateResourceSettings: UpdateResourceSettings,
+    options?: RequestInit,
+  ): Promise<updateProviderResourcesApiV1ProviderSettingsResourcesPatchResponse> => {
+    return orvalFetch<updateProviderResourcesApiV1ProviderSettingsResourcesPatchResponse>(
+      getUpdateProviderResourcesApiV1ProviderSettingsResourcesPatchUrl(),
+      {
+        ...options,
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...options?.headers },
+        body: JSON.stringify(updateResourceSettings),
+      },
+    );
+  };
 
 /**
  * @summary Provider Summary

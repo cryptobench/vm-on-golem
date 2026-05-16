@@ -10,10 +10,10 @@ class StreamMap:
         self._lock = asyncio.Lock()
         self._data: Dict[str, Any] = {}
         if self._path.exists():
-            try:
-                self._data = json.loads(self._path.read_text())
-            except Exception:
-                self._data = {}
+            data = json.loads(self._path.read_text())
+            if not isinstance(data, dict):
+                raise ValueError(f"stream map {self._path} must contain a JSON object")
+            self._data = data
 
     async def set(
         self, vm_id: str, stream_id: int, requestor_address: str | None = None
@@ -38,6 +38,21 @@ class StreamMap:
             owner = value.get("requestor_address")
             return str(owner) if owner else None
         return None
+
+    async def set_owner(self, vm_id: str, requestor_address: str) -> None:
+        async with self._lock:
+            value = self._data.get(vm_id)
+            if isinstance(value, dict):
+                value["requestor_address"] = requestor_address
+            elif value is not None:
+                value = {
+                    "stream_id": int(value),
+                    "requestor_address": requestor_address,
+                }
+                self._data[vm_id] = value
+            else:
+                raise KeyError(f"stream mapping for VM {vm_id} not found")
+            self._persist()
 
     async def remove(self, vm_id: str) -> None:
         async with self._lock:

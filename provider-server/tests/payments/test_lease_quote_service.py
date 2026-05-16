@@ -1,10 +1,8 @@
-from eth_account import Account
-
 import pytest
+from eth_account import Account
 
 from provider.errors import ValidationError
 from provider.payments.lease_quote_service import LeaseQuoteService
-
 
 PRIVATE_KEY = "0x" + "11" * 32
 PROVIDER = Account.from_key(PRIVATE_KEY).address

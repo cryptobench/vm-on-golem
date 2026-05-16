@@ -1,5 +1,7 @@
 from fastapi import APIRouter
 
+from provider.auth import api as auth_api
+
 from . import (
     admin_routes,
     live_routes,
@@ -12,6 +14,7 @@ from . import (
 )
 
 router = APIRouter()
+router.include_router(auth_api.router)
 router.include_router(vm_routes.router)
 router.include_router(provider_routes.router)
 router.include_router(settings_routes.router)

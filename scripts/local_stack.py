@@ -34,8 +34,6 @@ PROVIDER_HOST = "127.0.0.1"
 PROVIDER_PORT = 7466
 PORT_CHECKER_HOST = "127.0.0.1"
 PORT_CHECKER_PORT = 9000
-REQUESTOR_HOST = "127.0.0.1"
-REQUESTOR_PORT = 8000
 WEB_HOST = "127.0.0.1"
 WEB_PORT = 3000
 PROVIDER_DESKTOP_HOST = "127.0.0.1"
@@ -51,7 +49,6 @@ CENTRAL_URL = f"http://{CENTRAL_HOST}:{CENTRAL_PORT}"
 CENTRAL_API_URL = f"{CENTRAL_URL}/api/v1"
 PROVIDER_API_URL = f"http://{PROVIDER_HOST}:{PROVIDER_PORT}/api/v1"
 PORT_CHECKER_URL = f"http://{PORT_CHECKER_HOST}:{PORT_CHECKER_PORT}"
-REQUESTOR_API_URL = f"http://{REQUESTOR_HOST}:{REQUESTOR_PORT}/api/v1"
 WEB_URL = f"http://{WEB_HOST}:{WEB_PORT}"
 PROVIDER_DESKTOP_URL = f"http://{PROVIDER_DESKTOP_HOST}:{PROVIDER_DESKTOP_PORT}"
 ARKIV_RPC_URL = "https://kaolin.hoodi.arkiv.network/rpc"
@@ -339,7 +336,6 @@ def preflight(start_provider_desktop: bool) -> None:
         (CENTRAL_HOST, CENTRAL_PORT),
         (PROVIDER_HOST, PROVIDER_PORT),
         (PORT_CHECKER_HOST, PORT_CHECKER_PORT),
-        (REQUESTOR_HOST, REQUESTOR_PORT),
     ):
         log_setup(f"[setup] checking port: {host}:{port}")
         ensure_port_free(host, port)
@@ -493,7 +489,6 @@ def ensure_python_deps() -> None:
         "central-discovery-server",
         "port-checker-server",
         "provider-server",
-        "requestor-server",
     ):
         log_setup(f"[setup] poetry install: {service}")
         run_checked(["poetry", "-C", service, "install", "--no-interaction"])
@@ -802,7 +797,6 @@ def local_dirs() -> dict[str, Path]:
     dirs = {
         "central": LOCAL_DIR / "central-discovery",
         "provider": LOCAL_DIR / "provider",
-        "requestor": LOCAL_DIR / "requestor",
         "logs": LOCAL_DIR / "logs",
     }
     for path in dirs.values():
@@ -816,7 +810,6 @@ def build_services(
 ) -> list[Service]:
     dirs = local_dirs()
     provider_dir = dirs["provider"]
-    requestor_dir = dirs["requestor"]
     provider_env = {
         **service_log_env("GOLEM_PROVIDER"),
         "GOLEM_PROVIDER_SKIP_BOOTSTRAP": "1",
@@ -920,45 +913,6 @@ def build_services(
                 ),
             ]
         )
-
-    services.append(
-        Service(
-            name="requestor-api",
-            command=[
-                "poetry",
-                "-C",
-                "requestor-server",
-                "run",
-                "golem",
-                "server",
-                "api",
-                "--host",
-                REQUESTOR_HOST,
-                "--port",
-                str(REQUESTOR_PORT),
-                "--reload",
-            ],
-            env={
-                **service_log_env("GOLEM_REQUESTOR"),
-                "GOLEM_ENVIRONMENT": "development",
-                "GOLEM_REQUESTOR_NETWORK": "development",
-                "GOLEM_REQUESTOR_DISCOVERY_BACKEND": "central",
-                "GOLEM_REQUESTOR_DISCOVERY_URL": CENTRAL_URL,
-                "GOLEM_REQUESTOR_PAYMENTS_NETWORK": PAYMENTS_NETWORK,
-                "GOLEM_REQUESTOR_L2_RPC_URL": deployment.get("rpc_url", L2_RPC_URL),
-                "GOLEM_REQUESTOR_L2_FAUCET_URL": L2_FAUCET_URL,
-                "GOLEM_REQUESTOR_STREAM_PAYMENT_ADDRESS": deployment[
-                    "stream_payment_address"
-                ],
-                "GOLEM_REQUESTOR_GLM_TOKEN_ADDRESS": deployment["glm_token_address"],
-                "GOLEM_REQUESTOR_ARKIV_RPC_URL": ARKIV_RPC_URL,
-                "GOLEM_REQUESTOR_ARKIV_WS_URL": ARKIV_WS_URL,
-                "GOLEM_REQUESTOR_BASE_DIR": str(requestor_dir),
-                "GOLEM_REQUESTOR_DB_PATH": str(requestor_dir / "vms.db"),
-            },
-            ready=lambda: http_ok(f"{REQUESTOR_API_URL}/settings"),
-        )
-    )
 
     requestor_ui_env = {
         **stack_log_env(),
@@ -1121,7 +1075,6 @@ def run_stack(args: argparse.Namespace) -> int:
         else:
             log(f"  Provider API:       {PROVIDER_API_URL}")
         log(f"  Port checker:       {PORT_CHECKER_URL}")
-        log(f"  Requestor API:      {REQUESTOR_API_URL}")
         log(f"  Payments network:   {PAYMENTS_NETWORK} ({L2_CHAIN_ID_HEX})")
         log(f"  Payments RPC:       {deployment.get('rpc_url', L2_RPC_URL)}")
         log(f"  StreamPayment:      {deployment['stream_payment_address']}")
