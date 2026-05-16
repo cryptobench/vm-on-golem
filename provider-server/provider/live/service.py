@@ -28,7 +28,8 @@ SNAPSHOT_SCOPES: tuple[LiveScope, ...] = (
     "job",
     "snapshots",
     "stream",
-    "metrics",
+    "metrics_live",
+    "metrics_history",
 )
 PROVIDER_LIVE_SCOPES: tuple[str, ...] = (
     "provider_info",
@@ -106,7 +107,9 @@ class VMLiveService:
         try:
             history_range = _validate_history_range(history_range)
         except ValidationError as exc:
-            await self._send(websocket, "error", scope="metrics", error=str(exc))
+            await self._send(
+                websocket, "error", scope="metrics_history", error=str(exc)
+            )
             await websocket.close(code=HISTORY_RANGE_CLOSE_CODE)
             return
         logger.info(
@@ -210,12 +213,12 @@ class VMLiveService:
                         str(message.get("history_range") or history_state["value"])
                     )
                 except ValidationError as exc:
-                    await self._send_error(websocket, "metrics", exc)
+                    await self._send_error(websocket, "metrics_history", exc)
                     continue
                 await self._send_update(
                     websocket,
-                    "metrics",
-                    await self._metrics_payload(vm_id, history_state["value"]),
+                    "metrics_history",
+                    await self._metrics_history_payload(vm_id, history_state["value"]),
                 )
             elif event_type == "refresh":
                 scopes = message.get("scopes") or list(SNAPSHOT_SCOPES)
@@ -238,7 +241,7 @@ class VMLiveService:
     ) -> None:
         while True:
             payload = await queue.get()
-            await self._send_update(websocket, "metrics", payload)
+            await self._send_update(websocket, "metrics_live", payload)
 
     async def _invalidation_loop(
         self,
@@ -277,10 +280,12 @@ class VMLiveService:
             if scope == "job" and not job_id:
                 continue
             try:
-                if scope == "metrics":
-                    payload = await self._metrics_payload(vm_id, history_range)
-                    snapshot.metrics_latest = payload["latest"]
-                    snapshot.metrics_history = payload["history"]
+                if scope == "metrics_live":
+                    snapshot.metrics_live = await self._metrics_live_payload(vm_id)
+                elif scope == "metrics_history":
+                    snapshot.metrics_history = await self._metrics_history_payload(
+                        vm_id, history_range
+                    )
                 else:
                     setattr(
                         snapshot, scope, await self._scope_data(scope, vm_id, job_id)
@@ -307,11 +312,12 @@ class VMLiveService:
             if scope == "job" and not job_id:
                 continue
             try:
-                data = (
-                    await self._metrics_payload(vm_id, history_range)
-                    if scope == "metrics"
-                    else await self._scope_data(scope, vm_id, job_id)
-                )
+                if scope == "metrics_live":
+                    data = await self._metrics_live_payload(vm_id)
+                elif scope == "metrics_history":
+                    data = await self._metrics_history_payload(vm_id, history_range)
+                else:
+                    data = await self._scope_data(scope, vm_id, job_id)
                 await self._send_update(websocket, scope, data)
             except Exception as exc:
                 await self._send_error(websocket, scope, exc)
@@ -345,21 +351,25 @@ class VMLiveService:
             ).model_dump(mode="json")
         raise ValueError(f"unsupported scope: {scope}")
 
-    async def _metrics_payload(self, vm_id: str, history_range: str) -> dict[str, Any]:
+    async def _metrics_live_payload(self, vm_id: str) -> dict[str, Any]:
         return {
             "latest": self.monitoring_service.latest_for_vm(vm_id).model_dump(
                 mode="json"
             ),
-            "history": self.monitoring_service.history(
-                scope=MetricScope.VM,
-                range_name=history_range,
-                vm_id=vm_id,
-            ).model_dump(mode="json"),
             "guest_interval_seconds": self.monitoring_service.guest_sample_interval(
                 vm_id
             ),
             "live_mode": self.monitoring_service.is_vm_live(vm_id),
         }
+
+    async def _metrics_history_payload(
+        self, vm_id: str, history_range: str
+    ) -> dict[str, Any]:
+        return self.monitoring_service.history(
+            scope=MetricScope.VM,
+            range_name=history_range,
+            vm_id=vm_id,
+        ).model_dump(mode="json")
 
     async def _send_update(
         self,
@@ -709,7 +719,9 @@ class HostLiveService:
         try:
             history_range = _validate_history_range(history_range)
         except ValidationError as exc:
-            await self._send(websocket, "error", scope="metrics", error=str(exc))
+            await self._send(
+                websocket, "error", scope="metrics_history", error=str(exc)
+            )
             await websocket.close(code=HISTORY_RANGE_CLOSE_CODE)
             return
         logger.info("Host live stream opened", extra={"history_range": history_range})
@@ -720,7 +732,7 @@ class HostLiveService:
                 data={
                     "protocol": "provider-host-live.v1",
                     "capabilities": {
-                        "scopes": ["metrics"],
+                        "scopes": ["metrics_live", "metrics_history"],
                         "client_events": ["set_history_range", "refresh", "ping"],
                     },
                     "server_time": self._now(),
@@ -796,19 +808,30 @@ class HostLiveService:
                     )
                 except ValidationError as exc:
                     await self._send(
-                        websocket, "error", scope="metrics", error=str(exc)
+                        websocket, "error", scope="metrics_history", error=str(exc)
                     )
                     continue
                 await self._send_update(
-                    websocket, "metrics", await self._metrics_payload(current_range)
+                    websocket,
+                    "metrics_history",
+                    await self._metrics_history_payload(current_range),
                 )
             elif event_type == "refresh":
-                scopes = message.get("scopes") or ["metrics"]
-                if "metrics" in {str(scope) for scope in scopes}:
+                scopes = {
+                    str(scope)
+                    for scope in (message.get("scopes") or ["metrics_live"])
+                }
+                if "metrics_live" in scopes:
                     await self._send_update(
                         websocket,
-                        "metrics",
-                        await self._metrics_payload(current_range),
+                        "metrics_live",
+                        await self._metrics_live_payload(),
+                    )
+                if "metrics_history" in scopes:
+                    await self._send_update(
+                        websocket,
+                        "metrics_history",
+                        await self._metrics_history_payload(current_range),
                     )
             else:
                 logger.warning(
@@ -825,7 +848,7 @@ class HostLiveService:
     ) -> None:
         while True:
             payload = await queue.get()
-            await self._send_update(websocket, "metrics", payload)
+            await self._send_update(websocket, "metrics_live", payload)
 
     async def _heartbeat_loop(self, websocket: WebSocket) -> None:
         while True:
@@ -836,22 +859,27 @@ class HostLiveService:
         await self._send(
             websocket,
             "snapshot",
-            data=await self._metrics_payload(history_range),
+            data={
+                "metrics_live": await self._metrics_live_payload(),
+                "metrics_history": await self._metrics_history_payload(history_range),
+            },
         )
 
-    async def _metrics_payload(self, history_range: str) -> dict[str, Any]:
+    async def _metrics_live_payload(self) -> dict[str, Any]:
         last_sample_at = self.monitoring_service.latest_sample_at()
         return {
-            "metrics_latest": self.monitoring_service.latest().model_dump(mode="json"),
-            "metrics_history": self.monitoring_service.history(
-                scope=MetricScope.HOST,
-                range_name=history_range,
-            ).model_dump(mode="json"),
+            "latest": self.monitoring_service.latest().model_dump(mode="json"),
             "status": self.monitoring_service.status(),
             "last_sample_at": ensure_utc(last_sample_at).isoformat()
             if last_sample_at
             else None,
         }
+
+    async def _metrics_history_payload(self, history_range: str) -> dict[str, Any]:
+        return self.monitoring_service.history(
+            scope=MetricScope.HOST,
+            range_name=history_range,
+        ).model_dump(mode="json")
 
     async def _send_update(
         self,

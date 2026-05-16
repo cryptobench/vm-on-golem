@@ -131,6 +131,17 @@ export function buildSparklineRows(
     }));
 }
 
+export function buildRoundedSparklineRows(
+  rows: MetricChartRow[],
+  key: MetricValueKey,
+  fractionDigits: number,
+): MetricSparklineRow[] {
+  return buildSparklineRows(rows, key).map((row) => ({
+    ...row,
+    value: Number(row.value.toFixed(fractionDigits)),
+  }));
+}
+
 export function latestNetworkRates(rows: MetricChartRow[]) {
   const latest = [...rows]
     .reverse()

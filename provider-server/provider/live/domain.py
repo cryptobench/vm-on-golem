@@ -9,7 +9,8 @@ LiveScope = Literal[
     "job",
     "snapshots",
     "stream",
-    "metrics",
+    "metrics_live",
+    "metrics_history",
 ]
 
 
@@ -28,6 +29,6 @@ class LiveSnapshot(BaseModel):
     job: dict[str, Any] | None = None
     snapshots: list[dict[str, Any]] = Field(default_factory=list)
     stream: dict[str, Any] | None = None
-    metrics_latest: dict[str, Any] | None = None
+    metrics_live: dict[str, Any] | None = None
     metrics_history: dict[str, Any] | None = None
     errors: dict[str, str] = Field(default_factory=dict)

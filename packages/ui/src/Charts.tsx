@@ -233,12 +233,17 @@ export function SlidingLineChart<TData extends ChartDatum>({
   height?: number;
   showLegend?: boolean;
 }) {
-  const slide = useAppendSlide(
-    data.map((row, index) =>
-      animationKey ? animationKey(row) : String(row[xKey] ?? index),
-    ),
-    yAxisWidth + 40,
+  const keys = data.map((row, index) =>
+    animationKey ? animationKey(row) : String(row[xKey] ?? index),
   );
+  const slide = useAppendSlide(keys, yAxisWidth + 40);
+  const append = useAppendDraw(keys);
+  const chartData = React.useMemo(
+    () => buildAppendedLineData(data, series, append.count),
+    [append.count, data, series],
+  );
+  const appendKey = append.keys.join("\u001f");
+  const hasAppend = append.count > 0;
 
   return (
     <div
@@ -257,7 +262,7 @@ export function SlidingLineChart<TData extends ChartDatum>({
       <div className="min-h-0 flex-1">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart
-            data={data}
+            data={chartData}
             margin={{ top: 8, right: 20, bottom: 0, left: 0 }}
           >
             <CartesianGrid
@@ -295,10 +300,10 @@ export function SlidingLineChart<TData extends ChartDatum>({
             <Legend wrapperStyle={{ display: "none" }} />
             {series.map((item) => (
               <Line
-                key={item.key}
+                key={`${item.key}:base`}
                 className={item.colorClassName}
                 type="linear"
-                dataKey={item.key}
+                dataKey={hasAppend ? lineBaseKey(item.key) : item.key}
                 name={item.label}
                 stroke="currentColor"
                 strokeWidth={2}
@@ -310,11 +315,61 @@ export function SlidingLineChart<TData extends ChartDatum>({
                 isAnimationActive={false}
               />
             ))}
+            {hasAppend
+              ? series.map((item) => (
+                  <Line
+                    key={`${appendKey}:${item.key}:append`}
+                    className={cn(item.colorClassName, "golem-chart-append-curve")}
+                    type="linear"
+                    dataKey={lineAppendKey(item.key)}
+                    name={item.label}
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    dot={false}
+                    activeDot={{ r: 4 }}
+                    connectNulls={false}
+                    isAnimationActive={false}
+                  />
+                ))
+              : null}
           </LineChart>
         </ResponsiveContainer>
       </div>
     </div>
   );
+}
+
+function buildAppendedLineData<TData extends ChartDatum>(
+  data: TData[],
+  series: ChartSeries[],
+  appendedCount: number,
+): ChartDatum[] {
+  if (appendedCount <= 0) return data;
+
+  const appendStart = Math.max(1, data.length - appendedCount);
+  return data.map((row, index) => {
+    const next: ChartDatum = { ...row };
+    series.forEach((item) => {
+      const value = row[item.key];
+      next[lineBaseKey(item.key)] = index <= appendStart - 1 ? value : null;
+      next[lineAppendKey(item.key)] = index >= appendStart - 1 ? value : null;
+    });
+    return next;
+  });
+}
+
+function lineBaseKey(key: string) {
+  return `${key}__base`;
+}
+
+function lineAppendKey(key: string) {
+  return `${key}__append`;
+}
+
+function originalLineKey(key: string) {
+  return key.replace(/__(?:base|append)$/, "");
 }
 
 export function SlidingSparkline<TData extends ChartDatum>({
@@ -342,10 +397,12 @@ export function SlidingSparkline<TData extends ChartDatum>({
     .map((row) => Number(row[dataKey]))
     .filter((value) => Number.isFinite(value));
   const domain = useStableValueDomain(values, keys);
-  const path = React.useMemo(
-    () => buildSparklinePath(data, dataKey, domain, windowSize),
-    [data, dataKey, domain, windowSize],
+  const append = useAppendDraw(keys);
+  const paths = React.useMemo(
+    () => buildSparklinePaths(data, dataKey, domain, windowSize, append.count),
+    [append.count, data, dataKey, domain, windowSize],
   );
+  const appendKey = append.keys.join("\u001f");
 
   return (
     <div
@@ -367,7 +424,7 @@ export function SlidingSparkline<TData extends ChartDatum>({
       >
         <path
           className={cn("golem-chart-line-curve", colorClassName)}
-          d={path}
+          d={paths.base}
           fill="none"
           stroke="currentColor"
           strokeWidth="2"
@@ -375,27 +432,61 @@ export function SlidingSparkline<TData extends ChartDatum>({
           strokeLinejoin="round"
           vectorEffect="non-scaling-stroke"
         />
+        {paths.append ? (
+          <path
+            key={appendKey}
+            className={cn("golem-chart-append-curve", colorClassName)}
+            d={paths.append}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            vectorEffect="non-scaling-stroke"
+            pathLength={1}
+          />
+        ) : null}
       </svg>
     </div>
   );
 }
 
-function buildSparklinePath<TData extends ChartDatum>(
+function buildSparklinePaths<TData extends ChartDatum>(
+  data: TData[],
+  dataKey: keyof TData & string,
+  domain: NumericDomain,
+  windowSize?: number,
+  appendedCount = 0,
+) {
+  const points = buildSparklinePoints(data, dataKey, domain, windowSize);
+  if (points.length < 2) return { base: "", append: "" };
+
+  const appendStart = Math.max(1, points.length - appendedCount);
+  if (appendedCount <= 0 || appendStart >= points.length) {
+    return { base: pointsToPath(points), append: "" };
+  }
+
+  return {
+    base: pointsToPath(points.slice(0, appendStart)),
+    append: pointsToPath(points.slice(appendStart - 1)),
+  };
+}
+
+function buildSparklinePoints<TData extends ChartDatum>(
   data: TData[],
   dataKey: keyof TData & string,
   domain: NumericDomain,
   windowSize?: number,
 ) {
-  const numericValues = data
-    .map((row) => Number(row[dataKey]))
-    .filter((value) => Number.isFinite(value));
-  if (numericValues.length < 2) return "";
+  const numericValues = data.map((row) => Number(row[dataKey]));
+  if (numericValues.filter((value) => Number.isFinite(value)).length < 2) {
+    return [];
+  }
 
   const pointCount = Math.max(windowSize ?? data.length, data.length, 2);
   const visibleStart = Math.max(0, pointCount - data.length);
   const range = Math.max(domain.max - domain.min, Number.EPSILON);
 
-  let pathIndex = 0;
   return data
     .map((row, index) => {
       const value = Number(row[dataKey]);
@@ -403,11 +494,17 @@ function buildSparklinePath<TData extends ChartDatum>(
       const x = ((visibleStart + index) / Math.max(pointCount - 1, 1)) * 100;
       const normalized = (value - domain.min) / range;
       const y = 34 - Math.max(0, Math.min(1, normalized)) * 32;
-      const command = pathIndex === 0 ? "M" : "L";
-      pathIndex += 1;
-      return `${command}${formatPathNumber(x)},${formatPathNumber(y)}`;
+      return { x, y };
     })
-    .filter((segment): segment is string => Boolean(segment))
+    .filter((point): point is { x: number; y: number } => Boolean(point));
+}
+
+function pointsToPath(points: Array<{ x: number; y: number }>) {
+  return points
+    .map(
+      (point, index) =>
+        `${index === 0 ? "M" : "L"}${formatPathNumber(point.x)},${formatPathNumber(point.y)}`,
+    )
     .join(" ");
 }
 
@@ -463,6 +560,33 @@ function formatPathNumber(value: number) {
   return Number(value.toFixed(3));
 }
 
+function useAppendDraw(keys: string[]) {
+  const previousKeysRef = React.useRef<string[]>([]);
+  const [append, setAppend] = React.useState({ count: 0, keys: [] as string[] });
+  const keySignature = keys.join("\u001f");
+
+  React.useLayoutEffect(() => {
+    const previousKeys = previousKeysRef.current;
+    previousKeysRef.current = keys;
+    const change = getAppendOnlySlideChange(previousKeys, keys);
+    if (!change) {
+      setAppend({ count: 0, keys: [] });
+      return;
+    }
+
+    setAppend({
+      count: change.appendedCount,
+      keys: keys.slice(-change.appendedCount),
+    });
+    const timeout = window.setTimeout(() => {
+      setAppend({ count: 0, keys: [] });
+    }, 380);
+    return () => window.clearTimeout(timeout);
+  }, [keySignature]);
+
+  return append;
+}
+
 function ChartLegend({ series }: { series: ChartSeries[] }) {
   return (
     <div className="mb-4 flex flex-wrap justify-center gap-x-6 gap-y-2 text-sm font-medium text-text-primary">
@@ -498,11 +622,26 @@ function MetricTooltip({
       <div className="space-y-1">
         {payload
           .filter((item) => typeof item.value === "number")
+          .reduce<Array<{ key: string; value: number; name?: string }>>(
+            (rows, item) => {
+              const key = originalLineKey(String(item.dataKey));
+              if (!seriesByKey.has(key) || rows.some((row) => row.key === key)) {
+                return rows;
+              }
+              rows.push({
+                key,
+                value: item.value as number,
+                name: String(item.name || key),
+              });
+              return rows;
+            },
+            [],
+          )
           .map((item) => {
-            const config = seriesByKey.get(String(item.dataKey));
+            const config = seriesByKey.get(item.key);
             return (
               <div
-                key={String(item.dataKey)}
+                key={item.key}
                 className="flex items-center justify-between gap-4 text-text-secondary"
               >
                 <span className="flex items-center gap-2">
@@ -515,7 +654,7 @@ function MetricTooltip({
                   {config?.label || item.name}
                 </span>
                 <span className="font-medium text-text-primary">
-                  {valueFormatter(item.value as number)}
+                  {valueFormatter(item.value)}
                 </span>
               </div>
             );
