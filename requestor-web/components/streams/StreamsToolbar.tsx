@@ -2,13 +2,12 @@
 
 import React from "react";
 import {
-  RiArrowDownSLine,
   RiRefreshLine,
   RiSettings3Line,
   RiMoneyDollarCircleLine,
 } from "@remixicon/react";
 import Link from "next/link";
-import { Spinner } from "@golem/ui";
+import { Select, Spinner } from "@golem/ui";
 import type { DisplayCurrency } from "./streamModel";
 
 type StreamsToolbarProps = {
@@ -33,8 +32,9 @@ export function StreamsToolbar({
             className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-text-secondary"
             aria-hidden
           />
-          <select
-            className="input h-10 min-w-40 appearance-none bg-surface pl-10 pr-8 text-sm font-medium text-text-primary"
+          <Select
+            className="min-w-40"
+            selectClassName="h-10 pl-10 text-sm font-medium text-text-primary"
             value={displayCurrency}
             onChange={(event) =>
               onDisplayCurrencyChange(event.target.value === "token" ? "token" : "fiat")
@@ -42,11 +42,7 @@ export function StreamsToolbar({
           >
             <option value="fiat">USD (Fiat)</option>
             <option value="token">Token</option>
-          </select>
-          <RiArrowDownSLine
-            className="pointer-events-none absolute right-3 top-1/2 h-5 w-5 -translate-y-1/2 text-text-secondary"
-            aria-hidden
-          />
+          </Select>
         </span>
       </label>
       <button

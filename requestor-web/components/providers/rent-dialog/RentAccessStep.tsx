@@ -1,7 +1,8 @@
 "use client";
 
 import React from "react";
-import { RiAddLine, RiArrowRightSLine } from "@remixicon/react";
+import { RiAddLine } from "@remixicon/react";
+import { Input, Select } from "@golem/ui";
 import type { SSHKey } from "../../../lib/api";
 import { KeyAddModal } from "../../ssh/KeyAddModal";
 import { RentStepSection } from "./RentStepSection";
@@ -34,8 +35,8 @@ export function RentAccessStep({
       <div className="mt-8">
         <label className="label">SSH key</label>
         <div className="relative mt-2">
-          <select
-            className="input h-10 appearance-none pr-10"
+          <Select
+            selectClassName="h-10 pr-10"
             value={selectedKeyId}
             disabled={!keys.length}
             onChange={(event) => {
@@ -53,11 +54,7 @@ export function RentAccessStep({
             ) : (
               <option>No SSH keys saved</option>
             )}
-          </select>
-          <RiArrowRightSLine
-            className="pointer-events-none absolute right-3 top-3 h-4 w-4 rotate-90 text-text-secondary"
-            aria-hidden
-          />
+          </Select>
         </div>
         <button
           type="button"
@@ -76,8 +73,9 @@ export function RentAccessStep({
 
       <div className="mt-8">
         <label className="label">VM name</label>
-        <input
-          className="input mt-2 h-10"
+        <Input
+          className="mt-2"
+          inputClassName="h-10"
           value={name}
           onChange={(event) => onNameChange(event.target.value)}
           placeholder="vm-ed1d"

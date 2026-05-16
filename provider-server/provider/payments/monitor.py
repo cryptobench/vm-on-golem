@@ -8,12 +8,15 @@ logger = setup_logger(__name__)
 
 
 class StreamMonitor:
-    def __init__(self, *, stream_map, vm_service, reader, client, settings):
+    def __init__(
+        self, *, stream_map, vm_service, reader, client, settings, webhook_service=None
+    ):
         self.stream_map = stream_map
         self.vm_service = vm_service
         self.reader = reader
         self.client = client
         self.settings = settings
+        self.webhook_service = webhook_service
         self._task: Optional[asyncio.Task] = None
 
     def _get(self, key: str, default=None):
@@ -66,6 +69,12 @@ class StreamMonitor:
                         logger.info(
                             f"Deleting VM {vm_id} due to missing/unavailable payment stream (id={stream_id}): {e}"
                         )
+                        await self._emit_stream_lost(
+                            vm_id,
+                            stream_id,
+                            "stream lookup failed",
+                            {"error": str(e)},
+                        )
                         try:
                             await self.vm_service.delete_vm(vm_id)
                         except Exception as del_err:
@@ -92,6 +101,12 @@ class StreamMonitor:
                     ):
                         logger.info(
                             f"Deleting VM {vm_id} due to terminated stream (id={stream_id}, now={now})"
+                        )
+                        await self._emit_stream_lost(
+                            vm_id,
+                            stream_id,
+                            "stream terminated",
+                            {"remaining_seconds": remaining},
                         )
                         try:
                             await self.vm_service.delete_vm(vm_id)
@@ -126,6 +141,12 @@ class StreamMonitor:
                     if remaining == 0:
                         logger.info(
                             f"Deleting VM {vm_id} as stream runway is exhausted (id={stream_id}, now={now}, stop={s.get('stopTime')})"
+                        )
+                        await self._emit_stream_lost(
+                            vm_id,
+                            stream_id,
+                            "stream exhausted",
+                            {"remaining_seconds": remaining},
                         )
                         # Capture pre-delete status for context
                         try:
@@ -209,3 +230,17 @@ class StreamMonitor:
                 break
             except Exception as e:
                 logger.error(f"stream monitor error: {e}", exc_info=True)
+
+    async def _emit_stream_lost(
+        self, vm_id: str, stream_id: int, reason: str, data: dict
+    ) -> None:
+        if self.webhook_service is None:
+            return
+        await self.webhook_service.emit(
+            "payment.stream.lost",
+            resource_type="stream",
+            resource_id=str(stream_id),
+            severity="critical",
+            summary="Payment stream lost",
+            data={"vm_id": vm_id, "reason": reason, **data},
+        )

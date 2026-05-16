@@ -5,6 +5,8 @@ from fastapi.testclient import TestClient
 
 from provider.container import Container
 from provider.main import app
+from provider.monitoring.repo import MonitoringRepository
+from provider.monitoring.services import MonitoringService
 from provider.vm.models import VMInfo, VMNotFoundError, VMResources, VMStatus
 from provider.vm.service import VMService
 
@@ -102,6 +104,22 @@ def test_vm_metrics_history_rejects_invalid_range(client: TestClient):
     response = client.get("/api/v1/vms/test-vm/metrics/history?range=bogus")
 
     assert response.status_code == 422
+
+
+def test_guest_sample_rejects_invalid_token(tmp_path):
+    repo = MonitoringRepository(str(tmp_path / "monitoring.sqlite"))
+    service = MonitoringService({}, repo, MagicMock(), MagicMock())
+    app.container.monitoring_service.override(service)
+    try:
+        response = TestClient(app).post(
+            "/api/v1/monitoring/guest/vm-a/samples",
+            json={"token": "bad"},
+        )
+    finally:
+        app.container.monitoring_service.reset_override()
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "invalid guest metrics token"
 
 
 def test_delete_vm_happy_path(client: TestClient, mock_vm_service: VMService):

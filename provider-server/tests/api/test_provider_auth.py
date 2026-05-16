@@ -49,14 +49,15 @@ VM_WRITE_ENDPOINTS = [
 
 
 class FakeStreamMap:
-    def __init__(self, owner: str):
+    def __init__(self, owner: str | None, stream_id: int | None = 1):
         self.owner = owner
+        self.stream_id = stream_id
 
     async def get_owner(self, vm_id: str):
         return self.owner
 
     async def get(self, vm_id: str):
-        return 1
+        return self.stream_id
 
 
 class FakeJobStore:
@@ -75,6 +76,9 @@ class FakeJobStore:
             "created_at": "2026-05-14T12:00:00+00:00",
             "updated_at": "2026-05-14T12:00:01+00:00",
         }
+
+    async def active_recent_jobs(self):
+        return [await self.get_job("job-a")]
 
 
 def test_requestor_vm_endpoint_rejects_missing_token():
@@ -197,6 +201,25 @@ def test_requestor_vm_endpoint_accepts_owner_token():
 
     assert response.status_code == 200
     assert response.json()["id"] == "vm-a"
+
+
+@pytest.mark.asyncio
+async def test_provider_auth_resolves_owner_from_create_job_before_stream_mapping():
+    service = ProviderAuthService(
+        settings={
+            "PROVIDER_ID": PROVIDER,
+            "VM_DATA_DIR": "/tmp",
+            "REQUESTOR_SESSION_SECRET": "test-secret",
+            "PROVIDER_ADMIN_TOKEN": "admin-token",
+        },
+        stream_map=FakeStreamMap(owner=None, stream_id=None),
+        job_store=FakeJobStore(),
+        reader_factory=lambda: None,
+    )
+
+    owner = await service.resolve_vm_owner("vm-a")
+
+    assert owner == REQUESTOR
 
 
 def test_requestor_vm_endpoint_accepts_admin_token_for_provider_owner():

@@ -802,8 +802,9 @@ export default function VmDetailsClient({ vmId: vmIdProp }: VmDetailsClientProps
       currentResources,
       resizeLimits,
     );
-    let replacementStream: { id: string; contractAddress: string } | null =
-      null;
+    let replacementStream:
+      | Awaited<ReturnType<typeof openPaymentStream>>
+      | null = null;
     const previousStreamId = vm.stream_id;
     try {
       setBusy(true);
@@ -820,6 +821,8 @@ export default function VmDetailsClient({ vmId: vmIdProp }: VmDetailsClientProps
           durationSeconds,
           ads,
           account,
+          vmName: vm.vm_id,
+          purpose: "replacement",
           ensurePaymentsNetwork,
           onPhase: setResizePhase,
         });
@@ -830,7 +833,12 @@ export default function VmDetailsClient({ vmId: vmIdProp }: VmDetailsClientProps
           ? "Stopping, resizing, and restarting VM"
           : "Applying resource changes",
       );
-      await vmResize(requireProviderEndpoint(vm), vm.vm_id, targetResources);
+      await vmResize(
+        requireProviderEndpoint(vm),
+        vm.vm_id,
+        targetResources,
+        replacementStream?.payment,
+      );
       setResizeOpen(false);
       const next = {
         ...vm,
@@ -1053,8 +1061,6 @@ export default function VmDetailsClient({ vmId: vmIdProp }: VmDetailsClientProps
         name={vm.name}
         status={lifecycle.status}
         statusMessage={lifecycle.message}
-        lifecycleStage={lifecycle.stage}
-        progress={lifecycle.progress}
         transitioning={lifecycle.transitioning}
         copySshDisabled={providerActionDisabled || !sshCmd || isTerminated}
         busy={busy}

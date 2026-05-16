@@ -34,6 +34,8 @@ from .vm.name_mapper import VMNameMapper
 from .vm.port_manager import PortManager
 from .vm.proxy_manager import PythonProxyManager
 from .vm.service import VMService
+from .webhooks.repo import WebhookRepository
+from .webhooks.service import WebhookService
 
 
 class Container(containers.DeclarativeContainer):
@@ -115,6 +117,20 @@ class Container(containers.DeclarativeContainer):
         ),
     )
 
+    webhook_repo = providers.Singleton(
+        WebhookRepository,
+        db_path=providers.Callable(
+            lambda base: str(Path(base) / "monitoring.sqlite"), config.VM_DATA_DIR
+        ),
+    )
+
+    webhook_service = providers.Singleton(
+        WebhookService,
+        settings=config,
+        repo=webhook_repo,
+        event_broadcaster=provider_event_broadcaster,
+    )
+
     vm_provider = providers.Singleton(
         MultipassAdapter,
         proxy_manager=proxy_manager,
@@ -135,6 +151,7 @@ class Container(containers.DeclarativeContainer):
         repo=monitoring_repo,
         vm_service=vm_service,
         proxy_manager=proxy_manager,
+        webhook_service=webhook_service,
     )
 
     # Payments
@@ -175,6 +192,7 @@ class Container(containers.DeclarativeContainer):
         reader=stream_reader,
         client=stream_client,
         settings=config,
+        webhook_service=webhook_service,
     )
 
     network_setup_service = providers.Singleton(
@@ -215,6 +233,7 @@ class Container(containers.DeclarativeContainer):
         stream_status_service=stream_status_service,
         job_store=job_store,
         event_broadcaster=provider_event_broadcaster,
+        webhook_service=webhook_service,
     )
 
     provider_info_service = providers.Factory(
@@ -260,5 +279,6 @@ class Container(containers.DeclarativeContainer):
         vm_application_service=vm_application_service,
         stream_status_service=stream_status_service,
         monitoring_service=monitoring_service,
+        webhook_service=webhook_service,
         auth_service=provider_auth_service,
     )

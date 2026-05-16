@@ -6,7 +6,7 @@ import { useAds } from "../../context/AdsContext";
 import { getRequestorRuntimeConfig } from "../../lib/runtimeConfig";
 import { KeyPicker } from "../../components/ssh/KeyPicker";
 import { Button } from "@golem/ui";
-import { FormField, SelectInput, TextInput } from "@golem/ui";
+import { FormField, Select, Input } from "@golem/ui";
 import { PageHeader } from "@golem/ui";
 import { Skeleton } from "@golem/ui";
 import { Tabs, type TabItem } from "@golem/ui";
@@ -148,15 +148,15 @@ export default function SettingsPage() {
             <div className="card-body grid gap-3">
               <div className="grid gap-2 sm:grid-cols-[1fr_auto_auto] sm:items-end">
                 <FormField label="Active profile">
-                  <SelectInput value={activeId} onChange={(e) => { const id = e.target.value; setActive(id); const p = profiles.find(x => x.id === id); if (p) { setProfileName(p.name); setMode(p.config.mode); setDisc(p.config.discovery_url); setRpc(p.config.arkiv_rpc_url); setWs(p.config.arkiv_ws_url); } }}>
+                  <Select value={activeId} onChange={(e) => { const id = e.target.value; setActive(id); const p = profiles.find(x => x.id === id); if (p) { setProfileName(p.name); setMode(p.config.mode); setDisc(p.config.discovery_url); setRpc(p.config.arkiv_rpc_url); setWs(p.config.arkiv_ws_url); } }}>
                     {profiles.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                  </SelectInput>
+                  </Select>
                 </FormField>
                 <Button variant="secondary" onClick={() => addProfile(`Profile ${profiles.length + 1}`)}>New profile</Button>
                 <Button variant="danger" onClick={() => removeProfile(activeId)} disabled={profiles.length <= 1}>Delete</Button>
               </div>
               <FormField label="Profile name">
-                <TextInput value={profileName} onChange={(e) => setProfileName(e.target.value)} placeholder="Default" />
+                <Input value={profileName} onChange={(e) => setProfileName(e.target.value)} placeholder="Default" />
               </FormField>
             </div>
           </div>
@@ -165,22 +165,22 @@ export default function SettingsPage() {
               <div className="text-sm font-medium">Discovery & Network</div>
               <div className="mt-3 grid gap-3">
                 <FormField label="Mode">
-                  <SelectInput value={mode} onChange={e => setMode(e.target.value as "arkiv" | "central")}>
+                  <Select value={mode} onChange={e => setMode(e.target.value as "arkiv" | "central")}>
                     <option value="arkiv">Arkiv</option>
                     <option value="central">Central Discovery</option>
-                  </SelectInput>
+                  </Select>
                 </FormField>
                 {mode === 'central' ? (
                   <FormField label="Central discovery URL">
-                    <TextInput value={disc} onChange={e => setDisc(e.target.value)} placeholder="http://host:9001/api/v1" />
+                    <Input value={disc} onChange={e => setDisc(e.target.value)} placeholder="http://host:9001/api/v1" />
                   </FormField>
                 ) : (
                   <>
                     <FormField label="Arkiv RPC URL">
-                      <TextInput value={rpc} onChange={e => setRpc(e.target.value)} placeholder="https://.../rpc" />
+                      <Input value={rpc} onChange={e => setRpc(e.target.value)} placeholder="https://.../rpc" />
                     </FormField>
                     <FormField label="Arkiv WS URL">
-                      <TextInput value={ws} onChange={e => setWs(e.target.value)} placeholder="wss://.../rpc/ws" />
+                      <Input value={ws} onChange={e => setWs(e.target.value)} placeholder="wss://.../rpc/ws" />
                     </FormField>
                   </>
                 )}
@@ -202,28 +202,28 @@ export default function SettingsPage() {
           <div className="card">
             <div className="card-body grid gap-3">
               <FormField label="Price unit">
-                <SelectInput className="w-48" value={displayCurrency} onChange={(e) => { const v = (e.target.value as 'fiat'|'token'); setDisplayCurrency(v); saveSettings({ display_currency: v }); }}>
+                <Select className="w-48" value={displayCurrency} onChange={(e) => { const v = (e.target.value as 'fiat'|'token'); setDisplayCurrency(v); saveSettings({ display_currency: v }); }}>
                   <option value="fiat">Fiat (USD)</option>
                   <option value="token">Token (GLM)</option>
-                </SelectInput>
+                </Select>
               </FormField>
               <FormField label="StreamPayment contract address">
-                <TextInput value={sp} onChange={e => setSp(e.target.value)} placeholder="0x..." />
+                <Input value={sp} onChange={e => setSp(e.target.value)} placeholder="0x..." />
               </FormField>
               <FormField label="GLM token address">
-                <TextInput value={glm} onChange={e => setGlm(e.target.value)} placeholder="0x..." />
+                <Input value={glm} onChange={e => setGlm(e.target.value)} placeholder="0x..." />
               </FormField>
               <FormField label="Payments chain ID (hex or decimal)">
-                <TextInput value={evmChainIdText} onChange={e => setEvmChainIdText(e.target.value)} placeholder="0x88bb0" />
+                <Input value={evmChainIdText} onChange={e => setEvmChainIdText(e.target.value)} placeholder="0x88bb0" />
               </FormField>
               <FormField label="Payments chain name">
-                <TextInput value={evmChainName} onChange={e => setEvmChainName(e.target.value)} placeholder="Ethereum Hoodi" />
+                <Input value={evmChainName} onChange={e => setEvmChainName(e.target.value)} placeholder="Ethereum Hoodi" />
               </FormField>
               <FormField label="Payments RPC URL">
-                <TextInput value={evmRpcUrl} onChange={e => setEvmRpcUrl(e.target.value)} placeholder="https://.../rpc" />
+                <Input value={evmRpcUrl} onChange={e => setEvmRpcUrl(e.target.value)} placeholder="https://.../rpc" />
               </FormField>
               <FormField label="Payments explorer URL">
-                <TextInput value={evmExplorerUrl} onChange={e => setEvmExplorerUrl(e.target.value)} placeholder="https://..." />
+                <Input value={evmExplorerUrl} onChange={e => setEvmExplorerUrl(e.target.value)} placeholder="https://..." />
               </FormField>
               <div className="flex items-center gap-3 pt-2">
                 <Button onClick={save}>Save</Button>

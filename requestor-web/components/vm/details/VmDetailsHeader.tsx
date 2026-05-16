@@ -24,8 +24,6 @@ export function VmDetailsHeader({
   name,
   status,
   statusMessage,
-  lifecycleStage,
-  progress,
   transitioning,
   copySshDisabled,
   busy,
@@ -35,8 +33,6 @@ export function VmDetailsHeader({
   name: string;
   status: string;
   statusMessage?: string | null;
-  lifecycleStage?: string | null;
-  progress?: number | null;
   transitioning?: boolean;
   copySshDisabled?: boolean;
   busy?: boolean;
@@ -44,17 +40,9 @@ export function VmDetailsHeader({
   onCopySsh: () => void;
 }) {
   const lifecycle = deriveVmLifecycle({ status, transitioning });
-  const showProgress = Boolean(transitioning && progress != null);
-  const progressValue = Math.max(0, Math.min(100, Math.round(progress || 0)));
   const visibleStatusMessage =
     statusMessage && !isRedundantStatusMessage(status, statusMessage)
       ? statusMessage
-      : null;
-  const visibleLifecycleStage =
-    lifecycleStage &&
-    lifecycleStage !== status &&
-    !isRedundantLifecycleStage(status, lifecycleStage)
-      ? lifecycleStage
       : null;
 
   return (
@@ -75,29 +63,9 @@ export function VmDetailsHeader({
             busy={lifecycle.transitioning}
           />
         </div>
-        <div className="mt-2 flex items-center gap-2 text-sm text-text-secondary">
-          {visibleStatusMessage ? <span>{visibleStatusMessage}</span> : null}
-          {visibleLifecycleStage ? (
-            <>
-              {visibleStatusMessage ? <span aria-hidden>&middot;</span> : null}
-              <span>{formatStage(visibleLifecycleStage)}</span>
-            </>
-          ) : null}
-          {showProgress ? (
-            <>
-              {visibleStatusMessage || visibleLifecycleStage ? (
-                <span aria-hidden>&middot;</span>
-              ) : null}
-              <span>{progressValue}%</span>
-            </>
-          ) : null}
-        </div>
-        {showProgress ? (
-          <div className="mt-3 h-1.5 w-full max-w-xl overflow-hidden rounded-full bg-surface-muted">
-            <div
-              className="h-full rounded-full bg-warning transition-all duration-500"
-              style={{ width: `${progressValue}%` }}
-            />
+        {visibleStatusMessage ? (
+          <div className="mt-2 flex items-center gap-2 text-sm text-text-secondary">
+            <span>{visibleStatusMessage}</span>
           </div>
         ) : null}
       </div>
@@ -169,6 +137,13 @@ function isRedundantStatusMessage(status: string, message: string) {
   const normalizedMessage = message.trim().toLowerCase();
 
   return (
+    (normalizedStatus === "creating" &&
+      [
+        "queued vm creation",
+        "provisioning vm",
+        "vm is being provisioned",
+        "launching vm image",
+      ].includes(normalizedMessage)) ||
     (normalizedStatus === "running" && normalizedMessage === "vm is online") ||
     (normalizedStatus === "stopped" && normalizedMessage === "vm is stopped") ||
     (normalizedStatus === "suspended" &&
@@ -178,22 +153,4 @@ function isRedundantStatusMessage(status: string, message: string) {
     (normalizedStatus === "terminated" &&
       normalizedMessage === "vm has been terminated")
   );
-}
-
-function isRedundantLifecycleStage(status: string, stage: string) {
-  const normalizedStatus = status.toLowerCase().replaceAll("-", "_");
-  const normalizedStage = stage.toLowerCase().replaceAll("-", "_");
-
-  return (
-    normalizedStage === normalizedStatus ||
-    (normalizedStatus === "running" && normalizedStage === "ready")
-  );
-}
-
-function formatStage(stage: string) {
-  return stage
-    .split("_")
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
 }

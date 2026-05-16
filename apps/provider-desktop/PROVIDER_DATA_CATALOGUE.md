@@ -465,17 +465,53 @@ id: 2
 name: Ops alerts
 url: "https://example.com/golem-alerts"
 enabled: true
+service_type: discord # generic_json | discord | slack
+events:
+  - alert.fired
+  - alert.resolved
+  - vm.failed
+  - payment.stream.lost
+template:
+  title: "{{summary}}"
+  message: "{{summary}}"
+  color: severity
+  fields:
+    - name: Event
+      value: "{{event.type}}"
+    - name: Resource
+      value: "{{resource.id}}"
+  footer: Golem Provider
 last_status: success
+last_http_status: 204
 last_error: null
 last_delivered_at: "2026-05-13T10:10:02Z"
+```
+
+Webhook preview:
+
+```yaml
+service_type: discord
+payload:
+  content: "VM requestor-vm-id is ready"
+  embeds:
+    - title: "VM is online"
+      description: "VM requestor-vm-id is ready"
+      color: 3909878
+      fields:
+        - name: Event
+          value: vm.ready
+          inline: true
 ```
 
 Webhook test success:
 
 ```yaml
 ok: true
-status: 200
+status: 204
 error: null
+event_id: "3c812df0-63d4-4de4-95a0-11ef09c0c9ef"
+payload:
+  event_type: vm.ready
 ```
 
 Webhook test failure:
@@ -484,6 +520,22 @@ Webhook test failure:
 ok: false
 status: 500
 error: "server returned 500"
+event_id: "3c812df0-63d4-4de4-95a0-11ef09c0c9ef"
+payload: {}
+```
+
+Webhook delivery attempt:
+
+```yaml
+id: 9
+webhook_id: 2
+event_id: "3c812df0-63d4-4de4-95a0-11ef09c0c9ef"
+event_type: payment.stream.lost
+attempt: 2
+status: success
+http_status: 204
+error: null
+attempted_at: "2026-05-13T10:10:02Z"
 ```
 
 ## Health Data Available Through the Provider CLI
@@ -552,6 +604,4 @@ wallet_faucet_request: not_available_yet
 stream_withdraw_action: not_available_yet
 alert_rule_update: not_available_yet
 alert_rule_delete: not_available_yet
-webhook_update: not_available_yet
-webhook_delete: not_available_yet
 ```

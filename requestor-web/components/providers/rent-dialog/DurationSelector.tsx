@@ -3,7 +3,7 @@
 import React from "react";
 import { RiTimeLine } from "@remixicon/react";
 import { humanDuration } from "../../../lib/streams";
-import { SelectableCard } from "@golem/ui";
+import { Input, SelectableCard } from "@golem/ui";
 import type { DurationOption, DurationPreset } from "./types";
 
 export const DURATION_OPTIONS: DurationOption[] = [
@@ -46,8 +46,8 @@ export function DurationSelector({
       </div>
       <label className="label mt-5">Custom duration</label>
       <div className="relative mt-2">
-        <input
-          className="input h-10 pr-10"
+        <Input
+          inputClassName="h-10 pr-10"
           placeholder="e.g. 45h 30m or 2d 12h"
           value={customInput}
           onChange={(event) => {

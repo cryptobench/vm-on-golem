@@ -2,6 +2,7 @@ import React from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type {
   HistoryRange,
+  MetricHistoryPoint,
   MetricSample,
   MetricsHistoryResponse,
   MetricsLatestResponse,
@@ -12,7 +13,6 @@ type ConnectionState = "idle" | "connecting" | "connected" | "degraded";
 
 type HostMetricsLivePayload = {
   latest?: MetricsLatestResponse | null;
-  history?: MetricsHistoryResponse | null;
   metrics_latest?: MetricsLatestResponse | null;
   metrics_history?: MetricsHistoryResponse | null;
   samples?: MetricSample[];
@@ -221,10 +221,9 @@ function mergeHistoryPayload(
   state: HostMonitoringLiveState,
   payload: HostMetricsLivePayload,
 ): HostMonitoringLiveState {
-  const history = payload.metrics_history ?? payload.history;
   return {
     ...state,
-    metricsHistory: history ?? state.metricsHistory,
+    metricsHistory: payload.metrics_history ?? state.metricsHistory,
     lastEventAt: Date.now(),
     errors: payload.errors ?? state.errors,
   };
@@ -236,13 +235,12 @@ function mergePayload(
   replaceHistory: boolean,
 ): HostMonitoringLiveState {
   const latest = payload.metrics_latest ?? payload.latest ?? state.metricsLatest;
-  const history = payload.metrics_history ?? payload.history;
   const samples = Array.isArray(payload.samples) ? payload.samples : [];
   return {
     ...state,
     metricsLatest: latest ?? null,
     metricsHistory:
-      history ??
+      payload.metrics_history ??
       (replaceHistory
         ? state.metricsHistory
         : mergeMetricSamples(state.metricsHistory, samples)),
@@ -254,35 +252,87 @@ function mergePayload(
 }
 
 function hasHistory(payload: HostMetricsLivePayload) {
-  return Boolean(payload.metrics_history ?? payload.history);
+  return Boolean(payload.metrics_history);
 }
 
 function mergeMetricSamples(
   history: MetricsHistoryResponse | null,
   samples: MetricSample[],
 ): MetricsHistoryResponse | null {
-  if (!samples.length) return history;
-  const byKey = new Map<string, MetricSample>();
-  [...(history?.samples ?? []), ...samples].forEach((sample) => {
-    byKey.set(metricSampleKey(sample), sample);
+  if (!samples.length || !history) return history;
+  const byKey = new Map<string, MetricHistoryPoint>();
+  history.points.forEach((point) => {
+    byKey.set(metricPointKey(point), point);
+  });
+  samples.forEach((sample) => {
+    const point = metricSamplePoint(sample, history.resolution_seconds);
+    const existing = byKey.get(metricPointKey(point));
+    byKey.set(
+      metricPointKey(point),
+      existing ? mergeMetricPoint(existing, sample.value) : point,
+    );
   });
   return {
-    samples: Array.from(byKey.values())
+    ...history,
+    points: Array.from(byKey.values())
       .sort(
         (a, b) =>
-          a.timestamp.localeCompare(b.timestamp) ||
+          a.bucket_start.localeCompare(b.bucket_start) ||
           a.metric.localeCompare(b.metric),
       )
       .slice(-10_000),
+    generated_at: new Date().toISOString(),
   };
 }
 
-function metricSampleKey(sample: MetricSample) {
+function metricSamplePoint(
+  sample: MetricSample,
+  resolutionSeconds: number,
+): MetricHistoryPoint {
+  const timestamp = Date.parse(sample.timestamp);
+  if (!Number.isFinite(timestamp)) {
+    throw new Error(`Metric timestamp must be absolute: ${sample.timestamp}`);
+  }
+  const bucketStartMs =
+    Math.floor(timestamp / (resolutionSeconds * 1000)) *
+    resolutionSeconds *
+    1000;
+  return {
+    scope: sample.scope,
+    source: sample.source,
+    vm_id: sample.vm_id,
+    metric: sample.metric,
+    unit: sample.unit,
+    bucket_start: new Date(bucketStartMs).toISOString(),
+    bucket_end: new Date(bucketStartMs + resolutionSeconds * 1000).toISOString(),
+    avg: sample.value,
+    min: sample.value,
+    max: sample.value,
+    count: 1,
+  };
+}
+
+function mergeMetricPoint(
+  point: MetricHistoryPoint,
+  sampleValue: number,
+): MetricHistoryPoint {
+  const count = point.count + 1;
+  return {
+    ...point,
+    avg: (point.avg * point.count + sampleValue) / count,
+    min: Math.min(point.min, sampleValue),
+    max: Math.max(point.max, sampleValue),
+    count,
+  };
+}
+
+function metricPointKey(point: MetricHistoryPoint) {
   return [
-    sample.scope,
-    sample.source,
-    sample.vm_id || "",
-    sample.metric,
-    sample.timestamp,
+    point.scope,
+    point.source,
+    point.vm_id || "",
+    point.metric,
+    point.unit,
+    point.bucket_start,
   ].join(":");
 }

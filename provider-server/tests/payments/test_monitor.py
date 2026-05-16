@@ -49,6 +49,14 @@ class DummyClient:
         self.withdrawn.append(sid)
 
 
+class CapturingWebhookService:
+    def __init__(self):
+        self.events = []
+
+    async def emit(self, event_type, **kwargs):
+        self.events.append((event_type, kwargs))
+
+
 class DummySettings:
     STREAM_MONITOR_ENABLED = True
     STREAM_WITHDRAW_ENABLED = True
@@ -227,12 +235,14 @@ async def test_monitor_deletes_when_stream_terminated(monkeypatch):
     reader = DummyReader(now, stream)
     client = DummyClient()
     settings = DummySettings()
+    webhooks = CapturingWebhookService()
     mon = StreamMonitor(
         stream_map=stream_map,
         vm_service=vm_service,
         reader=reader,
         client=client,
         settings=settings,
+        webhook_service=webhooks,
     )
 
     calls = {"n": 0}
@@ -249,6 +259,8 @@ async def test_monitor_deletes_when_stream_terminated(monkeypatch):
     assert vm_service.deleted == ["vm-del"]
     # No withdraw attempt for inactive stream path
     assert client.withdrawn == []
+    assert webhooks.events[0][0] == "payment.stream.lost"
+    assert webhooks.events[0][1]["data"]["reason"] == "stream terminated"
 
 
 @pytest.mark.asyncio
@@ -270,12 +282,14 @@ async def test_monitor_deletes_when_stream_ended(monkeypatch):
     reader = DummyReader(now, stream)
     client = DummyClient()
     settings = DummySettings()
+    webhooks = CapturingWebhookService()
     mon = StreamMonitor(
         stream_map=stream_map,
         vm_service=vm_service,
         reader=reader,
         client=client,
         settings=settings,
+        webhook_service=webhooks,
     )
 
     calls = {"n": 0}
@@ -292,3 +306,43 @@ async def test_monitor_deletes_when_stream_ended(monkeypatch):
     assert vm_service.stopped == []
     assert vm_service.deleted == ["vm-end"]
     assert client.withdrawn == []
+    assert webhooks.events[0][0] == "payment.stream.lost"
+    assert webhooks.events[0][1]["data"]["reason"] == "stream exhausted"
+
+
+@pytest.mark.asyncio
+async def test_monitor_emits_stream_lost_when_lookup_fails(monkeypatch):
+    class FailingReader:
+        web3 = types.SimpleNamespace(
+            eth=types.SimpleNamespace(get_block=lambda _x: {"timestamp": 6_000_000})
+        )
+
+        def get_stream(self, _stream_id):
+            raise RuntimeError("chain unavailable")
+
+    stream_map = DummyStreamMap({"vm-missing": 13})
+    vm_service = DummyVMService()
+    webhooks = CapturingWebhookService()
+    mon = StreamMonitor(
+        stream_map=stream_map,
+        vm_service=vm_service,
+        reader=FailingReader(),
+        client=DummyClient(),
+        settings=DummySettings(),
+        webhook_service=webhooks,
+    )
+
+    calls = {"n": 0}
+
+    async def fake_sleep(_):
+        calls["n"] += 1
+        if calls["n"] >= 2:
+            raise asyncio.CancelledError
+
+    monkeypatch.setattr(asyncio, "sleep", fake_sleep)
+
+    await mon._run()
+
+    assert vm_service.deleted == ["vm-missing"]
+    assert webhooks.events[0][0] == "payment.stream.lost"
+    assert webhooks.events[0][1]["data"]["reason"] == "stream lookup failed"

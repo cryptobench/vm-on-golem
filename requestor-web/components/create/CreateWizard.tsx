@@ -1,6 +1,6 @@
 "use client";
 import React from "react";
-import { Spinner } from "@golem/ui";
+import { Input, Select, Spinner } from "@golem/ui";
 import { Skeleton } from "@golem/ui";
 import { useAds } from "../../context/AdsContext";
 import { fetchAllProviders, computePriceRange, computeEstimate, loadSettings, saveSettings, type SSHKey, type ProviderAd } from "../../lib/api";
@@ -228,16 +228,15 @@ export function CreateWizard({ open, onClose, onComplete }: { open: boolean; onC
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div>
                       <label className="label">vCPU</label>
-                      <input className="input" type="number" min={1} value={cpu ?? ''} onChange={e => { setMode('specific'); setCpu(e.target.value ? Number(e.target.value) : undefined); }} placeholder="e.g., 2" />
+                      <Input type="number" min={1} value={cpu ?? ''} onChange={e => { setMode('specific'); setCpu(e.target.value ? Number(e.target.value) : undefined); }} placeholder="e.g., 2" />
                     </div>
                     <div>
                       <label className="label">RAM (GB)</label>
-                      <input className="input" type="number" min={1} value={memory ?? ''} onChange={e => { setMode('specific'); setMemory(e.target.value ? Number(e.target.value) : undefined); }} placeholder="e.g., 4" />
+                      <Input type="number" min={1} value={memory ?? ''} onChange={e => { setMode('specific'); setMemory(e.target.value ? Number(e.target.value) : undefined); }} placeholder="e.g., 4" />
                     </div>
                     <div>
                       <label className="label">Storage (GB)</label>
-                      <input
-                        className="input"
+                      <Input
                         type="number"
                         min={10}
                         value={storage ?? ''}
@@ -253,11 +252,11 @@ export function CreateWizard({ open, onClose, onComplete }: { open: boolean; onC
                   <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div>
                       <label className="label">Platform</label>
-                      <select className="input" value={platform} onChange={e => setPlatform(e.target.value)}>
+                      <Select value={platform} onChange={e => setPlatform(e.target.value)}>
                         <option value="">Any</option>
                         <option value="x86_64">x86_64</option>
                         <option value="arm64">arm64</option>
-                      </select>
+                      </Select>
                     </div>
                   </div>
                 </div>

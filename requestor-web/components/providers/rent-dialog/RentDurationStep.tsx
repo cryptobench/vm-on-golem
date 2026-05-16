@@ -2,7 +2,7 @@
 
 import React from "react";
 import { RiInformationLine } from "@remixicon/react";
-import { SelectableCard } from "@golem/ui";
+import { Input, SelectableCard } from "@golem/ui";
 import { DURATION_OPTIONS, type RentDurationPreset } from "./constants";
 import { durationTotal, formatUsd } from "./formatting";
 import { RentStepSection } from "./RentStepSection";
@@ -46,8 +46,8 @@ export function RentDurationStep({
       </div>
       <label className="label mt-7">Custom duration</label>
       <div className="relative mt-2 max-w-2xl">
-        <input
-          className="input h-10 pr-10"
+        <Input
+          inputClassName="h-10 pr-10"
           placeholder="e.g. 2d 12h or 45h 30m"
           value={customInput}
           onChange={(event) => {

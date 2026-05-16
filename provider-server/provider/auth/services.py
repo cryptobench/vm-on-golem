@@ -222,6 +222,9 @@ class ProviderAuthService:
 
         stream_id = await self.stream_map.get(vm_id)
         if stream_id is None:
+            job_owner = await self._resolve_vm_owner_from_create_job(vm_id)
+            if job_owner:
+                return job_owner
             raise ForbiddenError("VM owner unavailable")
 
         reader = self.reader_factory()
@@ -237,6 +240,19 @@ class ProviderAuthService:
         if set_owner is not None:
             await set_owner(vm_id, sender)
         return sender
+
+    async def _resolve_vm_owner_from_create_job(self, vm_id: str) -> str | None:
+        active_recent_jobs = getattr(self.job_store, "active_recent_jobs", None)
+        if active_recent_jobs is None:
+            return None
+
+        for job in await active_recent_jobs():
+            if str(job.get("vm_id") or "") != vm_id:
+                continue
+            owner = str(job.get("requestor_address") or "")
+            if owner:
+                return owner
+        return None
 
     def _purge_session_nonces(self, now: int) -> None:
         for key, deadline in list(self._seen_session_nonces.items()):

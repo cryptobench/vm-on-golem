@@ -2,7 +2,7 @@
 import React from "react";
 import { RiArrowDownSLine, RiFolderLine } from "@remixicon/react";
 import { useProjects } from "../../context/ProjectsContext";
-import { Modal } from "@golem/ui";
+import { Input, Modal } from "@golem/ui";
 import { cn } from "@golem/ui";
 
 export function ProjectSwitcher({ className }: { className?: string }) {
@@ -94,7 +94,7 @@ export function ProjectSwitcher({ className }: { className?: string }) {
           <div className="text-lg font-semibold">New Project</div>
           <div className="mt-3">
             <label className="label">Name</label>
-            <input className="input" value={name} onChange={e => setName(e.target.value)} placeholder="My Project" />
+            <Input value={name} onChange={e => setName(e.target.value)} placeholder="My Project" />
           </div>
           <div className="mt-4 flex items-center justify-end gap-2">
             <button className="btn btn-secondary" onClick={() => setShowNew(false)}>Cancel</button>

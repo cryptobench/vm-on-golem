@@ -19,7 +19,7 @@ class CreateVMRequest(BaseModel):
     )
     size: Optional[VMSize] = None
     resources: Optional[VMResources] = None
-    image: str = Field(default="24.04")  # Ubuntu 24.04 LTS
+    image: Optional[str] = None
     ssh_key: str = Field(
         ...,
         pattern="^(ssh-rsa|ssh-ed25519) ",

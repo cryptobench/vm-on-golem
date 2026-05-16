@@ -49,6 +49,7 @@ class MultipassAdapter(VMProvider):
         )
         self.proxy_manager = proxy_manager
         self.name_mapper = name_mapper
+        self._creating_multipass_names: set[str] = set()
 
     @staticmethod
     def _safe_int(value, default: int = 0) -> int:
@@ -74,8 +75,8 @@ class MultipassAdapter(VMProvider):
         self, args: List[str], check: bool = True
     ) -> subprocess.CompletedProcess:
         """Run a multipass command."""
-        # Commands that produce JSON or version info that we need to parse.
-        commands_to_capture = ["info", "version", "find"]
+        # Commands that produce JSON/version info or actionable failure text.
+        commands_to_capture = ["info", "version", "find", "launch"]
         should_capture = args[0] in commands_to_capture
 
         # We add a timeout to the launch command to prevent it from hanging indefinitely
@@ -96,16 +97,18 @@ class MultipassAdapter(VMProvider):
                 timeout=timeout,
             )
         except subprocess.CalledProcessError as e:
-            stderr = (
-                e.stderr
-                if should_capture and e.stderr
-                else "No stderr captured. See provider logs for command output."
-            )
+            stderr = self._format_command_error(e, should_capture)
             logger.warning(
                 "Multipass command failed",
-                extra={"command": args[0], "stderr": stderr},
+                extra={
+                    "command": args[0],
+                    "returncode": e.returncode,
+                    "stderr": stderr,
+                },
             )
-            raise MultipassError(f"Multipass command failed: {stderr}")
+            raise MultipassError(
+                f"Multipass command failed with exit code {e.returncode}: {stderr}"
+            )
         except subprocess.TimeoutExpired as e:
             stderr = (
                 e.stderr
@@ -119,6 +122,29 @@ class MultipassAdapter(VMProvider):
             raise MultipassError(
                 f"Multipass command '{' '.join(args)}' timed out after {timeout} seconds. Stderr: {stderr}"
             )
+
+    @staticmethod
+    def _format_command_error(
+        error: subprocess.CalledProcessError, captured: bool
+    ) -> str:
+        if captured:
+            stderr = (error.stderr or "").strip()
+            stdout = (error.stdout or "").strip()
+            if stderr:
+                return stderr
+            if stdout:
+                return stdout
+        return "No command output captured."
+
+    @staticmethod
+    def _launch_image(image: str) -> str:
+        """Return the Multipass launch image, accepting legacy ubuntu:* aliases."""
+        value = image.strip()
+        if value.startswith("ubuntu:"):
+            alias = value.split(":", 1)[1].strip()
+            if alias:
+                return alias
+        return value
 
     @async_retry_unless_not_found(
         retries=settings.RETRY_ATTEMPTS,
@@ -175,13 +201,19 @@ class MultipassAdapter(VMProvider):
         generated name for backward compatibility.
         """
         multipass_name = config.multipass_name or f"golem-{uuid.uuid4()}"
-        # If the name was generated here, ensure the mapping exists.
-        if not config.multipass_name:
-            await self.name_mapper.add_mapping(config.name, multipass_name)
+        self._creating_multipass_names.add(multipass_name)
+        await self.name_mapper.add_mapping(config.name, multipass_name)
+
+        launch_image = self._launch_image(config.image)
+        if launch_image != config.image:
+            logger.info(
+                "Normalized Multipass image alias",
+                extra={"configured_image": config.image, "launch_image": launch_image},
+            )
 
         launch_cmd = [
             "launch",
-            config.image,
+            launch_image,
             "--name",
             multipass_name,
             "--cloud-init",
@@ -254,7 +286,7 @@ class MultipassAdapter(VMProvider):
                 )
 
             # Now get the full status, which will include the allocated port
-            vm_info = await self.get_vm_status(multipass_name)
+            vm_info = await self.get_vm_status(config.name)
             await self._report_progress(
                 progress_callback,
                 "ready",
@@ -307,6 +339,8 @@ class MultipassAdapter(VMProvider):
                     ),
                 )
             raise MultipassError(f"Failed to create VM {config.name}: {e}") from e
+        finally:
+            self._creating_multipass_names.discard(multipass_name)
 
     async def delete_vm(self, multipass_name: str) -> None:
         """Delete a VM."""
@@ -333,18 +367,49 @@ class MultipassAdapter(VMProvider):
                 vm_info = await self.get_vm_status(requestor_name)
                 vms.append(vm_info)
             except VMNotFoundError:
+                if multipass_name in self._creating_multipass_names:
+                    logger.debug(
+                        "Skipping stale VM mapping cleanup during active creation",
+                        extra={
+                            "vm_id": requestor_name,
+                            "multipass_name": multipass_name,
+                        },
+                    )
+                    continue
                 logger.warning(
                     f"VM {requestor_name} not found, but a mapping exists. It may have been deleted externally."
                 )
                 # Cleanup stale mapping and proxy allocation to avoid repeated warnings
                 try:
                     await self.proxy_manager.remove_vm(multipass_name)
-                except Exception:
-                    pass
+                except Exception as cleanup_exc:
+                    logger.warning(
+                        "Failed to remove stale proxy allocation",
+                        extra={
+                            "vm_id": requestor_name,
+                            "multipass_name": multipass_name,
+                        },
+                        exc_info=(
+                            type(cleanup_exc),
+                            cleanup_exc,
+                            cleanup_exc.__traceback__,
+                        ),
+                    )
                 try:
                     await self.name_mapper.remove_mapping(requestor_name)
-                except Exception:
-                    pass
+                except Exception as cleanup_exc:
+                    logger.warning(
+                        "Failed to remove stale VM name mapping",
+                        extra={
+                            "vm_id": requestor_name,
+                            "multipass_name": multipass_name,
+                        },
+                        exc_info=(
+                            type(cleanup_exc),
+                            cleanup_exc,
+                            cleanup_exc.__traceback__,
+                        ),
+                    )
         return vms
 
     async def start_vm(self, multipass_name: str) -> VMInfo:
@@ -662,18 +727,49 @@ class MultipassAdapter(VMProvider):
                     else 10,
                 )
             except (MultipassError, VMNotFoundError):
+                if multipass_name in self._creating_multipass_names:
+                    logger.debug(
+                        "Skipping resource cleanup for VM creation in progress",
+                        extra={
+                            "vm_id": requestor_name,
+                            "multipass_name": multipass_name,
+                        },
+                    )
+                    continue
                 logger.warning(
                     f"Could not retrieve resources for VM {requestor_name} ({multipass_name}). It may have been deleted."
                 )
                 # Cleanup stale mapping and proxy allocation
                 try:
                     await self.proxy_manager.remove_vm(multipass_name)
-                except Exception:
-                    pass
+                except Exception as cleanup_exc:
+                    logger.warning(
+                        "Failed to remove stale proxy allocation",
+                        extra={
+                            "vm_id": requestor_name,
+                            "multipass_name": multipass_name,
+                        },
+                        exc_info=(
+                            type(cleanup_exc),
+                            cleanup_exc,
+                            cleanup_exc.__traceback__,
+                        ),
+                    )
                 try:
                     await self.name_mapper.remove_mapping(requestor_name)
-                except Exception:
-                    pass
+                except Exception as cleanup_exc:
+                    logger.warning(
+                        "Failed to remove stale VM name mapping",
+                        extra={
+                            "vm_id": requestor_name,
+                            "multipass_name": multipass_name,
+                        },
+                        exc_info=(
+                            type(cleanup_exc),
+                            cleanup_exc,
+                            cleanup_exc.__traceback__,
+                        ),
+                    )
             except Exception as e:
                 logger.error(f"Failed to get info for VM {requestor_name}: {e}")
         return vm_resources

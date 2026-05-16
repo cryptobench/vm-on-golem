@@ -15,6 +15,10 @@ import type {
   VMAccessInfo,
   VMInfo,
   WebhookConfig,
+  WebhookDeliveryAttempt,
+  WebhookEventType,
+  WebhookPreviewRequest,
+  WebhookPreviewResponse,
   WebhookTestResponse,
 } from "./types";
 
@@ -77,6 +81,13 @@ function patch<T>(path: string, body?: unknown) {
   });
 }
 
+function put<T>(path: string, body?: unknown) {
+  return request<T>(path, {
+    method: "PUT",
+    body: body == null ? undefined : JSON.stringify(body),
+  });
+}
+
 export const providerApi = {
   getServiceStatus: () => invoke<ProviderServiceStatus>("provider_status"),
   adminToken: providerAdminToken,
@@ -131,6 +142,16 @@ export const providerApi = {
   webhooks: () => request<WebhookConfig[]>("/monitoring/webhooks"),
   createWebhook: (webhook: WebhookConfig) =>
     post<WebhookConfig>("/monitoring/webhooks", webhook),
-  testWebhook: (id: number) =>
-    post<WebhookTestResponse>(`/monitoring/webhooks/${id}/test`),
+  updateWebhook: (id: number, webhook: WebhookConfig) =>
+    put<WebhookConfig>(`/monitoring/webhooks/${id}`, webhook),
+  deleteWebhook: (id: number) =>
+    request<void>(`/monitoring/webhooks/${id}`, { method: "DELETE" }),
+  webhookDeliveries: (id: number) =>
+    request<WebhookDeliveryAttempt[]>(`/monitoring/webhooks/${id}/deliveries`),
+  previewWebhook: (request: WebhookPreviewRequest) =>
+    post<WebhookPreviewResponse>("/monitoring/webhooks/preview", request),
+  testWebhook: (id: number, eventType: WebhookEventType) =>
+    post<WebhookTestResponse>(`/monitoring/webhooks/${id}/test`, {
+      event_type: eventType,
+    }),
 };

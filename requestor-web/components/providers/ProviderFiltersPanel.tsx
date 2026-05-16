@@ -2,13 +2,11 @@
 
 import React from "react";
 import {
-  RiArrowDownSLine,
   RiCloseLine,
   RiInformationLine,
-  RiSearchLine,
 } from "@remixicon/react";
 import { countryFlagEmoji, countryFullName } from "../../lib/intl";
-import { Spinner } from "@golem/ui";
+import { Input, Select, Spinner } from "@golem/ui";
 
 export type ProviderFilters = {
   search: string;
@@ -95,15 +93,12 @@ export function ProviderFiltersPanel({
       <div className="space-y-6 px-5 pb-5">
         <label className="block">
           <span className="mb-2 block text-sm font-medium text-text-primary">Search</span>
-          <span className="flex h-10 items-center gap-2 rounded-md border border-border bg-surface px-3">
-            <RiSearchLine className="h-4 w-4 text-text-muted" aria-hidden />
-            <input
-              className="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm outline-none placeholder:text-text-muted focus:ring-0"
-              placeholder="Search by provider ID, location or IP..."
-              value={filters.search}
-              onChange={(event) => patch({ search: event.target.value })}
-            />
-          </span>
+          <Input
+            type="search"
+            placeholder="Search by provider ID, location or IP..."
+            value={filters.search}
+            onChange={(event) => patch({ search: event.target.value })}
+          />
         </label>
 
         <label className="block">
@@ -111,25 +106,24 @@ export function ProviderFiltersPanel({
             Location <RiInformationLine className="h-4 w-4 text-text-muted" aria-hidden />
           </span>
           <span className="relative block">
-            <select className="input appearance-none pr-9" value={filters.country} onChange={(event) => patch({ country: event.target.value })} disabled={loadingCountries}>
+            <Select value={filters.country} onChange={(event) => patch({ country: event.target.value })} disabled={loadingCountries}>
               <option value="">All countries</option>
               {countries.map((code) => (
                 <option key={code} value={code}>{countryFlagEmoji(code)} {countryFullName(code)}</option>
               ))}
-            </select>
-            {loadingCountries ? <Spinner className="absolute right-3 top-2.5 h-4 w-4" /> : <RiArrowDownSLine className="pointer-events-none absolute right-3 top-2.5 h-5 w-5 text-text-secondary" aria-hidden />}
+            </Select>
+            {loadingCountries ? <Spinner className="absolute right-3 top-2.5 h-4 w-4" /> : null}
           </span>
         </label>
 
         <label className="block">
           <span className="mb-2 block text-sm font-medium text-text-primary">Platform</span>
           <span className="relative block">
-            <select className="input appearance-none pr-9" value={filters.platform} onChange={(event) => patch({ platform: event.target.value })}>
+            <Select value={filters.platform} onChange={(event) => patch({ platform: event.target.value })}>
               <option value="">All platforms</option>
               <option value="linux">Linux</option>
               <option value="windows">Windows</option>
-            </select>
-            <RiArrowDownSLine className="pointer-events-none absolute right-3 top-2.5 h-5 w-5 text-text-secondary" aria-hidden />
+            </Select>
           </span>
         </label>
       </div>
@@ -150,8 +144,7 @@ export function ProviderFiltersPanel({
         </div>
         <label className="block">
           <span className="mb-2 block text-sm text-text-secondary">Max monthly price (USD)</span>
-          <input
-            className="input"
+          <Input
             min={0}
             onChange={(event) => patch({ maxUsd: event.target.value ? Number(event.target.value) : undefined })}
             placeholder="Any price"

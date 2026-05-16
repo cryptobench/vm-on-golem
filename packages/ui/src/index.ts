@@ -10,6 +10,7 @@ export * from "./ConfirmDialog";
 export * from "./DataTable";
 export * from "./DialogScaffold";
 export * from "./FormField";
+export * from "./Input";
 export * from "./IconTile";
 export * from "./KeyValueList";
 export * from "./Modal";

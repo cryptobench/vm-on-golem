@@ -22,15 +22,3 @@ export function FormField({
     </label>
   );
 }
-
-export function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
-  return <input {...props} className={cn("input", props.className)} />;
-}
-
-export function SelectInput(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
-  return <select {...props} className={cn("input", props.className)} />;
-}
-
-export function TextAreaInput(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  return <textarea {...props} className={cn("input", props.className)} />;
-}

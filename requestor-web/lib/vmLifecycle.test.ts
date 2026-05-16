@@ -63,6 +63,38 @@ test("display lifecycle maps non-404 safe status failures to offline", () => {
   assert.equal(lifecycle.stage, "running");
 });
 
+test("display lifecycle keeps creating badge when provider is unreachable during creation", () => {
+  const lifecycle = deriveVmDisplayLifecycle({
+    lifecycle: { status: "offline", lifecycle_stage: "launching" },
+    fallback: { status: "creating", lifecycle_stage: "launching" },
+    safeStatus: { exists: false, code: 502, error: "Upstream error" },
+  });
+
+  assert.equal(lifecycle.status, "creating");
+  assert.equal(lifecycle.label, "Creating");
+  assert.equal(lifecycle.message, "Provider unreachable");
+  assert.equal(lifecycle.transitioning, true);
+  assert.equal(lifecycle.tone, "primary");
+});
+
+test("display lifecycle keeps failed job status when VM endpoints are unreachable", () => {
+  const lifecycle = deriveVmDisplayLifecycle({
+    lifecycle: {
+      status: "failed",
+      lifecycle_stage: "failed",
+      status_message: "VM creation failed",
+      progress: 100,
+    },
+    safeStatus: { exists: false, code: 403, error: "VM owner unavailable" },
+  });
+
+  assert.equal(lifecycle.status, "failed");
+  assert.equal(lifecycle.label, "Failed");
+  assert.equal(lifecycle.message, "VM creation failed");
+  assert.equal(lifecycle.transitioning, false);
+  assert.equal(lifecycle.tone, "danger");
+});
+
 test("display lifecycle does not classify 404 as offline", () => {
   const lifecycle = deriveVmDisplayLifecycle({
     fallback: { status: "running" },

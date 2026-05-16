@@ -6,10 +6,10 @@ import {
   DataTable,
   FormField,
   PageHeader,
-  SelectInput,
+  Select,
   StatCard,
   StatusBadge,
-  TextInput,
+  Input,
   ToggleSwitch,
 } from "@golem/ui";
 import { RiAlertLine, RiBellLine, RiCheckboxCircleLine, RiCloseLine } from "@remixicon/react";
@@ -138,49 +138,49 @@ export function AlertsPage({
           <CardBody className="space-y-4">
             <h2 className="text-base font-semibold text-text-primary">Create Alert Rule</h2>
             <FormField label="Name">
-              <TextInput value={rule.name} onChange={(event) => setRule({ ...rule, name: event.target.value })} />
+              <Input value={rule.name} onChange={(event) => setRule({ ...rule, name: event.target.value })} />
             </FormField>
             <FormField label="Metric">
-              <SelectInput value={rule.metric} onChange={(event) => setRule({ ...rule, metric: event.target.value })}>
+              <Select value={rule.metric} onChange={(event) => setRule({ ...rule, metric: event.target.value })}>
                 <option value="cpu_percent">cpu_percent</option>
                 <option value="memory_percent">memory_percent</option>
                 <option value="disk_percent">disk_percent</option>
                 <option value="stream_active">stream_active</option>
                 <option value="guest_agent_up">guest_agent_up</option>
-              </SelectInput>
+              </Select>
             </FormField>
             <FormField label="Scope">
-              <SelectInput value={rule.scope} onChange={(event) => setRule({ ...rule, scope: event.target.value as AlertRule["scope"] })}>
+              <Select value={rule.scope} onChange={(event) => setRule({ ...rule, scope: event.target.value as AlertRule["scope"] })}>
                 <option value="vm">vm</option>
                 <option value="host">host</option>
-              </SelectInput>
+              </Select>
             </FormField>
             <FormField label="Source">
-              <SelectInput value={rule.source} onChange={(event) => setRule({ ...rule, source: event.target.value as AlertRule["source"] })}>
+              <Select value={rule.source} onChange={(event) => setRule({ ...rule, source: event.target.value as AlertRule["source"] })}>
                 <option value="guest_agent">guest_agent</option>
                 <option value="infrastructure">infrastructure</option>
-              </SelectInput>
+              </Select>
             </FormField>
             <div className="grid grid-cols-2 gap-3">
               <FormField label="Operator">
-                <SelectInput value={rule.operator} onChange={(event) => setRule({ ...rule, operator: event.target.value })}>
+                <Select value={rule.operator} onChange={(event) => setRule({ ...rule, operator: event.target.value })}>
                   <option value=">">&gt;</option>
                   <option value="<">&lt;</option>
                   <option value="==">==</option>
-                </SelectInput>
+                </Select>
               </FormField>
               <FormField label="Threshold">
-                <TextInput type="number" value={rule.threshold} onChange={(event) => setRule({ ...rule, threshold: Number(event.target.value) })} />
+                <Input type="number" value={rule.threshold} onChange={(event) => setRule({ ...rule, threshold: Number(event.target.value) })} />
               </FormField>
             </div>
             <FormField label="Duration (seconds)">
-              <TextInput type="number" value={rule.duration_seconds} onChange={(event) => setRule({ ...rule, duration_seconds: Number(event.target.value) })} />
+              <Input type="number" value={rule.duration_seconds} onChange={(event) => setRule({ ...rule, duration_seconds: Number(event.target.value) })} />
             </FormField>
             <FormField label="Severity">
-              <SelectInput value={rule.severity} onChange={(event) => setRule({ ...rule, severity: event.target.value })}>
+              <Select value={rule.severity} onChange={(event) => setRule({ ...rule, severity: event.target.value })}>
                 <option value="warning">Warning</option>
                 <option value="critical">Critical</option>
-              </SelectInput>
+              </Select>
             </FormField>
             <div className="flex items-center justify-between text-sm text-text-secondary">
               Enabled

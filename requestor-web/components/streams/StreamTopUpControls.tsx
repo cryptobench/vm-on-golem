@@ -4,7 +4,7 @@ import React from "react";
 import { Menu, Transition } from "@headlessui/react";
 import { RiArrowDownSLine } from "@remixicon/react";
 import { parseHumanDuration } from "../../lib/time";
-import { cn } from "@golem/ui";
+import { cn, Input } from "@golem/ui";
 import { Spinner } from "@golem/ui";
 
 type StreamTopUpControlsProps = {
@@ -90,8 +90,8 @@ export function StreamTopUpControls({
             <div className="mt-2 border-t border-border pt-2">
               <label className="text-xs font-medium text-text-secondary">Custom duration</label>
               <div className="mt-2 flex gap-2">
-                <input
-                  className="input h-9 text-sm"
+                <Input
+                  inputClassName="h-9 text-sm"
                   placeholder="45m, 1h30m"
                   value={custom}
                   onChange={(event) => setCustom(event.target.value)}

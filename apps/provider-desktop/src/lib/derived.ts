@@ -2,7 +2,6 @@ import { formatLocalTime } from "@golem/ui";
 import type {
   ActiveAlert,
   AlertRule,
-  MetricSample,
   MetricsHistoryResponse,
   ProviderSummary,
   StreamStatus,
@@ -77,17 +76,17 @@ export function chartPoints(
   history: MetricsHistoryResponse | null | undefined,
   metric: string,
 ): ChartPoint[] {
-  const samples = history?.samples ?? [];
-  return samples
-    .filter((sample) => sample.metric === metric)
-    .map((sample) => ({
-      label: sampleLabel(sample),
-      value: Number(sample.value.toFixed(2)),
+  const points = history?.points ?? [];
+  return points
+    .filter((point) => point.metric === metric)
+    .map((point) => ({
+      label: sampleLabel(point.bucket_start),
+      value: Number(point.avg.toFixed(2)),
     }));
 }
 
-function sampleLabel(sample: MetricSample) {
-  return formatLocalTime(sample.timestamp) ?? sample.timestamp;
+function sampleLabel(timestamp: string) {
+  return formatLocalTime(timestamp) ?? timestamp;
 }
 
 export function streamEarningsPoints(streams: StreamStatus[]): ChartPoint[] {
