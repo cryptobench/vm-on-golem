@@ -4,6 +4,7 @@ import { test } from "node:test";
 import {
   remainingTokenBalance,
   spentTokenBalance,
+  streamStatus,
   type StreamRow,
 } from "../components/streams/streamModel";
 
@@ -30,6 +31,20 @@ test("stream accounting stops spending at terminated stop time", () => {
 
   assert.equal(spentTokenBalance(row, 180), 50);
   assert.equal(remainingTokenBalance(row, 180), 0);
+});
+
+test("stream status keeps expired streams in grace for 30 seconds", () => {
+  const row = streamRow({
+    startTime: 100n,
+    stopTime: 200n,
+    ratePerSecond: 1_000_000n,
+    deposit: 100_000_000n,
+  });
+
+  assert.equal(streamStatus(row, 199), "needs-top-up");
+  assert.equal(streamStatus(row, 200), "grace");
+  assert.equal(streamStatus(row, 229), "grace");
+  assert.equal(streamStatus(row, 230), "out-of-funds");
 });
 
 function streamRow(chain: Partial<StreamRow["chain"]>): StreamRow {

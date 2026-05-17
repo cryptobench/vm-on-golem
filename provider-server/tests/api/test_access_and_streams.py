@@ -250,6 +250,7 @@ def test_get_vm_stream_status_happy_path(monkeypatch, client: TestClient):
         assert data["vm_id"] == "test-vm"
         assert data["stream_id"] == 7
         assert data["verified"] is True
+        assert data["payment_state"] == "active"
         # computed checks
         assert data["computed"]["now"] == 200
         assert data["computed"]["remaining_seconds"] == 100
@@ -257,6 +258,52 @@ def test_get_vm_stream_status_happy_path(monkeypatch, client: TestClient):
         assert data["computed"]["vested_wei"] == 200
         # withdrawable = max(vested - withdrawn, 0) = 150
         assert data["computed"]["withdrawable_wei"] == 150
+    finally:
+        app.container.stream_reader.reset_override()
+        app.container.stream_map.reset_override()
+        app.container.config.override(old)
+
+
+def test_get_vm_stream_status_reports_grace_state(client: TestClient):
+    old = _enable_streaming_config()
+    try:
+        app.container.stream_map.override(DummyStreamMap({"test-vm": 7}))
+
+        class GraceReader:
+            def __init__(self, *a, **kw):
+                class W3:
+                    class Eth:
+                        def get_block(self, *_):
+                            return {"timestamp": 305}
+
+                    eth = Eth()
+
+                self.web3 = W3()
+
+            def get_stream(self, sid):
+                return {
+                    "token": "0xT",
+                    "sender": "0xS",
+                    "recipient": app.container.config()["PROVIDER_ID"],
+                    "startTime": 100,
+                    "stopTime": 300,
+                    "ratePerSecond": 2,
+                    "deposit": 400,
+                    "withdrawn": 50,
+                    "leaseId": "0x" + "11" * 32,
+                    "termsHash": "0x" + "22" * 32,
+                }
+
+            def verify_stream(self, sid, expected_recipient):
+                return False, "stream expired"
+
+        app.container.stream_reader.override(providers.Factory(GraceReader))
+
+        resp = client.get("/api/v1/vms/test-vm/stream")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["computed"]["remaining_seconds"] == 0
+        assert data["payment_state"] == "grace"
     finally:
         app.container.stream_reader.reset_override()
         app.container.stream_map.reset_override()

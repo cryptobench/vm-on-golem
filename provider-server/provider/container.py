@@ -140,6 +140,7 @@ class Container(containers.DeclarativeContainer):
         vm_service=vm_service,
         proxy_manager=proxy_manager,
         webhook_service=webhook_service,
+        event_broadcaster=provider_event_broadcaster,
     )
 
     # Payments
@@ -171,16 +172,6 @@ class Container(containers.DeclarativeContainer):
             config.STREAM_PAYMENT_ADDRESS,
             config.ETHEREUM_PRIVATE_KEY,
         ),
-    )
-
-    stream_monitor = providers.Singleton(
-        StreamMonitor,
-        stream_map=stream_map,
-        vm_service=vm_service,
-        reader=stream_reader,
-        client=stream_client,
-        settings=config,
-        webhook_service=webhook_service,
     )
 
     stream_payment_event_service = providers.Singleton(
@@ -232,6 +223,16 @@ class Container(containers.DeclarativeContainer):
         event_broadcaster=provider_event_broadcaster,
         webhook_service=webhook_service,
         stream_client=stream_client.provider,
+    )
+
+    stream_monitor = providers.Singleton(
+        StreamMonitor,
+        stream_map=stream_map,
+        vm_application_service=vm_application_service,
+        reader=stream_reader,
+        client=stream_client,
+        settings=config,
+        webhook_service=webhook_service,
     )
 
     provider_info_service = providers.Factory(

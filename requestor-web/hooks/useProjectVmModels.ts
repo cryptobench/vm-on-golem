@@ -1,7 +1,6 @@
 "use client";
 
 import React from "react";
-import useSWR from "swr";
 import {
   providerInfo,
   type Rental,
@@ -22,6 +21,15 @@ import { useProjectRentals } from "./useProjectRentals";
 type ProbeResult<T> = { ok: true; value: T } | { ok: false; error: unknown };
 
 export function useProjectVmModels(projectId: string) {
+  const [probes, setProbes] = React.useState<
+    Record<string, RequestorVmProbe>
+  >({});
+  const [pendingProbeIds, setPendingProbeIds] = React.useState<
+    Record<string, boolean>
+  >({});
+  const [refreshNonce, setRefreshNonce] = React.useState(0);
+  const probesRef = React.useRef(probes);
+  const latestProbeKeysRef = React.useRef<Record<string, string>>({});
   const {
     items: rentalItems,
     isInitialLoading: rentalsLoading,
@@ -46,21 +54,101 @@ export function useProjectVmModels(projectId: string) {
         : null,
     [projectId, projectRentals],
   );
-  const {
-    data: probes,
-    isValidating,
-    mutate,
-  } = useSWR(probeKey, () => loadVmProbes(projectRentals), {
-    refreshInterval: 8000,
-    revalidateOnFocus: true,
-    revalidateOnReconnect: true,
-  });
+
+  React.useEffect(() => {
+    probesRef.current = probes;
+  }, [probes]);
+
+  React.useEffect(() => {
+    const activeVmIds = new Set(projectRentals.map((rental) => rental.vm_id));
+    const nextProbeKeys = Object.fromEntries(
+      projectRentals.map((rental) => [rental.vm_id, rentalProbeKey(rental)]),
+    );
+    latestProbeKeysRef.current = nextProbeKeys;
+    setProbes((current) => filterByVmIds(current, activeVmIds));
+    setPendingProbeIds((current) => filterByVmIds(current, activeVmIds));
+  }, [probeKey, projectRentals]);
+
+  React.useEffect(() => {
+    if (!projectRentals.length) return;
+
+    let cancelled = false;
+    let timer: number | null = null;
+
+    const loadAll = () => {
+      for (const rental of projectRentals) {
+        const vmId = rental.vm_id;
+        const currentKey = rentalProbeKey(rental);
+        latestProbeKeysRef.current[vmId] = currentKey;
+
+        if (
+          isTerminalVmStatus(rental.status) ||
+          !rental.provider_endpoint_url ||
+          !vmId
+        ) {
+          setProbes((current) => ({ ...current, [vmId]: emptyProbe() }));
+          setPendingProbeIds((current) => omitVmId(current, vmId));
+          continue;
+        }
+
+        if (!probesRef.current[vmId]) {
+          setPendingProbeIds((current) => ({ ...current, [vmId]: true }));
+        }
+
+        void loadVmProbe(rental).then(
+          (probe) => {
+            if (
+              cancelled ||
+              latestProbeKeysRef.current[vmId] !== currentKey
+            ) {
+              return;
+            }
+            setProbes((current) => ({ ...current, [vmId]: probe }));
+            setPendingProbeIds((current) => omitVmId(current, vmId));
+          },
+          (error) => {
+            if (
+              cancelled ||
+              latestProbeKeysRef.current[vmId] !== currentKey
+            ) {
+              return;
+            }
+            setProbes((current) => ({
+              ...current,
+              [vmId]: failedProbe(error, !!rental.stream_id),
+            }));
+            setPendingProbeIds((current) => omitVmId(current, vmId));
+          },
+        );
+      }
+    };
+
+    loadAll();
+    timer = window.setInterval(loadAll, 8000);
+    return () => {
+      cancelled = true;
+      if (timer != null) window.clearInterval(timer);
+    };
+  }, [probeKey, projectRentals, refreshNonce]);
+
+  React.useEffect(() => {
+    const refreshProbes = () => setRefreshNonce((current) => current + 1);
+    window.addEventListener("focus", refreshProbes);
+    window.addEventListener("online", refreshProbes);
+    return () => {
+      window.removeEventListener("focus", refreshProbes);
+      window.removeEventListener("online", refreshProbes);
+    };
+  }, []);
+
   const items = React.useMemo<RequestorVmModel[]>(
     () =>
       projectRentals.map((rental) =>
-        buildRequestorVmModel(rental, probes?.[rental.vm_id]),
+        buildRequestorVmModel(rental, probes[rental.vm_id], {
+          probePending: !!pendingProbeIds[rental.vm_id],
+        }),
       ),
-    [probes, projectRentals],
+    [pendingProbeIds, probes, projectRentals],
   );
   React.useEffect(() => {
     if (!probes) return;
@@ -78,10 +166,9 @@ export function useProjectVmModels(projectId: string) {
 
   const refresh = React.useCallback(async () => {
     refreshRentals();
-    await mutate();
-  }, [mutate, refreshRentals]);
-  const isInitialLoading =
-    rentalsLoading || (projectRentals.length > 0 && !probes && isValidating);
+    setRefreshNonce((current) => current + 1);
+  }, [refreshRentals]);
+  const isInitialLoading = rentalsLoading;
 
   return {
     setItems,
@@ -91,13 +178,6 @@ export function useProjectVmModels(projectId: string) {
     isInitialLoading,
     refresh,
   } as const;
-}
-
-async function loadVmProbes(rentals: Rental[]) {
-  const pairs = await Promise.all(
-    rentals.map(async (rental) => [rental.vm_id, await loadVmProbe(rental)]),
-  );
-  return Object.fromEntries(pairs) as Record<string, RequestorVmProbe>;
 }
 
 async function loadVmProbe(rental: Rental): Promise<RequestorVmProbe> {
@@ -140,6 +220,18 @@ function emptyProbe(): RequestorVmProbe {
     accessError: null,
     stream: null,
     streamError: null,
+  };
+}
+
+function failedProbe(error: unknown, hasStream: boolean): RequestorVmProbe {
+  return {
+    provider: null,
+    providerError: error,
+    safeStatus: safeStatusError(error),
+    access: null,
+    accessError: error,
+    stream: null,
+    streamError: hasStream ? error : null,
   };
 }
 
@@ -190,4 +282,20 @@ function rentalProbeKey(rental: Rental) {
     rental.stream_id || "",
     rental.creation_job_id || "",
   ].join(":");
+}
+
+function filterByVmIds<T>(
+  values: Record<string, T>,
+  vmIds: Set<string>,
+): Record<string, T> {
+  return Object.fromEntries(
+    Object.entries(values).filter(([vmId]) => vmIds.has(vmId)),
+  );
+}
+
+function omitVmId<T>(values: Record<string, T>, vmId: string): Record<string, T> {
+  if (!(vmId in values)) return values;
+  const next = { ...values };
+  delete next[vmId];
+  return next;
 }

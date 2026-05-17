@@ -3,6 +3,11 @@ import asyncio
 from fastapi import FastAPI
 
 from .discovery.publishing_service import DiscoveryPublishingService
+from .payments.stream_status_service import (
+    EXPIRED_PAYMENT_STATE,
+    STREAM_GRACE_PERIOD_SECONDS,
+    TERMINATED_PAYMENT_STATE,
+)
 from .utils.logging import setup_logger
 from .utils.pricing import PricingAutoUpdater
 from .vm.service import VMService
@@ -114,20 +119,35 @@ class ProviderService:
                                 f"(stream_id={stream_id}): {e}"
                             ) from e
 
-                        if (
-                            str(stream.get("recipient", "")).lower()
-                            != "0x0000000000000000000000000000000000000000"
-                        ):
+                        payment_state = self._startup_stream_state(
+                            reader, int(stream_id), stream
+                        )
+                        if payment_state not in {
+                            TERMINATED_PAYMENT_STATE,
+                            EXPIRED_PAYMENT_STATE,
+                        }:
                             continue
 
                         logger.info(
-                            "Deleting VM after startup found terminated stream",
-                            extra={"vm_id": vm_id, "stream_id": int(stream_id)},
+                            "Deleting VM after startup found ended stream",
+                            extra={
+                                "vm_id": vm_id,
+                                "stream_id": int(stream_id),
+                                "payment_state": payment_state,
+                            },
                         )
                         await stream_map.mark_terminated(
                             vm_id,
-                            terminated_by="requestor",
-                            termination_reason="requestor_terminated",
+                            terminated_by=(
+                                "requestor"
+                                if payment_state == TERMINATED_PAYMENT_STATE
+                                else "provider"
+                            ),
+                            termination_reason=(
+                                "requestor_terminated"
+                                if payment_state == TERMINATED_PAYMENT_STATE
+                                else "stream_expired"
+                            ),
                             settlement_tx_hash=None,
                             cleanup_state="not_started",
                         )
@@ -198,6 +218,26 @@ class ProviderService:
             logger.error(f"Startup failed: {e}", exc_info=True)
             await self.cleanup()
             raise
+
+    @staticmethod
+    def _startup_stream_state(reader, stream_id: int, stream: dict) -> str:
+        stream_state = getattr(reader, "stream_state", None)
+        if stream_state is not None:
+            return str(stream_state(stream_id)).lower()
+        if (
+            str(stream.get("recipient", "")).lower()
+            == "0x0000000000000000000000000000000000000000"
+        ):
+            return TERMINATED_PAYMENT_STATE
+        web3 = getattr(reader, "web3", None)
+        eth = getattr(web3, "eth", None)
+        get_block = getattr(eth, "get_block", None)
+        if get_block is None:
+            return "active"
+        now = int(get_block("latest")["timestamp"])
+        if now >= int(stream["stopTime"]) + STREAM_GRACE_PERIOD_SECONDS:
+            return EXPIRED_PAYMENT_STATE
+        return "active"
 
     async def cleanup(self):
         """Cleanup provider components."""

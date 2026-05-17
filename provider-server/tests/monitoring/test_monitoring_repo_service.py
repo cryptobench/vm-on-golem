@@ -109,6 +109,63 @@ def test_guest_agent_state_requires_only_fresh_authenticated_metrics(
     assert service.fresh_guest_agent_state("vm-a") is None
 
 
+def test_guest_sample_restores_missing_ssh_proxy_from_source_ip(tmp_path: Path):
+    repo = MonitoringRepository(str(tmp_path / "monitoring.sqlite"))
+    repo.init_schema()
+    token = repo.issue_guest_token("vm-a")
+    vm_service = MagicMock()
+    vm_service.name_mapper.get_multipass_name = AsyncMock(return_value="golem-a")
+    proxy = MagicMock()
+    proxy.get_port.return_value = None
+    proxy.add_vm = AsyncMock(return_value=True)
+    broadcaster = MagicMock()
+    broadcaster.publish_provider = AsyncMock()
+    broadcaster.publish_vm = AsyncMock()
+    service = MonitoringService(
+        {},
+        repo,
+        vm_service,
+        proxy,
+        event_broadcaster=broadcaster,
+    )
+
+    asyncio_run(
+        service.record_guest_sample(
+            "vm-a",
+            GuestMetricPayload(token=token, agent_ready=True),
+            "192.168.2.19",
+        )
+    )
+
+    proxy.add_vm.assert_awaited_once_with("golem-a", "192.168.2.19")
+    broadcaster.publish_provider.assert_awaited_once_with(["vms", "summary"])
+    broadcaster.publish_vm.assert_awaited_once_with(
+        "vm-a", ["access", "lifecycle", "metrics_live"]
+    )
+
+
+def test_guest_sample_keeps_existing_ssh_proxy_listener(tmp_path: Path):
+    repo = MonitoringRepository(str(tmp_path / "monitoring.sqlite"))
+    repo.init_schema()
+    token = repo.issue_guest_token("vm-a")
+    vm_service = MagicMock()
+    vm_service.name_mapper.get_multipass_name = AsyncMock(return_value="golem-a")
+    proxy = MagicMock()
+    proxy.get_port.return_value = 50800
+    proxy.add_vm = AsyncMock(return_value=True)
+    service = MonitoringService({}, repo, vm_service, proxy)
+
+    asyncio_run(
+        service.record_guest_sample(
+            "vm-a",
+            GuestMetricPayload(token=token, agent_ready=True),
+            "192.168.2.19",
+        )
+    )
+
+    proxy.add_vm.assert_not_awaited()
+
+
 def test_history_range_filters_24h_samples(tmp_path: Path, monkeypatch):
     repo = MonitoringRepository(str(tmp_path / "monitoring.sqlite"))
     repo.init_schema()

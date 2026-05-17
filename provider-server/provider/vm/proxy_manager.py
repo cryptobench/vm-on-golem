@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os
+import socket
 from asyncio import Protocol, Task, Transport
 from pathlib import Path
 from typing import Dict, Optional, Set
@@ -9,6 +10,28 @@ from typing import Dict, Optional, Set
 from .port_manager import PortManager
 
 logger = logging.getLogger(__name__)
+
+
+def _enable_low_latency_tcp(
+    transport: Transport, connection_label: str, context: dict
+) -> None:
+    """Disable Nagle buffering on proxied SSH sockets."""
+    sock = transport.get_extra_info("socket")
+    if sock is None:
+        logger.debug(
+            "Cannot enable TCP_NODELAY: transport has no socket",
+            extra={"connection": connection_label, **context},
+        )
+        return
+
+    try:
+        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+    except OSError:
+        logger.warning(
+            "Failed to enable TCP_NODELAY for SSH proxy connection",
+            extra={"connection": connection_label, **context},
+            exc_info=True,
+        )
 
 
 class SSHProxyProtocol(Protocol):
@@ -26,6 +49,11 @@ class SSHProxyProtocol(Protocol):
     def connection_made(self, transport: Transport) -> None:
         """Called when connection is established."""
         self.transport = transport
+        _enable_low_latency_tcp(
+            transport,
+            "client",
+            {"target_host": self.target_host, "target_port": self.target_port},
+        )
         self.counters["connections"] = self.counters.get("connections", 0) + 1
         logger.debug(
             "SSH proxy client connected",
@@ -90,6 +118,14 @@ class SSHTargetProtocol(Protocol):
     def connection_made(self, transport: Transport) -> None:
         """Called when connection is established."""
         self.transport = transport
+        _enable_low_latency_tcp(
+            transport,
+            "target",
+            {
+                "target_host": self.client_protocol.target_host,
+                "target_port": self.client_protocol.target_port,
+            },
+        )
 
     def data_received(self, data: bytes) -> None:
         """Forward received data to client."""
@@ -458,8 +494,13 @@ class PythonProxyManager:
             ) in self.name_mapper.list_mappings().items():
                 if multipass_name in counters:
                     counters[requestor_name] = dict(counters[multipass_name])
+        except AttributeError:
+            logger.debug("Name mapper does not expose list_mappings")
         except Exception:
-            pass
+            logger.warning(
+                "Failed to include requestor VM names in proxy traffic counters",
+                exc_info=True,
+            )
         return counters
 
     async def cleanup(self) -> None:

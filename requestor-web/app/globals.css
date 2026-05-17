@@ -108,15 +108,6 @@
     box-shadow: inset 0.1875rem 0 0 var(--primary);
   }
 
-  .vm-action-menu {
-    animation: rentals-menu-enter 120ms ease-out;
-    transform-origin: top right;
-  }
-
-  .vm-action-menu__item {
-    @apply flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-text-secondary transition hover:bg-surface-muted hover:text-text-primary;
-  }
-
   .rentals-empty {
     background:
       radial-gradient(
@@ -275,17 +266,6 @@
   to {
     opacity: 1;
     transform: translateY(0);
-  }
-}
-
-@keyframes rentals-menu-enter {
-  from {
-    opacity: 0;
-    transform: translateY(-0.25rem) scale(0.98);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
   }
 }
 

@@ -23,6 +23,19 @@ export function vmStatusTone(status: VMStatus): StatusTone {
   return "primary";
 }
 
+export function paymentStateTone(paymentState?: string | null): StatusTone {
+  if (paymentState === "grace") return "warning";
+  if (paymentState === "expired" || paymentState === "terminated") return "danger";
+  return "success";
+}
+
+export function paymentStateLabel(paymentState?: string | null) {
+  if (paymentState === "grace") return "Payment grace";
+  if (paymentState === "expired") return "Payment expired";
+  if (paymentState === "terminated") return "Payment terminated";
+  return null;
+}
+
 export function alertTone(severity: string): StatusTone {
   if (severity === "critical" || severity === "error") return "danger";
   if (severity === "warning") return "warning";
@@ -33,13 +46,20 @@ export function isVmActive(vm: VMInfo) {
   return !["deleted", "stopped", "error"].includes(vm.status);
 }
 
-export function countVms(vms: VMInfo[]) {
+export function countVms(vms: VMInfo[], streams: StreamStatus[] = []) {
+  const streamByVm = new Map(streams.map((stream) => [stream.vm_id, stream]));
+  const effectiveStatus = (vm: VMInfo) => {
+    const paymentState = streamByVm.get(vm.id)?.payment_state;
+    return paymentState === "expired" || paymentState === "terminated"
+      ? "terminated"
+      : vm.status;
+  };
   return {
     all: vms.length,
-    running: vms.filter((vm) => vm.status === "running").length,
-    creating: vms.filter((vm) => vm.transitioning || vm.status === "creating").length,
-    stopped: vms.filter((vm) => vm.status === "stopped").length,
-    error: vms.filter((vm) => vm.status === "error").length,
+    running: vms.filter((vm) => effectiveStatus(vm) === "running").length,
+    creating: vms.filter((vm) => vm.transitioning || effectiveStatus(vm) === "creating").length,
+    stopped: vms.filter((vm) => effectiveStatus(vm) === "stopped").length,
+    error: vms.filter((vm) => effectiveStatus(vm) === "error").length,
   };
 }
 

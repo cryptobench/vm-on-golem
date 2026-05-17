@@ -2,24 +2,11 @@
 
 import React from "react";
 import { useProjects } from "../../context/ProjectsContext";
-import { useCopySSH } from "../../hooks/useCopySSH";
 import { useProjectVmModels } from "../../hooks/useProjectVmModels";
-import { useStreamActions } from "../../hooks/useStreamActions";
 import {
   loadSettings,
-  saveRentals,
   saveSettings,
-  type Rental,
-  vmDestroy,
-  vmResume,
-  vmStart,
-  vmStop,
 } from "../../lib/api";
-import { getRequestorRuntimeConfig } from "../../lib/runtimeConfig";
-import {
-  ensurePaidStreamCanStart,
-  terminatePaidRental,
-} from "../../lib/rentalLifecycle";
 import {
   isTerminalVmStatus,
   type RequestorVmModel,
@@ -41,32 +28,17 @@ function matchesQuery(vm: RequestorVmModel, query: string) {
     .some((value) => String(value).toLowerCase().includes(normalized));
 }
 
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
-}
-
 export function useRentalsScreen() {
   const [mounted, setMounted] = React.useState(false);
   const [showTerminated, setShowTerminated] = React.useState(false);
   const [query, setQuery] = React.useState("");
-  const [error, setError] = React.useState<string | null>(null);
-  const [busyId, setBusyId] = React.useState<string | null>(null);
-  const streamPaymentAddress = (
-    loadSettings().stream_payment_address ||
-    getRequestorRuntimeConfig().streamPaymentAddress ||
-    ""
-  ).trim();
-  const { terminate } = useStreamActions(streamPaymentAddress);
   const { activeId } = useProjects();
   const {
     items,
-    rawItems,
     projectRentals,
     isInitialLoading: rentalsLoading,
-    setItems,
     refresh,
   } = useProjectVmModels(activeId);
-  const copySSHAction = useCopySSH();
 
   React.useEffect(() => {
     setMounted(true);
@@ -113,81 +85,6 @@ export function useRentalsScreen() {
     [items, query],
   );
 
-  const copySSH = async (rental: Rental) => {
-    setError(null);
-    setBusyId(rental.vm_id);
-    try {
-      await copySSHAction(rental);
-    } catch (copyError) {
-      setError(errorMessage(copyError));
-    } finally {
-      setBusyId(null);
-    }
-  };
-
-  const updateRentalStatus = (rental: Rental, status: string) => {
-    const next = (rawItems || []).map((item) =>
-      item.vm_id === rental.vm_id ? { ...item, status } : item,
-    );
-    saveRentals(next);
-    setItems(next);
-  };
-
-  const start = async (rental: Rental) => {
-    setError(null);
-    setBusyId(rental.vm_id);
-    try {
-      await ensurePaidStreamCanStart({
-        rental,
-        streamPaymentAddress,
-      });
-      if (String(rental.status || "").toLowerCase() === "suspended") {
-        await vmResume(requireProviderEndpoint(rental), rental.vm_id);
-      } else {
-        await vmStart(requireProviderEndpoint(rental), rental.vm_id);
-      }
-      updateRentalStatus(rental, "running");
-    } catch (startError) {
-      setError(errorMessage(startError));
-    } finally {
-      setBusyId(null);
-    }
-  };
-
-  const stop = async (rental: Rental) => {
-    setError(null);
-    setBusyId(rental.vm_id);
-    try {
-      await vmStop(requireProviderEndpoint(rental), rental.vm_id);
-      updateRentalStatus(rental, "stopped");
-    } catch (stopError) {
-      setError(errorMessage(stopError));
-    } finally {
-      setBusyId(null);
-    }
-  };
-
-  const destroy = async (rental: Rental) => {
-    setError(null);
-    setBusyId(rental.vm_id);
-    try {
-      const terminatedRental = await terminatePaidRental({
-        rental,
-        terminateStream: terminate,
-        destroyVm: vmDestroy,
-      });
-      const next = (rawItems || []).map((item) =>
-        item.vm_id === rental.vm_id ? terminatedRental : item,
-      );
-      saveRentals(next);
-      setItems(next);
-    } catch (destroyError) {
-      setError(errorMessage(destroyError));
-    } finally {
-      setBusyId(null);
-    }
-  };
-
   const toggleTerminated = (next: boolean) => {
     setShowTerminated(next);
     saveSettings({ show_terminated: next });
@@ -195,10 +92,6 @@ export function useRentalsScreen() {
 
   return {
     active,
-    busyId,
-    copySSH,
-    destroy,
-    error,
     hasAnyProjectVm: projectRentals.length > 0,
     hasVisibleRows:
       active.length > 0 || (showTerminated && terminated.length > 0),
@@ -208,16 +101,7 @@ export function useRentalsScreen() {
     rentalsLoading,
     setQuery,
     showTerminated,
-    start,
-    stop,
     terminated,
     toggleTerminated,
   };
-}
-
-function requireProviderEndpoint(rental: Rental): string {
-  if (!rental.provider_endpoint_url) {
-    throw new Error("Provider endpoint unavailable");
-  }
-  return rental.provider_endpoint_url;
 }

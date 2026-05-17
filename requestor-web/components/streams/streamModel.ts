@@ -14,8 +14,11 @@ export type StreamRow = {
 export type StreamStatusKind =
   | "active"
   | "needs-top-up"
+  | "grace"
   | "out-of-funds"
   | "terminated";
+
+const STREAM_GRACE_SECONDS = 30;
 
 export type TokenTotal = {
   symbol: string;
@@ -66,7 +69,10 @@ export function streamRunwayPercent(row: StreamRow, nowSec: number) {
 export function streamStatus(row: StreamRow, nowSec: number): StreamStatusKind {
   if (isTerminatedStream(row.chain)) return "terminated";
   const remaining = remainingSeconds(row, nowSec);
-  if (remaining <= 0 || remainingTokenBalance(row, nowSec) <= 0) return "out-of-funds";
+  if (remaining <= 0 || remainingTokenBalance(row, nowSec) <= 0) {
+    const stopTime = Number(row.chain.stopTime || 0n);
+    return nowSec < stopTime + STREAM_GRACE_SECONDS ? "grace" : "out-of-funds";
+  }
   if (remaining < 3600) return "needs-top-up";
   return "active";
 }
@@ -126,9 +132,10 @@ export function fiatTotal(
 export function sortRowsByImportance(rows: StreamRow[], nowSec: number) {
   const statusRank: Record<StreamStatusKind, number> = {
     "needs-top-up": 0,
-    "out-of-funds": 1,
-    terminated: 2,
-    active: 3,
+    grace: 1,
+    "out-of-funds": 2,
+    terminated: 3,
+    active: 4,
   };
 
   return [...rows].sort((left, right) => {

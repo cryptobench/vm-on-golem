@@ -7,6 +7,7 @@ import type { StreamStatusKind } from "./streamModel";
 const STATUS_LABELS: Record<StreamStatusKind, string> = {
   active: "Active",
   "needs-top-up": "Needs top-up",
+  grace: "Payment grace",
   "out-of-funds": "Out of funds",
   terminated: "Terminated",
 };
@@ -14,6 +15,7 @@ const STATUS_LABELS: Record<StreamStatusKind, string> = {
 const STATUS_STYLES: Record<StreamStatusKind, string> = {
   active: "bg-success-soft text-success",
   "needs-top-up": "bg-warning-soft text-warning",
+  grace: "bg-warning-soft text-warning",
   "out-of-funds": "bg-danger-soft text-danger",
   terminated: "bg-danger-soft text-danger",
 };

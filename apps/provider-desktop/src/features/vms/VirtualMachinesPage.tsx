@@ -19,7 +19,12 @@ import {
 } from "@remixicon/react";
 import { EndpointErrors, LoadingGrid } from "../../components/StateViews";
 import type { NavigateTarget } from "../../components/types";
-import { countVms, vmStatusTone } from "../../lib/derived";
+import {
+  countVms,
+  paymentStateLabel,
+  paymentStateTone,
+  vmStatusTone,
+} from "../../lib/derived";
 import { EMPTY_VALUE, vmStatusLabel } from "../../lib/format";
 import type { DashboardData } from "../../lib/useProviderData";
 import type { VMInfo } from "../../lib/types";
@@ -38,7 +43,9 @@ export function VirtualMachinesPage({
   if (loading && !data) return <LoadingGrid />;
 
   const vms = data?.vms ?? [];
-  const counts = countVms(vms);
+  const streams = data?.streams ?? [];
+  const streamByVm = new Map(streams.map((stream) => [stream.vm_id, stream]));
+  const counts = countVms(vms, streams);
   const filtered = vms.filter((vm) => {
     const matches = vm.name.toLowerCase().includes(search.toLowerCase());
     const visible = showTerminated || !["deleted"].includes(vm.status);
@@ -96,7 +103,9 @@ export function VirtualMachinesPage({
               {
                 key: "status",
                 header: "Status",
-                render: (vm) => <VmStatus vm={vm} />,
+                render: (vm) => (
+                  <VmStatus vm={vm} paymentState={streamByVm.get(vm.id)?.payment_state} />
+                ),
               },
               {
                 key: "resources",
@@ -123,7 +132,28 @@ export function VirtualMachinesPage({
   );
 }
 
-function VmStatus({ vm }: { vm: VMInfo }) {
+function VmStatus({
+  vm,
+  paymentState,
+}: {
+  vm: VMInfo;
+  paymentState?: string | null;
+}) {
+  const paymentLabel = paymentStateLabel(paymentState);
+  if (paymentLabel && (paymentState === "grace" || paymentState === "expired")) {
+    return (
+      <div className="space-y-2">
+        <StatusBadge
+          label={paymentLabel}
+          tone={paymentStateTone(paymentState)}
+        />
+        {paymentState === "grace" ? (
+          <div className="text-xs text-warning">Top-up grace period</div>
+        ) : null}
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-2">
       <StatusBadge
