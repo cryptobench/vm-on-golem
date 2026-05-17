@@ -13,18 +13,6 @@ from .utils.logging import setup_logger
 logger = setup_logger(__name__)
 
 
-def normalize_discovery_backend(value: str | None) -> str:
-    """Normalize canonical discovery backend identifiers."""
-    raw = (value or "").strip().lower().replace("_", "-")
-    if raw == "arkiv":
-        return "arkiv"
-    if raw in {"", "central"}:
-        return "central"
-    if raw == "both":
-        return "both"
-    raise ValueError("Discovery backend must be 'arkiv', 'central', or 'both'")
-
-
 def normalize_acme_env(value: str | None) -> str:
     """Normalize ACME environment names used for certificate issuance."""
     raw = (value or "production").strip().lower()
@@ -242,53 +230,11 @@ class Settings(BaseSettings):
             return f"DEVMODE-{v}"
         return v
 
-    # Discovery settings. "Discovery" is the capability; Arkiv and central are backends.
-    DISCOVERY_URL: str = "http://195.201.39.101:9001"
-    DISCOVERY_BACKEND: str = Field(
-        default="central",
-        description="Discovery backend: 'arkiv', 'central', or 'both'",
+    # Discovery settings. Central discovery is websocket-only.
+    DISCOVERY_WS_URL: str = Field(
+        default="ws://195.201.39.101:9001/api/v1/discovery/providers",
+        description="Central discovery provider websocket URL",
     )
-    DISCOVERY_ADVERTISEMENT_INTERVAL: int = 240  # seconds
-    ARKIV_ADVERTISEMENT_INTERVAL: int = 3600  # seconds
-
-    @field_validator("DISCOVERY_BACKEND", mode="before")
-    @classmethod
-    def resolve_discovery_backend(cls, v: str) -> str:
-        return normalize_discovery_backend(v)
-
-    # Arkiv Settings.
-    # Default to Kaolin Hoodi (testnet) endpoints; in development we can switch to a separate
-    # Arkiv development network via environment variables below.
-    ARKIV_RPC_URL: str = "https://kaolin.hoodi.arkiv.network/rpc"
-    ARKIV_WS_URL: str = "wss://kaolin.hoodi.arkiv.network/rpc/ws"
-    ARKIV_DEV_RPC_URL: str = Field(
-        default="",
-        description="RPC URL for Arkiv development network (used when ENVIRONMENT=development)",
-    )
-    ARKIV_DEV_WS_URL: str = Field(
-        default="",
-        description="WebSocket URL for Arkiv development network (used when ENVIRONMENT=development)",
-    )
-
-    @field_validator("ARKIV_RPC_URL", mode="before")
-    @classmethod
-    def prefer_dev_arkiv_rpc(cls, v: str, values: dict) -> str:
-        env = (values.data.get("ENVIRONMENT") or "").lower()
-        if env == "development":
-            dev_v = (values.data.get("ARKIV_DEV_RPC_URL") or "").strip()
-            if dev_v:
-                return dev_v
-        return v
-
-    @field_validator("ARKIV_WS_URL", mode="before")
-    @classmethod
-    def prefer_dev_arkiv_ws(cls, v: str, values: dict) -> str:
-        env = (values.data.get("ENVIRONMENT") or "").lower()
-        if env == "development":
-            dev_v = (values.data.get("ARKIV_DEV_WS_URL") or "").strip()
-            if dev_v:
-                return dev_v
-        return v
 
     # EVM / Payments
     PAYMENTS_RPC_URL: str = Field(
@@ -343,12 +289,6 @@ class Settings(BaseSettings):
         default=False,
         description="When true, stop all running VMs on provider shutdown. Default keeps VMs running.",
     )
-
-    # Faucet settings for Arkiv advertisements
-    ARKIV_FAUCET_ENABLED: bool = True
-    FAUCET_URL: str = "https://kaolin.hoodi.arkiv.network/faucet"
-    CAPTCHA_URL: str = "https://cap.gobas.me"
-    CAPTCHA_API_KEY: str = "05381a2cef5e"
 
     @field_validator("PAYMENTS_RPC_URL", mode="before")
     @classmethod
@@ -689,6 +629,7 @@ class Settings(BaseSettings):
     MONITORING_HISTORY_DOWNSAMPLE_SECONDS: int = Field(default=10, ge=1)
     MONITORING_RETENTION_DAYS: int = Field(default=30, ge=1)
     MONITORING_GUEST_AGENT_DEFAULT: bool = True
+    VM_AGENT_STATE_STALE_SECONDS: int = Field(default=90, ge=1)
     MONITORING_PROMETHEUS_ENABLED: bool = True
     MONITORING_OTLP_ENDPOINT: str = ""
     MONITORING_WEBHOOK_TIMEOUT_SECONDS: int = Field(default=5, ge=1)
@@ -702,6 +643,7 @@ class Settings(BaseSettings):
     RETRY_BACKOFF: float = 2.0
     CREATE_VM_MAX_RETRIES: int = 15
     CREATE_VM_RETRY_DELAY_SECONDS: float = 5.0
+    MULTIPASS_LAUNCH_INIT_TIMEOUT_SECONDS: int = Field(default=1, ge=1)
     LAUNCH_TIMEOUT_SECONDS: int = 300
 
     # Multipass Settings
@@ -845,7 +787,6 @@ class Settings(BaseSettings):
     PRICING_UPDATE_ENABLED: bool = True
     PRICING_UPDATE_MIN_DELTA_PERCENT: float = Field(default=1.0, ge=0.0)
     PRICING_UPDATE_INTERVAL_DISCOVERY: int = 900  # 15 minutes
-    PRICING_UPDATE_INTERVAL_ARKIV: int = 14400  # 4 hours
 
     class Config:
         env_prefix = "GOLEM_PROVIDER_"

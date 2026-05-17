@@ -1,9 +1,11 @@
 "use client";
 
 import React from "react";
-import { computeEstimate, fetchProviders, type ProviderAd } from "../../lib/api";
+import { computeEstimate, type ProviderAd } from "../../lib/api";
 import { useAds } from "../../context/AdsContext";
 import { useSettings } from "../../hooks/useSettings";
+import { useDiscoveryProviders } from "../../hooks/useDiscoveryProviders";
+import { countriesFromProviders } from "../../lib/discovery";
 import {
   estimateSpec,
   providerMatchesSearch,
@@ -27,19 +29,33 @@ export function useProvidersScreen() {
   const { ads } = useAds();
   const { displayCurrency, setDisplayCurrency } = useSettings();
   const [filters, setFilters] = React.useState<ProviderFilters>(readFiltersFromUrl);
+  const [appliedFilters, setAppliedFilters] =
+    React.useState<ProviderFilters>(filters);
   const [countries, setCountries] = React.useState<string[]>([]);
-  const [loadingCountries, setLoadingCountries] = React.useState(false);
-  const [loading, setLoading] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
-  const [rows, setRows] = React.useState<ProviderAd[]>([]);
   const [page, setPage] = React.useState(1);
   const [filtersOpen, setFiltersOpen] = React.useState(false);
   const [filtersMounted, setFiltersMounted] = React.useState(false);
   const [selectedProvider, setSelectedProvider] = React.useState<ProviderAd | null>(null);
   const closeTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const providerQuery = React.useMemo(
+    () => ({
+      cpu: appliedFilters.cpu,
+      memory: appliedFilters.memory,
+      storage: appliedFilters.storage,
+      country: appliedFilters.country || undefined,
+      platform: appliedFilters.platform || undefined,
+    }),
+    [appliedFilters],
+  );
+  const allProviders = useDiscoveryProviders({}, true);
+  const liveProviders = useDiscoveryProviders(providerQuery, true);
 
-  const spec = estimateSpec(filters);
+  const spec = estimateSpec(appliedFilters);
   const showTokenPrices = displayCurrency === "token";
+  const rows = React.useMemo(
+    () => applyClientFilters(liveProviders.rows, appliedFilters, spec),
+    [liveProviders.rows, appliedFilters, spec],
+  );
   const pageCount = Math.max(1, Math.ceil(rows.length / PROVIDERS_PAGE_SIZE));
   const visibleRows = rows.slice(
     (page - 1) * PROVIDERS_PAGE_SIZE,
@@ -47,55 +63,23 @@ export function useProvidersScreen() {
   );
 
   const loadProviders = React.useCallback(
-    async (nextFilters = filters) => {
-      setLoading(true);
-      setError(null);
-      try {
-        const query = {
-          cpu: nextFilters.cpu,
-          memory: nextFilters.memory,
-          storage: nextFilters.storage,
-          country: nextFilters.country || undefined,
-        };
-        const data = await fetchProviders(query, ads);
-        const nextSpec = estimateSpec(nextFilters);
-        setRows(applyClientFilters(data, nextFilters, nextSpec));
-        setPage(1);
-        writeFiltersToUrl(nextFilters);
-      } catch (event) {
-        setError(event instanceof Error ? event.message : String(event));
-      } finally {
-        setLoading(false);
-      }
+    (nextFilters = filters) => {
+      setAppliedFilters(nextFilters);
+      setPage(1);
+      writeFiltersToUrl(nextFilters);
     },
-    [ads, filters],
+    [filters],
   );
 
   React.useEffect(() => {
-    let cancelled = false;
-    async function loadCountries() {
-      setLoadingCountries(true);
-      try {
-        const { listCountries } = await import("../../lib/providers");
-        const list = await listCountries(ads);
-        if (!cancelled) setCountries(list);
-      } catch {
-        if (!cancelled) setCountries([]);
-      } finally {
-        if (!cancelled) setLoadingCountries(false);
-      }
-    }
-    loadCountries();
-    return () => {
-      cancelled = true;
-    };
-  }, [ads]);
+    setCountries(countriesFromProviders(allProviders.rows));
+  }, [allProviders.rows]);
 
   React.useEffect(() => {
     try {
       const raw = localStorage.getItem("requestor_pending_create");
       if (!raw) {
-        loadProviders(filters);
+        loadProviders(appliedFilters);
         return;
       }
       const pending = JSON.parse(raw);
@@ -113,7 +97,7 @@ export function useProvidersScreen() {
       setFilters(next);
       loadProviders(next);
     } catch {
-      loadProviders(filters);
+      loadProviders(appliedFilters);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -158,9 +142,9 @@ export function useProvidersScreen() {
     filters,
     setFilters,
     countries,
-    loadingCountries,
-    loading,
-    error,
+    loadingCountries: allProviders.loading,
+    loading: liveProviders.loading,
+    error: liveProviders.error || allProviders.error,
     rows,
     page,
     setPage,

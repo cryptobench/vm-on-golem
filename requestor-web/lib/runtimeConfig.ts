@@ -1,8 +1,7 @@
 "use client";
 
 export type RequestorRuntimeConfig = {
-  discoveryApiUrl: string;
-  discoveryMode: "arkiv" | "central";
+  discoveryWsUrl: string;
   streamPaymentAddress: string;
   glmTokenAddress: string;
   evmChainId: string;
@@ -11,8 +10,6 @@ export type RequestorRuntimeConfig = {
   evmWsUrl: string;
   evmExplorerUrl: string;
   golemEnvironment: string;
-  arkivDevRpcUrl: string;
-  arkivDevWsUrl: string;
 };
 
 declare global {
@@ -22,8 +19,7 @@ declare global {
 }
 
 const DEFAULTS: RequestorRuntimeConfig = {
-  discoveryApiUrl: "http://195.201.39.101:9001/api/v1",
-  discoveryMode: "central",
+  discoveryWsUrl: "ws://195.201.39.101:9001/api/v1/discovery/requestors",
   streamPaymentAddress: "0x479044F8A58276DC15d0d924a6A92Ec663877D00",
   glmTokenAddress: "0x55555555555556AcFf9C332Ed151758858bd7a26",
   evmChainId: "0x88bb0",
@@ -32,8 +28,6 @@ const DEFAULTS: RequestorRuntimeConfig = {
   evmWsUrl: "wss://ethereum-hoodi-rpc.publicnode.com",
   evmExplorerUrl: "https://hoodi.etherscan.io",
   golemEnvironment: "",
-  arkivDevRpcUrl: "",
-  arkivDevWsUrl: "",
 };
 
 function envValue(name: keyof PublicRuntimeEnv): string {
@@ -41,8 +35,7 @@ function envValue(name: keyof PublicRuntimeEnv): string {
 }
 
 type PublicRuntimeEnv = {
-  NEXT_PUBLIC_DISCOVERY_API_URL?: string;
-  NEXT_PUBLIC_DISCOVERY_MODE?: string;
+  NEXT_PUBLIC_DISCOVERY_WS_URL?: string;
   NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS?: string;
   NEXT_PUBLIC_GLM_TOKEN_ADDRESS?: string;
   NEXT_PUBLIC_EVM_CHAIN_ID?: string;
@@ -51,14 +44,11 @@ type PublicRuntimeEnv = {
   NEXT_PUBLIC_EVM_WS_URL?: string;
   NEXT_PUBLIC_EVM_EXPLORER_URL?: string;
   NEXT_PUBLIC_GOLEM_ENVIRONMENT?: string;
-  NEXT_PUBLIC_ARKIV_DEV_RPC_URL?: string;
-  NEXT_PUBLIC_ARKIV_DEV_WS_URL?: string;
 };
 
 function publicRuntimeEnv(): PublicRuntimeEnv {
   return {
-    NEXT_PUBLIC_DISCOVERY_API_URL: process.env.NEXT_PUBLIC_DISCOVERY_API_URL,
-    NEXT_PUBLIC_DISCOVERY_MODE: process.env.NEXT_PUBLIC_DISCOVERY_MODE,
+    NEXT_PUBLIC_DISCOVERY_WS_URL: process.env.NEXT_PUBLIC_DISCOVERY_WS_URL,
     NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS:
       process.env.NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS,
     NEXT_PUBLIC_GLM_TOKEN_ADDRESS: process.env.NEXT_PUBLIC_GLM_TOKEN_ADDRESS,
@@ -68,8 +58,6 @@ function publicRuntimeEnv(): PublicRuntimeEnv {
     NEXT_PUBLIC_EVM_WS_URL: process.env.NEXT_PUBLIC_EVM_WS_URL,
     NEXT_PUBLIC_EVM_EXPLORER_URL: process.env.NEXT_PUBLIC_EVM_EXPLORER_URL,
     NEXT_PUBLIC_GOLEM_ENVIRONMENT: process.env.NEXT_PUBLIC_GOLEM_ENVIRONMENT,
-    NEXT_PUBLIC_ARKIV_DEV_RPC_URL: process.env.NEXT_PUBLIC_ARKIV_DEV_RPC_URL,
-    NEXT_PUBLIC_ARKIV_DEV_WS_URL: process.env.NEXT_PUBLIC_ARKIV_DEV_WS_URL,
   };
 }
 
@@ -89,11 +77,7 @@ export function getRequestorRuntimeConfig(): RequestorRuntimeConfig {
       ? {}
       : window.__GOLEM_REQUESTOR_RUNTIME_CONFIG__ || {};
   const env: Partial<RequestorRuntimeConfig> = {
-    discoveryApiUrl: envValue("NEXT_PUBLIC_DISCOVERY_API_URL"),
-    discoveryMode:
-      envValue("NEXT_PUBLIC_DISCOVERY_MODE").toLowerCase() === "arkiv"
-        ? "arkiv"
-        : undefined,
+    discoveryWsUrl: envValue("NEXT_PUBLIC_DISCOVERY_WS_URL"),
     streamPaymentAddress: envValue("NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS"),
     glmTokenAddress: envValue("NEXT_PUBLIC_GLM_TOKEN_ADDRESS"),
     evmChainId: envValue("NEXT_PUBLIC_EVM_CHAIN_ID"),
@@ -102,8 +86,6 @@ export function getRequestorRuntimeConfig(): RequestorRuntimeConfig {
     evmWsUrl: envValue("NEXT_PUBLIC_EVM_WS_URL"),
     evmExplorerUrl: envValue("NEXT_PUBLIC_EVM_EXPLORER_URL"),
     golemEnvironment: envValue("NEXT_PUBLIC_GOLEM_ENVIRONMENT"),
-    arkivDevRpcUrl: envValue("NEXT_PUBLIC_ARKIV_DEV_RPC_URL"),
-    arkivDevWsUrl: envValue("NEXT_PUBLIC_ARKIV_DEV_WS_URL"),
   };
   return { ...DEFAULTS, ...compact(env), ...compact(runtime) };
 }

@@ -14,13 +14,6 @@ const output = {
 };
 
 export default defineConfig({
-  centralDiscovery: {
-    input: "../openapi/central-discovery.json",
-    output: {
-      ...output,
-      target: "lib/generated/api/central-discovery.ts",
-    },
-  },
   provider: {
     input: "../openapi/provider.json",
     output: {

@@ -1,69 +1,48 @@
 # Discovery Architecture
 
-Discovery is the capability that lets providers publish available capacity and lets requestors find providers. VM on Golem supports two discovery backends.
+Discovery is a live websocket capability. Providers are discoverable only while
+their central-discovery provider websocket is connected, and requestors browse
+providers through a requestor websocket subscription.
 
-## Backends
+## Central Discovery
 
-| Backend | Mode | Purpose |
-| --- | --- | --- |
-| Central Discovery | FastAPI + SQLite service | Default backend. Providers POST advertisements to an HTTP server, and requestors query that server. |
-| Arkiv | Decentralized Web3 database | Optional decentralized backend. Providers publish advertisements as Arkiv entities, and requestors query Arkiv by annotations. |
+Central discovery keeps an in-memory registry keyed by provider ID. The registry
+is connection-authoritative: provider disconnect removes that provider
+immediately and broadcasts a removal to subscribed requestors.
 
-The old name “discovery-server” referred only to the centralized MVP backend. It is now named `central-discovery-server` to avoid implying it is the whole discovery system.
+HTTP is limited to `/health`. Discovery data is never read or written through
+HTTP endpoints.
 
 ## Provider Flow
 
-Provider-side discovery publishing is selected with:
+Provider nodes connect to:
 
 ```bash
-GOLEM_PROVIDER_DISCOVERY_BACKEND=central # default
-GOLEM_PROVIDER_DISCOVERY_BACKEND=arkiv
-GOLEM_PROVIDER_DISCOVERY_BACKEND=both
+GOLEM_PROVIDER_DISCOVERY_WS_URL=ws://host:9001/api/v1/discovery/providers
 ```
 
-Legacy `GOLEM_PROVIDER_ADVERTISER_TYPE=golem_base|discovery_server|both` is still accepted.
-
-Canonical provider classes:
-
-- `ArkivDiscoveryPublisher` publishes to Arkiv.
-- `CentralDiscoveryPublisher` publishes to the centralized HTTP service.
-- `CompositeDiscoveryPublisher` publishes to both.
-- `DiscoveryPublishingService` owns lifecycle and immediate update triggering.
-
-Advertisements carry both legacy `ip_address` and public endpoint metadata. In
-production, providers publish `endpoint_protocol=https`, `endpoint_host`,
-`endpoint_port`, and `endpoint_url` after verifying the public IP HTTPS
-certificate. In development, providers may publish an HTTP endpoint for local
-direct access. Requestor clients require a usable `endpoint_url` for provider
-API traffic. `ip_address` remains legacy metadata and may still be used for SSH
-host display, but it is not a provider API fallback.
+The server sends a nonce, the provider authenticates with an Ethereum signature
+from `ETHEREUM_PRIVATE_KEY`, then sends `advertisement.upsert` whenever
+resources, pricing, or endpoint state changes. If the endpoint is not
+advertisable or resources fall below minimum requirements, the provider sends
+`advertisement.remove`.
 
 ## Requestor Flow
 
-Requestor web provider lookup is selected with:
+Requestor web connects to:
 
 ```bash
-NEXT_PUBLIC_DISCOVERY_MODE=central # default
-NEXT_PUBLIC_DISCOVERY_MODE=arkiv
+NEXT_PUBLIC_DISCOVERY_WS_URL=ws://host:9001/api/v1/discovery/requestors
 ```
 
-Requestor web hides advertisements without a usable `endpoint_url`. HTTP
-endpoints are accepted only in development; production requestor clients require
-HTTPS.
+The requestor sends `subscribe` with resource, country, and platform filters.
+The server responds with a `snapshot`, then streams `provider.upsert` and
+`provider.remove` events. Filter changes send another `subscribe` message and
+receive a fresh snapshot.
 
-## Naming
+## Guarantees
 
-Use these terms consistently:
-
-- `discovery`: the capability/domain.
-- `Arkiv`: the decentralized Web3 database backend.
-- `central discovery`: the centralized FastAPI backend.
-- `central-discovery-server`: the package containing the centralized backend.
-
-Compatibility aliases remain for one transition window:
-
-- `GolemBaseAdvertiser` -> `ArkivDiscoveryPublisher`
-- `DiscoveryServerAdvertiser` -> `CentralDiscoveryPublisher`
-- `MultiAdvertiser` -> `CompositeDiscoveryPublisher`
-- `golem-discovery` -> `golem-central-discovery`
-- `GOLEM_DISCOVERY_*` -> `GOLEM_CENTRAL_DISCOVERY_*`
+- No stale providers survive provider disconnect.
+- No persisted advertisement snapshot is queryable.
+- No HTTP advertisement polling exists.
+- No alternate discovery backend or compatibility alias exists.

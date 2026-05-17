@@ -10,6 +10,7 @@ from provider.webhooks.domain import WEBHOOK_EVENT_TYPES, WebhookTemplate
 
 from .domain import (
     AlertRule,
+    GuestAgentState,
     MetricHistoryPoint,
     MetricSample,
     MetricScope,
@@ -24,6 +25,18 @@ def _dt(value: datetime | str | None = None) -> datetime:
     if isinstance(value, datetime):
         return ensure_utc(value)
     return ensure_utc(datetime.fromisoformat(value))
+
+
+def _optional_bool(value: Optional[bool]) -> Optional[int]:
+    if value is None:
+        return None
+    return 1 if value else 0
+
+
+def _row_bool(value: Any) -> Optional[bool]:
+    if value is None:
+        return None
+    return bool(value)
 
 
 class MonitoringRepository:
@@ -54,6 +67,16 @@ class MonitoringRepository:
                     vm_id TEXT PRIMARY KEY,
                     token TEXT NOT NULL,
                     created_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS guest_agent_state (
+                    vm_id TEXT PRIMARY KEY,
+                    source_ip TEXT NOT NULL,
+                    agent_ready INTEGER,
+                    sshd_ready INTEGER,
+                    hardening_applied INTEGER,
+                    agent_version TEXT NOT NULL,
+                    last_seen_at TEXT NOT NULL
                 );
 
                 CREATE TABLE IF NOT EXISTS alert_rules (
@@ -248,6 +271,79 @@ class MonitoringRepository:
     def delete_guest_token(self, vm_id: str) -> None:
         with self._connect() as conn:
             conn.execute("DELETE FROM guest_tokens WHERE vm_id = ?", (vm_id,))
+            conn.execute("DELETE FROM guest_agent_state WHERE vm_id = ?", (vm_id,))
+
+    def upsert_guest_agent_state(
+        self,
+        *,
+        vm_id: str,
+        source_ip: str,
+        agent_ready: Optional[bool],
+        sshd_ready: Optional[bool],
+        hardening_applied: Optional[bool],
+        agent_version: str,
+        last_seen_at: datetime,
+    ) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO guest_agent_state (
+                    vm_id,
+                    source_ip,
+                    agent_ready,
+                    sshd_ready,
+                    hardening_applied,
+                    agent_version,
+                    last_seen_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(vm_id) DO UPDATE SET
+                    source_ip=excluded.source_ip,
+                    agent_ready=excluded.agent_ready,
+                    sshd_ready=excluded.sshd_ready,
+                    hardening_applied=excluded.hardening_applied,
+                    agent_version=excluded.agent_version,
+                    last_seen_at=excluded.last_seen_at
+                """,
+                (
+                    vm_id,
+                    source_ip,
+                    _optional_bool(agent_ready),
+                    _optional_bool(sshd_ready),
+                    _optional_bool(hardening_applied),
+                    agent_version or "unknown",
+                    ensure_utc(last_seen_at).isoformat(),
+                ),
+            )
+
+    def get_guest_agent_state(self, vm_id: str) -> Optional[GuestAgentState]:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT
+                    vm_id,
+                    source_ip,
+                    agent_ready,
+                    sshd_ready,
+                    hardening_applied,
+                    agent_version,
+                    last_seen_at
+                FROM guest_agent_state
+                WHERE vm_id = ?
+                """,
+                (vm_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return GuestAgentState(
+            vm_id=row["vm_id"],
+            source_ip=row["source_ip"],
+            agent_ready=_row_bool(row["agent_ready"]),
+            sshd_ready=_row_bool(row["sshd_ready"]),
+            hardening_applied=_row_bool(row["hardening_applied"]),
+            agent_version=row["agent_version"],
+            last_seen_at=_dt(row["last_seen_at"]),
+        )
 
     def list_alert_rules(self) -> list[AlertRule]:
         with self._connect() as conn:

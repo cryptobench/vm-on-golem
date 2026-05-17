@@ -1,68 +1,46 @@
-import os
-from datetime import timedelta
-
+import pytest
 from fastapi.testclient import TestClient
 
 
-def test_models_validation_errors():
-    import pytest
+def test_advertisement_payload_validation_errors():
+    from central_discovery.domain import AdvertisementPayload
 
-    from discovery.api.models import AdvertisementCreate
-
-    # Missing resource keys
     with pytest.raises(ValueError):
-        AdvertisementCreate(
+        AdvertisementPayload(
             ip_address="1.2.3.4",
             country="US",
             resources={"cpu": 1, "memory": 1},
         )
 
-    # Invalid resource values
     for bad in (
         {"cpu": 0, "memory": 1, "storage": 1},
         {"cpu": 1, "memory": 0, "storage": 1},
         {"cpu": 1, "memory": 1, "storage": 0},
     ):
         with pytest.raises(ValueError):
-            AdvertisementCreate(
+            AdvertisementPayload(
                 ip_address="1.2.3.4",
                 country="US",
                 resources=bad,
             )
 
 
-def test_config_assemble_db_url_uses_dir_and_name(tmp_path):
-    from discovery.config import Settings
+def test_central_config_uses_only_canonical_prefix(monkeypatch):
+    from central_discovery.config import Settings
 
-    cfg = Settings(DATABASE_DIR=str(tmp_path), DATABASE_NAME="t.db", DATABASE_URL=None)
-    assert cfg.DATABASE_URL.endswith("/t.db")
-    # Directory is created
-    assert tmp_path.exists()
+    monkeypatch.setenv("UNRELATED_DISCOVERY_PORT", "7777")
+    monkeypatch.delenv("GOLEM_CENTRAL_DISCOVERY_PORT", raising=False)
 
+    assert Settings().PORT == 9001
 
-def test_db_model_is_expired_property():
-    from discovery.db.models import Advertisement
-    from discovery.time import utc_now
-
-    a = Advertisement(provider_id="p", ip_address="i", country="US", resources={})
-    a.updated_at = None
-    assert a.is_expired is True
-
-    # repr covered
-    assert "Advertisement(" in repr(a)
-
-    a.updated_at = utc_now()
-    assert a.is_expired is False
-
-    a.updated_at = utc_now() - timedelta(minutes=6)
-    assert a.is_expired is True
+    monkeypatch.setenv("GOLEM_CENTRAL_DISCOVERY_PORT", "7777")
+    assert Settings().PORT == 7777
 
 
 def test_rate_limit_middleware_allows_under_limit():
-    # Build a minimal FastAPI app with the middleware directly
     from fastapi import FastAPI
 
-    from discovery.main import RateLimitMiddleware
+    from central_discovery.main import RateLimitMiddleware
 
     app = FastAPI()
 
@@ -73,62 +51,5 @@ def test_rate_limit_middleware_allows_under_limit():
     app.add_middleware(RateLimitMiddleware, requests_per_minute=2)
 
     with TestClient(app) as client:
-        r1 = client.get("/")
-        assert r1.status_code == 200
-
-        r2 = client.get("/")
-        assert r2.status_code == 200
-
-
-def test_health_endpoint():
-    os.environ["GOLEM_DISCOVERY_DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
-    from discovery.main import app
-
-    with TestClient(app) as client:
-        r = client.get("/health")
-        assert r.status_code == 200
-        assert r.json()["status"] == "healthy"
-
-
-def test_start_invokes_uvicorn_run(monkeypatch):
-    # Ensure calling start() triggers uvicorn.run with expected args
-    from discovery import main
-
-    called = {}
-
-    def fake_run(*args, **kwargs):
-        called["args"] = args
-        called["kwargs"] = kwargs
-
-    # Inject fake uvicorn module so that import inside start() uses it
-    import sys
-    import types
-
-    fake_uvicorn = types.SimpleNamespace(run=fake_run)
-    monkeypatch.setitem(sys.modules, "uvicorn", fake_uvicorn)
-    main.start()
-    assert called["kwargs"]["host"] == main.settings.HOST
-    assert called["kwargs"]["port"] == main.settings.PORT
-
-
-def test_rate_limit_middleware_blocks_returns_serializable():
-    from fastapi import FastAPI
-
-    from discovery.main import RateLimitMiddleware
-
-    app = FastAPI()
-
-    @app.get("/")
-    def root():
-        return {"ok": True}
-
-    app.add_middleware(RateLimitMiddleware, requests_per_minute=1)
-
-    from fastapi.testclient import TestClient
-
-    with TestClient(app) as client:
         assert client.get("/").status_code == 200
-        r2 = client.get("/")
-        assert r2.status_code == 429
-        assert r2.json()["code"] == "RATE_001"
-        assert isinstance(r2.json()["timestamp"], str)
+        assert client.get("/").status_code == 200

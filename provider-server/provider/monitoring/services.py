@@ -17,6 +17,7 @@ from provider.webhooks.domain import WebhookEvent, WebhookResource
 
 from .domain import (
     AlertRule,
+    GuestAgentState,
     GuestMetricAccepted,
     GuestMetricPayload,
     MetricHistoryRange,
@@ -98,13 +99,23 @@ class MonitoringService:
         self.repo.delete_guest_token(vm_id)
 
     async def record_guest_sample(
-        self, vm_id: str, payload: GuestMetricPayload
+        self, vm_id: str, payload: GuestMetricPayload, source_ip: str | None = None
     ) -> GuestMetricAccepted:
         self.repo.init_schema()
         if not self.repo.validate_guest_token(vm_id, payload.token):
             raise UnauthorizedError("invalid guest metrics token")
 
         timestamp = ensure_utc(payload.timestamp) if payload.timestamp else utc_now()
+        if source_ip:
+            self.repo.upsert_guest_agent_state(
+                vm_id=vm_id,
+                source_ip=source_ip,
+                agent_ready=payload.agent_ready,
+                sshd_ready=payload.sshd_ready,
+                hardening_applied=payload.hardening_applied,
+                agent_version=payload.agent_version,
+                last_seen_at=timestamp,
+            )
         samples: list[MetricSample] = [
             MetricSample(
                 scope=MetricScope.VM,
@@ -117,6 +128,20 @@ class MonitoringService:
             )
         ]
         metrics = {
+            "agent_ready": (
+                float(payload.agent_ready) if payload.agent_ready is not None else None,
+                "boolean",
+            ),
+            "sshd_ready": (
+                float(payload.sshd_ready) if payload.sshd_ready is not None else None,
+                "boolean",
+            ),
+            "hardening_applied": (
+                float(payload.hardening_applied)
+                if payload.hardening_applied is not None
+                else None,
+                "boolean",
+            ),
             "cpu_percent": (payload.cpu_percent, "percent"),
             "memory_used_bytes": (payload.memory_used_bytes, "bytes"),
             "memory_total_bytes": (payload.memory_total_bytes, "bytes"),
@@ -177,6 +202,19 @@ class MonitoringService:
             next_interval_seconds=self.guest_sample_interval(vm_id),
             live_mode=self.is_vm_live(vm_id),
         )
+
+    def guest_agent_state(self, vm_id: str) -> GuestAgentState | None:
+        self.repo.init_schema()
+        return self.repo.get_guest_agent_state(vm_id)
+
+    def fresh_guest_agent_state(self, vm_id: str) -> GuestAgentState | None:
+        state = self.guest_agent_state(vm_id)
+        if state is None:
+            return None
+        stale_seconds = int(self._setting("VM_AGENT_STATE_STALE_SECONDS", 90))
+        if utc_now() - state.last_seen_at > timedelta(seconds=stale_seconds):
+            return None
+        return state
 
     async def overview(self) -> MonitoringOverview:
         latest = self._latest_by_scope()

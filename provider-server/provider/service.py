@@ -2,7 +2,7 @@ import asyncio
 
 from fastapi import FastAPI
 
-from .discovery.service import DiscoveryPublishingService
+from .discovery.publishing_service import DiscoveryPublishingService
 from .utils.logging import setup_logger
 from .utils.pricing import PricingAutoUpdater
 from .vm.service import VMService
@@ -35,7 +35,6 @@ class ProviderService:
     async def setup(self, app: FastAPI):
         """Setup and initialize the provider components."""
         from .config import settings
-        from .security.faucet import FaucetClient
         from .utils.ascii_art import provider_ready_message, startup_animation
 
         try:
@@ -161,20 +160,6 @@ class ProviderService:
                     "Failed to reconcile VMs with payment streams", exc_info=True
                 )
                 raise
-
-            # Check Arkiv wallet balance and request funds only when Arkiv publishing
-            # is enabled. Local central-discovery stacks must not depend on Arkiv.
-            if settings.DISCOVERY_BACKEND in {"arkiv", "both"} and bool(
-                settings.ARKIV_FAUCET_ENABLED
-            ):
-                faucet_client = FaucetClient(
-                    faucet_url=settings.FAUCET_URL,
-                    captcha_url=settings.CAPTCHA_URL,
-                    captcha_api_key=settings.CAPTCHA_API_KEY,
-                )
-                await faucet_client.get_funds(settings.PROVIDER_ID)
-            else:
-                logger.info("Arkiv faucet disabled for current discovery backend")
 
             await self.advertisement_service.start()
             logger.info("Provider discovery publishing started")

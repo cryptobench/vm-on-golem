@@ -1426,39 +1426,6 @@ files = [
 ]
 
 [[package]]
-name = "golem-base-sdk"
-version = "0.1.0"
-description = "GolemBase Python SDK."
-optional = false
-python-versions = ">=3.10"
-groups = ["main"]
-files = [
-    {file = "golem_base_sdk-0.1.0-py3-none-any.whl", hash = "sha256:5425c7e77775337e3f4c92d1adb8d53490c6761f74f296d96975b75069d42833"},
-    {file = "golem_base_sdk-0.1.0.tar.gz", hash = "sha256:fa8dae61272168a29f497f00a2fcfdad78ccbab30cde8a8663e40834f3b90b02"},
-]
-
-[package.dependencies]
-anyio = ">=4.10.0"
-pyxdg = ">=0.28"
-rlp = ">=1.2.0"
-web3 = ">=4.7.2"
-
-[[package]]
-name = "golem-faucet"
-version = "0.1.1"
-description = "Shared PoW faucet client for Golem environments"
-optional = false
-python-versions = "<4.0,>=3.11"
-groups = ["main"]
-files = [
-    {file = "golem_faucet-0.1.1-py3-none-any.whl", hash = "sha256:45ebd495cc081636bd41b9822903e941148790e9a51449774c6e514d1ea3c5d1"},
-    {file = "golem_faucet-0.1.1.tar.gz", hash = "sha256:65a22098a9df7d1d9f7d32aacafe5d2194a0264f9808ad4c6c16d9c290805872"},
-]
-
-[package.dependencies]
-httpx = ">=0.23,<1"
-
-[[package]]
 name = "golem-streaming-abi"
 version = "0.1.0"
 description = "Shared native-ETH StreamPayment ABI definitions for VM on Golem"
@@ -2569,18 +2536,6 @@ files = [
 ]
 
 [[package]]
-name = "pyxdg"
-version = "0.28"
-description = "PyXDG contains implementations of freedesktop.org standards in python."
-optional = false
-python-versions = "*"
-groups = ["main"]
-files = [
-    {file = "pyxdg-0.28-py2.py3-none-any.whl", hash = "sha256:bdaf595999a0178ecea4052b7f4195569c1ff4d344567bccdc12dfdf02d545ab"},
-    {file = "pyxdg-0.28.tar.gz", hash = "sha256:3267bb3074e934df202af2ee0868575484108581e6f3cb006af1da35395e88b4"},
-]
-
-[[package]]
 name = "pyyaml"
 version = "6.0.3"
 description = "YAML parser and emitter for Python"
@@ -3403,4 +3358,4 @@ propcache = ">=0.2.1"
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.11"
-content-hash = "5b326520180e0bb14c16732e9ae102c68bc55dd91102a7d4e09ddd04eccabc41"
+content-hash = "b0e94711ad26a420fee6f0dadf55573a447803bfcdad0d633a5d59e87bd34ee8"

@@ -416,9 +416,13 @@ class VMApplicationService:
                     by_id[vm_id] = self._terminal_vm_info(vm_id, record)
             for job in await self.job_store.active_recent_jobs():
                 vm_id = str(job.get("vm_id") or "")
-                if not vm_id or vm_id in by_id:
+                if not vm_id:
                     continue
-                by_id[vm_id] = self._vm_from_create_job(job)
+                if vm_id not in by_id or (
+                    self._is_active_create_job(job)
+                    and by_id[vm_id].status == VMStatus.UNKNOWN
+                ):
+                    by_id[vm_id] = self._vm_from_create_job(job)
             return list(by_id.values())
         except Exception as exc:
             raise ExternalServiceError(f"failed to list VMs: {exc}") from exc
@@ -461,7 +465,15 @@ class VMApplicationService:
             return self._terminal_vm_info(vm_id, terminal)
         try:
             logger.debug("Fetching provider VM status", extra={"vm_id": vm_id})
-            return await self.vm_service.get_vm_status(vm_id)
+            vm = await self.vm_service.get_vm_status(vm_id)
+            job = await self._latest_create_job_for_vm(vm_id)
+            if (
+                job is not None
+                and self._is_active_create_job(job)
+                and vm.status == VMStatus.UNKNOWN
+            ):
+                return self._vm_from_create_job(job)
+            return vm
         except VMNotFoundError as exc:
             return await self._synthetic_creating_status(vm_id, exc)
         except Exception as exc:

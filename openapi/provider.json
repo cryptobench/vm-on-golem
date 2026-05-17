@@ -444,6 +444,17 @@
       },
       "GuestMetricPayload": {
         "properties": {
+          "agent_ready": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Ready"
+          },
           "agent_version": {
             "default": "unknown",
             "title": "Agent Version",
@@ -481,6 +492,17 @@
               }
             ],
             "title": "Disk Used Bytes"
+          },
+          "hardening_applied": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hardening Applied"
           },
           "load_1m": {
             "anyOf": [
@@ -536,6 +558,17 @@
               }
             ],
             "title": "Network Tx Bytes"
+          },
+          "sshd_ready": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sshd Ready"
           },
           "timestamp": {
             "anyOf": [
@@ -1593,7 +1626,7 @@
             "type": "null"
           },
           "ssh_user": {
-            "description": "SSH login user for this VM, currently ubuntu",
+            "description": "SSH login user for this VM, currently golem",
             "title": "Ssh User",
             "type": "string"
           },

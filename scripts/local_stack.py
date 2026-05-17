@@ -46,13 +46,12 @@ WEB_WATCH_ENV_DEFAULTS = {
 }
 
 CENTRAL_URL = f"http://{CENTRAL_HOST}:{CENTRAL_PORT}"
-CENTRAL_API_URL = f"{CENTRAL_URL}/api/v1"
+CENTRAL_PROVIDER_WS_URL = f"ws://{CENTRAL_HOST}:{CENTRAL_PORT}/api/v1/discovery/providers"
+CENTRAL_REQUESTOR_WS_URL = f"ws://{CENTRAL_HOST}:{CENTRAL_PORT}/api/v1/discovery/requestors"
 PROVIDER_API_URL = f"http://{PROVIDER_HOST}:{PROVIDER_PORT}/api/v1"
 PORT_CHECKER_URL = f"http://{PORT_CHECKER_HOST}:{PORT_CHECKER_PORT}"
 WEB_URL = f"http://{WEB_HOST}:{WEB_PORT}"
 PROVIDER_DESKTOP_URL = f"http://{PROVIDER_DESKTOP_HOST}:{PROVIDER_DESKTOP_PORT}"
-ARKIV_RPC_URL = "https://kaolin.hoodi.arkiv.network/rpc"
-ARKIV_WS_URL = "wss://kaolin.hoodi.arkiv.network/rpc/ws"
 PAYMENTS_RPC_URL = "https://rpc.hoodi.ethpandaops.io"
 PAYMENTS_WS_URL = "wss://ethereum-hoodi-rpc.publicnode.com"
 L2_RPC_FALLBACK_URLS = [
@@ -651,19 +650,6 @@ def http_ok(url: str) -> bool:
         return False
 
 
-def central_has_provider() -> bool:
-    try:
-        with urllib.request.urlopen(
-            f"{CENTRAL_API_URL}/advertisements", timeout=2
-        ) as r:
-            if r.status != 200:
-                return False
-            data = json.loads(r.read().decode("utf-8"))
-            return isinstance(data, list) and len(data) > 0
-    except (OSError, ValueError, urllib.error.URLError):
-        return False
-
-
 def stream_output(service: Service) -> None:
     assert service.process is not None
     assert service.process.stdout is not None
@@ -814,16 +800,12 @@ def build_services(
         "GOLEM_PROVIDER_SKIP_BOOTSTRAP": "1",
         "GOLEM_ENVIRONMENT": "development",
         "GOLEM_PROVIDER_NETWORK": "development",
-        "GOLEM_PROVIDER_DISCOVERY_BACKEND": "central",
-        "GOLEM_PROVIDER_DISCOVERY_URL": CENTRAL_URL,
+        "GOLEM_PROVIDER_DISCOVERY_WS_URL": CENTRAL_PROVIDER_WS_URL,
         "GOLEM_PROVIDER_PAYMENTS_NETWORK": PAYMENTS_NETWORK,
         "GOLEM_PROVIDER_PAYMENTS_RPC_URL": deployment.get("rpc_url", PAYMENTS_RPC_URL),
         "GOLEM_PROVIDER_PAYMENTS_WS_URL": deployment.get("ws_url", PAYMENTS_WS_URL),
         "GOLEM_PROVIDER_STREAM_PAYMENT_ADDRESS": deployment["stream_payment_address"],
         "GOLEM_PROVIDER_GLM_TOKEN_ADDRESS": deployment["glm_token_address"],
-        "GOLEM_PROVIDER_ARKIV_FAUCET_ENABLED": "false",
-        "GOLEM_PROVIDER_ARKIV_RPC_URL": ARKIV_RPC_URL,
-        "GOLEM_PROVIDER_ARKIV_WS_URL": ARKIV_WS_URL,
         "GOLEM_PROVIDER_HOST": PROVIDER_BIND_HOST,
         "GOLEM_PROVIDER_PORT": str(PROVIDER_PORT),
         "GOLEM_PROVIDER_PUBLIC_IP": "auto",
@@ -855,8 +837,6 @@ def build_services(
                 **service_log_env("GOLEM_CENTRAL_DISCOVERY"),
                 "GOLEM_CENTRAL_DISCOVERY_HOST": CENTRAL_HOST,
                 "GOLEM_CENTRAL_DISCOVERY_PORT": str(CENTRAL_PORT),
-                "GOLEM_CENTRAL_DISCOVERY_DATABASE_DIR": str(dirs["central"]),
-                "GOLEM_CENTRAL_DISCOVERY_DATABASE_NAME": "local.db",
                 "GOLEM_CENTRAL_DISCOVERY_DEBUG": "false",
             },
             ready=lambda: http_ok(f"{CENTRAL_URL}/health"),
@@ -904,12 +884,6 @@ def build_services(
                     env=provider_env,
                     ready=lambda: http_ok(f"{PROVIDER_API_URL}/provider/info"),
                 ),
-                Service(
-                    name="central-advertisement",
-                    command=[sys.executable, "-c", "import time; time.sleep(3600)"],
-                    env=stack_log_env(),
-                    ready=central_has_provider,
-                ),
             ]
         )
 
@@ -917,8 +891,7 @@ def build_services(
         **stack_log_env(),
         "GOLEM_ENVIRONMENT": "development",
         "NEXT_PUBLIC_GOLEM_ENVIRONMENT": "development",
-        "NEXT_PUBLIC_DISCOVERY_MODE": "central",
-        "NEXT_PUBLIC_DISCOVERY_API_URL": CENTRAL_API_URL,
+        "NEXT_PUBLIC_DISCOVERY_WS_URL": CENTRAL_REQUESTOR_WS_URL,
         "NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS": deployment["stream_payment_address"],
         "NEXT_PUBLIC_GLM_TOKEN_ADDRESS": deployment["glm_token_address"],
         "NEXT_PUBLIC_EVM_CHAIN_ID": L2_CHAIN_ID_HEX,
@@ -926,8 +899,6 @@ def build_services(
         "NEXT_PUBLIC_EVM_RPC_URL": deployment.get("rpc_url", PAYMENTS_RPC_URL),
         "NEXT_PUBLIC_EVM_WS_URL": deployment.get("ws_url", PAYMENTS_WS_URL),
         "NEXT_PUBLIC_EVM_EXPLORER_URL": L2_EXPLORER_URL,
-        "NEXT_PUBLIC_ARKIV_DEV_RPC_URL": ARKIV_RPC_URL,
-        "NEXT_PUBLIC_ARKIV_DEV_WS_URL": ARKIV_WS_URL,
     }
 
     services.append(
@@ -1068,7 +1039,7 @@ def run_stack(args: argparse.Namespace) -> int:
         log("")
         log("Local stack is ready:")
         log(f"  Requestor web:      {WEB_URL}")
-        log(f"  Central discovery:  {CENTRAL_API_URL}")
+        log(f"  Central discovery:  {CENTRAL_REQUESTOR_WS_URL}")
         if start_provider_desktop:
             log("  Provider desktop:   native Tauri app")
             log("  Provider API:       started from provider desktop")
@@ -1131,7 +1102,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "--skip-chain-check",
         action="store_true",
-        help="Skip Arkiv L2 chain and StreamPayment deployment validation",
+        help="Skip payments chain and StreamPayment deployment validation",
     )
     parser.add_argument(
         "--no-provider-desktop",

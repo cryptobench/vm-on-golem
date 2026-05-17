@@ -1,16 +1,11 @@
 from central_discovery.main import app
 
 
-def test_openapi_exposes_typed_central_discovery_contracts():
+def test_openapi_keeps_only_http_health_contract():
     schema = app.openapi()
-
     paths = schema["paths"]
-    assert paths["/api/v1/advertisements"]["get"]["responses"]["200"]["content"][
-        "application/json"
-    ]["schema"]["items"]["$ref"].endswith("/AdvertisementResponse")
-    assert paths["/api/v1/advertisements/{provider_id}"]["delete"]["responses"]["200"][
-        "content"
-    ]["application/json"]["schema"]["$ref"].endswith("/DeleteAdvertisementResponse")
+
+    assert all("advertisement" not in path for path in paths)
     assert paths["/health"]["get"]["responses"]["200"]["content"]["application/json"][
         "schema"
     ]["$ref"].endswith("/HealthResponse")

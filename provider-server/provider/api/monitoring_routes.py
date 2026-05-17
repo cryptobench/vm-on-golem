@@ -1,7 +1,7 @@
 from typing import Optional
 
 from dependency_injector.wiring import Provide, inject
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import PlainTextResponse
 
 from provider.auth.dependencies import (
@@ -80,6 +80,7 @@ async def monitoring_history(
 async def record_guest_sample(
     vm_id: str,
     payload: GuestMetricPayload,
+    request: Request,
     monitoring_service: MonitoringService = Depends(
         Provide[Container.monitoring_service]
     ),
@@ -87,7 +88,8 @@ async def record_guest_sample(
         Provide[Container.provider_event_broadcaster]
     ),
 ) -> GuestMetricAccepted:
-    result = await monitoring_service.record_guest_sample(vm_id, payload)
+    source_ip = request.client.host if request.client else None
+    result = await monitoring_service.record_guest_sample(vm_id, payload, source_ip)
     await event_broadcaster.publish_provider(["monitoring", "metrics"])
     return result
 

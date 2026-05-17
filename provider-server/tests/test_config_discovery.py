@@ -5,7 +5,6 @@ from provider.config import (
     Settings,
     _development_public_ip,
     normalize_acme_env,
-    normalize_discovery_backend,
 )
 
 
@@ -17,17 +16,25 @@ def _set_settings_paths(monkeypatch, tmp_path):
     monkeypatch.setenv("GOLEM_PROVIDER_CERT_DIR", str(tmp_path / "certs"))
 
 
-def test_discovery_backend_defaults_to_central(monkeypatch, tmp_path):
-    monkeypatch.delenv("GOLEM_PROVIDER_DISCOVERY_BACKEND", raising=False)
+def test_discovery_ws_url_has_central_websocket_default(monkeypatch, tmp_path):
+    monkeypatch.delenv("GOLEM_PROVIDER_DISCOVERY_WS_URL", raising=False)
     _set_settings_paths(monkeypatch, tmp_path)
 
     settings = Settings()
 
-    assert settings.DISCOVERY_BACKEND == "central"
+    assert settings.DISCOVERY_WS_URL.endswith("/api/v1/discovery/providers")
 
 
-def test_empty_discovery_backend_normalizes_to_central():
-    assert normalize_discovery_backend("") == "central"
+def test_discovery_ws_url_override_wins(monkeypatch, tmp_path):
+    monkeypatch.setenv(
+        "GOLEM_PROVIDER_DISCOVERY_WS_URL",
+        "ws://127.0.0.1:9001/api/v1/discovery/providers",
+    )
+    _set_settings_paths(monkeypatch, tmp_path)
+
+    settings = Settings()
+
+    assert settings.DISCOVERY_WS_URL == "ws://127.0.0.1:9001/api/v1/discovery/providers"
 
 
 def test_acme_env_normalization_accepts_prod_alias():

@@ -4,14 +4,9 @@
 # Ports
 PORT_CHECKER_PORT ?= 9000
 PROVIDER_API_PORT ?= 7466
-# Arkiv RPC/WS for decentralized discovery (Kaolin Hoodi).
-ARKIV_RPC_URL ?= https://kaolin.hoodi.arkiv.network/rpc
-ARKIV_WS_URL ?= wss://kaolin.hoodi.arkiv.network/rpc/ws
-# Optional dev-only Arkiv endpoints.
-ARKIV_DEV_RPC_URL ?=
-ARKIV_DEV_WS_URL ?=
-# Central discovery API used by requestor-web in local development.
-CENTRAL_DISCOVERY_API_URL ?= http://127.0.0.1:9001/api/v1
+# Central discovery websockets used in local development.
+CENTRAL_DISCOVERY_PROVIDER_WS_URL ?= ws://127.0.0.1:9001/api/v1/discovery/providers
+CENTRAL_DISCOVERY_REQUESTOR_WS_URL ?= ws://127.0.0.1:9001/api/v1/discovery/requestors
 # Payments chain used by MetaMask/requestor-web.
 L2_RPC_URL ?= https://rpc.hoodi.ethpandaops.io
 L2_EXPLORER_URL ?= https://hoodi.etherscan.io
@@ -48,7 +43,6 @@ local:
 	python3 scripts/local_stack.py $(LOCAL_STACK_ARGS)
 
 openapi:
-	poetry -C central-discovery-server run python ../scripts/export_openapi.py central-discovery ../openapi/central-discovery.json
 	poetry -C port-checker-server run python ../scripts/export_openapi.py port-checker ../openapi/port-checker.json
 	poetry -C provider-server run python ../scripts/export_openapi.py provider ../openapi/provider.json
 
@@ -63,6 +57,7 @@ start:
 	# Start provider (development network, local IP)
 	GOLEM_ENVIRONMENT=development \
 	GOLEM_PROVIDER_NETWORK=development \
+	GOLEM_PROVIDER_DISCOVERY_WS_URL=$(CENTRAL_DISCOVERY_PROVIDER_WS_URL) \
 	poetry -C provider-server run golem-provider start & \
 		# Start port-checker for provider port verification
 		GOLEM_ENVIRONMENT=development \
@@ -72,28 +67,26 @@ start:
 	# Start requestor web UI (development environment)
 	GOLEM_ENVIRONMENT=development \
 		NEXT_PUBLIC_GOLEM_ENVIRONMENT=development \
-		NEXT_PUBLIC_DISCOVERY_API_URL=$(CENTRAL_DISCOVERY_API_URL) \
+		NEXT_PUBLIC_DISCOVERY_WS_URL=$(CENTRAL_DISCOVERY_REQUESTOR_WS_URL) \
 		NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS=$(STREAM_PAYMENT_ADDRESS) \
 	NEXT_PUBLIC_GLM_TOKEN_ADDRESS=$(GLM_TOKEN_ADDRESS) \
 	NEXT_PUBLIC_EVM_CHAIN_ID=$(L2_CHAIN_ID_HEX) \
 	NEXT_PUBLIC_EVM_CHAIN_NAME="$(L2_CHAIN_NAME)" \
 	NEXT_PUBLIC_EVM_RPC_URL=$(L2_RPC_URL) \
 	NEXT_PUBLIC_EVM_EXPLORER_URL=$(L2_EXPLORER_URL) \
-	NEXT_PUBLIC_ARKIV_DEV_RPC_URL=$(ARKIV_DEV_RPC_URL) \
-	NEXT_PUBLIC_ARKIV_DEV_WS_URL=$(ARKIV_DEV_WS_URL) \
 	npm --prefix requestor-web run dev & \
 	wait
 
 start-testnet:
 	@set -e; \
 	GOLEM_PROVIDER_NETWORK=testnet GOLEM_ENVIRONMENT=development poetry -C central-discovery-server run golem-central-discovery & \
-	GOLEM_PROVIDER_NETWORK=testnet GOLEM_ENVIRONMENT=development poetry -C provider-server run golem-provider start --network testnet & \
+	GOLEM_PROVIDER_NETWORK=testnet GOLEM_ENVIRONMENT=development GOLEM_PROVIDER_DISCOVERY_WS_URL=$(CENTRAL_DISCOVERY_PROVIDER_WS_URL) poetry -C provider-server run golem-provider start --network testnet & \
 	wait
 
 start-mainnet:
 	@set -e; \
 	GOLEM_PROVIDER_NETWORK=mainnet GOLEM_ENVIRONMENT=production poetry -C central-discovery-server run golem-central-discovery & \
-	GOLEM_PROVIDER_NETWORK=mainnet GOLEM_ENVIRONMENT=production poetry -C provider-server run golem-provider start & \
+	GOLEM_PROVIDER_NETWORK=mainnet GOLEM_ENVIRONMENT=production GOLEM_PROVIDER_DISCOVERY_WS_URL=$(CENTRAL_DISCOVERY_PROVIDER_WS_URL) poetry -C provider-server run golem-provider start & \
 	wait
 
 # --- Dev helpers: Port-checker + Discovery + Web UI ---
@@ -115,15 +108,13 @@ dev-web:
 	# Run Next.js dev with discovery env configured
 	GOLEM_ENVIRONMENT=development \
 	NEXT_PUBLIC_GOLEM_ENVIRONMENT=development \
-	NEXT_PUBLIC_DISCOVERY_API_URL=$(CENTRAL_DISCOVERY_API_URL) \
+	NEXT_PUBLIC_DISCOVERY_WS_URL=$(CENTRAL_DISCOVERY_REQUESTOR_WS_URL) \
 	NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS=$(STREAM_PAYMENT_ADDRESS) \
 	NEXT_PUBLIC_GLM_TOKEN_ADDRESS=$(GLM_TOKEN_ADDRESS) \
 	NEXT_PUBLIC_EVM_CHAIN_ID=$(L2_CHAIN_ID_HEX) \
 	NEXT_PUBLIC_EVM_CHAIN_NAME="$(L2_CHAIN_NAME)" \
 	NEXT_PUBLIC_EVM_RPC_URL=$(L2_RPC_URL) \
 	NEXT_PUBLIC_EVM_EXPLORER_URL=$(L2_EXPLORER_URL) \
-	NEXT_PUBLIC_ARKIV_DEV_RPC_URL=$(ARKIV_DEV_RPC_URL) \
-	NEXT_PUBLIC_ARKIV_DEV_WS_URL=$(ARKIV_DEV_WS_URL) \
 	npm --prefix requestor-web run dev
 
 dev-port-checker-web:
@@ -139,15 +130,13 @@ dev-port-checker-web:
 	# Start web UI
 	GOLEM_ENVIRONMENT=development \
 	NEXT_PUBLIC_GOLEM_ENVIRONMENT=development \
-	NEXT_PUBLIC_DISCOVERY_API_URL=$(CENTRAL_DISCOVERY_API_URL) \
+	NEXT_PUBLIC_DISCOVERY_WS_URL=$(CENTRAL_DISCOVERY_REQUESTOR_WS_URL) \
 	NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS=$(STREAM_PAYMENT_ADDRESS) \
 	NEXT_PUBLIC_GLM_TOKEN_ADDRESS=$(GLM_TOKEN_ADDRESS) \
 	NEXT_PUBLIC_EVM_CHAIN_ID=$(L2_CHAIN_ID_HEX) \
 	NEXT_PUBLIC_EVM_CHAIN_NAME="$(L2_CHAIN_NAME)" \
 	NEXT_PUBLIC_EVM_RPC_URL=$(L2_RPC_URL) \
 	NEXT_PUBLIC_EVM_EXPLORER_URL=$(L2_EXPLORER_URL) \
-	NEXT_PUBLIC_ARKIV_DEV_RPC_URL=$(ARKIV_DEV_RPC_URL) \
-	NEXT_PUBLIC_ARKIV_DEV_WS_URL=$(ARKIV_DEV_WS_URL) \
 	npm --prefix requestor-web run dev & \
 	wait
 
@@ -160,6 +149,7 @@ start-dev:
 	# Start provider (development network, local IP)
 	GOLEM_ENVIRONMENT=development \
 	GOLEM_PROVIDER_NETWORK=development \
+	GOLEM_PROVIDER_DISCOVERY_WS_URL=$(CENTRAL_DISCOVERY_PROVIDER_WS_URL) \
 	poetry -C provider-server run golem-provider start & \
 	# Start port-checker for provider port verification
 	GOLEM_ENVIRONMENT=development \
@@ -169,15 +159,13 @@ start-dev:
 	# Start web UI (development environment)
 	GOLEM_ENVIRONMENT=development \
 	NEXT_PUBLIC_GOLEM_ENVIRONMENT=development \
-	NEXT_PUBLIC_DISCOVERY_API_URL=$(CENTRAL_DISCOVERY_API_URL) \
+	NEXT_PUBLIC_DISCOVERY_WS_URL=$(CENTRAL_DISCOVERY_REQUESTOR_WS_URL) \
 	NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS=$(STREAM_PAYMENT_ADDRESS) \
 	NEXT_PUBLIC_GLM_TOKEN_ADDRESS=$(GLM_TOKEN_ADDRESS) \
 	NEXT_PUBLIC_EVM_CHAIN_ID=$(L2_CHAIN_ID_HEX) \
 	NEXT_PUBLIC_EVM_CHAIN_NAME="$(L2_CHAIN_NAME)" \
 	NEXT_PUBLIC_EVM_RPC_URL=$(L2_RPC_URL) \
 	NEXT_PUBLIC_EVM_EXPLORER_URL=$(L2_EXPLORER_URL) \
-	NEXT_PUBLIC_ARKIV_DEV_RPC_URL=$(ARKIV_DEV_RPC_URL) \
-	NEXT_PUBLIC_ARKIV_DEV_WS_URL=$(ARKIV_DEV_WS_URL) \
 	npm --prefix requestor-web run dev & \
 	wait
 
