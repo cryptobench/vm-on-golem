@@ -38,7 +38,7 @@ class LeaseQuoteService:
         contract_address = str(self._setting("STREAM_PAYMENT_ADDRESS", "") or "")
         glm_token_address = str(self._setting("GLM_TOKEN_ADDRESS", "") or "")
         private_key = str(self._setting("ETHEREUM_PRIVATE_KEY", "") or "")
-        rpc_url = str(self._setting("POLYGON_RPC_URL", "") or "")
+        rpc_url = str(self._setting("PAYMENTS_RPC_URL", "") or "")
         if not all(
             [
                 provider_address,

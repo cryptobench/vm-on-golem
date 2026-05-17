@@ -20,12 +20,14 @@ class ProviderService:
         port_manager,
         monitoring_service=None,
         network_setup_service=None,
+        stream_payment_event_service=None,
     ):
         self.vm_service = vm_service
         self.advertisement_service = advertisement_service
         self.port_manager = port_manager
         self.monitoring_service = monitoring_service
         self.network_setup_service = network_setup_service
+        self.stream_payment_event_service = stream_payment_event_service
         self._pricing_updater: PricingAutoUpdater | None = None
         self._pricing_task: asyncio.Task | None = None
         self._stream_monitor = None
@@ -74,8 +76,9 @@ class ProviderService:
             except Exception as e:
                 logger.warning(f"Failed to sync resources with existing VMs: {e}")
 
-            # Cross-check running VMs against payment streams. If a VM has no
-            # active stream, it is no longer rented: terminate it and free resources.
+            # Cross-check running VMs against payment streams. Stream state is
+            # authoritative: only a chain-confirmed terminated stream may cause
+            # local VM deletion.
             try:
                 # Only perform checks if payments are configured
                 if (
@@ -83,53 +86,61 @@ class ProviderService:
                     and not settings.STREAM_PAYMENT_ADDRESS.lower().endswith(
                         "0000000000000000000000000000000000000000"
                     )
-                    and settings.POLYGON_RPC_URL
+                    and settings.PAYMENTS_RPC_URL
                 ):
                     stream_map = app.container.stream_map()
                     reader = app.container.stream_reader()
+                    active_items = await stream_map.active_items()
+                    records = await stream_map.records()
 
                     # Use the most recent view of VMs from the previous sync
                     vm_ids = (
                         list(vm_resources.keys()) if "vm_resources" in locals() else []
                     )
                     for vm_id in vm_ids:
-                        try:
-                            stream_id = await stream_map.get(vm_id)
-                        except Exception:
-                            stream_id = None
-
-                        if stream_id is None:
-                            reason = "no stream mapped"
-                            should_terminate = True
-                        else:
-                            try:
-                                ok, msg = reader.verify_stream(
-                                    int(stream_id), settings.PROVIDER_ID
-                                )
-                                should_terminate = not ok
-                                reason = msg if not ok else "ok"
-                            except Exception as e:
-                                # If verification cannot be performed, be conservative and keep the VM
-                                logger.warning(
-                                    f"Stream verification error for VM {vm_id} (stream {stream_id}): {e}"
-                                )
-                                should_terminate = False
-                                reason = f"verification error: {e}"
-
-                        if should_terminate:
-                            logger.info(
-                                f"Deleting VM {vm_id}: inactive stream (stream_id={stream_id}, reason={reason})"
+                        if vm_id not in active_items:
+                            record = records.get(vm_id)
+                            if record and record.get("state") == "terminated":
+                                continue
+                            raise RuntimeError(
+                                f"VM {vm_id} has no active structured stream record"
                             )
-                            try:
-                                await self.vm_service.delete_vm(vm_id)
-                            except Exception as e:
-                                logger.warning(f"Failed to delete VM {vm_id}: {e}")
-                            try:
-                                await stream_map.remove(vm_id)
-                            except Exception as e:
-                                logger.warning(
-                                    f"Failed to remove stream mapping for VM {vm_id}: {e}"
-                                )
+
+                    for vm_id, stream_id in active_items.items():
+                        try:
+                            stream = reader.get_stream(int(stream_id))
+                        except Exception as e:
+                            raise RuntimeError(
+                                f"stream lookup failed for VM {vm_id} "
+                                f"(stream_id={stream_id}): {e}"
+                            ) from e
+
+                        if (
+                            str(stream.get("recipient", "")).lower()
+                            != "0x0000000000000000000000000000000000000000"
+                        ):
+                            continue
+
+                        logger.info(
+                            "Deleting VM after startup found terminated stream",
+                            extra={"vm_id": vm_id, "stream_id": int(stream_id)},
+                        )
+                        await stream_map.mark_terminated(
+                            vm_id,
+                            terminated_by="requestor",
+                            termination_reason="requestor_terminated",
+                            settlement_tx_hash=None,
+                            cleanup_state="not_started",
+                        )
+                        try:
+                            await self.vm_service.delete_vm(vm_id)
+                        except Exception as e:
+                            await stream_map.set_cleanup_state(vm_id, "failed")
+                            raise RuntimeError(
+                                f"failed to delete VM {vm_id} after stream "
+                                f"termination: {e}"
+                            ) from e
+                        await stream_map.set_cleanup_state(vm_id, "completed")
 
                     # Re-sync after any terminations to ensure ads reflect capacity
                     try:
@@ -138,13 +149,18 @@ class ProviderService:
                             vm_resources
                         )
                     except Exception as e:
-                        logger.warning(f"Post-termination resource sync failed: {e}")
+                        raise RuntimeError(
+                            f"post-termination resource sync failed: {e}"
+                        ) from e
                 else:
                     logger.info(
                         "Payments not configured; skipping startup stream checks"
                     )
             except Exception as e:
-                logger.warning(f"Failed to reconcile VMs with payment streams: {e}")
+                logger.error(
+                    "Failed to reconcile VMs with payment streams", exc_info=True
+                )
+                raise
 
             # Check Arkiv wallet balance and request funds only when Arkiv publishing
             # is enabled. Local central-discovery stacks must not depend on Arkiv.
@@ -186,6 +202,10 @@ class ProviderService:
                 self._stream_monitor = app.container.stream_monitor()
                 self._stream_monitor.start()
                 logger.info("Provider stream monitor started")
+
+            if self.stream_payment_event_service is not None:
+                self.stream_payment_event_service.start()
+                logger.info("Provider StreamPayment event service started")
 
             await provider_ready_message(int(settings.PORT))
             logger.success("✨ Provider setup complete")
@@ -272,6 +292,9 @@ class ProviderService:
         if self._stream_monitor:
             await self._stream_monitor.stop()
             logger.info("Provider stream monitor stopped")
+        if self.stream_payment_event_service is not None:
+            await self.stream_payment_event_service.stop()
+            logger.info("Provider StreamPayment event service stopped")
         logger.success("✨ Provider cleanup complete")
 
     def _setup_directories(self):

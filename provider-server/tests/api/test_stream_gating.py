@@ -71,7 +71,7 @@ def test_create_vm_requires_stream_when_enabled(monkeypatch, client: TestClient)
     cfg.update(
         {
             "STREAM_PAYMENT_ADDRESS": "0x1111111111111111111111111111111111111111",
-            "POLYGON_RPC_URL": "http://localhost",
+            "PAYMENTS_RPC_URL": "http://localhost",
             "PROVIDER_ID": "0x2222222222222222222222222222222222222222",
             "GLM_TOKEN_ADDRESS": TOKEN,
             "PRICE_GLM_PER_CORE_MONTH": "0.000000000002628",
@@ -101,7 +101,7 @@ def test_create_vm_accepts_valid_stream(monkeypatch, client: TestClient):
     cfg.update(
         {
             "STREAM_PAYMENT_ADDRESS": "0x1111111111111111111111111111111111111111",
-            "POLYGON_RPC_URL": "http://localhost",
+            "PAYMENTS_RPC_URL": "http://localhost",
             "PROVIDER_ID": "0x2222222222222222222222222222222222222222",
             "GLM_TOKEN_ADDRESS": TOKEN,
             "PRICE_GLM_PER_CORE_MONTH": "0.000000000002628",
@@ -159,6 +159,9 @@ def test_create_vm_accepts_valid_stream(monkeypatch, client: TestClient):
             async def remove(self, vm_id):
                 self.remove_calls.append(vm_id)
 
+            async def get(self, vm_id):
+                return None
+
             async def all_items(self):
                 return {}
 
@@ -191,7 +194,7 @@ def test_create_vm_accepts_quote_when_live_pricing_changes(
         {
             "DEFAULT_VM_IMAGE": "24.04",
             "STREAM_PAYMENT_ADDRESS": "0x1111111111111111111111111111111111111111",
-            "POLYGON_RPC_URL": "http://localhost",
+            "PAYMENTS_RPC_URL": "http://localhost",
             "PROVIDER_ID": "0x2222222222222222222222222222222222222222",
             "GLM_TOKEN_ADDRESS": TOKEN,
             "PRICE_GLM_PER_CORE_MONTH": "0",
@@ -244,6 +247,9 @@ def test_create_vm_accepts_quote_when_live_pricing_changes(
         )
 
         class DummyStreamMap:
+            async def get(self, *_):
+                return None
+
             async def set(self, *_):
                 return None
 
@@ -274,7 +280,7 @@ def test_create_vm_rejects_invalid_stream(monkeypatch, client: TestClient):
     cfg.update(
         {
             "STREAM_PAYMENT_ADDRESS": "0x1111111111111111111111111111111111111111",
-            "POLYGON_RPC_URL": "http://localhost",
+            "PAYMENTS_RPC_URL": "http://localhost",
             "PROVIDER_ID": "0x2222222222222222222222222222222222222222",
             "GLM_TOKEN_ADDRESS": TOKEN,
             "PRICE_GLM_PER_CORE_MONTH": "0.000000000002628",
@@ -333,7 +339,7 @@ def test_create_vm_requires_stream_for_configured_payments_in_pytest(
     cfg.update(
         {
             "STREAM_PAYMENT_ADDRESS": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "POLYGON_RPC_URL": "http://localhost",
+            "PAYMENTS_RPC_URL": "http://localhost",
             "PROVIDER_ID": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         }
     )
@@ -387,7 +393,7 @@ def test_create_vm_gating_enforces_without_default_lookup(
     cfg.update(
         {
             "STREAM_PAYMENT_ADDRESS": "0x9999999999999999999999999999999999999999",
-            "POLYGON_RPC_URL": "http://localhost",
+            "PAYMENTS_RPC_URL": "http://localhost",
             "PROVIDER_ID": "0x8888888888888888888888888888888888888888",
         }
     )
@@ -429,7 +435,7 @@ def test_create_vm_enforces_outside_pytest_env(monkeypatch, client: TestClient):
     cfg.update(
         {
             "STREAM_PAYMENT_ADDRESS": "0x4444444444444444444444444444444444444444",
-            "POLYGON_RPC_URL": "http://localhost",
+            "PAYMENTS_RPC_URL": "http://localhost",
             "PROVIDER_ID": "0x5555555555555555555555555555555555555555",
         }
     )
@@ -461,7 +467,7 @@ def test_create_vm_logs_when_stream_map_set_fails(monkeypatch, client: TestClien
     cfg.update(
         {
             "STREAM_PAYMENT_ADDRESS": "0x1111111111111111111111111111111111111111",
-            "POLYGON_RPC_URL": "http://localhost",
+            "PAYMENTS_RPC_URL": "http://localhost",
             "PROVIDER_ID": "0x2222222222222222222222222222222222222222",
             "GLM_TOKEN_ADDRESS": TOKEN,
             "PRICE_GLM_PER_CORE_MONTH": "0.000000000002628",
@@ -510,6 +516,9 @@ def test_create_vm_logs_when_stream_map_set_fails(monkeypatch, client: TestClien
 
         # stream_map that raises on set
         class BadMap:
+            async def get(self, *_):
+                return None
+
             async def set(self, *_):
                 raise RuntimeError("fail")
 

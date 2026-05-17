@@ -33,6 +33,7 @@ async def require_requestor_vm_access(
             vm_id=str(vm_id),
             token_id="provider-admin",
             expires_at=0,
+            scope="provider",
             is_admin=True,
         )
     if vm_id is not None:
@@ -53,5 +54,5 @@ async def require_provider_admin(
 
 
 async def require_matching_vm_id(identity: RequestorIdentity, vm_id: str) -> None:
-    if identity.vm_id != vm_id:
+    if identity.scope == "vm" and identity.vm_id != vm_id:
         raise ForbiddenError("requestor session is scoped to a different VM")

@@ -14,6 +14,7 @@ import { formatUnixSecondsDateTime } from "../../lib/time";
 import { vmDetailsHref } from "../../lib/routes";
 import { humanDuration } from "../../lib/streams";
 import { countryFlagEmoji } from "../../lib/intl";
+import { sshEndpointLabel } from "../../lib/providerConnection";
 import { deriveVmDisplayLifecycle } from "../../lib/vmLifecycle";
 import { CopyValue } from "./CopyValue";
 import { RentalActionsMenu } from "./RentalActionsMenu";
@@ -158,12 +159,22 @@ export function RentalRowWithData({
     (statusPayload as { platform?: string | null } | null)?.platform ||
     rental.platform ||
     "Linux";
-  const providerIp =
-    (provider as { ip_address?: string | null } | null)?.ip_address ||
-    rental.provider_ip ||
-    (liveAccess as { ssh_host?: string | null } | null)?.ssh_host ||
-    (access as { ssh_host?: string | null } | null)?.ssh_host ||
-    "";
+  const sshEndpoint = sshEndpointLabel({
+    access:
+      (liveAccess as {
+        ssh_host?: string | null;
+        ssh_port?: number | string | null;
+      } | null) ||
+      (access as {
+        ssh_host?: string | null;
+        ssh_port?: number | string | null;
+      } | null),
+    provider: provider as {
+      ip_address?: string | null;
+      endpoint_url?: string | null;
+    } | null,
+    rental,
+  });
   const remainingSeconds = (
     stream as { computed?: { remaining_seconds?: number | null } } | null
   )?.computed?.remaining_seconds;
@@ -206,7 +217,7 @@ export function RentalRowWithData({
         </span>
       </td>
       <td className="td py-4">
-        <CopyValue value={providerIp} />
+        <CopyValue value={sshEndpoint === "-" ? "" : sshEndpoint} />
       </td>
       <td className="td py-4">
         <VmPlatform platform={platform} />

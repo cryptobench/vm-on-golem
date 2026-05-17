@@ -41,6 +41,7 @@ export default function SettingsPage() {
   const [evmChainIdText, setEvmChainIdText] = React.useState<string>(runtimeConfig.evmChainId || "0x88bb0");
   const [evmChainName, setEvmChainName] = React.useState<string>(runtimeConfig.evmChainName || "Ethereum Hoodi");
   const [evmRpcUrl, setEvmRpcUrl] = React.useState<string>(runtimeConfig.evmRpcUrl || "https://rpc.hoodi.ethpandaops.io");
+  const [evmWsUrl, setEvmWsUrl] = React.useState<string>(runtimeConfig.evmWsUrl || "wss://ethereum-hoodi-rpc.publicnode.com");
   const [evmExplorerUrl, setEvmExplorerUrl] = React.useState<string>(runtimeConfig.evmExplorerUrl || "https://hoodi.etherscan.io");
   const [profileName, setProfileName] = React.useState<string>(profiles.find(p => p.id === activeId)?.name || "");
   const [pendingProvider, setPendingProvider] = React.useState<string | null>(null);
@@ -68,6 +69,7 @@ export default function SettingsPage() {
     setEvmChainIdText(initial.evm_chain_id || (runtimeConfig.evmChainId || "0x88bb0"));
     setEvmChainName(initial.evm_chain_name || (runtimeConfig.evmChainName || "Ethereum Hoodi"));
     setEvmRpcUrl(initial.evm_rpc_url || (runtimeConfig.evmRpcUrl || "https://rpc.hoodi.ethpandaops.io"));
+    setEvmWsUrl(initial.evm_ws_url || (runtimeConfig.evmWsUrl || "wss://ethereum-hoodi-rpc.publicnode.com"));
     setEvmExplorerUrl(initial.evm_explorer_url || (runtimeConfig.evmExplorerUrl || "https://hoodi.etherscan.io"));
     // Sync ads-derived fields (profiles/context already mounted)
     setMode(ads.mode);
@@ -87,6 +89,7 @@ export default function SettingsPage() {
       evm_chain_id: evmChainIdText.trim(),
       evm_chain_name: evmChainName.trim(),
       evm_rpc_url: evmRpcUrl.trim(),
+      evm_ws_url: evmWsUrl.trim(),
       evm_explorer_url: evmExplorerUrl.trim(),
       display_currency: displayCurrency,
     });
@@ -221,6 +224,9 @@ export default function SettingsPage() {
               </FormField>
               <FormField label="Payments RPC URL">
                 <Input value={evmRpcUrl} onChange={e => setEvmRpcUrl(e.target.value)} placeholder="https://.../rpc" />
+              </FormField>
+              <FormField label="Payments WS URL">
+                <Input value={evmWsUrl} onChange={e => setEvmWsUrl(e.target.value)} placeholder="wss://..." />
               </FormField>
               <FormField label="Payments explorer URL">
                 <Input value={evmExplorerUrl} onChange={e => setEvmExplorerUrl(e.target.value)} placeholder="https://..." />

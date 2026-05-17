@@ -100,6 +100,7 @@ export type VMStatus =
   | "suspended"
   | "stopping"
   | "stopped"
+  | "terminated"
   | "error"
   | "deleted"
   | "unknown";
@@ -169,6 +170,17 @@ export type StreamStatus = {
   verified: boolean;
   reason: string;
   payment_state?: string;
+};
+
+export type LeaseTerminationResult = {
+  vm: VMInfo;
+  stream_id: number;
+  payment_state: string;
+  termination_reason: string;
+  terminated_by: string;
+  terminated_at: string | null;
+  settlement_tx_hash: string | null;
+  cleanup_state: string;
 };
 
 export type MetricSample = {

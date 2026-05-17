@@ -2,7 +2,7 @@ from pydantic import BaseModel
 
 from provider.payments.domain import LeasePayment
 
-from .models import VMResources
+from .models import VMInfo, VMResources
 
 
 class CreateVMCommand(BaseModel):
@@ -24,3 +24,14 @@ class CreateVMJobResult(BaseModel):
     progress: int
     transitioning: bool = True
     next_poll_seconds: int = 2
+
+
+class LeaseTerminationResult(BaseModel):
+    vm: VMInfo
+    stream_id: int
+    payment_state: str
+    termination_reason: str
+    terminated_by: str
+    terminated_at: str | None
+    settlement_tx_hash: str | None = None
+    cleanup_state: str

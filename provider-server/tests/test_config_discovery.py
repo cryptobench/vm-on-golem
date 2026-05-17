@@ -1,7 +1,12 @@
 import pytest
 from pydantic import ValidationError
 
-from provider.config import Settings, normalize_acme_env, normalize_discovery_backend
+from provider.config import (
+    Settings,
+    _development_public_ip,
+    normalize_acme_env,
+    normalize_discovery_backend,
+)
 
 
 def _set_settings_paths(monkeypatch, tmp_path):
@@ -91,6 +96,47 @@ def test_acme_invalid_env_fails(monkeypatch, tmp_path):
         Settings()
 
 
+def test_development_public_ip_prefers_default_route(monkeypatch):
+    class RouteSocket:
+        def connect(self, target):
+            assert target == ("8.8.8.8", 80)
+
+        def getsockname(self):
+            return ("192.168.50.48", 49152)
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr("provider.config.socket.socket", lambda *args: RouteSocket())
+    monkeypatch.setattr("provider.config.socket.gethostname", lambda: "provider-host")
+    monkeypatch.setattr(
+        "provider.config.socket.gethostbyname_ex",
+        lambda hostname: (hostname, [], ["192.168.2.1"]),
+    )
+
+    assert _development_public_ip() == "192.168.50.48"
+
+
+def test_development_public_ip_falls_back_to_hostname(monkeypatch):
+    class UnroutableSocket:
+        def connect(self, target):
+            raise OSError("no route")
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(
+        "provider.config.socket.socket", lambda *args: UnroutableSocket()
+    )
+    monkeypatch.setattr("provider.config.socket.gethostname", lambda: "provider-host")
+    monkeypatch.setattr(
+        "provider.config.socket.gethostbyname_ex",
+        lambda hostname: (hostname, [], ["127.0.0.1", "192.168.2.1"]),
+    )
+
+    assert _development_public_ip() == "192.168.2.1"
+
+
 def test_public_endpoint_internal_ports_match_public_defaults(monkeypatch, tmp_path):
     monkeypatch.delenv("GOLEM_PROVIDER_ACME_HTTP_PUBLIC_PORT", raising=False)
     monkeypatch.delenv("GOLEM_PROVIDER_ACME_HTTP_INTERNAL_PORT", raising=False)
@@ -104,3 +150,38 @@ def test_public_endpoint_internal_ports_match_public_defaults(monkeypatch, tmp_p
     assert settings.ACME_HTTP_INTERNAL_PORT == 80
     assert settings.PUBLIC_HTTPS_PORT == 443
     assert settings.PUBLIC_HTTPS_INTERNAL_PORT == 443
+
+
+def test_hoodi_payments_profile_defaults_to_l1_rpc_and_ws(monkeypatch, tmp_path):
+    monkeypatch.delenv("GOLEM_PROVIDER_PAYMENTS_RPC_URL", raising=False)
+    monkeypatch.delenv("GOLEM_PROVIDER_PAYMENTS_WS_URL", raising=False)
+    monkeypatch.setenv("GOLEM_PROVIDER_PAYMENTS_NETWORK", "hoodi")
+    _set_settings_paths(monkeypatch, tmp_path)
+
+    settings = Settings()
+
+    assert settings.PAYMENTS_RPC_URL == "https://rpc.hoodi.ethpandaops.io"
+    assert settings.PAYMENTS_WS_URL == "wss://ethereum-hoodi-rpc.publicnode.com"
+
+
+def test_legacy_payment_rpc_aliases_are_ignored(monkeypatch, tmp_path):
+    monkeypatch.delenv("GOLEM_PROVIDER_PAYMENTS_RPC_URL", raising=False)
+    monkeypatch.setenv("GOLEM_PROVIDER_PAYMENTS_NETWORK", "hoodi")
+    monkeypatch.setenv("GOLEM_PROVIDER_L2_RPC_URL", "http://legacy-l2.invalid")
+    monkeypatch.setenv("GOLEM_PROVIDER_KAOLIN_RPC_URL", "http://legacy-kaolin.invalid")
+    _set_settings_paths(monkeypatch, tmp_path)
+
+    settings = Settings()
+
+    assert settings.PAYMENTS_RPC_URL == "https://rpc.hoodi.ethpandaops.io"
+
+
+def test_explicit_payments_rpc_and_ws_win(monkeypatch, tmp_path):
+    monkeypatch.setenv("GOLEM_PROVIDER_PAYMENTS_RPC_URL", "https://rpc.example")
+    monkeypatch.setenv("GOLEM_PROVIDER_PAYMENTS_WS_URL", "wss://ws.example")
+    _set_settings_paths(monkeypatch, tmp_path)
+
+    settings = Settings()
+
+    assert settings.PAYMENTS_RPC_URL == "https://rpc.example"
+    assert settings.PAYMENTS_WS_URL == "wss://ws.example"

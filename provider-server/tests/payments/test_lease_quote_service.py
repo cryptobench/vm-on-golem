@@ -42,7 +42,7 @@ def test_create_quote_uses_provider_default_image_when_omitted(monkeypatch):
             "STREAM_PAYMENT_ADDRESS": CONTRACT,
             "GLM_TOKEN_ADDRESS": TOKEN,
             "ETHEREUM_PRIVATE_KEY": PRIVATE_KEY,
-            "POLYGON_RPC_URL": "http://rpc.invalid",
+            "PAYMENTS_RPC_URL": "http://rpc.invalid",
             "DEFAULT_VM_IMAGE": "custom-image",
             "PRICE_GLM_PER_CORE_MONTH": "0.000000000002628",
             "PRICE_GLM_PER_GB_RAM_MONTH": "0",

@@ -53,12 +53,11 @@ WEB_URL = f"http://{WEB_HOST}:{WEB_PORT}"
 PROVIDER_DESKTOP_URL = f"http://{PROVIDER_DESKTOP_HOST}:{PROVIDER_DESKTOP_PORT}"
 ARKIV_RPC_URL = "https://kaolin.hoodi.arkiv.network/rpc"
 ARKIV_WS_URL = "wss://kaolin.hoodi.arkiv.network/rpc/ws"
-L2_RPC_URL = "https://rpc.hoodi.ethpandaops.io"
+PAYMENTS_RPC_URL = "https://rpc.hoodi.ethpandaops.io"
+PAYMENTS_WS_URL = "wss://ethereum-hoodi-rpc.publicnode.com"
 L2_RPC_FALLBACK_URLS = [
-    L2_RPC_URL,
+    PAYMENTS_RPC_URL,
 ]
-L2_WS_URL = ""
-L2_FAUCET_URL = ""
 L2_EXPLORER_URL = "https://hoodi.etherscan.io"
 L2_CHAIN_ID_DEC = "560048"
 L2_CHAIN_ID_HEX = "0x88bb0"
@@ -818,8 +817,8 @@ def build_services(
         "GOLEM_PROVIDER_DISCOVERY_BACKEND": "central",
         "GOLEM_PROVIDER_DISCOVERY_URL": CENTRAL_URL,
         "GOLEM_PROVIDER_PAYMENTS_NETWORK": PAYMENTS_NETWORK,
-        "GOLEM_PROVIDER_L2_RPC_URL": deployment.get("rpc_url", L2_RPC_URL),
-        "GOLEM_PROVIDER_L2_FAUCET_URL": L2_FAUCET_URL,
+        "GOLEM_PROVIDER_PAYMENTS_RPC_URL": deployment.get("rpc_url", PAYMENTS_RPC_URL),
+        "GOLEM_PROVIDER_PAYMENTS_WS_URL": deployment.get("ws_url", PAYMENTS_WS_URL),
         "GOLEM_PROVIDER_STREAM_PAYMENT_ADDRESS": deployment["stream_payment_address"],
         "GOLEM_PROVIDER_GLM_TOKEN_ADDRESS": deployment["glm_token_address"],
         "GOLEM_PROVIDER_ARKIV_FAUCET_ENABLED": "false",
@@ -924,7 +923,8 @@ def build_services(
         "NEXT_PUBLIC_GLM_TOKEN_ADDRESS": deployment["glm_token_address"],
         "NEXT_PUBLIC_EVM_CHAIN_ID": L2_CHAIN_ID_HEX,
         "NEXT_PUBLIC_EVM_CHAIN_NAME": "Ethereum Hoodi",
-        "NEXT_PUBLIC_EVM_RPC_URL": deployment.get("rpc_url", L2_RPC_URL),
+        "NEXT_PUBLIC_EVM_RPC_URL": deployment.get("rpc_url", PAYMENTS_RPC_URL),
+        "NEXT_PUBLIC_EVM_WS_URL": deployment.get("ws_url", PAYMENTS_WS_URL),
         "NEXT_PUBLIC_EVM_EXPLORER_URL": L2_EXPLORER_URL,
         "NEXT_PUBLIC_ARKIV_DEV_RPC_URL": ARKIV_RPC_URL,
         "NEXT_PUBLIC_ARKIV_DEV_WS_URL": ARKIV_WS_URL,
@@ -1076,7 +1076,7 @@ def run_stack(args: argparse.Namespace) -> int:
             log(f"  Provider API:       {PROVIDER_API_URL}")
         log(f"  Port checker:       {PORT_CHECKER_URL}")
         log(f"  Payments network:   {PAYMENTS_NETWORK} ({L2_CHAIN_ID_HEX})")
-        log(f"  Payments RPC:       {deployment.get('rpc_url', L2_RPC_URL)}")
+        log(f"  Payments RPC:       {deployment.get('rpc_url', PAYMENTS_RPC_URL)}")
         log(f"  StreamPayment:      {deployment['stream_payment_address']}")
         log(f"  Logs:               {log_config.log_dir}")
         log("")

@@ -33,6 +33,7 @@ import { useStreamActions } from "../../hooks/useStreamActions";
 import { useVmLive } from "../../hooks/useVmLive";
 import { useWallet } from "../../context/WalletContext";
 import { getPaymentNetworkErrorMessage } from "../../lib/chain";
+import { usePaymentStreamsLive } from "../../lib/paymentStreamLive";
 import {
   ensurePaidStreamCanStart,
   terminatePaidRental,
@@ -60,6 +61,7 @@ import { VmSnapshotsPanel } from "../../components/vm/details/VmSnapshotsPanel";
 import { VmResizeModal } from "../../components/vm/details/VmResizeModal";
 import { VmPaymentStreamPanel } from "../../components/vm/details/VmPaymentStreamPanel";
 import { VmDetailsSkeleton } from "../../components/vm/details/VmDetailsSkeleton";
+import { providerPublicHost } from "../../lib/providerConnection";
 import { deriveVmDisplayLifecycle } from "../../lib/vmLifecycle";
 
 type VmDetailsClientProps = {
@@ -129,6 +131,10 @@ export default function VmDetailsClient({ vmId: vmIdProp }: VmDetailsClientProps
     vm?.vm_id,
     vm?.creation_job_id,
     metricsRange,
+  );
+  const vmPaymentStreams = usePaymentStreamsLive(
+    spAddr,
+    vm?.stream_id ? [vm as Rental] : [],
   );
 
   // Destroy confirmation state (must be before any early returns)
@@ -271,40 +277,32 @@ export default function VmDetailsClient({ vmId: vmIdProp }: VmDetailsClientProps
     }
   }, [statusData, vm?.vm_id, vm?.provider_id]);
 
-  // Stream details via lightweight polling + local 1s countdown
+  // Stream details from the shared requestor chain read model + local 1s countdown.
   React.useEffect(() => {
-    let cancelled = false;
-    const run = async () => {
-      if (!vm?.stream_id || !spAddr || live.state.stream) {
-        if (!cancelled) setStream(null);
-        return;
-      }
-      try {
-        setErr(null);
-        const res = await fetchStreamWithMeta(spAddr, BigInt(vm.stream_id));
-        if (cancelled) return;
-        setStream({
-          chain: res.chain as any,
-          remaining: BigInt(res.remaining),
-        });
-        setRemaining(Number(res.remaining));
-        setTokenSymbol(String(res.tokenSymbol || "GLM"));
-        setTokenDecimals(Number(res.tokenDecimals || 18));
-        setUsdPrice(res.usdPrice ?? null);
-      } catch (e) {
-        if (!cancelled) {
-          setStream(null);
-          setErr(getPaymentNetworkErrorMessage(e));
-        }
-      }
-    };
-    run();
-    const iv = setInterval(run, 15000);
-    return () => {
-      cancelled = true;
-      clearInterval(iv);
-    };
-  }, [vm?.stream_id, spAddr, live.state.stream]);
+    if (!vm?.stream_id || !spAddr) {
+      setStream(null);
+      return;
+    }
+    const entry = vmPaymentStreams.entries[String(vm.stream_id)];
+    if (!entry) {
+      setErr(vmPaymentStreams.error);
+      return;
+    }
+    if (!entry.ok) {
+      setStream(null);
+      setErr(entry.error);
+      return;
+    }
+    setErr(null);
+    setStream({
+      chain: entry.data.chain as any,
+      remaining: BigInt(entry.data.remaining),
+    });
+    setRemaining(Number(entry.data.remaining));
+    setTokenSymbol(String(entry.data.tokenSymbol || "GLM"));
+    setTokenDecimals(Number(entry.data.tokenDecimals || 18));
+    setUsdPrice(entry.data.usdPrice ?? null);
+  }, [vm?.stream_id, spAddr, vmPaymentStreams.entries, vmPaymentStreams.error]);
 
   // Keep USD price in sync with global cache
   React.useEffect(() => {
@@ -829,9 +827,7 @@ export default function VmDetailsClient({ vmId: vmIdProp }: VmDetailsClientProps
       );
       show("Top-up sent");
       live.refresh(["stream"]);
-      const res = await fetchStreamWithMeta(spAddr, BigInt(vm.stream_id));
-      setStream({ chain: res.chain as any, remaining: BigInt(res.remaining) });
-      setRemaining(Number(res.remaining));
+      await vmPaymentStreams.refresh();
     } catch (e) {
       show(getPaymentNetworkErrorMessage(e));
     } finally {
@@ -934,7 +930,7 @@ export default function VmDetailsClient({ vmId: vmIdProp }: VmDetailsClientProps
       icon: RiExpandDiagonalLine,
     },
     {
-      label: "Delete VM",
+      label: "Terminate Lease",
       onClick: openDestroy,
       disabled: busy,
       danger: true,
@@ -960,7 +956,11 @@ export default function VmDetailsClient({ vmId: vmIdProp }: VmDetailsClientProps
         vmId={vm.vm_id}
         country={provider?.country}
         platform={provider?.platform || vm.platform}
-        providerIp={provider?.ip_address || vm.provider_ip}
+        providerIp={providerPublicHost({
+          access,
+          provider,
+          rental: vm,
+        })}
         sshPort={sshPort}
         resources={effectiveResources}
         onCopy={copyValue}
@@ -1052,9 +1052,9 @@ export default function VmDetailsClient({ vmId: vmIdProp }: VmDetailsClientProps
         open={confirmDestroyOpen}
         onCancel={closeDestroy}
         onConfirm={confirmDestroy}
-        title="Terminate VM"
-        description="Are you sure you want to permanently terminate this VM? This action cannot be undone."
-        confirmLabel="Terminate"
+        title="Terminate Lease"
+        description="This terminates the payment stream from your wallet first. The VM is deleted only after the lease is confirmed terminated."
+        confirmLabel="Terminate Lease"
         danger
         busy={busy}
       />
@@ -1096,7 +1096,7 @@ function mergeVmStatus(vm: Rental, payload: unknown): Rental | null {
   const terminal = status === "terminated" || status === "deleted";
   const sshPort =
     terminal || data.ssh_port == null ? null : Number(data.ssh_port);
-  const providerIp = data.ip_address || vm.provider_ip || null;
+  const vmIp = data.ip_address || vm.vm_ip || null;
   const resources = getEffectiveResources(data, vm) || vm.resources;
   const next: Rental = {
     ...vm,
@@ -1107,7 +1107,7 @@ function mergeVmStatus(vm: Rental, payload: unknown): Rental | null {
     transitioning: data.transitioning ?? vm.transitioning,
     next_poll_seconds: data.next_poll_seconds ?? vm.next_poll_seconds,
     ssh_port: sshPort,
-    provider_ip: providerIp,
+    vm_ip: vmIp,
     resources,
     ...(terminal ? { ended_at: Math.floor(Date.now() / 1000) } : {}),
   };
@@ -1115,7 +1115,7 @@ function mergeVmStatus(vm: Rental, payload: unknown): Rental | null {
   if (
     next.status === vm.status &&
     next.ssh_port === vm.ssh_port &&
-    next.provider_ip === vm.provider_ip &&
+    next.vm_ip === vm.vm_ip &&
     next.lifecycle_stage === vm.lifecycle_stage &&
     next.status_message === vm.status_message &&
     next.progress === vm.progress &&

@@ -357,9 +357,15 @@
         "description": "Request model for creating a VM.",
         "properties": {
           "image": {
-            "default": "24.04",
-            "title": "Image",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image"
           },
           "name": {
             "maxLength": 64,
@@ -716,6 +722,66 @@
           "requestor_address"
         ],
         "title": "LeaseQuoteCommand",
+        "type": "object"
+      },
+      "LeaseTerminationResult": {
+        "properties": {
+          "cleanup_state": {
+            "title": "Cleanup State",
+            "type": "string"
+          },
+          "payment_state": {
+            "title": "Payment State",
+            "type": "string"
+          },
+          "settlement_tx_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Settlement Tx Hash"
+          },
+          "stream_id": {
+            "title": "Stream Id",
+            "type": "integer"
+          },
+          "terminated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Terminated At"
+          },
+          "terminated_by": {
+            "title": "Terminated By",
+            "type": "string"
+          },
+          "termination_reason": {
+            "title": "Termination Reason",
+            "type": "string"
+          },
+          "vm": {
+            "$ref": "#/components/schemas/VMInfo"
+          }
+        },
+        "required": [
+          "vm",
+          "stream_id",
+          "payment_state",
+          "termination_reason",
+          "terminated_by",
+          "terminated_at",
+          "cleanup_state"
+        ],
+        "title": "LeaseTerminationResult",
         "type": "object"
       },
       "MetricHistoryPoint": {
@@ -1146,21 +1212,32 @@
             "title": "Requestor Address",
             "type": "string"
           },
+          "scope": {
+            "default": "vm",
+            "title": "Scope",
+            "type": "string"
+          },
           "token_type": {
             "default": "bearer",
             "title": "Token Type",
             "type": "string"
           },
           "vm_id": {
-            "title": "Vm Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vm Id"
           }
         },
         "required": [
           "access_token",
           "expires_at",
-          "requestor_address",
-          "vm_id"
+          "requestor_address"
         ],
         "title": "RequestorSession",
         "type": "object"
@@ -1191,15 +1268,21 @@
             "type": "string"
           },
           "vm_id": {
-            "maxLength": 64,
-            "minLength": 3,
-            "title": "Vm Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 3,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vm Id"
           }
         },
         "required": [
           "requestor_address",
-          "vm_id",
           "nonce",
           "deadline",
           "signature"
@@ -1482,8 +1565,15 @@
             "type": "string"
           },
           "multipass_name": {
-            "title": "Multipass Name",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Multipass Name"
           },
           "next_poll_seconds": {
             "default": 2,
@@ -1529,7 +1619,6 @@
         },
         "required": [
           "vm_id",
-          "multipass_name",
           "ssh_user"
         ],
         "title": "VMAccessPendingResponse",
@@ -1768,6 +1857,7 @@
           "suspended",
           "stopping",
           "stopped",
+          "terminated",
           "error",
           "deleted",
           "unknown"
@@ -2333,6 +2423,50 @@
           }
         ],
         "summary": "Admin Shutdown"
+      }
+    },
+    "/api/v1/admin/vms/{requestor_name}/terminate-lease": {
+      "post": {
+        "operationId": "terminate_vm_lease_api_v1_admin_vms__requestor_name__terminate_lease_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "requestor_name",
+            "required": true,
+            "schema": {
+              "title": "Requestor Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeaseTerminationResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Terminate Vm Lease"
       }
     },
     "/api/v1/auth/requestor-sessions": {

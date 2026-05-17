@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   AlertRule,
   HistoryRange,
+  LeaseTerminationResult,
   MetricsHistoryResponse,
   MetricsLatestResponse,
   MonitoringOverview,
@@ -105,14 +106,10 @@ export const providerApi = {
   vm: (id: string) => request<VMInfo>(`/vms/${encodeURIComponent(id)}`),
   vmAccess: (id: string) =>
     request<VMAccessInfo>(`/vms/${encodeURIComponent(id)}/access`),
-  startVm: (id: string) => post<VMInfo>(`/vms/${encodeURIComponent(id)}/start`),
-  stopVm: (id: string) => post<VMInfo>(`/vms/${encodeURIComponent(id)}/stop`),
-  restartVm: (id: string) =>
-    post<VMInfo>(`/vms/${encodeURIComponent(id)}/restart`),
-  suspendVm: (id: string) =>
-    post<VMInfo>(`/vms/${encodeURIComponent(id)}/suspend`),
-  deleteVm: (id: string) =>
-    request<void>(`/vms/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  terminateLease: (id: string) =>
+    post<LeaseTerminationResult>(
+      `/admin/vms/${encodeURIComponent(id)}/terminate-lease`,
+    ),
   vmStream: (id: string) =>
     request<StreamStatus>(`/vms/${encodeURIComponent(id)}/stream`),
   streams: () => request<StreamStatus[]>("/payments/streams"),

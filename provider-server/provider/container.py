@@ -20,6 +20,7 @@ from .network_setup.service import NetworkSetupService
 from .payments.blockchain_service import StreamPaymentClient
 from .payments.blockchain_service import StreamPaymentConfig as _SPC
 from .payments.blockchain_service import StreamPaymentReader
+from .payments.events import StreamPaymentEventService
 from .payments.lease_quote_service import LeaseQuoteService
 from .payments.monitor import StreamMonitor
 from .payments.stream_map import StreamMap
@@ -157,7 +158,7 @@ class Container(containers.DeclarativeContainer):
     # Payments
     stream_reader = providers.Factory(
         StreamPaymentReader,
-        rpc_url=config.POLYGON_RPC_URL,
+        rpc_url=config.PAYMENTS_RPC_URL,
         contract_address=config.STREAM_PAYMENT_ADDRESS,
     )
 
@@ -179,7 +180,7 @@ class Container(containers.DeclarativeContainer):
             lambda rpc, addr, pk: _SPC(
                 rpc_url=rpc, contract_address=addr, private_key=pk
             ),
-            config.POLYGON_RPC_URL,
+            config.PAYMENTS_RPC_URL,
             config.STREAM_PAYMENT_ADDRESS,
             config.ETHEREUM_PRIVATE_KEY,
         ),
@@ -195,6 +196,14 @@ class Container(containers.DeclarativeContainer):
         webhook_service=webhook_service,
     )
 
+    stream_payment_event_service = providers.Singleton(
+        StreamPaymentEventService,
+        settings=config,
+        stream_map=stream_map,
+        reader_factory=stream_reader.provider,
+        broadcaster=provider_event_broadcaster,
+    )
+
     network_setup_service = providers.Singleton(
         NetworkSetupService,
         settings=provider_settings,
@@ -208,6 +217,7 @@ class Container(containers.DeclarativeContainer):
         port_manager=port_manager,
         monitoring_service=monitoring_service,
         network_setup_service=network_setup_service,
+        stream_payment_event_service=stream_payment_event_service,
     )
 
     # Async job store for VM creations
@@ -234,6 +244,7 @@ class Container(containers.DeclarativeContainer):
         job_store=job_store,
         event_broadcaster=provider_event_broadcaster,
         webhook_service=webhook_service,
+        stream_client=stream_client.provider,
     )
 
     provider_info_service = providers.Factory(

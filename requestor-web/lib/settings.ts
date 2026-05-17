@@ -18,6 +18,7 @@ export type Settings = {
   evm_chain_id?: string;
   evm_chain_name?: string;
   evm_rpc_url?: string;
+  evm_ws_url?: string;
   evm_explorer_url?: string;
   display_currency?: "fiat" | "token";
   show_terminated?: boolean;

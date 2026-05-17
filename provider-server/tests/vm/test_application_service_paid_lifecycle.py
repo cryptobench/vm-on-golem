@@ -2,8 +2,9 @@ import asyncio
 
 import pytest
 
-from provider.errors import ConflictError
+from provider.errors import ConflictError, ExternalServiceError
 from provider.payments.domain import LeasePayment
+from provider.payments.errors import InvalidStreamError
 from provider.summary.service import ProviderSummaryService
 from provider.vm.application_service import VMApplicationService
 from provider.vm.domain import CreateVMCommand
@@ -34,6 +35,8 @@ class FakeResourceTracker:
 class FakeStreamStatusService:
     def __init__(self):
         self.removed = []
+        self.terminated = []
+        self.cleanup = []
         self.stream_map = FakeStreamMap()
 
     async def require_vm_action_authorized(self, vm_id, action_signer):
@@ -51,12 +54,48 @@ class FakeStreamStatusService:
     async def set_vm_stream(self, *args, **kwargs):
         return None
 
+    async def verify_vm_stream_terminated(self, vm_id):
+        return None
+
+    async def terminal_record(self, vm_id):
+        return None
+
+    async def mark_vm_stream_terminated(self, vm_id, **kwargs):
+        self.terminated.append((vm_id, kwargs))
+        return {
+            "vm_id": vm_id,
+            "stream_id": 1,
+            "requestor_address": "0x3333333333333333333333333333333333333333",
+            "state": "terminated",
+            **kwargs,
+        }
+
+    async def set_vm_stream_cleanup_state(self, vm_id, cleanup_state):
+        self.cleanup.append((vm_id, cleanup_state))
+        return {
+            "vm_id": vm_id,
+            "stream_id": 1,
+            "requestor_address": "0x3333333333333333333333333333333333333333",
+            "state": "terminated",
+            "terminated_by": "requestor",
+            "termination_reason": "requestor_terminated",
+            "terminated_at": "2026-05-14T12:00:00+00:00",
+            "settlement_tx_hash": None,
+            "cleanup_state": cleanup_state,
+        }
+
 
 class FakeStreamMap:
     async def get(self, vm_id):
         return None
 
     async def get_owner(self, vm_id):
+        return None
+
+    async def records(self):
+        return {}
+
+    async def get_record(self, vm_id):
         return None
 
 
@@ -102,10 +141,10 @@ async def test_delete_vm_removes_stream_mapping_when_vm_already_gone():
         job_store=None,
     )
 
-    with pytest.raises(VMNotFoundError):
-        await service.delete_vm("vm-id")
+    await service.delete_vm("vm-id")
 
-    assert stream_status.removed == ["vm-id"]
+    assert stream_status.terminated[0][0] == "vm-id"
+    assert stream_status.cleanup == [("vm-id", "completed")]
 
 
 @pytest.mark.asyncio
@@ -551,3 +590,148 @@ async def test_resize_vm_validates_and_maps_replacement_stream():
     assert stream_status.set_calls == [
         (("vm-a", 123, "0x3333333333333333333333333333333333333333"), {})
     ]
+
+
+class LeaseTerminationVMService(LifecycleVMService):
+    def __init__(self):
+        super().__init__()
+        self.deleted = []
+
+    async def delete_vm(self, vm_id: str) -> None:
+        self.deleted.append(vm_id)
+
+
+class LeaseTerminationStreamStatus:
+    def __init__(self, *, chain_terminated=False, verify_terminated=True):
+        self.record = {
+            "vm_id": "vm-a",
+            "stream_id": 123,
+            "requestor_address": "0x3333333333333333333333333333333333333333",
+            "state": "active",
+            "terminated_by": None,
+            "termination_reason": None,
+            "terminated_at": None,
+            "settlement_tx_hash": None,
+            "cleanup_state": None,
+        }
+        self.chain_terminated = chain_terminated
+        self.verify_terminated = verify_terminated
+
+    async def is_payment_required(self):
+        return True
+
+    async def require_vm_action_authorized(self, vm_id, action_signer):
+        return None
+
+    async def verify_vm_stream_terminated(self, vm_id):
+        if not self.verify_terminated:
+            raise InvalidStreamError("stream is still active")
+        return None
+
+    async def terminal_record(self, vm_id):
+        return dict(self.record) if self.record["state"] == "terminated" else None
+
+    async def mark_vm_stream_terminated(self, vm_id, **kwargs):
+        self.record.update(
+            {
+                "state": "terminated",
+                "terminated_at": "2026-05-14T12:00:00+00:00",
+                **kwargs,
+            }
+        )
+        return dict(self.record)
+
+    async def set_vm_stream_cleanup_state(self, vm_id, cleanup_state):
+        self.record["cleanup_state"] = cleanup_state
+        return dict(self.record)
+
+    async def _stream_record(self, vm_id):
+        return dict(self.record)
+
+    def _reader(self):
+        chain_terminated = self.chain_terminated
+
+        class Reader:
+            def get_stream(self, stream_id):
+                return {
+                    "recipient": (
+                        "0x0000000000000000000000000000000000000000"
+                        if chain_terminated
+                        else "0x2222222222222222222222222222222222222222"
+                    )
+                }
+
+        return Reader()
+
+
+class LeaseTerminationClient:
+    def __init__(self, *, fail=False):
+        self.fail = fail
+        self.terminated = []
+
+    def terminate(self, stream_id):
+        self.terminated.append(stream_id)
+        if self.fail:
+            raise RuntimeError("chain down")
+        return "0xtx"
+
+
+@pytest.mark.asyncio
+async def test_provider_terminate_lease_submits_chain_before_delete():
+    vm_service = LeaseTerminationVMService()
+    stream_status = LeaseTerminationStreamStatus()
+    client = LeaseTerminationClient()
+    service = VMApplicationService(
+        vm_service=vm_service,
+        settings={},
+        stream_status_service=stream_status,
+        job_store=FakeJobStore(),
+        stream_client=client,
+    )
+
+    result = await service.terminate_lease_by_provider("vm-a")
+
+    assert client.terminated == [123]
+    assert vm_service.deleted == ["vm-a"]
+    assert stream_status.record["state"] == "terminated"
+    assert stream_status.record["terminated_by"] == "provider"
+    assert stream_status.record["cleanup_state"] == "completed"
+    assert result.vm.status == VMStatus.TERMINATED
+
+
+@pytest.mark.asyncio
+async def test_provider_terminate_lease_chain_failure_does_not_delete_vm():
+    vm_service = LeaseTerminationVMService()
+    stream_status = LeaseTerminationStreamStatus(chain_terminated=False)
+    client = LeaseTerminationClient(fail=True)
+    service = VMApplicationService(
+        vm_service=vm_service,
+        settings={},
+        stream_status_service=stream_status,
+        job_store=FakeJobStore(),
+        stream_client=client,
+    )
+
+    with pytest.raises(ExternalServiceError):
+        await service.terminate_lease_by_provider("vm-a")
+
+    assert vm_service.deleted == []
+    assert stream_status.record["state"] == "active"
+
+
+@pytest.mark.asyncio
+async def test_requestor_delete_rejects_active_stream_before_vm_delete():
+    vm_service = LeaseTerminationVMService()
+    stream_status = LeaseTerminationStreamStatus(verify_terminated=False)
+    service = VMApplicationService(
+        vm_service=vm_service,
+        settings={},
+        stream_status_service=stream_status,
+        job_store=FakeJobStore(),
+    )
+
+    with pytest.raises(InvalidStreamError):
+        await service.delete_vm("vm-a", "0x3333333333333333333333333333333333333333")
+
+    assert vm_service.deleted == []
+    assert stream_status.record["state"] == "active"

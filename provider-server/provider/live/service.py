@@ -1,5 +1,4 @@
 import asyncio
-import json
 import logging
 from datetime import datetime, timezone
 from typing import Any
@@ -466,9 +465,6 @@ class ProviderLiveService:
                         name="provider-live-invalidations",
                     ),
                     asyncio.create_task(
-                        self._poll_loop(websocket), name="provider-live-reconcile"
-                    ),
-                    asyncio.create_task(
                         self._heartbeat_loop(websocket), name="provider-live-heartbeat"
                     ),
                 ]
@@ -535,23 +531,6 @@ class ProviderLiveService:
         while True:
             scopes = await queue.get()
             await self._refresh_scopes(websocket, sorted(scopes))
-
-    async def _poll_loop(self, websocket: WebSocket) -> None:
-        previous: dict[str, str] = {}
-        while True:
-            await asyncio.sleep(2)
-            for scope in PROVIDER_LIVE_SCOPES:
-                try:
-                    data = await self._scope_data(scope)
-                    fingerprint = json.dumps(data, sort_keys=True, default=str)
-                    if previous.get(scope) != fingerprint:
-                        previous[scope] = fingerprint
-                        await self._send_update(websocket, scope, data)
-                except Exception as exc:
-                    fingerprint = f"error:{exc}"
-                    if previous.get(scope) != fingerprint:
-                        previous[scope] = fingerprint
-                        await self._send_error(websocket, scope, exc)
 
     async def _heartbeat_loop(self, websocket: WebSocket) -> None:
         while True:
@@ -818,8 +797,7 @@ class HostLiveService:
                 )
             elif event_type == "refresh":
                 scopes = {
-                    str(scope)
-                    for scope in (message.get("scopes") or ["metrics_live"])
+                    str(scope) for scope in (message.get("scopes") or ["metrics_live"])
                 }
                 if "metrics_live" in scopes:
                     await self._send_update(

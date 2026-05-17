@@ -47,6 +47,7 @@ export type Rental = {
   provider_id: string;
   provider_endpoint_url?: string | null;
   provider_ip?: string | null;
+  vm_ip?: string | null;
   vm_id: string;
   status: string;
   lifecycle_stage?: string | null;
@@ -71,6 +72,7 @@ export type Rental = {
   termination_reason?: string;
   create_failed_at?: number;
   settlement_status?: "pending" | "settled" | "failed" | "not_required";
+  cleanup_state?: "not_started" | "completed" | "failed";
 };
 
 export type VmMonitoringMetric = {

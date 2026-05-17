@@ -9,12 +9,23 @@ from provider.payments.monitor import StreamMonitor
 class DummyStreamMap:
     def __init__(self, mapping):
         self._mapping = mapping
+        self.terminated = []
+        self.cleanup = []
 
     async def all_items(self):
         return dict(self._mapping)
 
+    async def active_items(self):
+        return dict(self._mapping)
+
     async def remove(self, vm_id):
         self._mapping.pop(vm_id, None)
+
+    async def mark_terminated(self, vm_id, **kwargs):
+        self.terminated.append((vm_id, kwargs))
+
+    async def set_cleanup_state(self, vm_id, cleanup_state):
+        self.cleanup.append((vm_id, cleanup_state))
 
 
 class DummyVMService:
@@ -302,9 +313,9 @@ async def test_monitor_deletes_when_stream_ended(monkeypatch):
     monkeypatch.setattr(asyncio, "sleep", fake_sleep)
 
     await mon._run()
-    # VM deleted due to exhausted runway
+    # Exhaustion is visible, but deletion waits for on-chain termination.
     assert vm_service.stopped == []
-    assert vm_service.deleted == ["vm-end"]
+    assert vm_service.deleted == []
     assert client.withdrawn == []
     assert webhooks.events[0][0] == "payment.stream.lost"
     assert webhooks.events[0][1]["data"]["reason"] == "stream exhausted"
@@ -343,6 +354,6 @@ async def test_monitor_emits_stream_lost_when_lookup_fails(monkeypatch):
 
     await mon._run()
 
-    assert vm_service.deleted == ["vm-missing"]
+    assert vm_service.deleted == []
     assert webhooks.events[0][0] == "payment.stream.lost"
     assert webhooks.events[0][1]["data"]["reason"] == "stream lookup failed"

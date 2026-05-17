@@ -82,10 +82,8 @@ except ImportError:
 
 cli = typer.Typer()
 pricing_app = typer.Typer(help="Configure USD pricing; auto-converts to GLM.")
-wallet_app = typer.Typer(help="Wallet utilities (funding, balance)")
 streams_app = typer.Typer(help="Inspect payment streams")
 cli.add_typer(pricing_app, name="pricing")
-cli.add_typer(wallet_app, name="wallet")
 cli.add_typer(streams_app, name="streams")
 config_app = typer.Typer(help="Configure stream monitoring and withdrawals")
 cli.add_typer(config_app, name="config")
@@ -1019,36 +1017,6 @@ def status(
             pass
 
 
-@wallet_app.command("faucet-l2")
-def wallet_faucet_l2():
-    """Request L2 faucet funds for the provider's payment address (gas ETH)."""
-    from .config import settings
-    from .security.l2_faucet import L2FaucetService
-
-    try:
-        if not bool(getattr(settings, "FAUCET_ENABLED", False)):
-            logger.info("Provider L2 faucet command skipped because faucet is disabled")
-            print("Faucet is disabled for current payments network.")
-            raise typer.Exit(code=0)
-        addr = settings.PROVIDER_ID
-
-        async def _run():
-            svc = L2FaucetService(settings)
-            tx = await svc.request_funds(addr)
-            if tx:
-                logger.info("Provider L2 faucet transaction received")
-                print(f"Faucet tx: {tx}")
-            else:
-                # Either skipped due to sufficient balance or failed
-                pass
-
-        asyncio.run(_run())
-    except Exception as e:
-        logger.error("Provider L2 faucet command failed", exc_info=True)
-        print(f"Error: {e}")
-        raise typer.Exit(code=1)
-
-
 @streams_app.command("list")
 def streams_list(json_out: bool = typer.Option(False, "--json", help="Output in JSON")):
     """List all mapped streams with computed status."""
@@ -1079,7 +1047,7 @@ def streams_list(json_out: bool = typer.Option(False, "--json", help="Output in 
         c.config.from_pydantic(settings)
         stream_map = c.stream_map()
         reader = StreamPaymentReader(
-            settings.POLYGON_RPC_URL, settings.STREAM_PAYMENT_ADDRESS
+            settings.PAYMENTS_RPC_URL, settings.STREAM_PAYMENT_ADDRESS
         )
         items = asyncio.run(stream_map.all_items())
         now = int(reader.web3.eth.get_block("latest")["timestamp"]) if items else 0
@@ -1239,7 +1207,7 @@ def streams_show(
                 print("No stream mapped for this VM.")
             raise typer.Exit(code=1)
         reader = StreamPaymentReader(
-            settings.POLYGON_RPC_URL, settings.STREAM_PAYMENT_ADDRESS
+            settings.PAYMENTS_RPC_URL, settings.STREAM_PAYMENT_ADDRESS
         )
         s = reader.get_stream(int(sid))
         now = int(reader.web3.eth.get_block("latest")["timestamp"])  # type: ignore
@@ -1342,7 +1310,7 @@ def streams_earnings(
         c.config.from_pydantic(settings)
         stream_map = c.stream_map()
         reader = StreamPaymentReader(
-            settings.POLYGON_RPC_URL, settings.STREAM_PAYMENT_ADDRESS
+            settings.PAYMENTS_RPC_URL, settings.STREAM_PAYMENT_ADDRESS
         )
         items = asyncio.run(stream_map.all_items())
         now = int(reader.web3.eth.get_block("latest")["timestamp"]) if items else 0
@@ -1475,7 +1443,6 @@ def streams_withdraw(
     """Withdraw vested funds for one or all streams."""
     from .config import settings
     from .container import Container
-    from .security.l2_faucet import L2FaucetService
 
     try:
         if not vm_id and not all_streams:
@@ -1485,12 +1452,6 @@ def streams_withdraw(
         c.config.from_pydantic(settings)
         stream_map = c.stream_map()
         client = c.stream_client()
-        # Ensure we have L2 gas for withdrawals (testnets)
-        try:
-            asyncio.run(L2FaucetService(settings).request_funds(settings.PROVIDER_ID))
-        except Exception:
-            # Non-fatal; proceed with withdraw attempt
-            pass
         targets = []
         if all_streams:
             items = asyncio.run(stream_map.all_items())

@@ -7,6 +7,7 @@ import type { Rental, VMResources } from "../../lib/api";
 import { vmDetailsHref } from "../../lib/routes";
 import { humanDuration } from "../../lib/streams";
 import { useVmLive } from "../../hooks/useVmLive";
+import { sshEndpointLabel } from "../../lib/providerConnection";
 import { DashboardStatus } from "./DashboardStatus";
 
 export type DashboardStreamRow = {
@@ -51,7 +52,7 @@ export function ActiveVmsTable({ rentals }: { rentals: Rental[] }) {
             <th className="px-4 py-4">vCPU</th>
             <th className="px-4 py-4">RAM</th>
             <th className="px-4 py-4">Storage</th>
-            <th className="px-4 py-4">Provider IP</th>
+            <th className="px-4 py-4">SSH Endpoint</th>
             <th className="py-4 pl-4 text-right">Actions</th>
           </tr>
         </thead>
@@ -72,6 +73,11 @@ function ActiveVmRow({ rental }: { rental: Rental }) {
     rental.creation_job_id,
   );
   const liveLifecycle = live.state.lifecycle;
+  const sshEndpoint = sshEndpointLabel({
+    access: live.state.access,
+    provider: live.state.providerInfo,
+    rental,
+  });
   const platform = platformLabel(rental.platform);
   const PlatformIcon = platform.Icon;
   const status = String(liveLifecycle?.status || rental.status);
@@ -95,7 +101,7 @@ function ActiveVmRow({ rental }: { rental: Rental }) {
       <td className="px-4 py-4">{resourceValue(rental.resources, "cpu")}</td>
       <td className="px-4 py-4">{resourceValue(rental.resources, "memory")} GB</td>
       <td className="px-4 py-4">{resourceValue(rental.resources, "storage")} GB</td>
-      <td className="px-4 py-4">{rental.provider_ip || "-"}</td>
+      <td className="px-4 py-4 font-mono text-text-primary">{sshEndpoint}</td>
       <td className="py-4 pl-4 text-right">
         <button className="rounded-md p-1 text-text-primary hover:bg-surface-muted" type="button" aria-label={`Actions for ${rental.name}`}>
           <RiMoreFill className="h-5 w-5" aria-hidden />

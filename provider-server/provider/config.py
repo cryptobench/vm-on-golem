@@ -35,6 +35,42 @@ def normalize_acme_env(value: str | None) -> str:
     raise ValueError("ACME environment must be 'staging', 'production', or 'prod'")
 
 
+def _default_route_local_ip() -> str | None:
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.connect(("8.8.8.8", 80))
+        ip_address = sock.getsockname()[0]
+        if ip_address and not ip_address.startswith("127."):
+            return ip_address
+    except OSError:
+        return None
+    finally:
+        sock.close()
+
+    return None
+
+
+def _hostname_local_ips() -> list[str]:
+    try:
+        hostname = socket.gethostname()
+        return [
+            ip_address
+            for ip_address in socket.gethostbyname_ex(hostname)[2]
+            if not ip_address.startswith("127.")
+        ]
+    except socket.gaierror:
+        return []
+
+
+def _development_public_ip() -> str | None:
+    default_route_ip = _default_route_local_ip()
+    if default_route_ip:
+        return default_route_ip
+
+    local_ips = _hostname_local_ips()
+    return local_ips[0] if local_ips else None
+
+
 def ensure_config() -> None:
     """Ensure the provider configuration directory and defaults exist."""
     base_dir = Path.home() / ".golem" / "provider"
@@ -82,6 +118,10 @@ class Settings(BaseSettings):
         default="",
         description="Optional signing secret for provider-issued requestor VM sessions.",
     )
+    REQUESTOR_SESSION_TTL_SECONDS: int = Field(
+        default=86400,
+        description="Maximum lifetime for provider-issued requestor API sessions.",
+    )
     PROVIDER_ADMIN_TOKEN: str = Field(
         default="",
         description="Optional bearer token for provider-owner/admin API access.",
@@ -96,7 +136,7 @@ class Settings(BaseSettings):
     # Payments chain selection (modular network profiles).
     PAYMENTS_NETWORK: str = Field(
         default="hoodi",
-        description="Payments network profile (e.g., 'hoodi', 'sepolia', 'l2.hoodi', 'mainnet')",
+        description="Payments network profile (e.g., 'hoodi', 'sepolia', 'mainnet')",
     )
 
     @field_validator("PAYMENTS_NETWORK", mode="before")
@@ -251,13 +291,17 @@ class Settings(BaseSettings):
         return v
 
     # EVM / Payments
-    POLYGON_RPC_URL: str = Field(
+    PAYMENTS_RPC_URL: str = Field(
         default="",
         description="EVM RPC URL for streaming payments; defaults from PAYMENTS_NETWORK profile",
     )
+    PAYMENTS_WS_URL: str = Field(
+        default="",
+        description="EVM WebSocket RPC URL for StreamPayment live events",
+    )
     STREAM_PAYMENT_ADDRESS: str = Field(
         default="",
-        description="Deployed StreamPayment contract address (defaults to contracts/deployments/l2.json)",
+        description="Deployed StreamPayment contract address",
     )
     GLM_TOKEN_ADDRESS: str = Field(
         default="",
@@ -306,51 +350,21 @@ class Settings(BaseSettings):
     CAPTCHA_URL: str = "https://cap.gobas.me"
     CAPTCHA_API_KEY: str = "05381a2cef5e"
 
-    # L2 payments faucet (gas ETH)
-    L2_FAUCET_URL: str = Field(
-        default="",
-        description="Faucet base URL (no trailing /api). Only used on testnets; defaults from PAYMENTS_NETWORK profile",
-    )
-    L2_CAPTCHA_URL: str = Field(
-        default="https://cap.gobas.me", description="CAPTCHA base URL"
-    )
-    L2_CAPTCHA_API_KEY: str = Field(
-        default="05381a2cef5e", description="CAPTCHA API key path segment"
-    )
-
-    @field_validator("L2_CAPTCHA_URL", mode="before")
-    @classmethod
-    def prefer_l2_captcha_url(cls, v: str) -> str:
-        return os.environ.get("GOLEM_PROVIDER_L2_CAPTCHA_URL", v)
-
-    @field_validator("L2_CAPTCHA_API_KEY", mode="before")
-    @classmethod
-    def prefer_l2_captcha_key(cls, v: str) -> str:
-        return os.environ.get("GOLEM_PROVIDER_L2_CAPTCHA_API_KEY", v)
-
-    @field_validator("POLYGON_RPC_URL", mode="before")
+    @field_validator("PAYMENTS_RPC_URL", mode="before")
     @classmethod
     def prefer_custom_env(cls, v: str, values: dict) -> str:
-        # Accept alternative aliases for payments RPC
-        for key in ("GOLEM_PROVIDER_L2_RPC_URL", "GOLEM_PROVIDER_KAOLIN_RPC_URL"):
-            if os.environ.get(key):
-                return os.environ[key]
         if v:
             return v
-        # Default from profile
         pn = values.data.get("PAYMENTS_NETWORK") or "hoodi"
         return Settings._profile_defaults(pn)["rpc_url"]
 
-    @field_validator("L2_FAUCET_URL", mode="before")
+    @field_validator("PAYMENTS_WS_URL", mode="before")
     @classmethod
-    def prefer_faucet_env(cls, v: str, values: dict) -> str:
-        for key in ("GOLEM_PROVIDER_L2_FAUCET_URL",):
-            if os.environ.get(key):
-                return os.environ[key]
+    def default_payments_ws_url(cls, v: str, values: dict) -> str:
         if v:
             return v
         pn = values.data.get("PAYMENTS_NETWORK") or "hoodi"
-        return Settings._profile_defaults(pn).get("faucet_url", "")
+        return str(Settings._profile_defaults(pn).get("ws_url", ""))
 
     @staticmethod
     def _load_deployment(network: str) -> tuple[str | None, str | None]:
@@ -391,35 +405,20 @@ class Settings(BaseSettings):
             pass
         return None, None
 
-    # Backwards-compat helper used by tests expecting this method name
-    @staticmethod
-    def _load_l2_deployment() -> tuple[str | None, str | None]:
-        return Settings._load_deployment("l2.hoodi")
-
     @staticmethod
     def _deployment_basename(network: str) -> str:
         n = (network or "").lower()
-        if n in ("l2", "l2.hoodi"):
-            return "l2"
         if "." in n:
             return n.split(".")[0]
-        return n or "l2"
+        return n or "hoodi"
 
     @staticmethod
     def _profile_defaults(network: str) -> dict[str, str | bool]:
         n = (network or "hoodi").lower()
         profiles = {
-            "l2.hoodi": {
-                "rpc_url": "https://l2.hoodi.arkiv.network/rpc",
-                "faucet_url": "https://l2.hoodi.arkiv.network/faucet",
-                "faucet_enabled": True,
-                "glm_token_address": "",
-                "token_symbol": "GLM",
-                "gas_symbol": "ETH",
-            },
             "sepolia": {
                 "rpc_url": "https://rpc.sepolia.org",
-                "faucet_url": "",
+                "ws_url": "",
                 "faucet_enabled": False,
                 "glm_token_address": "",
                 "token_symbol": "GLM",
@@ -427,7 +426,7 @@ class Settings(BaseSettings):
             },
             "hoodi": {
                 "rpc_url": "https://rpc.hoodi.ethpandaops.io",
-                "faucet_url": "",
+                "ws_url": "wss://ethereum-hoodi-rpc.publicnode.com",
                 "faucet_enabled": False,
                 "glm_token_address": "0x55555555555556AcFf9C332Ed151758858bd7a26",
                 "token_symbol": "GLM",
@@ -435,7 +434,7 @@ class Settings(BaseSettings):
             },
             "mainnet": {
                 "rpc_url": "",
-                "faucet_url": "",
+                "ws_url": "",
                 "faucet_enabled": False,
                 "glm_token_address": "",
                 "token_symbol": "GLM",
@@ -807,28 +806,10 @@ class Settings(BaseSettings):
             return v
 
         if values.data.get("ENVIRONMENT") == "development":
-            try:
-                hostname = socket.gethostname()
-                ips = socket.gethostbyname_ex(hostname)[2]
-                local_ips = [ip for ip in ips if not ip.startswith("127.")]
-                if local_ips:
-                    ip = local_ips[0]
-                    logger.info(f"Found local IP for development: {ip}")
-                    return ip
-            except socket.gaierror:
-                pass
-
-            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            try:
-                s.connect(("8.8.8.8", 80))
-                IP = s.getsockname()[0]
-                if IP:
-                    logger.info(f"Found local IP for development: {IP}")
-                    return IP
-            except Exception:
-                pass
-            finally:
-                s.close()
+            ip_address = _development_public_ip()
+            if ip_address:
+                logger.info(f"Found local IP for development: {ip_address}")
+                return ip_address
 
             raise ValueError(
                 "Could not determine local IP address in development mode. "

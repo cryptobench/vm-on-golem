@@ -38,6 +38,7 @@ test("terminates stream before deleting provider VM and keeps history fields", a
   assert.equal(next.terminated_at, 123);
   assert.equal(next.settlement_tx_hash, "0xtx");
   assert.equal(next.settlement_status, "settled");
+  assert.equal(next.cleanup_state, "completed");
 });
 
 test("failed settlement blocks provider VM deletion", async () => {
@@ -73,6 +74,24 @@ test("provider 404 after settlement is treated as terminated", async () => {
 
   assert.equal(next.status, "terminated");
   assert.equal(next.terminated_at, 456);
+  assert.equal(next.cleanup_state, "completed");
+});
+
+test("provider cleanup failure after settlement is recorded locally", async () => {
+  const next = await terminatePaidRental({
+    rental,
+    terminateStream: async () => "0xtx",
+    destroyVm: async () => {
+      throw new Error("provider offline");
+    },
+    now: () => 789,
+  });
+
+  assert.equal(next.status, "terminated");
+  assert.equal(next.terminated_at, 789);
+  assert.equal(next.settlement_status, "settled");
+  assert.equal(next.cleanup_state, "failed");
+  assert.equal(next.status_message, "Lease terminated; provider cleanup pending");
 });
 
 test("start guard rejects settled or empty paid streams", async () => {

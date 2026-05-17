@@ -4,18 +4,18 @@ import {
   Card,
   CardBody,
   DataTable,
-  LineAreaChart,
   PageHeader,
   Sparkline,
   StatCard,
   StatusBadge,
   Tabs,
 } from "@golem/ui";
-import { RiAddLine, RiCheckboxCircleLine, RiLineChartLine, RiMoneyDollarCircleLine, RiStackLine } from "@remixicon/react";
+import { RiAddLine, RiLineChartLine, RiMoneyDollarCircleLine, RiStackLine } from "@remixicon/react";
 import { EndpointErrors, LoadingGrid } from "../../components/StateViews";
 import type { NavigateTarget } from "../../components/types";
 import { streamEarningsPoints, streamsTotals } from "../../lib/derived";
 import { EMPTY_VALUE, formatCurrency, formatGlm, formatDuration, weiToToken } from "../../lib/format";
+import { projectStreams, useStreamNowSeconds } from "../../lib/liveStreamValues";
 import { glmToUsd, useGlmUsdPrice } from "../../lib/prices";
 import type { DashboardData } from "../../lib/useProviderData";
 
@@ -32,8 +32,9 @@ export function StreamsPage({
 }) {
   const [tab, setTab] = React.useState<StreamTab>("active");
   const glmUsd = useGlmUsdPrice();
+  const nowSeconds = useStreamNowSeconds();
   if (loading && !data) return <LoadingGrid />;
-  const streams = data?.streams ?? [];
+  const streams = projectStreams(data?.streams ?? [], nowSeconds);
   const totals = streamsTotals(streams);
   const totalEarnedUsd = glmToUsd(totals.vested, glmUsd);
   const activeStreams = streams.filter((stream) => (stream.payment_state ?? "active") === "active");
@@ -49,10 +50,10 @@ export function StreamsPage({
       <EndpointErrors errors={data?.errors ?? {}} />
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Total Earned (USD)" value={formatCurrency(totalEarnedUsd)} detail={glmUsd == null ? "Waiting for GLM/USD quote" : "Converted from stream GLM"} icon={<RiMoneyDollarCircleLine className="h-5 w-5" />} tone="success" />
-        <StatCard label="Total Earned (GLM)" value={formatGlm(totals.vested)} detail="From stream vested values" icon={<RiStackLine className="h-5 w-5" />} tone="primary" />
+        <StatCard label="Total earned (USD)" value={formatCurrency(totalEarnedUsd)} detail={glmUsd == null ? "Waiting for GLM/USD quote" : "Converted from stream GLM"} icon={<RiMoneyDollarCircleLine className="h-5 w-5" />} tone="success" />
+        <StatCard label="Total earned (GLM)" value={formatGlm(totals.vested, 4)} detail="Earned by elapsed stream time" icon={<RiStackLine className="h-5 w-5" />} tone="primary" />
         <StatCard label="Active Streams" value={activeStreams.length} detail={`${streams.length} mapped`} icon={<RiLineChartLine className="h-5 w-5" />} tone="primary" />
-        <StatCard label="Withdrawable (GLM)" value={formatGlm(totals.withdrawable)} icon={<RiAddLine className="h-5 w-5" />} tone="success" />
+        <StatCard label="Withdrawable (GLM)" value={formatGlm(totals.withdrawable, 4)} icon={<RiAddLine className="h-5 w-5" />} tone="success" />
       </div>
 
       <Tabs<StreamTab>
@@ -113,13 +114,13 @@ export function StreamsPage({
               },
               {
                 key: "vested",
-                header: "Vested (GLM)",
-                render: (stream) => formatGlm(weiToToken(stream.computed.vested_wei)),
+                header: "Total earned (GLM)",
+                render: (stream) => formatGlm(weiToToken(stream.computed.vested_wei), 4),
               },
               {
                 key: "withdrawable",
                 header: "Withdrawable (GLM)",
-                render: (stream) => formatGlm(weiToToken(stream.computed.withdrawable_wei)),
+                render: (stream) => formatGlm(weiToToken(stream.computed.withdrawable_wei), 4),
               },
               {
                 key: "spark",
@@ -142,16 +143,7 @@ export function StreamsPage({
         </CardBody>
       </Card>
 
-      <div className="grid gap-4 xl:grid-cols-[1fr_1fr]">
-        <Card>
-          <CardBody>
-            <div className="mb-4">
-              <h2 className="text-base font-semibold text-text-primary">Earnings (GLM)</h2>
-              <p className="mt-1 text-2xl font-semibold">{formatGlm(totals.vested)}</p>
-            </div>
-            <LineAreaChart data={points} height={260} />
-          </CardBody>
-        </Card>
+      <div className="grid gap-4">
         <Card>
           <CardBody>
             <h2 className="text-base font-semibold text-text-primary">Top Earning VMs</h2>
@@ -164,7 +156,7 @@ export function StreamsPage({
                   <div key={stream.vm_id} className="flex items-center justify-between gap-4 border-b border-border pb-3">
                     <span className="font-medium text-text-primary">{stream.vm_id}</span>
                     <span className="text-text-secondary">
-                      {formatGlm(weiToToken(stream.computed.vested_wei))}
+                      {formatGlm(weiToToken(stream.computed.vested_wei), 4)}
                     </span>
                   </div>
                 ))}
