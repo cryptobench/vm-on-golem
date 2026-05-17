@@ -305,8 +305,8 @@ uses the `hoodi` payments profile and auto-loads the StreamPayment contract from
 
 Optional background automation (all disabled by default):
 
-- `STREAM_MIN_REMAINING_SECONDS` — minimum remaining runway to keep a VM running (default 0)
-- `STREAM_MONITOR_ENABLED` — stop VMs when remaining runway < threshold (default true)
+- `STREAM_MIN_REMAINING_SECONDS` — legacy compatibility setting; expiry is now driven by contract `streamState`
+- `STREAM_MONITOR_ENABLED` — delete VMs once their payment stream is expired (default true)
 - `STREAM_MONITOR_INTERVAL_SECONDS` — how frequently to check runway (default 30)
 - `STREAM_WITHDRAW_ENABLED` — periodically withdraw vested funds (default false)
 - `STREAM_WITHDRAW_INTERVAL_SECONDS` — how often to attempt withdrawals (default 1800)
@@ -315,9 +315,10 @@ Optional background automation (all disabled by default):
 Implementation notes:
 
 - The provider exposes `GET /api/v1/provider/info` returning `provider_id`, `stream_payment_address`, and `glm_token_address`.
-- On successful VM creation with a valid `stream_id`, the provider persists a VM→stream mapping in `streams.json`. This enables the background monitor to stop VMs with low remaining runway and to withdraw vested funds according to configured intervals.
+- On successful VM creation with a valid `stream_id`, the provider persists a VM→stream mapping in `streams.json`. This enables the background monitor to delete VMs once streams pass `stopTime + 30s` and to withdraw vested funds according to configured intervals.
 - Stopping a VM only changes power state; the stream mapping stays active and billing continues.
-- When a VM is deleted or already gone, the VM→stream mapping is cleaned up after provider-side teardown. Requestor-initiated paid termination should settle the stream before delete.
+- Expired streams remain withdrawable by the provider. VM compute is removed after the 30-second top-up grace period without forcing immediate withdrawal.
+- When a VM is deleted or already gone, the VM→stream mapping is marked terminal after provider-side teardown. Requestor-initiated paid termination should settle the stream before delete.
 
 When enabled, the provider verifies each VM creation request’s `stream_id` and refuses to start the VM if:
 

@@ -1,4 +1,5 @@
 import asyncio
+from types import SimpleNamespace
 
 import pytest
 
@@ -596,16 +597,33 @@ class LeaseTerminationVMService(LifecycleVMService):
     def __init__(self):
         super().__init__()
         self.deleted = []
+        self.stopped = []
 
     async def delete_vm(self, vm_id: str) -> None:
         self.deleted.append(vm_id)
 
+    async def stop_vm(self, vm_id: str):
+        self.stopped.append(vm_id)
+        return VMInfo(
+            id=vm_id,
+            name=vm_id,
+            status=VMStatus.STOPPED,
+            resources=VMResources(cpu=1, memory=1, storage=10),
+        )
+
 
 class LeaseTerminationStreamStatus:
-    def __init__(self, *, chain_terminated=False, verify_terminated=True):
+    def __init__(
+        self,
+        *,
+        chain_terminated=False,
+        verify_terminated=True,
+        payment_state="expired",
+        current_stream_id=123,
+    ):
         self.record = {
             "vm_id": "vm-a",
-            "stream_id": 123,
+            "stream_id": current_stream_id,
             "requestor_address": "0x3333333333333333333333333333333333333333",
             "state": "active",
             "terminated_by": None,
@@ -616,6 +634,8 @@ class LeaseTerminationStreamStatus:
         }
         self.chain_terminated = chain_terminated
         self.verify_terminated = verify_terminated
+        self.payment_state = payment_state
+        self.stream_status_calls = []
 
     async def is_payment_required(self):
         return True
@@ -644,6 +664,13 @@ class LeaseTerminationStreamStatus:
     async def set_vm_stream_cleanup_state(self, vm_id, cleanup_state):
         self.record["cleanup_state"] = cleanup_state
         return dict(self.record)
+
+    async def get_vm_stream_status(self, vm_id):
+        self.stream_status_calls.append(vm_id)
+        return SimpleNamespace(
+            stream_id=self.record["stream_id"],
+            payment_state=self.payment_state,
+        )
 
     async def _stream_record(self, vm_id):
         return dict(self.record)
@@ -733,5 +760,51 @@ async def test_requestor_delete_rejects_active_stream_before_vm_delete():
     with pytest.raises(InvalidStreamError):
         await service.delete_vm("vm-a", "0x3333333333333333333333333333333333333333")
 
+    assert vm_service.deleted == []
+    assert stream_status.record["state"] == "active"
+
+
+@pytest.mark.asyncio
+async def test_expired_lease_cleanup_rechecks_stream_then_deletes_vm():
+    vm_service = LeaseTerminationVMService()
+    stream_status = LeaseTerminationStreamStatus(payment_state="expired")
+    webhooks = CapturingWebhookService()
+    service = VMApplicationService(
+        vm_service=vm_service,
+        settings={},
+        stream_status_service=stream_status,
+        job_store=FakeJobStore(),
+        webhook_service=webhooks,
+    )
+
+    result = await service.expire_vm_lease("vm-a", 123)
+
+    assert result is True
+    assert stream_status.stream_status_calls == ["vm-a"]
+    assert vm_service.stopped == ["vm-a"]
+    assert vm_service.deleted == ["vm-a"]
+    assert stream_status.record["state"] == "terminated"
+    assert stream_status.record["terminated_by"] == "provider"
+    assert stream_status.record["termination_reason"] == "stream_expired"
+    assert stream_status.record["cleanup_state"] == "completed"
+    assert webhooks.events[0][0] == "vm.deleted"
+
+
+@pytest.mark.asyncio
+async def test_expired_lease_cleanup_skips_when_top_up_moved_stream_to_grace():
+    vm_service = LeaseTerminationVMService()
+    stream_status = LeaseTerminationStreamStatus(payment_state="grace")
+    service = VMApplicationService(
+        vm_service=vm_service,
+        settings={},
+        stream_status_service=stream_status,
+        job_store=FakeJobStore(),
+    )
+
+    result = await service.expire_vm_lease("vm-a", 123)
+
+    assert result is False
+    assert stream_status.stream_status_calls == ["vm-a"]
+    assert vm_service.stopped == []
     assert vm_service.deleted == []
     assert stream_status.record["state"] == "active"

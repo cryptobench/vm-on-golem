@@ -8,10 +8,17 @@ logger = setup_logger(__name__)
 
 class StreamMonitor:
     def __init__(
-        self, *, stream_map, vm_service, reader, client, settings, webhook_service=None
+        self,
+        *,
+        stream_map,
+        vm_application_service,
+        reader,
+        client,
+        settings,
+        webhook_service=None,
     ):
         self.stream_map = stream_map
-        self.vm_service = vm_service
+        self.vm_application_service = vm_application_service
         self.reader = reader
         self.client = client
         self.settings = settings
@@ -96,24 +103,17 @@ class StreamMonitor:
                             "stream terminated",
                             {"remaining_seconds": remaining},
                         )
-                        await self.stream_map.mark_terminated(
-                            vm_id,
-                            terminated_by="requestor",
-                            termination_reason="requestor_terminated",
-                            settlement_tx_hash=None,
-                            cleanup_state="not_started",
-                        )
                         try:
-                            await self.vm_service.delete_vm(vm_id)
+                            await self.vm_application_service.cleanup_requestor_terminated_stream(
+                                vm_id, stream_id
+                            )
                         except Exception as e:
-                            await self.stream_map.set_cleanup_state(vm_id, "failed")
                             logger.error(
                                 "VM cleanup failed after stream termination",
                                 extra={"vm_id": vm_id, "stream_id": int(stream_id)},
                                 exc_info=True,
                             )
                             continue
-                        await self.stream_map.set_cleanup_state(vm_id, "completed")
                         continue
 
                     if remaining == 0:
@@ -123,9 +123,25 @@ class StreamMonitor:
                             "stream exhausted",
                             {"remaining_seconds": remaining},
                         )
-                        logger.error(
-                            "Payment stream exhausted but not terminated; VM cleanup "
-                            "requires on-chain stream termination",
+                        try:
+                            cleaned = await self.vm_application_service.expire_vm_lease(
+                                vm_id, stream_id
+                            )
+                        except Exception:
+                            logger.error(
+                                "Expired stream VM cleanup failed",
+                                extra={"vm_id": vm_id, "stream_id": int(stream_id)},
+                                exc_info=True,
+                            )
+                            continue
+                        if cleaned:
+                            logger.info(
+                                "Expired stream VM cleanup completed",
+                                extra={"vm_id": vm_id, "stream_id": int(stream_id)},
+                            )
+                            continue
+                        logger.info(
+                            "Payment stream has no remaining runway but is still in grace",
                             extra={"vm_id": vm_id, "stream_id": int(stream_id)},
                         )
                         continue

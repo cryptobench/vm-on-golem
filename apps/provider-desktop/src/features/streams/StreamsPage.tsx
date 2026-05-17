@@ -13,7 +13,12 @@ import {
 import { RiAddLine, RiLineChartLine, RiMoneyDollarCircleLine, RiStackLine } from "@remixicon/react";
 import { EndpointErrors, LoadingGrid } from "../../components/StateViews";
 import type { NavigateTarget } from "../../components/types";
-import { streamEarningsPoints, streamsTotals } from "../../lib/derived";
+import {
+  paymentStateLabel,
+  paymentStateTone,
+  streamEarningsPoints,
+  streamsTotals,
+} from "../../lib/derived";
 import { EMPTY_VALUE, formatCurrency, formatGlm, formatDuration, weiToToken } from "../../lib/format";
 import { projectStreams, useStreamNowSeconds } from "../../lib/liveStreamValues";
 import { glmToUsd, useGlmUsdPrice } from "../../lib/prices";
@@ -99,6 +104,16 @@ export function StreamsPage({
                   <StatusBadge
                     label={stream.verified ? "Verified" : "Issue"}
                     tone={stream.verified ? "success" : "danger"}
+                  />
+                ),
+              },
+              {
+                key: "state",
+                header: "Payment",
+                render: (stream) => (
+                  <StatusBadge
+                    label={paymentStateLabel(stream.payment_state) ?? "Active"}
+                    tone={paymentStateTone(stream.payment_state)}
                   />
                 ),
               },

@@ -4,7 +4,6 @@ import { RentalsEmptyState } from "../../components/rentals/RentalsEmptyState";
 import { RentalsToolbar } from "../../components/rentals/RentalsToolbar";
 import { RentalsTable } from "../../components/rentals/RentalsTable";
 import { RentalsTableSkeleton } from "../../components/rentals/RentalsTableSkeleton";
-import { Alert } from "@golem/ui";
 import { PageHeader } from "@golem/ui";
 import { useRentalsScreen } from "./useRentalsScreen";
 
@@ -28,12 +27,6 @@ export default function RentalsPage() {
         }
       />
 
-      {screen.error && (
-        <Alert tone="danger" className="rounded-lg">
-          {screen.error}
-        </Alert>
-      )}
-
       {!screen.mounted || screen.rentalsLoading ? (
         <RentalsTableSkeleton />
       ) : screen.hasVisibleRows ? (
@@ -44,12 +37,7 @@ export default function RentalsPage() {
               subtitle="Running, stopped, suspended, and provisioning machines."
               count={screen.active.length}
               vms={screen.active}
-              busyId={screen.busyId}
               timeColumnLabel="Stream Time Left"
-              onCopySSH={screen.copySSH}
-              onStart={screen.start}
-              onStop={screen.stop}
-              onDestroy={screen.destroy}
             />
           )}
           {screen.showTerminated && screen.terminated.length > 0 && (
@@ -58,10 +46,8 @@ export default function RentalsPage() {
               subtitle="These VMs can no longer be started."
               count={screen.terminated.length}
               vms={screen.terminated}
-              busyId={screen.busyId}
               timeColumnLabel="Terminated At"
               terminated
-              onDestroy={screen.destroy}
             />
           )}
         </div>

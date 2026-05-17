@@ -128,6 +128,9 @@ async def test_initialize_does_not_report_or_create_proxy_for_stopped_vm(
     multipass_adapter._run_multipass.return_value = mock_process
     multipass_adapter.proxy_manager.get_port = MagicMock(return_value=None)
     multipass_adapter.proxy_manager.add_vm = AsyncMock(return_value=True)
+    multipass_adapter.monitoring_repo.get_guest_agent_state = MagicMock(
+        return_value=None
+    )
     multipass_adapter._get_vm_info = AsyncMock(
         return_value={
             "state": "Stopped",
@@ -142,6 +145,36 @@ async def test_initialize_does_not_report_or_create_proxy_for_stopped_vm(
         await multipass_adapter.initialize()
 
     multipass_adapter.proxy_manager.add_vm.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_initialize_restores_missing_proxy_from_guest_state_when_multipass_has_no_ip(
+    multipass_adapter,
+):
+    mock_process = MagicMock()
+    mock_process.stdout = "multipass 1.16.1+mac"
+    multipass_adapter._run_multipass.return_value = mock_process
+    multipass_adapter.proxy_manager.get_port = MagicMock(return_value=None)
+    multipass_adapter.proxy_manager.add_vm = AsyncMock(return_value=True)
+    multipass_adapter.monitoring_repo.get_guest_agent_state = MagicMock(
+        return_value=guest_state("test-vm", source_ip="192.168.2.19")
+    )
+    multipass_adapter._get_vm_info = AsyncMock(
+        return_value={
+            "state": "Unknown",
+            "ipv4": [],
+            "cpu_count": "1",
+            "memory": {"total": 2147483648},
+            "disks": {"sda1": {"total": 21474836480}},
+        }
+    )
+
+    with patch.object(multipass_adapter, "_check_host_virtualization_compatibility"):
+        await multipass_adapter.initialize()
+
+    multipass_adapter.proxy_manager.add_vm.assert_awaited_once_with(
+        "multipass-vm-name", "192.168.2.19"
+    )
 
 
 @pytest.mark.asyncio

@@ -14,6 +14,15 @@ interface IERC20 {
  *         provider-signed lease quote.
  */
 contract StreamPayment {
+    uint128 public constant GRACE_PERIOD_SECONDS = 30;
+
+    enum StreamState {
+        Active,
+        Grace,
+        Expired,
+        Terminated
+    }
+
     bytes32 private constant LEASE_QUOTE_TYPEHASH = keccak256(
         "LeaseQuote(address recipient,uint256 deposit,uint128 ratePerSecond,bytes32 leaseId,bytes32 termsHash,uint128 quoteExpiresAt)"
     );
@@ -132,6 +141,21 @@ contract StreamPayment {
         return vested;
     }
 
+    function _streamState(Stream memory s) internal view returns (StreamState) {
+        if (s.recipient == address(0)) return StreamState.Terminated;
+        if (block.timestamp < s.stopTime) return StreamState.Active;
+        if (block.timestamp < uint256(s.stopTime) + GRACE_PERIOD_SECONDS) return StreamState.Grace;
+        return StreamState.Expired;
+    }
+
+    function streamState(uint256 streamId) external view returns (string memory) {
+        StreamState state = _streamState(streams[streamId]);
+        if (state == StreamState.Active) return "active";
+        if (state == StreamState.Grace) return "grace";
+        if (state == StreamState.Expired) return "expired";
+        return "terminated";
+    }
+
     function withdraw(uint256 streamId) external {
         Stream storage s = streams[streamId];
         require(s.recipient != address(0), "no-stream");
@@ -175,6 +199,8 @@ contract StreamPayment {
     function topUp(uint256 streamId, uint256 amount) external {
         Stream storage s = streams[streamId];
         require(s.recipient != address(0), "no-stream");
+        StreamState state = _streamState(s);
+        require(state == StreamState.Active || state == StreamState.Grace, "stream expired");
         require(msg.sender == s.sender, "not sender");
         require(amount > 0, "amount=0");
         require(s.token == glmToken, "token != GLM");

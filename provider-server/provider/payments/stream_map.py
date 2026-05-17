@@ -7,7 +7,9 @@ from provider.utils.time import utc_now
 
 StreamState = Literal["active", "terminated"]
 TerminationActor = Literal["requestor", "provider"]
-TerminationReason = Literal["requestor_terminated", "provider_terminated"]
+TerminationReason = Literal[
+    "requestor_terminated", "provider_terminated", "stream_expired"
+]
 CleanupState = Literal["not_started", "completed", "failed"]
 
 REQUIRED_RECORD_KEYS = {
@@ -195,6 +197,7 @@ class StreamMap:
                 if raw["termination_reason"] not in {
                     "requestor_terminated",
                     "provider_terminated",
+                    "stream_expired",
                 }:
                     raise ValueError(
                         f"stream map {self._path} terminated entry {vm_id} has bad "

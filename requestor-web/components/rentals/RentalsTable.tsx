@@ -1,22 +1,18 @@
 "use client";
 
 import React from "react";
-import type { Rental } from "../../lib/api";
 import type { RequestorVmModel } from "../../lib/requestorVmModel";
 import { RentalRowWithData } from "./RentalRowWithData";
 
 const HEADERS = [
   "VM Name",
   "Status",
-  "VM ID",
   "Provider ID",
   "Country",
-  "SSH Endpoint",
   "Platform",
   "vCPU",
   "RAM",
   "Storage",
-  "Stream ID",
 ];
 
 type RentalsTableProps = {
@@ -24,13 +20,8 @@ type RentalsTableProps = {
   subtitle: string;
   count: number;
   vms: RequestorVmModel[];
-  busyId: string | null;
   timeColumnLabel: string;
   terminated?: boolean;
-  onCopySSH?: (rental: Rental) => void;
-  onStart?: (rental: Rental) => void;
-  onStop?: (rental: Rental) => void;
-  onDestroy?: (rental: Rental) => void;
 };
 
 export function RentalsTable({
@@ -38,13 +29,8 @@ export function RentalsTable({
   subtitle,
   count,
   vms,
-  busyId,
   timeColumnLabel,
   terminated,
-  onCopySSH,
-  onStart,
-  onStop,
-  onDestroy,
 }: RentalsTableProps) {
   return (
     <section className="overflow-hidden rounded-lg border border-border bg-surface shadow-soft">
@@ -71,9 +57,6 @@ export function RentalsTable({
               <th className="th whitespace-nowrap py-3 normal-case tracking-normal">
                 {timeColumnLabel}
               </th>
-              <th className="th whitespace-nowrap py-3 text-right normal-case tracking-normal">
-                Actions
-              </th>
             </tr>
           </thead>
           <tbody>
@@ -81,12 +64,7 @@ export function RentalsTable({
               <RentalRowWithData
                 key={vm.rental.vm_id}
                 vm={vm}
-                busy={busyId === vm.rental.vm_id}
                 terminated={terminated}
-                onCopySSH={onCopySSH}
-                onStart={onStart}
-                onStop={onStop}
-                onDestroy={onDestroy}
               />
             ))}
           </tbody>

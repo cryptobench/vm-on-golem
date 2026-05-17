@@ -68,3 +68,53 @@ test("requestor VM model uses reachable provider status and access", () => {
   assert.equal(model.sshEndpoint, "192.168.50.48:50805");
   assert.equal(model.remainingSeconds, 60);
 });
+
+test("requestor VM model surfaces stream grace as payment warning", () => {
+  const model = buildRequestorVmModel(rental, {
+    provider: null,
+    providerError: null,
+    safeStatus: {
+      exists: true,
+      data: {
+        status: "running",
+      },
+    },
+    access: null,
+    accessError: null,
+    stream: {
+      payment_state: "grace",
+      computed: { remaining_seconds: 0 },
+    },
+    streamError: null,
+  });
+
+  assert.equal(model.lifecycle.status, "payment_grace");
+  assert.equal(model.lifecycle.label, "Payment grace");
+  assert.equal(model.lifecycle.tone, "warning");
+  assert.equal(model.paymentState, "grace");
+});
+
+test("requestor VM model surfaces expired streams as terminal payment state", () => {
+  const model = buildRequestorVmModel(rental, {
+    provider: null,
+    providerError: null,
+    safeStatus: {
+      exists: true,
+      data: {
+        status: "running",
+      },
+    },
+    access: null,
+    accessError: null,
+    stream: {
+      payment_state: "expired",
+      computed: { remaining_seconds: 0 },
+    },
+    streamError: null,
+  });
+
+  assert.equal(model.lifecycle.status, "payment_expired");
+  assert.equal(model.lifecycle.label, "Payment expired");
+  assert.equal(model.lifecycle.tone, "danger");
+  assert.equal(model.paymentState, "expired");
+});

@@ -13,6 +13,12 @@ from .errors import (
 from .lease_quote_service import LeaseQuoteService
 
 ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
+STREAM_GRACE_PERIOD_SECONDS = 30
+ACTIVE_PAYMENT_STATE = "active"
+GRACE_PAYMENT_STATE = "grace"
+EXPIRED_PAYMENT_STATE = "expired"
+TERMINATED_PAYMENT_STATE = "terminated"
+INVALID_PAYMENT_STATE = "invalid"
 logger = logging.getLogger(__name__)
 
 
@@ -121,7 +127,11 @@ class StreamStatusService:
             ),
             (stream["sender"].lower() == requestor_address.lower(), "sender mismatch"),
             (stream["token"].lower() == expected_token.lower(), "token mismatch"),
-            (int(stream["stopTime"]) > now, "stream expired"),
+            (
+                stream_payment_state(reader, payment.stream_id, stream, now, True)
+                == ACTIVE_PAYMENT_STATE,
+                "stream expired",
+            ),
             (
                 int(stream["ratePerSecond"]) == int(payment.rate_per_second_wei),
                 "stream rate mismatch",
@@ -219,7 +229,14 @@ class StreamStatusService:
 
     async def list_stream_statuses(self) -> list[StreamStatus]:
         reader = self._reader()
-        items = await self.stream_map.active_items()
+        records = getattr(self.stream_map, "records", None)
+        if records is not None:
+            items = {
+                vm_id: int(record["stream_id"])
+                for vm_id, record in (await records()).items()
+            }
+        else:
+            items = await self.stream_map.active_items()
         return [
             self._build_status(reader, vm_id, int(stream_id))
             for vm_id, stream_id in items.items()
@@ -298,6 +315,8 @@ class StreamStatusService:
         withdrawable = max(int(vested) - int(stream["withdrawn"]), 0)
         remaining = max(int(stream["stopTime"]) - now, 0)
 
+        payment_state = stream_payment_state(reader, stream_id, stream, now, ok)
+
         return StreamStatus(
             vm_id=vm_id,
             stream_id=stream_id,
@@ -310,7 +329,7 @@ class StreamStatusService:
             ),
             verified=bool(ok),
             reason=str(reason),
-            payment_state=_payment_state(stream, now, ok),
+            payment_state=payment_state,
         )
 
 
@@ -321,13 +340,40 @@ def _normalize_bytes32(value: str) -> str:
 
 def _payment_state(stream: dict, now: int, verified: bool) -> str:
     if _stream_is_terminated(stream):
-        return "terminated"
+        return TERMINATED_PAYMENT_STATE
     if int(stream["stopTime"]) <= now:
-        return "expired"
+        if now < int(stream["stopTime"]) + STREAM_GRACE_PERIOD_SECONDS:
+            return GRACE_PAYMENT_STATE
+        return EXPIRED_PAYMENT_STATE
     if verified:
-        return "active"
-    return "invalid"
+        return ACTIVE_PAYMENT_STATE
+    return INVALID_PAYMENT_STATE
 
 
 def _stream_is_terminated(stream: dict) -> bool:
     return str(stream["recipient"]).lower() == ZERO_ADDRESS
+
+
+def stream_payment_state(
+    reader: Any, stream_id: int, stream: dict, now: int, verified: bool
+) -> str:
+    stream_state = getattr(reader, "stream_state", None)
+    if stream_state is None:
+        return _payment_state(stream, now, verified)
+    try:
+        state = str(stream_state(int(stream_id))).lower()
+    except Exception:
+        logger.error(
+            "Payment stream state lookup failed",
+            extra={"stream_id": stream_id},
+            exc_info=True,
+        )
+        raise
+    if state in {
+        ACTIVE_PAYMENT_STATE,
+        GRACE_PAYMENT_STATE,
+        EXPIRED_PAYMENT_STATE,
+        TERMINATED_PAYMENT_STATE,
+    }:
+        return state
+    return INVALID_PAYMENT_STATE

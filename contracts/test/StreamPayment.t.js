@@ -106,6 +106,60 @@ describe("StreamPayment", function () {
     expect(s1.stopTime).to.be.greaterThan(s0.stopTime);
   });
 
+  it("reports active, grace, expired, and terminated stream states", async () => {
+    const { sender, recipient, glm, sp } = await fixture();
+    const { streamId } = await createGlmStream(sender, recipient, glm, sp, 10n);
+
+    expect(await sp.streamState(streamId)).to.equal("active");
+
+    await ethers.provider.send("evm_increaseTime", [10]);
+    await ethers.provider.send("evm_mine");
+    expect(await sp.streamState(streamId)).to.equal("grace");
+
+    await ethers.provider.send("evm_increaseTime", [30]);
+    await ethers.provider.send("evm_mine");
+    expect(await sp.streamState(streamId)).to.equal("expired");
+
+    await sp.connect(sender).terminate(streamId);
+    expect(await sp.streamState(streamId)).to.equal("terminated");
+  });
+
+  it("allows topUp during grace but rejects topUp after grace", async () => {
+    const { sender, recipient, glm, sp } = await fixture();
+    const { streamId, deposit } = await createGlmStream(sender, recipient, glm, sp, 10n);
+
+    await ethers.provider.send("evm_increaseTime", [10]);
+    await ethers.provider.send("evm_mine");
+    expect(await sp.streamState(streamId)).to.equal("grace");
+
+    await glm.connect(sender).approve(await sp.getAddress(), deposit);
+    await sp.connect(sender).topUp(streamId, deposit);
+    expect(await sp.streamState(streamId)).to.equal("active");
+
+    await ethers.provider.send("evm_increaseTime", [41]);
+    await ethers.provider.send("evm_mine");
+    expect(await sp.streamState(streamId)).to.equal("expired");
+
+    await glm.connect(sender).approve(await sp.getAddress(), deposit);
+    await expect(sp.connect(sender).topUp(streamId, deposit)).to.be.revertedWith(
+      "stream expired"
+    );
+  });
+
+  it("allows recipient withdraw after expiry", async () => {
+    const { sender, recipient, glm, sp } = await fixture();
+    const { streamId } = await createGlmStream(sender, recipient, glm, sp, 10n);
+
+    await ethers.provider.send("evm_increaseTime", [40]);
+    await ethers.provider.send("evm_mine");
+    expect(await sp.streamState(streamId)).to.equal("expired");
+
+    const before = await glm.balanceOf(recipient.address);
+    await sp.connect(recipient).withdraw(streamId);
+    const after = await glm.balanceOf(recipient.address);
+    expect(after - before).to.equal(ethers.parseEther("10"));
+  });
+
   it("reverts invalid params", async () => {
     const { sender, recipient, glm, sp } = await fixture();
     await glm.connect(sender).approve(await sp.getAddress(), ethers.parseEther("1"));

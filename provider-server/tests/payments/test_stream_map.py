@@ -28,6 +28,17 @@ async def test_stream_map_uses_structured_active_and_terminal_records(tmp_path):
     assert await stream_map.get_owner("vm-a") == "0xrequestor"
     assert await stream_map.active_items() == {}
 
+    await stream_map.set("vm-b", 43, "0xrequestor")
+    expired_record = await stream_map.mark_terminated(
+        "vm-b",
+        terminated_by="provider",
+        termination_reason="stream_expired",
+        settlement_tx_hash=None,
+        cleanup_state="completed",
+    )
+
+    assert expired_record["termination_reason"] == "stream_expired"
+
 
 def test_stream_map_rejects_legacy_unstructured_entries(tmp_path):
     path = tmp_path / "streams.json"

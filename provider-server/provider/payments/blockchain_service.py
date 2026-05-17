@@ -126,6 +126,9 @@ class StreamPaymentReader:
             return False, "stream expired"
         return True, "ok"
 
+    def stream_state(self, stream_id: int) -> str:
+        return str(self.contract.functions.streamState(int(stream_id)).call())
+
     # Reader should remain read-only; no terminate here
 
 

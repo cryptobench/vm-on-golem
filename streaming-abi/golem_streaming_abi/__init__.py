@@ -154,6 +154,19 @@ STREAM_PAYMENT_ABI = [
         "type": "event"
     },
     {
+        "inputs": [],
+        "name": "GRACE_PERIOD_SECONDS",
+        "outputs": [
+            {
+                "internalType": "uint128",
+                "name": "",
+                "type": "uint128"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
         "inputs": [
             {
                 "internalType": "address",
@@ -223,6 +236,25 @@ STREAM_PAYMENT_ABI = [
                 "internalType": "uint256",
                 "name": "",
                 "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "streamId",
+                "type": "uint256"
+            }
+        ],
+        "name": "streamState",
+        "outputs": [
+            {
+                "internalType": "string",
+                "name": "",
+                "type": "string"
             }
         ],
         "stateMutability": "view",

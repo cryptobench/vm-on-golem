@@ -2,6 +2,7 @@ import React from "react";
 import type { StreamComputed, StreamStatus } from "./types";
 
 const TICK_MS = 1_000;
+const STREAM_GRACE_SECONDS = 30;
 
 export function useStreamNowSeconds() {
   const [nowSeconds, setNowSeconds] = React.useState(() => currentUnixSeconds());
@@ -23,8 +24,24 @@ export function projectStreams(streams: StreamStatus[], nowSeconds: number) {
 export function projectStream(stream: StreamStatus, nowSeconds: number): StreamStatus {
   return {
     ...stream,
+    payment_state: projectPaymentState(stream, nowSeconds),
     computed: projectStreamComputed(stream, nowSeconds),
   };
+}
+
+function projectPaymentState(stream: StreamStatus, nowSeconds: number) {
+  if (stream.payment_state === "terminated" || stream.payment_state === "expired") {
+    return stream.payment_state;
+  }
+  const now = Number.isFinite(nowSeconds)
+    ? Math.max(nowSeconds, stream.computed.now)
+    : stream.computed.now;
+  if (stream.chain.recipient.toLowerCase() === "0x0000000000000000000000000000000000000000") {
+    return "terminated";
+  }
+  if (now >= stream.chain.stopTime + STREAM_GRACE_SECONDS) return "expired";
+  if (now >= stream.chain.stopTime) return "grace";
+  return stream.payment_state ?? "active";
 }
 
 function projectStreamComputed(

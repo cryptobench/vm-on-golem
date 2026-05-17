@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 import logging
 import ntpath
 import os
@@ -45,12 +46,14 @@ class MonitoringService:
         vm_service: Any,
         proxy_manager: Any,
         webhook_service: Any = None,
+        event_broadcaster: Any = None,
     ):
         self.settings = settings
         self.repo = repo
         self.vm_service = vm_service
         self.proxy_manager = proxy_manager
         self.webhook_service = webhook_service
+        self.event_broadcaster = event_broadcaster
         self._task: Optional[asyncio.Task] = None
         self._host_live_task: Optional[asyncio.Task] = None
         self._stop_event = asyncio.Event()
@@ -116,6 +119,7 @@ class MonitoringService:
                 agent_version=payload.agent_version,
                 last_seen_at=timestamp,
             )
+            await self._restore_missing_proxy_from_guest_sample(vm_id, source_ip)
         samples: list[MetricSample] = [
             MetricSample(
                 scope=MetricScope.VM,
@@ -202,6 +206,77 @@ class MonitoringService:
             next_interval_seconds=self.guest_sample_interval(vm_id),
             live_mode=self.is_vm_live(vm_id),
         )
+
+    async def _restore_missing_proxy_from_guest_sample(
+        self, vm_id: str, source_ip: str
+    ) -> None:
+        """Recover a missing SSH listener when the guest reports its current IP."""
+        name_mapper = getattr(self.vm_service, "name_mapper", None)
+        get_multipass_name = getattr(name_mapper, "get_multipass_name", None)
+        if get_multipass_name is None:
+            return
+
+        try:
+            result = get_multipass_name(vm_id)
+            multipass_name = await result if inspect.isawaitable(result) else result
+        except Exception:
+            logger.warning(
+                "Failed to resolve VM mapping from guest metrics sample",
+                extra={"vm_id": vm_id, "source_ip": source_ip},
+                exc_info=True,
+            )
+            return
+
+        if not multipass_name:
+            logger.warning(
+                "Guest metrics sample has no VM mapping for SSH proxy recovery",
+                extra={"vm_id": vm_id, "source_ip": source_ip},
+            )
+            return
+        if not isinstance(multipass_name, str):
+            return
+
+        try:
+            if self.proxy_manager.get_port(multipass_name) is not None:
+                return
+            result = self.proxy_manager.add_vm(multipass_name, source_ip)
+            restored = await result if inspect.isawaitable(result) else result
+        except Exception:
+            logger.error(
+                "Failed to restore missing SSH proxy from guest metrics sample",
+                extra={
+                    "vm_id": vm_id,
+                    "multipass_name": multipass_name,
+                    "source_ip": source_ip,
+                },
+                exc_info=True,
+            )
+            return
+
+        if not restored:
+            logger.error(
+                "SSH proxy recovery from guest metrics sample was rejected",
+                extra={
+                    "vm_id": vm_id,
+                    "multipass_name": multipass_name,
+                    "source_ip": source_ip,
+                },
+            )
+            return
+
+        logger.info(
+            "Restored missing SSH proxy from guest metrics sample",
+            extra={
+                "vm_id": vm_id,
+                "multipass_name": multipass_name,
+                "source_ip": source_ip,
+            },
+        )
+        if self.event_broadcaster is not None:
+            await self.event_broadcaster.publish_provider(["vms", "summary"])
+            await self.event_broadcaster.publish_vm(
+                vm_id, ["access", "lifecycle", "metrics_live"]
+            )
 
     def guest_agent_state(self, vm_id: str) -> GuestAgentState | None:
         self.repo.init_schema()

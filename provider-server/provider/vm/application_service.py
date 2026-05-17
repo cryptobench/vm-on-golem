@@ -7,7 +7,11 @@ from typing import Any
 from provider.errors import ConflictError, ExternalServiceError, NotFoundError
 from provider.payments.domain import LeasePayment
 from provider.payments.errors import InvalidStreamError
-from provider.payments.stream_status_service import ZERO_ADDRESS, StreamStatusService
+from provider.payments.stream_status_service import (
+    EXPIRED_PAYMENT_STATE,
+    ZERO_ADDRESS,
+    StreamStatusService,
+)
 from provider.webhooks.domain import WebhookEventType
 
 from .domain import CreateVMCommand, CreateVMJobResult, LeaseTerminationResult
@@ -974,6 +978,64 @@ class VMApplicationService:
             )
         await self._delete_terminated_vm(vm_id)
 
+    async def expire_vm_lease(self, vm_id: str, stream_id: int) -> bool:
+        status = await self.stream_status_service.get_vm_stream_status(vm_id)
+        if int(status.stream_id) != int(stream_id):
+            logger.info(
+                "Skipping lease expiry cleanup for replaced stream",
+                extra={
+                    "vm_id": vm_id,
+                    "expected_stream_id": int(stream_id),
+                    "current_stream_id": int(status.stream_id),
+                },
+            )
+            return False
+        if status.payment_state != EXPIRED_PAYMENT_STATE:
+            logger.info(
+                "Skipping lease expiry cleanup for non-expired stream",
+                extra={
+                    "vm_id": vm_id,
+                    "stream_id": int(stream_id),
+                    "payment_state": status.payment_state,
+                },
+            )
+            return False
+
+        try:
+            await self.vm_service.stop_vm(vm_id)
+        except VMNotFoundError:
+            logger.info("Expired lease VM already absent", extra={"vm_id": vm_id})
+        except Exception as exc:
+            logger.error(
+                "Failed to stop VM for expired lease",
+                extra={"vm_id": vm_id, "stream_id": int(stream_id)},
+                exc_info=True,
+            )
+            raise ExternalServiceError(
+                f"failed to stop expired lease VM {vm_id}: {exc}"
+            ) from exc
+
+        await self.stream_status_service.mark_vm_stream_terminated(
+            vm_id,
+            terminated_by="provider",
+            termination_reason="stream_expired",
+            settlement_tx_hash=None,
+            cleanup_state="not_started",
+        )
+        await self._delete_terminated_vm(vm_id)
+        logger.info(
+            "Expired VM lease cleaned up",
+            extra={"vm_id": vm_id, "stream_id": int(stream_id)},
+        )
+        await self._emit_webhook(
+            "vm.deleted",
+            vm_id,
+            "critical",
+            "VM lease expired",
+            {"stream_id": int(stream_id), "payment_state": status.payment_state},
+        )
+        return True
+
     async def _delete_terminated_vm(self, vm_id: str) -> None:
         try:
             await self.vm_service.delete_vm(vm_id)
@@ -1029,10 +1091,15 @@ class VMApplicationService:
 
     def _terminal_vm_info(self, vm_id: str, record: dict[str, Any]) -> VMInfo:
         terminated_by = str(record.get("terminated_by") or "requestor")
+        reason = str(record.get("termination_reason") or "terminated")
         message = (
-            "VM lease was terminated by provider"
-            if terminated_by == "provider"
-            else "VM lease was terminated by requestor"
+            "VM lease expired"
+            if reason == "stream_expired"
+            else (
+                "VM lease was terminated by provider"
+                if terminated_by == "provider"
+                else "VM lease was terminated by requestor"
+            )
         )
         resources = None
         if hasattr(self.vm_service, "resource_tracker"):

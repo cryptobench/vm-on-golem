@@ -136,6 +136,8 @@ test("represents every provider VM status", () => {
     "suspended",
     "stopping",
     "stopped",
+    "payment_grace",
+    "payment_expired",
     "error",
     "deleted",
     "offline",

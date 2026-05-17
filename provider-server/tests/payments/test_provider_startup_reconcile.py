@@ -124,6 +124,16 @@ class DummyReader:
             "ok": ok,
         }
 
+    def stream_state(self, sid):
+        ok, message = self.validity.get(int(sid), (False, "not found"))
+        if message == "stream terminated":
+            return "terminated"
+        if message == "stream expired":
+            return "expired"
+        if message == "stream grace":
+            return "grace"
+        return "active" if ok else "invalid"
+
 
 class DummyStreamMonitor:
     def start(self):
@@ -292,6 +302,37 @@ async def test_startup_deletes_vm_with_chain_terminated_stream(monkeypatch):
 
     assert vm_service.deleted == ["vm-a"]
     assert stream_map.terminated[0][0] == "vm-a"
+    assert stream_map.cleanup == [("vm-a", "completed")]
+    assert adv.started is True
+
+
+@pytest.mark.asyncio
+async def test_startup_deletes_vm_with_expired_stream_after_grace(monkeypatch):
+    from provider import service as ps
+    from provider.config import settings
+
+    settings.STREAM_PAYMENT_ADDRESS = "0x1234567890abcdef1234567890abcdef12345678"
+    settings.PAYMENTS_RPC_URL = "http://localhost"
+    settings.STREAM_MONITOR_ENABLED = False
+    settings.STREAM_WITHDRAW_ENABLED = False
+    monkeypatch.setattr(ps, "PricingAutoUpdater", DummyPricingUpdater)
+
+    vm_resources = {"vm-a": VMResources(cpu=2, memory=4, storage=20)}
+    vm_service = DummyVMService(vm_resources)
+    adv = DummyDiscoveryPublishingService()
+    provider_service = ProviderService(
+        vm_service=vm_service,
+        advertisement_service=adv,
+        port_manager=DummyPortManager(),
+    )
+    stream_map = DummyStreamMap({"vm-a": 42})
+    app = DummyApp(stream_map, DummyReader({42: (False, "stream expired")}))
+
+    await provider_service.setup(app)  # type: ignore[arg-type]
+
+    assert vm_service.deleted == ["vm-a"]
+    assert stream_map.terminated[0][0] == "vm-a"
+    assert stream_map.terminated[0][1]["termination_reason"] == "stream_expired"
     assert stream_map.cleanup == [("vm-a", "completed")]
     assert adv.started is True
 

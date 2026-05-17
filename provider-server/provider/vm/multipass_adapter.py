@@ -743,9 +743,15 @@ class MultipassAdapter(VMProvider):
                     f"Could not restore SSH proxy for {requestor_name}: {exc}"
                 )
                 continue
-            if info.get("state", "").lower() != "running" or not info.get("ipv4"):
-                continue
-            vm_ip = info["ipv4"][0]
+            ipv4 = info.get("ipv4") or []
+            if info.get("state", "").lower() == "running" and ipv4:
+                vm_ip = ipv4[0]
+            else:
+                guest_state = self._fresh_guest_agent_state(requestor_name)
+                if guest_state is None:
+                    continue
+                vm_ip = guest_state.source_ip
+
             if await self.proxy_manager.add_vm(multipass_name, vm_ip):
                 logger.info(
                     f"Restored missing SSH proxy for {requestor_name} ({multipass_name})"

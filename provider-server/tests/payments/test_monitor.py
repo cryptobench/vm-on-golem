@@ -28,16 +28,28 @@ class DummyStreamMap:
         self.cleanup.append((vm_id, cleanup_state))
 
 
-class DummyVMService:
-    def __init__(self):
+class DummyVMApplicationService:
+    def __init__(self, *, expire_result=True):
         self.stopped = []
         self.deleted = []
+        self.expired = []
+        self.expire_result = expire_result
 
     async def stop_vm(self, vm_id):
         self.stopped.append(vm_id)
 
     async def delete_vm(self, vm_id):
         self.deleted.append(vm_id)
+
+    async def cleanup_requestor_terminated_stream(self, vm_id, stream_id):
+        self.deleted.append(vm_id)
+
+    async def expire_vm_lease(self, vm_id, stream_id):
+        self.expired.append((vm_id, stream_id))
+        if self.expire_result:
+            self.stopped.append(vm_id)
+            self.deleted.append(vm_id)
+        return self.expire_result
 
 
 class DummyReader:
@@ -94,14 +106,14 @@ async def test_monitor_does_not_stop_until_empty_and_withdraws(monkeypatch):
     }
 
     stream_map = DummyStreamMap({"vm-1": 42})
-    vm_service = DummyVMService()
+    vm_service = DummyVMApplicationService()
     reader = DummyReader(now, stream)
     client = DummyClient()
     settings = DummySettings()
 
     mon = StreamMonitor(
         stream_map=stream_map,
-        vm_service=vm_service,
+        vm_application_service=vm_service,
         reader=reader,
         client=client,
         settings=settings,
@@ -145,12 +157,12 @@ async def test_monitor_respects_withdraw_interval(monkeypatch):
 
     settings = S()
     stream_map = DummyStreamMap({"vm-1": 7})
-    vm_service = DummyVMService()
+    vm_service = DummyVMApplicationService()
     reader = DummyReader(now, stream)
     client = DummyClient()
     mon = StreamMonitor(
         stream_map=stream_map,
-        vm_service=vm_service,
+        vm_application_service=vm_service,
         reader=reader,
         client=client,
         settings=settings,
@@ -201,12 +213,12 @@ async def test_monitor_accepts_dict_settings_and_does_not_stop_until_empty(monke
         }
     )
     stream_map = DummyStreamMap({"vm-1": 5})
-    vm_service = DummyVMService()
+    vm_service = DummyVMApplicationService()
     reader = DummyReader(now, stream)
     client = DummyClient()
     mon = StreamMonitor(
         stream_map=stream_map,
-        vm_service=vm_service,
+        vm_application_service=vm_service,
         reader=reader,
         client=client,
         settings=settings,
@@ -242,14 +254,14 @@ async def test_monitor_deletes_when_stream_terminated(monkeypatch):
         "termsHash": "0x" + "22" * 32,
     }
     stream_map = DummyStreamMap({"vm-del": 11})
-    vm_service = DummyVMService()
+    vm_service = DummyVMApplicationService()
     reader = DummyReader(now, stream)
     client = DummyClient()
     settings = DummySettings()
     webhooks = CapturingWebhookService()
     mon = StreamMonitor(
         stream_map=stream_map,
-        vm_service=vm_service,
+        vm_application_service=vm_service,
         reader=reader,
         client=client,
         settings=settings,
@@ -275,7 +287,7 @@ async def test_monitor_deletes_when_stream_terminated(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_monitor_deletes_when_stream_ended(monkeypatch):
+async def test_monitor_keeps_vm_during_expiry_grace(monkeypatch):
     now = 5_000_000
     stream = {
         "token": "0xglm",
@@ -289,14 +301,14 @@ async def test_monitor_deletes_when_stream_ended(monkeypatch):
         "halted": False,
     }
     stream_map = DummyStreamMap({"vm-end": 12})
-    vm_service = DummyVMService()
+    vm_service = DummyVMApplicationService(expire_result=False)
     reader = DummyReader(now, stream)
     client = DummyClient()
     settings = DummySettings()
     webhooks = CapturingWebhookService()
     mon = StreamMonitor(
         stream_map=stream_map,
-        vm_service=vm_service,
+        vm_application_service=vm_service,
         reader=reader,
         client=client,
         settings=settings,
@@ -313,9 +325,58 @@ async def test_monitor_deletes_when_stream_ended(monkeypatch):
     monkeypatch.setattr(asyncio, "sleep", fake_sleep)
 
     await mon._run()
-    # Exhaustion is visible, but deletion waits for on-chain termination.
+    # Exhaustion is visible, but application service skips cleanup while the
+    # latest chain read is still in the grace window.
     assert vm_service.stopped == []
     assert vm_service.deleted == []
+    assert vm_service.expired == [("vm-end", 12)]
+    assert client.withdrawn == []
+    assert webhooks.events[0][0] == "payment.stream.lost"
+    assert webhooks.events[0][1]["data"]["reason"] == "stream exhausted"
+
+
+@pytest.mark.asyncio
+async def test_monitor_deletes_when_stream_expired_after_grace(monkeypatch):
+    now = 5_000_000
+    stream = {
+        "token": "0xglm",
+        "sender": "0xreq",
+        "recipient": "0xprov",
+        "startTime": now - 10_000,
+        "stopTime": now - 30,
+        "ratePerSecond": 10,
+        "deposit": 200_000,
+        "withdrawn": 0,
+        "halted": False,
+    }
+    stream_map = DummyStreamMap({"vm-end": 12})
+    vm_service = DummyVMApplicationService(expire_result=True)
+    reader = DummyReader(now, stream)
+    client = DummyClient()
+    settings = DummySettings()
+    webhooks = CapturingWebhookService()
+    mon = StreamMonitor(
+        stream_map=stream_map,
+        vm_application_service=vm_service,
+        reader=reader,
+        client=client,
+        settings=settings,
+        webhook_service=webhooks,
+    )
+
+    calls = {"n": 0}
+
+    async def fake_sleep(_):
+        calls["n"] += 1
+        if calls["n"] >= 2:
+            raise asyncio.CancelledError
+
+    monkeypatch.setattr(asyncio, "sleep", fake_sleep)
+
+    await mon._run()
+    assert vm_service.stopped == ["vm-end"]
+    assert vm_service.deleted == ["vm-end"]
+    assert vm_service.expired == [("vm-end", 12)]
     assert client.withdrawn == []
     assert webhooks.events[0][0] == "payment.stream.lost"
     assert webhooks.events[0][1]["data"]["reason"] == "stream exhausted"
@@ -332,11 +393,11 @@ async def test_monitor_emits_stream_lost_when_lookup_fails(monkeypatch):
             raise RuntimeError("chain unavailable")
 
     stream_map = DummyStreamMap({"vm-missing": 13})
-    vm_service = DummyVMService()
+    vm_service = DummyVMApplicationService()
     webhooks = CapturingWebhookService()
     mon = StreamMonitor(
         stream_map=stream_map,
-        vm_service=vm_service,
+        vm_application_service=vm_service,
         reader=FailingReader(),
         client=DummyClient(),
         settings=DummySettings(),

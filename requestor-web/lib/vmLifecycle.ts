@@ -49,6 +49,8 @@ const READY_STAGES = new Set([
   "suspended",
   "deleted",
   "terminated",
+  "payment_grace",
+  "payment_expired",
   "offline",
   "failed",
   "error",
@@ -64,6 +66,8 @@ const STATUS_LABELS: Record<string, string> = {
   suspended: "Suspended",
   stopping: "Stopping",
   stopped: "Stopped",
+  payment_grace: "Payment grace",
+  payment_expired: "Payment expired",
   error: "Error",
   failed: "Failed",
   deleted: "Deleted",
@@ -82,6 +86,8 @@ const STATUS_MESSAGES: Record<string, string> = {
   suspended: "VM is suspended",
   stopping: "Stopping VM",
   stopped: "VM is stopped",
+  payment_grace: "Payment grace period",
+  payment_expired: "Payment expired",
   error: "VM requires attention",
   failed: "VM creation failed",
   deleted: "VM has been deleted",
@@ -112,6 +118,8 @@ const PROGRESS_BY_STATUS: Record<string, number> = {
   suspended: 100,
   stopping: 70,
   stopped: 100,
+  payment_grace: 100,
+  payment_expired: 100,
   error: 100,
   failed: 100,
   deleted: 100,
@@ -324,9 +332,15 @@ function clampProgress(value: number) {
 function toneForStatus(status: string): VmLifecycleTone {
   if (status === "running") return "success";
   if (status === "error" || status === "failed") return "danger";
-  if (status === "deleted" || status === "terminated" || status === "offline") {
+  if (
+    status === "deleted" ||
+    status === "terminated" ||
+    status === "payment_expired" ||
+    status === "offline"
+  ) {
     return "danger";
   }
+  if (status === "payment_grace") return "warning";
   if (status === "stopped" || status === "suspended") return "neutral";
   if (TRANSITIONAL_STATUSES.has(status)) return "primary";
   return "primary";

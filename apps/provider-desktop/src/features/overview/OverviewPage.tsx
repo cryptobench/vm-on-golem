@@ -39,8 +39,8 @@ export function OverviewPage({
   const nowSeconds = useStreamNowSeconds();
   if (loading && !data) return <LoadingGrid />;
   const vms = data?.vms ?? [];
-  const counts = countVms(vms);
   const streams = projectStreams(data?.streams ?? [], nowSeconds);
+  const counts = countVms(vms, streams);
   const totals = streamsTotals(streams);
   const totalEarnedUsd = glmToUsd(totals.vested, glmUsd);
   const { total, available } = resourcePair(data?.summary ?? undefined);

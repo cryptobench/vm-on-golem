@@ -254,11 +254,12 @@ class Settings(BaseSettings):
         description="GLM ERC20 token address used by StreamPayment.",
     )
     STREAM_MIN_REMAINING_SECONDS: int = Field(
-        default=0, description="Minimum remaining seconds required to keep a VM running"
+        default=0,
+        description="Legacy compatibility setting; streamState drives expiry",
     )
     STREAM_MONITOR_ENABLED: bool = Field(
         default=True,
-        description="Enable background monitor to stop VMs when runway < threshold",
+        description="Enable background monitor to delete VMs after stream expiry",
     )
     STREAM_WITHDRAW_ENABLED: bool = Field(
         default=False, description="Enable background withdrawals for active streams"

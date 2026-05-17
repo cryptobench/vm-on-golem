@@ -1,10 +1,16 @@
+import asyncio
 import json
+import socket
 from unittest.mock import AsyncMock
 
 import pytest
 
 from provider.vm import proxy_manager as proxy_module
-from provider.vm.proxy_manager import PythonProxyManager
+from provider.vm.proxy_manager import (
+    PythonProxyManager,
+    SSHProxyProtocol,
+    SSHTargetProtocol,
+)
 
 
 class FakePortManager:
@@ -35,6 +41,57 @@ class FakeProxyServer:
 
     async def stop(self):
         self.server = None
+
+
+class FakeSocket:
+    def __init__(self):
+        self.options = []
+
+    def setsockopt(self, level, option, value):
+        self.options.append((level, option, value))
+
+
+class FakeTransport:
+    def __init__(self):
+        self.socket = FakeSocket()
+
+    def get_extra_info(self, name):
+        if name == "socket":
+            return self.socket
+        return None
+
+
+@pytest.mark.asyncio
+async def test_proxy_client_socket_disables_nagle_buffering():
+    transport = FakeTransport()
+    protocol = SSHProxyProtocol("192.168.2.4", 22, {})
+
+    async def noop_connect():
+        return None
+
+    protocol.connect_to_target = noop_connect
+    protocol.connection_made(transport)
+    await asyncio.sleep(0)
+
+    assert (
+        socket.IPPROTO_TCP,
+        socket.TCP_NODELAY,
+        1,
+    ) in transport.socket.options
+
+
+def test_proxy_target_socket_disables_nagle_buffering():
+    transport = FakeTransport()
+    client_protocol = SSHProxyProtocol("192.168.2.4", 22, {})
+    target_protocol = SSHTargetProtocol(client_protocol)
+
+    target_protocol.connection_made(transport)
+
+    assert (
+        socket.IPPROTO_TCP,
+        socket.TCP_NODELAY,
+        1,
+    ) in transport.socket.options
 
 
 @pytest.mark.asyncio

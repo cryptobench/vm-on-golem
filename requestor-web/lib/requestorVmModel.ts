@@ -29,6 +29,8 @@ export type RequestorVmProbe = {
 
 export type RequestorVmModel = {
   rental: Rental;
+  hasLiveProbe: boolean;
+  probePending: boolean;
   lifecycle: VmLifecycleView;
   provider: Record<string, unknown> | null;
   statusPayload: Record<string, unknown> | null;
@@ -39,11 +41,13 @@ export type RequestorVmModel = {
   country: string;
   sshEndpoint: string;
   remainingSeconds: number | null;
+  paymentState: string;
 };
 
 export function buildRequestorVmModel(
   rental: Rental,
   probe: RequestorVmProbe | null | undefined,
+  options: { probePending?: boolean } = {},
 ): RequestorVmModel {
   const storedStatus = String(rental.status || "").toLowerCase();
   const storedTerminal = isTerminalVmStatus(storedStatus);
@@ -51,8 +55,10 @@ export function buildRequestorVmModel(
   const statusPayload = safeStatus?.exists ? safeStatus.data : null;
   const access = probe?.access || null;
   const provider = probe?.provider || null;
+  const paymentState = paymentStateFor(probe?.stream);
   const lifecycleSource = lifecycleSourceFor({
     access,
+    paymentState,
     statusPayload,
     storedStatus,
     storedTerminal,
@@ -90,6 +96,8 @@ export function buildRequestorVmModel(
 
   return {
     rental,
+    hasLiveProbe: !!probe,
+    probePending: !!options.probePending,
     lifecycle,
     provider,
     statusPayload,
@@ -110,29 +118,59 @@ export function buildRequestorVmModel(
       rental,
     }),
     remainingSeconds: remainingSeconds(probe?.stream),
+    paymentState,
   };
 }
 
 export function isTerminalVmStatus(status?: string | null) {
   const normalized = String(status || "").toLowerCase();
-  return normalized === "terminated" || normalized === "deleted";
+  return (
+    normalized === "terminated" ||
+    normalized === "deleted" ||
+    normalized === "payment_expired"
+  );
 }
 
 function lifecycleSourceFor({
   access,
+  paymentState,
   statusPayload,
   storedStatus,
   storedTerminal,
 }: {
   access: Record<string, unknown> | null;
+  paymentState: string;
   statusPayload: Record<string, unknown> | null;
   storedStatus: string;
   storedTerminal: boolean;
 }): LifecycleSource | null {
   if (storedTerminal) return { status: storedStatus || "terminated" };
+  if (paymentState === "expired") {
+    return {
+      status: "payment_expired",
+      lifecycle_stage: "payment_expired",
+      status_message: "Payment expired",
+      transitioning: false,
+    };
+  }
+  if (paymentState === "grace") {
+    return {
+      status: "payment_grace",
+      lifecycle_stage: "payment_grace",
+      status_message: "Payment grace period",
+      transitioning: false,
+    };
+  }
   if (statusPayload?.status) return statusPayload as LifecycleSource;
   if (access?.status) return access as LifecycleSource;
   return null;
+}
+
+function paymentStateFor(stream?: Record<string, unknown> | null) {
+  const state = stringValue(stream?.payment_state).toLowerCase();
+  if (state) return state;
+  const remaining = remainingSeconds(stream);
+  return remaining === 0 ? "expired" : "";
 }
 
 function remainingSeconds(stream?: Record<string, unknown> | null) {
