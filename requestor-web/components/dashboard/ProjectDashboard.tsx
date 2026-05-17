@@ -1,61 +1,88 @@
 "use client";
 
 import React from "react";
-import type { Rental } from "../../lib/api";
 import { useProjects } from "../../context/ProjectsContext";
-import { useProjectRentals } from "../../hooks/useProjectRentals";
+import { useProjectVmModels } from "../../hooks/useProjectVmModels";
 import { DashboardSkeleton } from "./DashboardSkeleton";
 import { DashboardEmptyState } from "./DashboardEmptyState";
 import { DashboardSection } from "./DashboardSection";
 import { DashboardSummaryCard } from "./DashboardSummaryCard";
 import { ActiveStreamsTable, ActiveVmsTable } from "./DashboardTables";
 import { useDashboardStreams } from "./useDashboardStreams";
+import { isTerminalVmStatus } from "../../lib/requestorVmModel";
 
 function formatToken(value: number, token: string, digits = 2) {
   return `${value.toLocaleString(undefined, { maximumFractionDigits: digits, minimumFractionDigits: value > 0 ? Math.min(2, digits) : 0 })} ${token}`;
 }
 
-function isLiveVm(rental: Rental) {
-  const status = String(rental.status || "").toLowerCase();
-  return status !== "terminated" && status !== "deleted";
-}
-
 export function ProjectDashboard() {
   const { activeId } = useProjects();
-  const { items, isInitialLoading: rentalsLoading } = useProjectRentals(activeId);
+  const { items, isInitialLoading: rentalsLoading } =
+    useProjectVmModels(activeId);
   const [mounted, setMounted] = React.useState(false);
   React.useEffect(() => setMounted(true), []);
 
-  const activeRentals = items.filter((rental) => (rental.project_id || "default") === activeId && isLiveVm(rental));
-  const activeStreamRentals = activeRentals.filter((rental) => rental.stream_id);
-  const runningCount = activeRentals.filter((rental) => String(rental.status).toLowerCase() === "running").length;
+  const activeVms = items.filter(
+    (vm) => !isTerminalVmStatus(vm.lifecycle.status),
+  );
+  const activeStreamRentals = activeVms
+    .filter((vm) => vm.rental.stream_id)
+    .map((vm) => vm.rental);
+  const runningCount = activeVms.filter(
+    (vm) => vm.lifecycle.status === "running",
+  ).length;
   const {
     rows: streamRows,
     totalSpent,
     isInitialLoading: streamsLoading,
   } = useDashboardStreams(activeStreamRentals);
+  const activeStreamRows = streamRows.filter((row) => row.status === "Active");
 
-  if (!mounted || rentalsLoading || streamsLoading) return <DashboardSkeleton />;
+  if (!mounted || rentalsLoading || streamsLoading)
+    return <DashboardSkeleton />;
 
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-text-primary">Dashboard</h1>
-        <p className="mt-1 text-sm text-text-secondary">Overview of your resources and usage.</p>
+        <h1 className="text-2xl font-semibold tracking-tight text-text-primary">
+          Dashboard
+        </h1>
+        <p className="mt-1 text-sm text-text-secondary">
+          Overview of your resources and usage.
+        </p>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
         <DashboardSummaryCard
           title="Active VMs"
-          value={String(activeRentals.length)}
+          value={String(activeVms.length)}
           visual="vms"
-          meta={activeRentals.length ? <span><span className="mr-2 inline-block h-2 w-2 rounded-full bg-success" />{runningCount} online</span> : "No active VMs"}
+          meta={
+            activeVms.length ? (
+              <span>
+                <span className="mr-2 inline-block h-2 w-2 rounded-full bg-success" />
+                {runningCount} online
+              </span>
+            ) : (
+              "No active VMs"
+            )
+          }
         />
         <DashboardSummaryCard
           title="Active Streams"
-          value={String(activeStreamRentals.length)}
+          value={String(activeStreamRows.length)}
           visual="streams"
-          meta={activeStreamRentals.length ? <>Total monthly burn<br />{formatToken(totalSpent.monthlyBurn, totalSpent.token)}</> : "No active streams"}
+          meta={
+            activeStreamRows.length ? (
+              <>
+                Total monthly burn
+                <br />
+                {formatToken(totalSpent.monthlyBurn, totalSpent.token)}
+              </>
+            ) : (
+              "No active streams"
+            )
+          }
         />
         <DashboardSummaryCard
           title="Monthly Spend"
@@ -66,9 +93,13 @@ export function ProjectDashboard() {
         />
       </div>
 
-      <DashboardSection title="Active VMs" href="/rentals" linkLabel="View all VMs">
-        {activeRentals.length ? (
-          <ActiveVmsTable rentals={activeRentals} />
+      <DashboardSection
+        title="Active VMs"
+        href="/rentals"
+        linkLabel="View all VMs"
+      >
+        {activeVms.length ? (
+          <ActiveVmsTable vms={activeVms} />
         ) : (
           <DashboardEmptyState
             icon="vms"
@@ -78,9 +109,13 @@ export function ProjectDashboard() {
         )}
       </DashboardSection>
 
-      <DashboardSection title="Active Streams" href="/streams" linkLabel="View all streams">
-        {streamRows.length ? (
-          <ActiveStreamsTable rows={streamRows} />
+      <DashboardSection
+        title="Active Streams"
+        href="/streams"
+        linkLabel="View all streams"
+      >
+        {activeStreamRows.length ? (
+          <ActiveStreamsTable rows={activeStreamRows} />
         ) : (
           <DashboardEmptyState
             icon="streams"

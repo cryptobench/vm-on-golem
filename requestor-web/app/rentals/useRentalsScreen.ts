@@ -3,7 +3,7 @@
 import React from "react";
 import { useProjects } from "../../context/ProjectsContext";
 import { useCopySSH } from "../../hooks/useCopySSH";
-import { useProjectRentals } from "../../hooks/useProjectRentals";
+import { useProjectVmModels } from "../../hooks/useProjectVmModels";
 import { useStreamActions } from "../../hooks/useStreamActions";
 import {
   loadSettings,
@@ -20,13 +20,13 @@ import {
   ensurePaidStreamCanStart,
   terminatePaidRental,
 } from "../../lib/rentalLifecycle";
+import {
+  isTerminalVmStatus,
+  type RequestorVmModel,
+} from "../../lib/requestorVmModel";
 
-function isTerminalStatus(status?: string | null) {
-  const normalized = String(status || "").toLowerCase();
-  return normalized === "terminated" || normalized === "deleted";
-}
-
-function matchesQuery(rental: Rental, query: string) {
+function matchesQuery(vm: RequestorVmModel, query: string) {
+  const { rental } = vm;
   const normalized = query.trim().toLowerCase();
   if (!normalized) return true;
   return [
@@ -34,7 +34,7 @@ function matchesQuery(rental: Rental, query: string) {
     rental.vm_id,
     rental.provider_id,
     rental.provider_ip,
-    rental.platform,
+    vm.platform,
     rental.stream_id == null ? "" : String(rental.stream_id),
   ]
     .filter(Boolean)
@@ -60,10 +60,12 @@ export function useRentalsScreen() {
   const { activeId } = useProjects();
   const {
     items,
+    rawItems,
+    projectRentals,
     isInitialLoading: rentalsLoading,
     setItems,
     refresh,
-  } = useProjectRentals(activeId);
+  } = useProjectVmModels(activeId);
   const copySSHAction = useCopySSH();
 
   React.useEffect(() => {
@@ -94,29 +96,21 @@ export function useRentalsScreen() {
     return () => window.clearTimeout(timer);
   }, [mounted, refresh]);
 
-  const projectItems = React.useMemo(
-    () =>
-      (items || []).filter(
-        (item) => (item.project_id || "default") === activeId,
-      ) as Rental[],
-    [activeId, items],
-  );
-
   const active = React.useMemo(
     () =>
-      projectItems.filter(
-        (rental) =>
-          !isTerminalStatus(rental.status) && matchesQuery(rental, query),
+      items.filter(
+        (vm) =>
+          !isTerminalVmStatus(vm.lifecycle.status) && matchesQuery(vm, query),
       ),
-    [projectItems, query],
+    [items, query],
   );
   const terminated = React.useMemo(
     () =>
-      projectItems.filter(
-        (rental) =>
-          isTerminalStatus(rental.status) && matchesQuery(rental, query),
+      items.filter(
+        (vm) =>
+          isTerminalVmStatus(vm.lifecycle.status) && matchesQuery(vm, query),
       ),
-    [projectItems, query],
+    [items, query],
   );
 
   const copySSH = async (rental: Rental) => {
@@ -132,7 +126,7 @@ export function useRentalsScreen() {
   };
 
   const updateRentalStatus = (rental: Rental, status: string) => {
-    const next = (items || []).map((item) =>
+    const next = (rawItems || []).map((item) =>
       item.vm_id === rental.vm_id ? { ...item, status } : item,
     );
     saveRentals(next);
@@ -182,7 +176,7 @@ export function useRentalsScreen() {
         terminateStream: terminate,
         destroyVm: vmDestroy,
       });
-      const next = (items || []).map((item) =>
+      const next = (rawItems || []).map((item) =>
         item.vm_id === rental.vm_id ? terminatedRental : item,
       );
       saveRentals(next);
@@ -205,7 +199,7 @@ export function useRentalsScreen() {
     copySSH,
     destroy,
     error,
-    hasAnyProjectVm: projectItems.length > 0,
+    hasAnyProjectVm: projectRentals.length > 0,
     hasVisibleRows:
       active.length > 0 || (showTerminated && terminated.length > 0),
     mounted,

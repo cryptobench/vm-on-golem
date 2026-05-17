@@ -18,7 +18,13 @@ from provider.monitoring.repo import MonitoringRepository
 from provider.monitoring.services import MonitoringService
 from provider.payments.errors import StreamNotFoundError
 from provider.provider_info.domain import ProviderInfo
-from provider.vm.models import VMAccessInfo, VMInfo, VMResources, VMStatus
+from provider.vm.models import (
+    MULTIPASS_SSH_USER,
+    VMAccessInfo,
+    VMInfo,
+    VMResources,
+    VMStatus,
+)
 
 
 def empty_history(range_name: str = "1h") -> MetricsHistoryResponse:
@@ -79,7 +85,7 @@ class FakeVmApp:
         return VMAccessInfo(
             ssh_host="127.0.0.1",
             ssh_port=50800,
-            ssh_user="ubuntu",
+            ssh_user=MULTIPASS_SSH_USER,
             vm_id=vm_id,
             multipass_name=vm_id,
         )
@@ -260,9 +266,9 @@ def test_vm_live_guest_sample_update_does_not_fetch_history(tmp_path: Path):
 
         assert update["type"] == "update"
         assert update["scope"] == "metrics_live"
-        assert {
-            sample["metric"] for sample in update["data"]["samples"]
-        } >= {"cpu_percent"}
+        assert {sample["metric"] for sample in update["data"]["samples"]} >= {
+            "cpu_percent"
+        }
         monitoring.history.assert_not_called()
 
     asyncio.run(run())

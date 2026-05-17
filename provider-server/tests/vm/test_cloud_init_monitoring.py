@@ -3,6 +3,7 @@ from pathlib import Path
 import yaml
 
 from provider.vm.cloud_init import cleanup_cloud_init, generate_cloud_init
+from provider.vm.models import MULTIPASS_SSH_USER
 
 
 def test_cloud_init_installs_push_only_monitoring_agent():
@@ -43,14 +44,14 @@ def test_cloud_init_grants_requestor_only_ssh_with_passwordless_sudo():
         content = Path(path).read_text()
         config = yaml.safe_load(content)
         users = config["users"]
-        ubuntu = users[0]
+        requestor_user = users[0]
 
         assert "ssh_authorized_keys" not in config
         assert config["ssh_pwauth"] is False
         assert config["disable_root"] is True
         assert len(users) == 1
-        assert ubuntu == {
-            "name": "ubuntu",
+        assert requestor_user == {
+            "name": MULTIPASS_SSH_USER,
             "gecos": "Golem Requestor",
             "groups": ["adm", "sudo"],
             "shell": "/bin/bash",
@@ -59,6 +60,7 @@ def test_cloud_init_grants_requestor_only_ssh_with_passwordless_sudo():
             "ssh_authorized_keys": [ssh_key],
         }
         assert {"name": "root", "ssh_authorized_keys": [ssh_key]} not in users
+        assert {"name": "ubuntu", "ssh_authorized_keys": [ssh_key]} not in users
     finally:
         cleanup_cloud_init(path, config_id)
 
@@ -81,9 +83,16 @@ def test_cloud_init_disables_password_and_root_ssh_login():
         assert "KbdInteractiveAuthentication no" in sshd_config
         assert "ChallengeResponseAuthentication no" in sshd_config
         assert "PermitRootLogin no" in sshd_config
+        assert "DenyUsers ubuntu" in sshd_config
         assert "PubkeyAuthentication yes" in sshd_config
         assert "AuthenticationMethods publickey" in sshd_config
-        assert "AllowUsers ubuntu" in sshd_config
+        assert f"AllowUsers {MULTIPASS_SSH_USER}" in sshd_config
+        assert "AllowUsers ubuntu" not in sshd_config
+        assert (
+            "if id ubuntu >/dev/null 2>&1; then passwd -l ubuntu && "
+            "usermod --shell /usr/sbin/nologin ubuntu && "
+            "rm -rf /home/ubuntu/.ssh; fi"
+        ) in config["runcmd"]
         assert "systemctl restart ssh || systemctl restart sshd" in config["runcmd"]
     finally:
         cleanup_cloud_init(path, config_id)

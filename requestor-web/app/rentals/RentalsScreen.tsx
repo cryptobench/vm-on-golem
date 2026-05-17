@@ -43,7 +43,7 @@ export default function RentalsPage() {
               title="Active VMs"
               subtitle="Running, stopped, suspended, and provisioning machines."
               count={screen.active.length}
-              rentals={screen.active}
+              vms={screen.active}
               busyId={screen.busyId}
               timeColumnLabel="Stream Time Left"
               onCopySSH={screen.copySSH}
@@ -57,7 +57,7 @@ export default function RentalsPage() {
               title="Terminated VMs"
               subtitle="These VMs can no longer be started."
               count={screen.terminated.length}
-              rentals={screen.terminated}
+              vms={screen.terminated}
               busyId={screen.busyId}
               timeColumnLabel="Terminated At"
               terminated
