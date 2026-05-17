@@ -8,6 +8,7 @@ import yaml
 
 from ..config import settings
 from ..utils.logging import setup_logger
+from .models import MULTIPASS_SSH_USER
 
 logger = setup_logger(__name__)
 
@@ -65,7 +66,7 @@ def generate_cloud_init(
         yaml_content = "#cloud-config\n"
 
         write_files = [_requestor_ssh_hardening_file()]
-        run_commands = [_restart_ssh_command()]
+        run_commands = [_lock_default_ubuntu_user_command(), _restart_ssh_command()]
 
         if (
             monitoring_vm_id
@@ -92,7 +93,7 @@ def generate_cloud_init(
             "disable_root": True,
             "users": [
                 {
-                    "name": "ubuntu",
+                    "name": MULTIPASS_SSH_USER,
                     "gecos": "Golem Requestor",
                     "groups": ["adm", "sudo"],
                     "shell": "/bin/bash",
@@ -157,6 +158,7 @@ def _requestor_ssh_hardening_file() -> dict[str, str]:
         "path": "/etc/ssh/sshd_config.d/99-golem-requestor-only.conf",
         "content": "\n".join(
             [
+                "DenyUsers ubuntu",
                 "PasswordAuthentication no",
                 "KbdInteractiveAuthentication no",
                 "ChallengeResponseAuthentication no",
@@ -164,13 +166,23 @@ def _requestor_ssh_hardening_file() -> dict[str, str]:
                 "PubkeyAuthentication yes",
                 "AuthenticationMethods publickey",
                 "X11Forwarding no",
-                "AllowUsers ubuntu",
+                f"AllowUsers {MULTIPASS_SSH_USER}",
                 "",
             ]
         ),
         "owner": "root:root",
         "permissions": "0644",
     }
+
+
+def _lock_default_ubuntu_user_command() -> str:
+    return (
+        "if id ubuntu >/dev/null 2>&1; then "
+        "passwd -l ubuntu && "
+        "usermod --shell /usr/sbin/nologin ubuntu && "
+        "rm -rf /home/ubuntu/.ssh; "
+        "fi"
+    )
 
 
 def _restart_ssh_command() -> str:

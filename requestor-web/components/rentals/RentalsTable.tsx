@@ -2,6 +2,7 @@
 
 import React from "react";
 import type { Rental } from "../../lib/api";
+import type { RequestorVmModel } from "../../lib/requestorVmModel";
 import { RentalRowWithData } from "./RentalRowWithData";
 
 const HEADERS = [
@@ -22,7 +23,7 @@ type RentalsTableProps = {
   title: string;
   subtitle: string;
   count: number;
-  rentals: Rental[];
+  vms: RequestorVmModel[];
   busyId: string | null;
   timeColumnLabel: string;
   terminated?: boolean;
@@ -36,7 +37,7 @@ export function RentalsTable({
   title,
   subtitle,
   count,
-  rentals,
+  vms,
   busyId,
   timeColumnLabel,
   terminated,
@@ -76,11 +77,11 @@ export function RentalsTable({
             </tr>
           </thead>
           <tbody>
-            {rentals.map((rental) => (
+            {vms.map((vm) => (
               <RentalRowWithData
-                key={rental.vm_id}
-                rental={rental}
-                busy={busyId === rental.vm_id}
+                key={vm.rental.vm_id}
+                vm={vm}
+                busy={busyId === vm.rental.vm_id}
                 terminated={terminated}
                 onCopySSH={onCopySSH}
                 onStart={onStart}

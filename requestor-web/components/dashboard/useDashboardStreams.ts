@@ -82,6 +82,7 @@ function streamRowFromLiveData(rental: Rental, data: PaymentStreamData) {
   const remainingTokens = Math.max(0, rps * remainingSeconds);
   const hourlyTokens = rps * 3600;
   const spent = tokenAmount(data.chain.withdrawn, decimals);
+  const terminated = isTerminatedStream(data.chain);
   return {
     row: {
       rental,
@@ -90,11 +91,11 @@ function streamRowFromLiveData(rental: Rental, data: PaymentStreamData) {
       remainingBalance: remainingTokens.toFixed(2),
       hourlyRate: hourlyTokens.toFixed(2),
       tokenSymbol: data.tokenSymbol,
-      status: isTerminatedStream(data.chain) ? "Terminated" : "Active",
+      status: terminated ? "Terminated" : "Active",
     } satisfies DashboardStreamRow,
     spent,
     spentUsd: data.usdPrice == null ? 0 : spent * data.usdPrice,
-    monthlyBurn: hourlyTokens * 730,
+    monthlyBurn: terminated ? 0 : hourlyTokens * 730,
     startedAt: Number(rental.created_at || 0) * 1000 || monthStartMs(),
   };
 }

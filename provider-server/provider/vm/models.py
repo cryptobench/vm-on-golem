@@ -92,7 +92,7 @@ DEFAULT_STATUS_PROGRESS = {
     VMStatus.UNKNOWN: 0,
 }
 
-MULTIPASS_SSH_USER = "ubuntu"
+MULTIPASS_SSH_USER = "golem"
 
 
 def status_message(status: VMStatus) -> str:
