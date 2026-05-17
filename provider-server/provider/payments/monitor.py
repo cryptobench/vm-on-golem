@@ -2,7 +2,6 @@ import asyncio
 from typing import Optional
 
 from ..utils.logging import setup_logger
-from ..vm.models import VMNotFoundError
 
 logger = setup_logger(__name__)
 
@@ -54,7 +53,7 @@ class StreamMonitor:
                 await asyncio.sleep(
                     int(self._get("STREAM_MONITOR_INTERVAL_SECONDS", 60))
                 )
-                items = await self.stream_map.all_items()
+                items = await self.stream_map.active_items()
                 now = (
                     int(self.reader.web3.eth.get_block("latest")["timestamp"])
                     if items
@@ -65,9 +64,10 @@ class StreamMonitor:
                     try:
                         s = self.reader.get_stream(stream_id)
                     except Exception as e:
-                        # No payment info available; delete the VM and remove mapping per unified policy
-                        logger.info(
-                            f"Deleting VM {vm_id} due to missing/unavailable payment stream (id={stream_id}): {e}"
+                        logger.error(
+                            "Stream lookup failed during monitor tick",
+                            extra={"vm_id": vm_id, "stream_id": int(stream_id)},
+                            exc_info=True,
                         )
                         await self._emit_stream_lost(
                             vm_id,
@@ -75,18 +75,6 @@ class StreamMonitor:
                             "stream lookup failed",
                             {"error": str(e)},
                         )
-                        try:
-                            await self.vm_service.delete_vm(vm_id)
-                        except Exception as del_err:
-                            logger.warning(
-                                f"delete_vm failed for {vm_id} after stream lookup failure: {del_err}"
-                            )
-                        try:
-                            await self.stream_map.remove(vm_id)
-                        except Exception as rem_err:
-                            logger.debug(
-                                f"failed to remove vm {vm_id} from stream map: {rem_err}"
-                            )
                         continue
                     # Stop VM if remaining runway < threshold
                     remaining = max(int(s["stopTime"]) - int(now), 0)
@@ -108,88 +96,38 @@ class StreamMonitor:
                             "stream terminated",
                             {"remaining_seconds": remaining},
                         )
+                        await self.stream_map.mark_terminated(
+                            vm_id,
+                            terminated_by="requestor",
+                            termination_reason="requestor_terminated",
+                            settlement_tx_hash=None,
+                            cleanup_state="not_started",
+                        )
                         try:
                             await self.vm_service.delete_vm(vm_id)
-                            # Best-effort verification of deletion for investigation
-                            try:
-                                _ = await self.vm_service.get_vm_status(vm_id)
-                                logger.info(
-                                    f"Post-delete status check: VM {vm_id} still present after delete request"
-                                )
-                            except VMNotFoundError:
-                                logger.info(
-                                    f"Post-delete status check: VM {vm_id} not found (expected)"
-                                )
-                            except Exception as chk_err:
-                                logger.debug(
-                                    f"Post-delete status check failed for {vm_id}: {chk_err}"
-                                )
                         except Exception as e:
-                            logger.warning(f"delete_vm failed for {vm_id}: {e}")
-                        try:
-                            await self.stream_map.remove(vm_id)
-                            logger.debug(
-                                f"Removed {vm_id} from stream map after delete"
+                            await self.stream_map.set_cleanup_state(vm_id, "failed")
+                            logger.error(
+                                "VM cleanup failed after stream termination",
+                                extra={"vm_id": vm_id, "stream_id": int(stream_id)},
+                                exc_info=True,
                             )
-                        except Exception as e:
-                            logger.debug(
-                                f"failed to remove vm {vm_id} from stream map: {e}"
-                            )
+                            continue
+                        await self.stream_map.set_cleanup_state(vm_id, "completed")
                         continue
 
-                    # If runway is exhausted, delete the VM and remove mapping
                     if remaining == 0:
-                        logger.info(
-                            f"Deleting VM {vm_id} as stream runway is exhausted (id={stream_id}, now={now}, stop={s.get('stopTime')})"
-                        )
                         await self._emit_stream_lost(
                             vm_id,
                             stream_id,
                             "stream exhausted",
                             {"remaining_seconds": remaining},
                         )
-                        # Capture pre-delete status for context
-                        try:
-                            pre = await self.vm_service.get_vm_status(vm_id)
-                            logger.info(
-                                f"Pre-delete status for {vm_id}: status={getattr(pre, 'status', '?')} ip={getattr(pre, 'ip_address', '?')}"
-                            )
-                        except VMNotFoundError:
-                            logger.info(
-                                f"Pre-delete status for {vm_id}: not found (will remove mapping)"
-                            )
-                        except Exception as pre_err:
-                            logger.debug(
-                                f"Pre-delete status check failed for {vm_id}: {pre_err}"
-                            )
-
-                        try:
-                            await self.vm_service.delete_vm(vm_id)
-                            # Verify deletion
-                            try:
-                                _ = await self.vm_service.get_vm_status(vm_id)
-                                logger.info(
-                                    f"Post-delete status check: VM {vm_id} still present after delete request"
-                                )
-                            except VMNotFoundError:
-                                logger.info(
-                                    f"Post-delete status check: VM {vm_id} not found (expected)"
-                                )
-                            except Exception as chk_err:
-                                logger.debug(
-                                    f"Post-delete status check failed for {vm_id}: {chk_err}"
-                                )
-                        except Exception as e:
-                            logger.warning(f"delete_vm failed for {vm_id}: {e}")
-                        try:
-                            await self.stream_map.remove(vm_id)
-                            logger.info(
-                                f"Removed mapping for {vm_id} after delete on exhausted runway"
-                            )
-                        except Exception as rem_err:
-                            logger.debug(
-                                f"failed to remove vm {vm_id} from stream map after delete: {rem_err}"
-                            )
+                        logger.error(
+                            "Payment stream exhausted but not terminated; VM cleanup "
+                            "requires on-chain stream termination",
+                            extra={"vm_id": vm_id, "stream_id": int(stream_id)},
+                        )
                         continue
 
                     # Otherwise, do not stop; just log health and consider withdrawals

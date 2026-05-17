@@ -50,6 +50,13 @@ The provider API is publicly reachable by requestor web clients, so authorizatio
 - Any new provider-wide/admin endpoint MUST include tests for missing admin token, requestor token rejected, and valid admin token accepted.
 - No silent auth fallback: missing owner, missing token, expired token, disabled payments, failed stream lookup, or unknown legacy owner must fail visibly.
 
+## StreamPayment ABI Workflow
+
+- `contracts/artifacts/contracts/StreamPayment.sol/StreamPayment.json` is the only ABI source of truth.
+- Never hand-edit `requestor-web/public/abi/StreamPayment.json` or `streaming-abi/golem_streaming_abi/__init__.py`.
+- When `StreamPayment.sol` changes, run `npm --prefix contracts run build`, `npm run abi:sync`, then `npm run abi:check`.
+- ABI drift is a hard failure; fix it by changing Solidity and regenerating, not by patching generated ABI files.
+
 ## Discovery Naming & Backends
 
 Discovery is a capability, not a single server. The repo supports two provider-discovery backends:

@@ -39,7 +39,17 @@ export async function terminatePaidRental({
     }
     await destroyVm(rental.provider_endpoint_url, rental.vm_id);
   } catch (error) {
-    if (!isNotFoundError(error)) throw error;
+    if (!isNotFoundError(error)) {
+      if (streamId == null || streamId === "") throw error;
+      return markRentalTerminated(rental, {
+        at: now(),
+        txHash,
+        reason: "settled",
+        settlementStatus: "settled",
+        cleanupState: "failed",
+        statusMessage: "Lease terminated; provider cleanup pending",
+      });
+    }
   }
 
   return markRentalTerminated(rental, {
@@ -47,6 +57,7 @@ export async function terminatePaidRental({
     txHash,
     reason: streamId == null || streamId === "" ? "provider_deleted" : "settled",
     settlementStatus: streamId == null || streamId === "" ? "not_required" : "settled",
+    cleanupState: "completed",
   });
 }
 
@@ -78,11 +89,15 @@ export function markRentalTerminated(
     txHash = null,
     reason = "settled",
     settlementStatus = "settled",
+    cleanupState = "completed",
+    statusMessage,
   }: {
     at?: number;
     txHash?: string | null;
     reason?: string;
     settlementStatus?: Rental["settlement_status"];
+    cleanupState?: Rental["cleanup_state"];
+    statusMessage?: string;
   } = {},
 ): Rental {
   return {
@@ -95,6 +110,8 @@ export function markRentalTerminated(
     termination_reason: reason,
     settlement_tx_hash: txHash,
     settlement_status: settlementStatus,
+    cleanup_state: cleanupState,
+    ...(statusMessage ? { status_message: statusMessage } : {}),
   };
 }
 

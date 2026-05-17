@@ -20,8 +20,8 @@ class DummyStreamMap:
         self.set_calls = []
         self.remove_calls = []
 
-    async def set(self, vm_id, stream_id):
-        self.set_calls.append((vm_id, stream_id))
+    async def set(self, vm_id, stream_id, requestor_address=None):
+        self.set_calls.append((vm_id, stream_id, requestor_address))
 
     async def remove(self, vm_id):
         self.remove_calls.append(vm_id)
@@ -33,6 +33,25 @@ class DummyStreamMap:
         # Return a copy to avoid accidental external mutation
         return dict(self._items)
 
+    async def active_items(self):
+        return dict(self._items)
+
+    async def get_record(self, vm_id):
+        stream_id = self._items.get(vm_id)
+        if stream_id is None:
+            return None
+        return {
+            "vm_id": vm_id,
+            "stream_id": stream_id,
+            "requestor_address": "0xrequestor",
+            "state": "active",
+            "terminated_by": None,
+            "termination_reason": None,
+            "terminated_at": None,
+            "settlement_tx_hash": None,
+            "cleanup_state": None,
+        }
+
 
 def _enable_streaming_config():
     old = dict(app.container.config())
@@ -40,7 +59,7 @@ def _enable_streaming_config():
     cfg.update(
         {
             "STREAM_PAYMENT_ADDRESS": "0x1111111111111111111111111111111111111111",
-            "POLYGON_RPC_URL": "http://localhost",
+            "PAYMENTS_RPC_URL": "http://localhost",
             "PROVIDER_ID": "0x2222222222222222222222222222222222222222",
         }
     )
@@ -76,6 +95,7 @@ def test_get_vm_access_happy_path(monkeypatch, client: TestClient):
         assert data["vm_id"] == "test-vm"
         assert data["multipass_name"] == "test-vm-20250101"
     finally:
+        app.container.stream_map.reset_override()
         app.container.config.override(old)
 
 
@@ -150,6 +170,7 @@ def test_get_vm_stream_status_no_mapping(monkeypatch, client: TestClient):
         resp = client.get("/api/v1/vms/test-vm/stream")
         assert resp.status_code == 404
     finally:
+        app.container.stream_map.reset_override()
         app.container.config.override(old)
 
 
@@ -182,6 +203,7 @@ def test_get_vm_stream_status_lookup_failure(monkeypatch, client: TestClient):
         assert resp.status_code == 502
     finally:
         app.container.stream_reader.reset_override()
+        app.container.stream_map.reset_override()
         app.container.config.override(old)
 
 
@@ -237,6 +259,7 @@ def test_get_vm_stream_status_happy_path(monkeypatch, client: TestClient):
         assert data["computed"]["withdrawable_wei"] == 150
     finally:
         app.container.stream_reader.reset_override()
+        app.container.stream_map.reset_override()
         app.container.config.override(old)
 
 
@@ -295,4 +318,5 @@ def test_list_stream_statuses_happy_and_errors(monkeypatch, client: TestClient):
         assert resp.status_code == 502
     finally:
         app.container.stream_reader.reset_override()
+        app.container.stream_map.reset_override()
         app.container.config.override(old)

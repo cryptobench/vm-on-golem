@@ -20,6 +20,7 @@ class VMStatus(str, Enum):
     SUSPENDED = "suspended"
     STOPPING = "stopping"
     STOPPED = "stopped"
+    TERMINATED = "terminated"
     ERROR = "error"
     DELETED = "deleted"
     UNKNOWN = "unknown"
@@ -42,6 +43,7 @@ class VMStatus(str, Enum):
             "suspended": cls.SUSPENDED,
             "stopping": cls.STOPPING,
             "stopped": cls.STOPPED,
+            "terminated": cls.TERMINATED,
             "error": cls.ERROR,
             "deleted": cls.DELETED,
             "unknown": cls.UNKNOWN,
@@ -59,6 +61,7 @@ STATUS_MESSAGES = {
     VMStatus.SUSPENDED: "VM is suspended",
     VMStatus.STOPPING: "Stopping VM",
     VMStatus.STOPPED: "VM is stopped",
+    VMStatus.TERMINATED: "VM lease has been terminated",
     VMStatus.ERROR: "VM requires attention",
     VMStatus.DELETED: "VM has been deleted",
     VMStatus.UNKNOWN: "Provider status is temporarily unavailable",
@@ -83,6 +86,7 @@ DEFAULT_STATUS_PROGRESS = {
     VMStatus.SUSPENDED: 100,
     VMStatus.STOPPING: 70,
     VMStatus.STOPPED: 100,
+    VMStatus.TERMINATED: 100,
     VMStatus.ERROR: 100,
     VMStatus.DELETED: 100,
     VMStatus.UNKNOWN: 0,

@@ -212,18 +212,70 @@ class StreamStatusService:
 
     async def get_vm_stream_status(self, vm_id: str) -> StreamStatus:
         reader = self._reader()
-        stream_id = await self.stream_map.get(vm_id)
-        if stream_id is None:
+        record = await self._stream_record(vm_id)
+        if record is None:
             raise StreamNotFoundError("no stream mapped for this VM")
-        return self._build_status(reader, vm_id, int(stream_id))
+        return self._build_status(reader, vm_id, int(record["stream_id"]))
 
     async def list_stream_statuses(self) -> list[StreamStatus]:
         reader = self._reader()
-        items = await self.stream_map.all_items()
+        items = await self.stream_map.active_items()
         return [
             self._build_status(reader, vm_id, int(stream_id))
             for vm_id, stream_id in items.items()
         ]
+
+    async def verify_vm_stream_terminated(self, vm_id: str) -> dict[str, Any]:
+        reader = self._reader()
+        record = await self._stream_record(vm_id)
+        if record is None:
+            raise StreamNotFoundError("no stream mapped for this VM")
+        try:
+            stream = reader.get_stream(int(record["stream_id"]))
+        except Exception as exc:
+            raise StreamLookupError(f"stream lookup failed: {exc}") from exc
+        if not _stream_is_terminated(stream):
+            raise InvalidStreamError("stream is still active")
+        return stream
+
+    async def terminal_record(self, vm_id: str) -> dict[str, Any] | None:
+        record = await self._stream_record(vm_id)
+        if record and record.get("state") == "terminated":
+            return record
+        return None
+
+    async def mark_vm_stream_terminated(
+        self,
+        vm_id: str,
+        *,
+        terminated_by: str,
+        termination_reason: str,
+        settlement_tx_hash: str | None,
+        cleanup_state: str,
+    ) -> dict[str, Any]:
+        mark_terminated = getattr(self.stream_map, "mark_terminated")
+        return await mark_terminated(
+            vm_id,
+            terminated_by=terminated_by,
+            termination_reason=termination_reason,
+            settlement_tx_hash=settlement_tx_hash,
+            cleanup_state=cleanup_state,
+        )
+
+    async def set_vm_stream_cleanup_state(
+        self, vm_id: str, cleanup_state: str
+    ) -> dict[str, Any]:
+        set_cleanup_state = getattr(self.stream_map, "set_cleanup_state")
+        return await set_cleanup_state(vm_id, cleanup_state)
+
+    async def active_stream_items(self) -> dict[str, int]:
+        return await self.stream_map.active_items()
+
+    async def _stream_record(self, vm_id: str) -> dict[str, Any] | None:
+        get_record = getattr(self.stream_map, "get_record", None)
+        if get_record is None:
+            raise RuntimeError("structured stream map is required")
+        return await get_record(vm_id)
 
     def _build_status(self, reader: Any, vm_id: str, stream_id: int) -> StreamStatus:
         try:
@@ -268,10 +320,14 @@ def _normalize_bytes32(value: str) -> str:
 
 
 def _payment_state(stream: dict, now: int, verified: bool) -> str:
-    if stream["recipient"].lower() == "0x0000000000000000000000000000000000000000":
+    if _stream_is_terminated(stream):
         return "terminated"
     if int(stream["stopTime"]) <= now:
         return "expired"
     if verified:
         return "active"
     return "invalid"
+
+
+def _stream_is_terminated(stream: dict) -> bool:
+    return str(stream["recipient"]).lower() == ZERO_ADDRESS

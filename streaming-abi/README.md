@@ -1,7 +1,8 @@
 Streaming ABI
 
-Shared Python package exporting the StreamPayment ABI used by provider and
-requestor components. Centralizing the ABI prevents drift between services.
+Shared Python package exporting the generated StreamPayment ABI used by
+provider and requestor components. The ABI is copied from the compiled Hardhat
+artifact; do not edit it by hand.
 
 Contents:
 
@@ -12,5 +13,5 @@ The StreamPayment contract is GLM-only. Integrations must pass the configured
 GLM token address, approve GLM before create/top-up calls, and use native ETH
 only for gas.
 
-If the on-chain contract interface changes, update the provider/requestor
-blockchain clients and the ABI guard tests together.
+If the on-chain contract interface changes, update Solidity, compile contracts,
+run `npm run abi:sync`, then run `npm run abi:check`.

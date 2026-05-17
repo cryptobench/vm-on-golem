@@ -64,8 +64,8 @@ def generate_cloud_init(
         # Start with required #cloud-config header
         yaml_content = "#cloud-config\n"
 
-        write_files = []
-        run_commands = []
+        write_files = [_requestor_ssh_hardening_file()]
+        run_commands = [_restart_ssh_command()]
 
         if (
             monitoring_vm_id
@@ -88,8 +88,19 @@ def generate_cloud_init(
             "package_update": True,
             "package_upgrade": True,
             "preserve_hostname": False,
-            "ssh_authorized_keys": [ssh_key],
-            "users": ["default"],
+            "ssh_pwauth": False,
+            "disable_root": True,
+            "users": [
+                {
+                    "name": "ubuntu",
+                    "gecos": "Golem Requestor",
+                    "groups": ["adm", "sudo"],
+                    "shell": "/bin/bash",
+                    "sudo": "ALL=(ALL) NOPASSWD:ALL",
+                    "lock_passwd": True,
+                    "ssh_authorized_keys": [ssh_key],
+                }
+            ],
         }
 
         if write_files:
@@ -139,6 +150,31 @@ def generate_cloud_init(
             except Exception as read_error:
                 logger.error(f"Could not read failed config: {read_error}")
         raise Exception(error_msg)
+
+
+def _requestor_ssh_hardening_file() -> dict[str, str]:
+    return {
+        "path": "/etc/ssh/sshd_config.d/99-golem-requestor-only.conf",
+        "content": "\n".join(
+            [
+                "PasswordAuthentication no",
+                "KbdInteractiveAuthentication no",
+                "ChallengeResponseAuthentication no",
+                "PermitRootLogin no",
+                "PubkeyAuthentication yes",
+                "AuthenticationMethods publickey",
+                "X11Forwarding no",
+                "AllowUsers ubuntu",
+                "",
+            ]
+        ),
+        "owner": "root:root",
+        "permissions": "0644",
+    }
+
+
+def _restart_ssh_command() -> str:
+    return "systemctl restart ssh || systemctl restart sshd"
 
 
 def _monitoring_agent_files(vm_id: str, token: str) -> list[dict[str, str]]:

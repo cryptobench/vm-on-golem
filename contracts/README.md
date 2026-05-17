@@ -107,24 +107,27 @@ npx hardhat verify --network hoodi <StreamPaymentAddress> \
   <OracleAddress> 0x55555555555556AcFf9C332Ed151758858bd7a26
 ```
 
-Deploy to Arkiv L2 Hoodi:
+Deploy to Ethereum Hoodi:
 
 ```bash
-L2_RPC_URL=https://l2.hoodi.arkiv.network/rpc \
-L2_CHAIN_ID=393530 \
+HOODI_RPC_URL=https://rpc.hoodi.ethpandaops.io \
 GLM_TOKEN_ADDRESS=0x... \
 PRIVATE_KEY=0x... \
-npx hardhat run scripts/deploy.js --network l2
+npx hardhat run scripts/deploy.js --network hoodi
 ```
 
 For local/test networks without a GLM token, deploy `MockGLM` first and pass
 its address as `GLM_TOKEN_ADDRESS`:
 
 ```bash
-npx hardhat run scripts/deploy_mock_glm.js --network l2
+npx hardhat run scripts/deploy_mock_glm.js --network hoodi
 ```
 
 Deployment info is written to `contracts/deployments/<network>.json`.
+After changing Solidity, run `npm --prefix contracts run build`,
+`npm run abi:sync`, and `npm run abi:check`. Provider and requestor ABIs are
+generated from `contracts/artifacts/contracts/StreamPayment.sol/StreamPayment.json`
+and must not be hand-edited.
 
 Network notes
 
@@ -134,5 +137,3 @@ Network notes
 - Ethereum Hoodi GLM token: `0x55555555555556AcFf9C332Ed151758858bd7a26`
 - Ethereum Hoodi tGLM minter: `0x500F965199C63865A3E666cA3fF55B64F1c8Bc8b`
 - Ethereum Hoodi explorer: `https://hoodi.etherscan.io`
-- Arkiv L2 Hoodi chain ID: `393530` (`0x6013a`)
-- Arkiv L2 Hoodi explorer: `https://explorer.l2.hoodi.arkiv.network`

@@ -7,6 +7,7 @@ from provider.container import Container
 from provider.main import app
 from provider.monitoring.repo import MonitoringRepository
 from provider.monitoring.services import MonitoringService
+from provider.vm.domain import LeaseTerminationResult
 from provider.vm.models import VMInfo, VMNotFoundError, VMResources, VMStatus
 from provider.vm.service import VMService
 
@@ -346,6 +347,48 @@ def test_stop_vm_generic_exception(client: TestClient, mock_vm_service: VMServic
 
     # Assert
     assert response.status_code == 502
+
+
+def test_admin_terminate_lease_happy_path(client: TestClient):
+    class TerminationService:
+        async def terminate_lease_by_provider(self, vm_id):
+            return LeaseTerminationResult(
+                vm=VMInfo(
+                    id=vm_id,
+                    name=vm_id,
+                    status=VMStatus.TERMINATED,
+                    resources=VMResources(cpu=1, memory=1, storage=10),
+                    lifecycle_stage="provider_terminated",
+                    status_message="VM lease was terminated by provider",
+                    progress=100,
+                    transitioning=False,
+                ),
+                stream_id=42,
+                payment_state="terminated",
+                termination_reason="provider_terminated",
+                terminated_by="provider",
+                terminated_at="2026-05-14T12:00:00+00:00",
+                settlement_tx_hash="0xtx",
+                cleanup_state="completed",
+            )
+
+    old = dict(app.container.config())
+    cfg = dict(old)
+    cfg["PROVIDER_ADMIN_TOKEN"] = "secret"
+    app.container.config.override(cfg)
+    app.container.vm_application_service.override(TerminationService())
+    try:
+        response = client.post(
+            "/api/v1/admin/vms/test-vm/terminate-lease",
+            headers={"Authorization": "Bearer secret"},
+        )
+    finally:
+        app.container.vm_application_service.reset_override()
+        app.container.config.override(old)
+
+    assert response.status_code == 200
+    assert response.json()["vm"]["status"] == "terminated"
+    assert response.json()["terminated_by"] == "provider"
 
 
 @pytest.mark.parametrize(

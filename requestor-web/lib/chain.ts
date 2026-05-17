@@ -7,6 +7,7 @@ import { walletDebug, walletWarn } from "./walletDebug";
 const DEFAULT_CHAIN_ID = "0x88bb0";
 const DEFAULT_CHAIN_NAME = "Ethereum Hoodi";
 const DEFAULT_RPC_URL = "https://rpc.hoodi.ethpandaops.io";
+const DEFAULT_WS_URL = "wss://ethereum-hoodi-rpc.publicnode.com";
 const DEFAULT_EXPLORER_URL = "https://hoodi.etherscan.io";
 
 export type PaymentsChain = {
@@ -16,6 +17,15 @@ export type PaymentsChain = {
   rpcUrls: string[];
   blockExplorerUrls?: string[];
 };
+
+export function getPaymentsWsUrl(settings: Partial<Settings> = loadSettings()) {
+  const runtimeConfig = getRequestorRuntimeConfig();
+  return (
+    settings.evm_ws_url ||
+    runtimeConfig.evmWsUrl ||
+    DEFAULT_WS_URL
+  ).trim();
+}
 
 export type PaymentNetworkErrorCode =
   | "missing_wallet"

@@ -65,7 +65,7 @@ export function VmCardWithData(props: {
       if (
         rental.status !== "running" ||
         rental.ssh_port !== sshPort ||
-        rental.provider_ip !== ipAddr ||
+        rental.vm_ip !== ipAddr ||
         (resFromVm &&
           JSON.stringify(rental.resources) !== JSON.stringify(resFromVm))
       ) {
@@ -73,7 +73,7 @@ export function VmCardWithData(props: {
           ...rental,
           status: "running",
           ssh_port: sshPort,
-          provider_ip: ipAddr,
+          vm_ip: ipAddr,
           resources: resFromVm || rental.resources,
         };
       }
@@ -122,7 +122,7 @@ export function VmCardWithData(props: {
     rental.provider_id,
     rental.status,
     rental.ssh_port,
-    rental.provider_ip,
+    rental.vm_ip,
   ]);
 
   // Create a computed rental for display using the freshest data
@@ -130,7 +130,7 @@ export function VmCardWithData(props: {
     const s = (vmData as any) || {};
     const status = s.status ? String(s.status) : rental.status;
     const sshPort = s.ssh_port != null ? Number(s.ssh_port) : null;
-    const ipAddr = s.ip_address != null ? s.ip_address : rental.provider_ip;
+    const ipAddr = s.ip_address != null ? s.ip_address : rental.vm_ip;
     // Prefer resources from VM status if exposed; fallback to saved rental spec
     const r = s?.resources && typeof s.resources === "object" ? s.resources : s;
     const cpu = Number((r as any)?.cpu);
@@ -145,7 +145,7 @@ export function VmCardWithData(props: {
       ...rental,
       status,
       ssh_port: sshPort,
-      provider_ip: ipAddr,
+      vm_ip: ipAddr,
       resources,
     } as Rental;
   }, [vmData, rental]);

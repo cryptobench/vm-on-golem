@@ -3,8 +3,8 @@ import {
   Button,
   Card,
   CardBody,
+  ConfirmDialog,
   KeyValueList,
-  LineAreaChart,
   ProgressBar,
   SectionHeader,
   StatCard,
@@ -15,19 +15,16 @@ import {
 import {
   RiArrowLeftLine,
   RiCheckboxCircleLine,
+  RiCloseCircleLine,
   RiCpuLine,
   RiFileCopyLine,
   RiHardDrive3Line,
-  RiPauseLine,
-  RiPlayLine,
-  RiRestartLine,
-  RiStopLine,
 } from "@remixicon/react";
 import { EmptyPanel, EndpointErrors, LoadingGrid } from "../../components/StateViews";
 import { metricChartPoints } from "../../components/metricChartPoints";
 import { RangePicker } from "../../components/RangePicker";
 import type { NavigateTarget } from "../../components/types";
-import { metricNumber, streamEarningsPoints, vmStatusTone } from "../../lib/derived";
+import { metricNumber, vmStatusTone } from "../../lib/derived";
 import {
   EMPTY_VALUE,
   formatBytes,
@@ -39,6 +36,7 @@ import {
   vmStatusLabel,
   weiToToken,
 } from "../../lib/format";
+import { projectStream, useStreamNowSeconds } from "../../lib/liveStreamValues";
 import { providerApi } from "../../lib/providerApi";
 import type { HistoryRange, MetricsHistoryResponse, VMInfo } from "../../lib/types";
 import { useVmDetail, useVmMetricHistory } from "../../lib/useProviderData";
@@ -135,10 +133,11 @@ function OverviewTab({
 }) {
   const vm = data?.vm;
   const access = data?.access;
-  const stream = data?.stream;
+  const nowSeconds = useStreamNowSeconds();
+  const stream = data?.stream ? projectStream(data.stream, nowSeconds) : null;
   return (
     <div className="space-y-6">
-      <div className="grid gap-4 xl:grid-cols-[1fr_1fr]">
+      <div className="grid gap-4">
         <Card>
           <CardBody>
             <SectionHeader title="VM Overview" />
@@ -154,13 +153,6 @@ function OverviewTab({
                 { key: "updated", label: "Updated At", value: formatDateTime(vm?.updated_at) },
               ]}
             />
-          </CardBody>
-        </Card>
-
-        <Card>
-          <CardBody>
-            <SectionHeader title="Earnings (GLM)" description={formatGlm(weiToToken(stream?.computed.vested_wei))} />
-            <LineAreaChart data={stream ? streamEarningsPoints([stream]) : []} height={250} />
           </CardBody>
         </Card>
       </div>
@@ -283,7 +275,8 @@ function MetricChart({
 }
 
 function StreamTab({ data }: { data: ReturnType<typeof useVmDetail>["data"] }) {
-  const stream = data?.stream;
+  const nowSeconds = useStreamNowSeconds();
+  const stream = data?.stream ? projectStream(data.stream, nowSeconds) : null;
   if (!stream) return <EmptyPanel title="No stream data" detail={data?.errors.stream} />;
   return (
     <div className="grid gap-4 xl:grid-cols-[1fr_0.7fr]">
@@ -312,8 +305,8 @@ function StreamTab({ data }: { data: ReturnType<typeof useVmDetail>["data"] }) {
             className="mt-4"
             items={[
               { key: "remaining", label: "Remaining", value: formatDuration(stream.computed.remaining_seconds) },
-              { key: "vested", label: "Vested", value: formatGlm(weiToToken(stream.computed.vested_wei)) },
-              { key: "withdrawable", label: "Withdrawable", value: formatGlm(weiToToken(stream.computed.withdrawable_wei)) },
+              { key: "vested", label: "Total earned", value: formatGlm(weiToToken(stream.computed.vested_wei), 4) },
+              { key: "withdrawable", label: "Withdrawable", value: formatGlm(weiToToken(stream.computed.withdrawable_wei), 4) },
               { key: "deposit", label: "Deposit", value: formatGlm(weiToToken(stream.chain.deposit)) },
               { key: "withdrawn", label: "Withdrawn", value: formatGlm(weiToToken(stream.chain.withdrawn)) },
             ]}
@@ -347,6 +340,7 @@ function ProviderActions({
 }) {
   const [busy, setBusy] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+  const [confirmOpen, setConfirmOpen] = React.useState(false);
   const run = async (key: string, action: () => Promise<unknown>) => {
     setBusy(key);
     setError(null);
@@ -359,34 +353,41 @@ function ProviderActions({
       setBusy(null);
     }
   };
+  const terminated = vm?.status === "terminated";
+  const disabled = !vm || terminated || vm.transitioning || busy !== null;
   return (
     <Card>
       <CardBody>
         <SectionHeader title="Provider Actions" />
         {error ? <div className="mt-3 text-sm text-danger">{error}</div> : null}
         {vm?.transitioning ? <ProgressBar className="mt-4" value={vm.progress} /> : null}
-        <div className="mt-4 grid gap-3 md:grid-cols-5">
-          <Button variant="secondary" busy={busy === "start"} disabled={vm?.status === "running"} onClick={() => run("start", () => providerApi.startVm(vmId))}>
-            <RiPlayLine className="h-4 w-4" aria-hidden />
-            Start VM
-          </Button>
-          <Button variant="secondary" busy={busy === "suspend"} disabled={vm?.status !== "running"} onClick={() => run("suspend", () => providerApi.suspendVm(vmId))}>
-            <RiPauseLine className="h-4 w-4" aria-hidden />
-            Suspend VM
-          </Button>
-          <Button variant="secondary" busy={busy === "restart"} disabled={vm?.status !== "running"} onClick={() => run("restart", () => providerApi.restartVm(vmId))}>
-            <RiRestartLine className="h-4 w-4" aria-hidden />
-            Restart VM
-          </Button>
-          <Button variant="danger" busy={busy === "stop"} disabled={vm?.status !== "running"} onClick={() => run("stop", () => providerApi.stopVm(vmId))}>
-            <RiStopLine className="h-4 w-4" aria-hidden />
-            Stop VM
-          </Button>
-          <Button variant="danger" busy={busy === "delete"} onClick={() => run("delete", () => providerApi.deleteVm(vmId))}>
-            Delete VM
+        <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,18rem)]">
+          <Button
+            variant="danger"
+            busy={busy === "terminate"}
+            disabled={disabled}
+            onClick={() => setConfirmOpen(true)}
+          >
+            <RiCloseCircleLine className="h-4 w-4" aria-hidden />
+            Terminate Lease
           </Button>
         </div>
       </CardBody>
+      <ConfirmDialog
+        open={confirmOpen}
+        onCancel={() => setConfirmOpen(false)}
+        onConfirm={() =>
+          run("terminate", async () => {
+            await providerApi.terminateLease(vmId);
+            setConfirmOpen(false);
+          })
+        }
+        title="Terminate Lease"
+        description="This submits an on-chain termination from the provider wallet, so the provider pays gas. The VM is deleted only after the lease is confirmed terminated."
+        confirmLabel="Terminate Lease"
+        danger
+        busy={busy === "terminate"}
+      />
     </Card>
   );
 }

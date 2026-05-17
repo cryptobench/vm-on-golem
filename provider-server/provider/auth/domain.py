@@ -6,6 +6,7 @@ class RequestorIdentity(BaseModel):
     vm_id: str
     token_id: str
     expires_at: int
+    scope: str = "vm"
     is_admin: bool = False
 
 
@@ -15,7 +16,7 @@ class AdminIdentity(BaseModel):
 
 class RequestorSessionCommand(BaseModel):
     requestor_address: str
-    vm_id: str = Field(..., min_length=3, max_length=64)
+    vm_id: str | None = Field(default=None, min_length=3, max_length=64)
     nonce: str = Field(..., min_length=8, max_length=128)
     deadline: int
     signature: str
@@ -27,4 +28,5 @@ class RequestorSession(BaseModel):
     token_type: str = "bearer"
     expires_at: int
     requestor_address: str
-    vm_id: str
+    vm_id: str | None = None
+    scope: str = "vm"

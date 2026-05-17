@@ -11,17 +11,15 @@ import {
   type Rental,
 } from "../../lib/api";
 import { getPaymentNetworkErrorMessage } from "../../lib/chain";
+import { usePaymentStreamsLive } from "../../lib/paymentStreamLive";
 import { getPriceUSD, onPricesUpdated } from "../../lib/prices";
 import { getRequestorRuntimeConfig } from "../../lib/runtimeConfig";
-import { fetchStreamWithMeta } from "../../lib/streams";
 import { useToast } from "@golem/ui";
 import {
   isEndedStream,
   type DisplayCurrency,
   type StreamRow,
 } from "../../components/streams/streamModel";
-
-const STREAM_REFRESH_MS = 15000;
 
 export function useStreamsScreen() {
   const { show } = useToast();
@@ -102,81 +100,63 @@ export function useStreamsScreen() {
       ),
     [activeProjectId, rentals],
   );
-
-  const loadStreams = React.useCallback(
-    async ({ background = false }: { background?: boolean } = {}) => {
-      if (!mounted) return;
-      if (!projectStreamRentals.length) {
-        setRows([]);
-        setError(null);
-        setRefreshing(false);
-        return;
-      }
-      if (!streamPaymentAddress) {
-        setRows([]);
-        setError("StreamPayment address not configured in Settings.");
-        return;
-      }
-
-      if (!background) setRows(null);
-      setRefreshing(background);
-      setError(null);
-
-      try {
-        const results = await Promise.all(
-          projectStreamRentals.map(async (rental) => {
-            try {
-              const data = await fetchStreamWithMeta(
-                streamPaymentAddress,
-                BigInt(rental.stream_id!),
-              );
-              return {
-                ok: true as const,
-                row: {
-                  r: rental,
-                  chain: data.chain,
-                  tokenSymbol: data.tokenSymbol,
-                  tokenDecimals: data.tokenDecimals,
-                  usdPrice: data.usdPrice,
-                },
-              };
-            } catch (streamError) {
-              return {
-                ok: false as const,
-                message: getPaymentNetworkErrorMessage(streamError),
-              };
-            }
-          }),
-        );
-
-        const nextRows = results.flatMap((result) =>
-          result.ok ? [result.row] : [],
-        );
-        const firstError = results.find((result) => !result.ok);
-        setRows(nextRows);
-        setError(firstError && !firstError.ok ? firstError.message : null);
-      } catch (loadError) {
-        setError(getPaymentNetworkErrorMessage(loadError));
-        setRows([]);
-      } finally {
-        setRefreshing(false);
-      }
-    },
-    [mounted, projectStreamRentals, streamPaymentAddress],
+  const liveStreams = usePaymentStreamsLive(
+    streamPaymentAddress,
+    projectStreamRentals,
   );
 
   React.useEffect(() => {
     if (!mounted) return;
-    loadStreams();
-  }, [loadStreams, mounted]);
+    if (!projectStreamRentals.length) {
+      setRows([]);
+      setError(null);
+      setRefreshing(false);
+      return;
+    }
+    if (!streamPaymentAddress) {
+      setRows([]);
+      setError("StreamPayment address not configured in Settings.");
+      setRefreshing(false);
+      return;
+    }
 
-  React.useEffect(() => {
-    if (!mounted) return;
-    const timer = window.setInterval(() => {
-      loadStreams({ background: true });
-    }, STREAM_REFRESH_MS);
-    return () => window.clearInterval(timer);
-  }, [loadStreams, mounted]);
+    const entries = projectStreamRentals.map((rental) =>
+      rental.stream_id ? liveStreams.entries[String(rental.stream_id)] : null,
+    );
+    const loadedEntries = entries.filter(Boolean);
+    if (loadedEntries.length < projectStreamRentals.length) {
+      setRows(null);
+      return;
+    }
+
+    const nextRows = loadedEntries.flatMap((entry) => {
+      if (!entry || !entry.ok) return [];
+      return [
+        {
+          r: entry.rental,
+          chain: entry.data.chain,
+          tokenSymbol: entry.data.tokenSymbol,
+          tokenDecimals: entry.data.tokenDecimals,
+          usdPrice: entry.data.usdPrice,
+        },
+      ];
+    });
+    const firstEntryError = loadedEntries.find(
+      (entry) => entry && !entry.ok,
+    );
+    setRows(nextRows);
+    setError(
+      liveStreams.error ||
+        (firstEntryError && !firstEntryError.ok ? firstEntryError.error : null),
+    );
+    setRefreshing(false);
+  }, [
+    liveStreams.entries,
+    liveStreams.error,
+    mounted,
+    projectStreamRentals,
+    streamPaymentAddress,
+  ]);
 
   React.useEffect(() => {
     const off = onPricesUpdated(() => {
@@ -218,24 +198,10 @@ export function useStreamsScreen() {
     saveSettings({ show_ended_streams: value });
   };
 
-  const refreshOne = async (streamId: string) => {
-    const current = rows || [];
-    const index = current.findIndex(
-      (row) => String(row.r.stream_id) === streamId,
-    );
-    if (index < 0) return;
-
-    const data = await fetchStreamWithMeta(streamPaymentAddress, BigInt(streamId));
-    const next = [...current];
-    next[index] = {
-      ...next[index],
-      chain: data.chain,
-      tokenSymbol: data.tokenSymbol,
-      tokenDecimals: data.tokenDecimals,
-      usdPrice: data.usdPrice,
-    };
-    setRows(next);
-  };
+  const refreshStreams = React.useCallback(async (_options?: { background?: boolean }) => {
+    setRefreshing(true);
+    await liveStreams.refresh();
+  }, [liveStreams.refresh]);
 
   const topUp = async (row: StreamRow, seconds: number) => {
     const streamId = String(row.r.stream_id);
@@ -250,7 +216,7 @@ export function useStreamsScreen() {
         seconds,
       );
       show("Top-up sent");
-      await refreshOne(streamId);
+      await refreshStreams();
     } catch (topUpError) {
       show(getPaymentNetworkErrorMessage(topUpError));
     } finally {
@@ -276,6 +242,6 @@ export function useStreamsScreen() {
     topUp,
     updateDisplayCurrency,
     updateShowEnded,
-    refreshStreams: loadStreams,
+    refreshStreams,
   };
 }

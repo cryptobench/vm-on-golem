@@ -1,10 +1,10 @@
 import time
 from unittest.mock import AsyncMock
 
+import pytest
 from eth_account import Account
 from eth_account.messages import encode_typed_data
 from fastapi.testclient import TestClient
-import pytest
 
 from provider.auth.services import (
     REQUESTOR_SESSION_DOMAIN,
@@ -49,11 +49,17 @@ VM_WRITE_ENDPOINTS = [
 
 
 class FakeStreamMap:
-    def __init__(self, owner: str | None, stream_id: int | None = 1):
+    def __init__(
+        self,
+        owner: str | None | dict[str, str | None],
+        stream_id: int | None = 1,
+    ):
         self.owner = owner
         self.stream_id = stream_id
 
     async def get_owner(self, vm_id: str):
+        if isinstance(self.owner, dict):
+            return self.owner.get(vm_id)
         return self.owner
 
     async def get(self, vm_id: str):
@@ -62,23 +68,27 @@ class FakeStreamMap:
 
 class FakeJobStore:
     async def get_job(self, job_id: str):
-        return {
-            "job_id": job_id,
-            "vm_id": "vm-a",
-            "requestor_address": REQUESTOR,
-            "status": "queued",
-            "lifecycle_stage": "queued",
-            "status_message": "Queued VM creation",
-            "progress": 0,
-            "transitioning": True,
-            "next_poll_seconds": 2,
-            "error": None,
-            "created_at": "2026-05-14T12:00:00+00:00",
-            "updated_at": "2026-05-14T12:00:01+00:00",
-        }
+        return job_payload(job_id)
 
     async def active_recent_jobs(self):
         return [await self.get_job("job-a")]
+
+
+def job_payload(job_id: str = "job-a") -> dict:
+    return {
+        "job_id": job_id,
+        "vm_id": "vm-a",
+        "requestor_address": REQUESTOR,
+        "status": "queued",
+        "lifecycle_stage": "queued",
+        "status_message": "Queued VM creation",
+        "progress": 0,
+        "transitioning": True,
+        "next_poll_seconds": 2,
+        "error": None,
+        "created_at": "2026-05-14T12:00:00+00:00",
+        "updated_at": "2026-05-14T12:00:01+00:00",
+    }
 
 
 def test_requestor_vm_endpoint_rejects_missing_token():
@@ -117,6 +127,27 @@ def test_vm_job_endpoint_rejects_wrong_owner():
         app.container.provider_auth_service.reset_override()
 
     assert response.status_code == 403
+
+
+def test_vm_job_endpoint_accepts_provider_scoped_owner_token():
+    token = _provider_requestor_token(REQUESTOR_KEY)
+    fake_vm_app_service = type(
+        "FakeVMApplicationService",
+        (),
+        {"get_create_job": AsyncMock(return_value=job_payload())},
+    )()
+    _override_auth(owner=REQUESTOR)
+    app.container.vm_application_service.override(fake_vm_app_service)
+    try:
+        response = TestClient(app).get(
+            "/api/v1/vms/jobs/job-a", headers=_requestor_headers(token)
+        )
+    finally:
+        app.container.provider_auth_service.reset_override()
+        app.container.vm_application_service.reset_override()
+
+    assert response.status_code == 200
+    assert response.json()["job_id"] == "job-a"
 
 
 @pytest.mark.parametrize(("method", "path", "payload"), VM_WRITE_ENDPOINTS)
@@ -203,6 +234,45 @@ def test_requestor_vm_endpoint_accepts_owner_token():
     assert response.json()["id"] == "vm-a"
 
 
+def test_provider_scoped_token_accesses_owned_vms_on_same_provider():
+    token = _provider_requestor_token(REQUESTOR_KEY)
+
+    async def get_vm_status(vm_id: str):
+        return VMInfo(
+            id=vm_id,
+            name=vm_id,
+            status=VMStatus.RUNNING,
+            resources=VMResources(cpu=1, memory=1, storage=10),
+        )
+
+    _override_auth(owner={"vm-a": REQUESTOR, "vm-b": REQUESTOR})
+    app.container.vm_service().get_vm_status = get_vm_status
+    try:
+        client = TestClient(app)
+        first = client.get("/api/v1/vms/vm-a", headers=_requestor_headers(token))
+        second = client.get("/api/v1/vms/vm-b", headers=_requestor_headers(token))
+    finally:
+        app.container.provider_auth_service.reset_override()
+
+    assert first.status_code == 200
+    assert first.json()["id"] == "vm-a"
+    assert second.status_code == 200
+    assert second.json()["id"] == "vm-b"
+
+
+def test_provider_scoped_token_rejects_wrong_owner_vm():
+    token = _provider_requestor_token(REQUESTOR_KEY)
+    _override_auth(owner={"vm-a": OTHER})
+    try:
+        response = TestClient(app).get(
+            "/api/v1/vms/vm-a", headers=_requestor_headers(token)
+        )
+    finally:
+        app.container.provider_auth_service.reset_override()
+
+    assert response.status_code == 403
+
+
 @pytest.mark.asyncio
 async def test_provider_auth_resolves_owner_from_create_job_before_stream_mapping():
     service = ProviderAuthService(
@@ -272,6 +342,30 @@ def test_admin_endpoint_accepts_admin_token():
     assert response.status_code == 200
 
 
+def test_admin_terminate_lease_rejects_missing_admin_token():
+    _override_auth(owner=REQUESTOR)
+    try:
+        response = TestClient(app).post("/api/v1/admin/vms/vm-a/terminate-lease")
+    finally:
+        app.container.provider_auth_service.reset_override()
+
+    assert response.status_code == 401
+
+
+def test_admin_terminate_lease_rejects_requestor_token():
+    token = _requestor_token("vm-a", REQUESTOR_KEY)
+    _override_auth(owner=REQUESTOR)
+    try:
+        response = TestClient(app).post(
+            "/api/v1/admin/vms/vm-a/terminate-lease",
+            headers=_requestor_headers(token),
+        )
+    finally:
+        app.container.provider_auth_service.reset_override()
+
+    assert response.status_code == 401
+
+
 def test_create_vm_rejects_free_requestor_vm():
     token = _requestor_token("vm-a", REQUESTOR_KEY)
     _override_auth(owner=REQUESTOR)
@@ -332,6 +426,52 @@ def test_requestor_session_rejects_wrong_provider_signature():
     assert response.status_code == 401
 
 
+def test_provider_scoped_session_rejects_wrong_provider_signature():
+    command = _provider_session_command(
+        REQUESTOR_KEY,
+        signed_provider="0x5555555555555555555555555555555555555555",
+    )
+    _override_auth(owner=REQUESTOR)
+    try:
+        response = TestClient(app).post("/api/v1/auth/requestor-sessions", json=command)
+    finally:
+        app.container.provider_auth_service.reset_override()
+
+    assert response.status_code == 401
+
+
+def test_provider_scoped_session_uses_configured_ttl():
+    command = _provider_session_command(
+        REQUESTOR_KEY,
+        deadline=int(time.time()) + 100000,
+    )
+    _override_auth(owner=REQUESTOR, session_ttl_seconds=86400)
+    try:
+        before = int(time.time())
+        response = TestClient(app).post("/api/v1/auth/requestor-sessions", json=command)
+        after = int(time.time())
+    finally:
+        app.container.provider_auth_service.reset_override()
+
+    assert response.status_code == 200
+    expires_at = int(response.json()["expires_at"])
+    assert before + 86400 <= expires_at <= after + 86400
+    assert response.json()["scope"] == "provider"
+
+
+def test_provider_scoped_session_respects_earlier_deadline():
+    deadline = int(time.time()) + 120
+    command = _provider_session_command(REQUESTOR_KEY, deadline=deadline)
+    _override_auth(owner=REQUESTOR, session_ttl_seconds=86400)
+    try:
+        response = TestClient(app).post("/api/v1/auth/requestor-sessions", json=command)
+    finally:
+        app.container.provider_auth_service.reset_override()
+
+    assert response.status_code == 200
+    assert response.json()["expires_at"] == deadline
+
+
 def test_requestor_session_rejects_wrong_wallet_signature():
     command = _session_command("vm-a", REQUESTOR_KEY)
     command["signature"] = _sign_session(command, OTHER_KEY)
@@ -344,12 +484,17 @@ def test_requestor_session_rejects_wrong_wallet_signature():
     assert response.status_code == 401
 
 
-def _override_auth(owner: str):
+def _override_auth(
+    owner: str | None | dict[str, str | None],
+    *,
+    session_ttl_seconds: int = 86400,
+):
     settings = {
         "PROVIDER_ID": PROVIDER,
         "VM_DATA_DIR": "/tmp",
         "REQUESTOR_SESSION_SECRET": "test-secret",
         "PROVIDER_ADMIN_TOKEN": "admin-token",
+        "REQUESTOR_SESSION_TTL_SECONDS": session_ttl_seconds,
     }
     service = ProviderAuthService(
         settings=settings,
@@ -364,6 +509,17 @@ def _requestor_token(vm_id: str, private_key: str) -> str:
     _override_auth(owner=REQUESTOR)
     try:
         command = _session_command(vm_id, private_key)
+        response = TestClient(app).post("/api/v1/auth/requestor-sessions", json=command)
+        assert response.status_code == 200
+        return response.json()["access_token"]
+    finally:
+        app.container.provider_auth_service.reset_override()
+
+
+def _provider_requestor_token(private_key: str) -> str:
+    _override_auth(owner=REQUESTOR)
+    try:
+        command = _provider_session_command(private_key)
         response = TestClient(app).post("/api/v1/auth/requestor-sessions", json=command)
         assert response.status_code == 200
         return response.json()["access_token"]
@@ -391,9 +547,52 @@ def _session_command(
     return command
 
 
+def _provider_session_command(
+    private_key: str,
+    *,
+    deadline: int | None = None,
+    signed_provider: str = PROVIDER,
+) -> dict:
+    command = {
+        "requestor_address": Account.from_key(private_key).address,
+        "scope": "provider",
+        "nonce": f"nonce-{time.time_ns()}",
+        "deadline": deadline or int(time.time()) + 100000,
+    }
+    command["signature"] = _sign_session(
+        command, private_key, signed_provider=signed_provider
+    )
+    return command
+
+
 def _sign_session(
     command: dict, private_key: str, *, signed_provider: str = PROVIDER
 ) -> str:
+    if command["scope"] == "provider":
+        signable = encode_typed_data(
+            domain_data={
+                "name": REQUESTOR_SESSION_DOMAIN,
+                "version": REQUESTOR_SESSION_VERSION,
+            },
+            message_types={
+                "ProviderSession": [
+                    {"name": "provider", "type": "address"},
+                    {"name": "requestor", "type": "address"},
+                    {"name": "scope", "type": "string"},
+                    {"name": "nonce", "type": "string"},
+                    {"name": "deadline", "type": "uint256"},
+                ]
+            },
+            message_data={
+                "provider": signed_provider,
+                "requestor": command["requestor_address"],
+                "scope": command["scope"],
+                "nonce": command["nonce"],
+                "deadline": command["deadline"],
+            },
+        )
+        return Account.sign_message(signable, private_key=private_key).signature.hex()
+
     signable = encode_typed_data(
         domain_data={
             "name": REQUESTOR_SESSION_DOMAIN,

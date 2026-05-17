@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   getPaymentNetworkErrorMessage,
   getPaymentsChain,
+  getPaymentsWsUrl,
   normalizeChainId,
   PaymentNetworkError,
   switchToPaymentsNetwork,
@@ -27,6 +28,25 @@ describe("payments chain helpers", () => {
     assert.equal(chain.chainName, "Local Payments");
     assert.deepEqual(chain.rpcUrls, ["https://payments.example/rpc"]);
     assert.deepEqual(chain.blockExplorerUrls, ["https://payments.example/explorer"]);
+  });
+
+  it("resolves payments websocket url from settings before runtime env and default", () => {
+    const previous = process.env.NEXT_PUBLIC_EVM_WS_URL;
+    try {
+      process.env.NEXT_PUBLIC_EVM_WS_URL = "wss://runtime.example";
+
+      assert.equal(getPaymentsWsUrl({}), "wss://runtime.example");
+      assert.equal(
+        getPaymentsWsUrl({ evm_ws_url: "wss://settings.example" }),
+        "wss://settings.example",
+      );
+    } finally {
+      if (previous == null) {
+        delete process.env.NEXT_PUBLIC_EVM_WS_URL;
+      } else {
+        process.env.NEXT_PUBLIC_EVM_WS_URL = previous;
+      }
+    }
   });
 
   it("formats wrong-network and explicit rpc failures as actionable messages", () => {

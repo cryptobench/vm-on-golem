@@ -8,6 +8,7 @@ export type RequestorRuntimeConfig = {
   evmChainId: string;
   evmChainName: string;
   evmRpcUrl: string;
+  evmWsUrl: string;
   evmExplorerUrl: string;
   golemEnvironment: string;
   arkivDevRpcUrl: string;
@@ -28,6 +29,7 @@ const DEFAULTS: RequestorRuntimeConfig = {
   evmChainId: "0x88bb0",
   evmChainName: "Ethereum Hoodi",
   evmRpcUrl: "https://rpc.hoodi.ethpandaops.io",
+  evmWsUrl: "wss://ethereum-hoodi-rpc.publicnode.com",
   evmExplorerUrl: "https://hoodi.etherscan.io",
   golemEnvironment: "",
   arkivDevRpcUrl: "",
@@ -46,6 +48,7 @@ type PublicRuntimeEnv = {
   NEXT_PUBLIC_EVM_CHAIN_ID?: string;
   NEXT_PUBLIC_EVM_CHAIN_NAME?: string;
   NEXT_PUBLIC_EVM_RPC_URL?: string;
+  NEXT_PUBLIC_EVM_WS_URL?: string;
   NEXT_PUBLIC_EVM_EXPLORER_URL?: string;
   NEXT_PUBLIC_GOLEM_ENVIRONMENT?: string;
   NEXT_PUBLIC_ARKIV_DEV_RPC_URL?: string;
@@ -62,6 +65,7 @@ function publicRuntimeEnv(): PublicRuntimeEnv {
     NEXT_PUBLIC_EVM_CHAIN_ID: process.env.NEXT_PUBLIC_EVM_CHAIN_ID,
     NEXT_PUBLIC_EVM_CHAIN_NAME: process.env.NEXT_PUBLIC_EVM_CHAIN_NAME,
     NEXT_PUBLIC_EVM_RPC_URL: process.env.NEXT_PUBLIC_EVM_RPC_URL,
+    NEXT_PUBLIC_EVM_WS_URL: process.env.NEXT_PUBLIC_EVM_WS_URL,
     NEXT_PUBLIC_EVM_EXPLORER_URL: process.env.NEXT_PUBLIC_EVM_EXPLORER_URL,
     NEXT_PUBLIC_GOLEM_ENVIRONMENT: process.env.NEXT_PUBLIC_GOLEM_ENVIRONMENT,
     NEXT_PUBLIC_ARKIV_DEV_RPC_URL: process.env.NEXT_PUBLIC_ARKIV_DEV_RPC_URL,
@@ -95,6 +99,7 @@ export function getRequestorRuntimeConfig(): RequestorRuntimeConfig {
     evmChainId: envValue("NEXT_PUBLIC_EVM_CHAIN_ID"),
     evmChainName: envValue("NEXT_PUBLIC_EVM_CHAIN_NAME"),
     evmRpcUrl: envValue("NEXT_PUBLIC_EVM_RPC_URL"),
+    evmWsUrl: envValue("NEXT_PUBLIC_EVM_WS_URL"),
     evmExplorerUrl: envValue("NEXT_PUBLIC_EVM_EXPLORER_URL"),
     golemEnvironment: envValue("NEXT_PUBLIC_GOLEM_ENVIRONMENT"),
     arkivDevRpcUrl: envValue("NEXT_PUBLIC_ARKIV_DEV_RPC_URL"),

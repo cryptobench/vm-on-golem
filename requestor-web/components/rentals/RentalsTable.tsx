@@ -10,7 +10,7 @@ const HEADERS = [
   "VM ID",
   "Provider ID",
   "Country",
-  "Provider IP",
+  "SSH Endpoint",
   "Platform",
   "vCPU",
   "RAM",

@@ -7,10 +7,10 @@ from typing import Any
 from provider.errors import ConflictError, ExternalServiceError, NotFoundError
 from provider.payments.domain import LeasePayment
 from provider.payments.errors import InvalidStreamError
-from provider.payments.stream_status_service import StreamStatusService
+from provider.payments.stream_status_service import ZERO_ADDRESS, StreamStatusService
 from provider.webhooks.domain import WebhookEventType
 
-from .domain import CreateVMCommand, CreateVMJobResult
+from .domain import CreateVMCommand, CreateVMJobResult, LeaseTerminationResult
 from .lifecycle import VMLifecycleState, creation_lifecycle, lifecycle_for_status
 from .models import (
     MULTIPASS_SSH_USER,
@@ -39,6 +39,7 @@ class VMApplicationService:
         job_store: Any,
         event_broadcaster: Any = None,
         webhook_service: Any = None,
+        stream_client: Any = None,
     ):
         self.vm_service = vm_service
         self.settings = settings
@@ -46,6 +47,7 @@ class VMApplicationService:
         self.job_store = job_store
         self.event_broadcaster = event_broadcaster
         self.webhook_service = webhook_service
+        self.stream_client = stream_client
 
     def _setting(self, name: str, default: Any = None) -> Any:
         if isinstance(self.settings, dict):
@@ -408,6 +410,10 @@ class VMApplicationService:
             logger.debug("Listing provider VMs")
             real_vms = await self.vm_service.list_vms()
             by_id = {vm.id: vm for vm in real_vms}
+            records = await self._stream_records()
+            for vm_id, record in records.items():
+                if record.get("state") == "terminated":
+                    by_id[vm_id] = self._terminal_vm_info(vm_id, record)
             for job in await self.job_store.active_recent_jobs():
                 vm_id = str(job.get("vm_id") or "")
                 if not vm_id or vm_id in by_id:
@@ -450,6 +456,9 @@ class VMApplicationService:
         )
 
     async def get_vm_status(self, vm_id: str) -> VMInfo:
+        terminal = await self.stream_status_service.terminal_record(vm_id)
+        if terminal is not None:
+            return self._terminal_vm_info(vm_id, terminal)
         try:
             logger.debug("Fetching provider VM status", extra={"vm_id": vm_id})
             return await self.vm_service.get_vm_status(vm_id)
@@ -508,9 +517,26 @@ class VMApplicationService:
         if vm is None:
             raise VMNotFoundError(f"VM {vm_id} not found")
 
+        if vm.status == VMStatus.TERMINATED:
+            return {
+                "vm_id": vm_id,
+                "multipass_name": None,
+                "status": VMStatus.TERMINATED.value,
+                "lifecycle_stage": vm.lifecycle_stage,
+                "status_message": vm.status_message,
+                "progress": 100,
+                "transitioning": False,
+                "next_poll_seconds": 8,
+                "ssh_port": None,
+                "ssh_user": MULTIPASS_SSH_USER,
+            }
+
         multipass_name = None
         if hasattr(self.vm_service, "name_mapper"):
             multipass_name = await self.vm_service.name_mapper.get_multipass_name(vm_id)
+
+        if vm.ssh_port is not None and not multipass_name:
+            raise VMNotFoundError(f"VM {vm_id} not found")
 
         if vm.ssh_port is None or not multipass_name:
             lifecycle = lifecycle_for_status(
@@ -812,6 +838,30 @@ class VMApplicationService:
             ) from exc
 
     async def delete_vm(self, vm_id: str, action_signer: str | None = None) -> None:
+        if await self.stream_status_service.is_payment_required():
+            await self.stream_status_service.require_vm_action_authorized(
+                vm_id, action_signer
+            )
+            await self.stream_status_service.verify_vm_stream_terminated(vm_id)
+            record = await self.stream_status_service.terminal_record(vm_id)
+            if record is None:
+                await self.stream_status_service.mark_vm_stream_terminated(
+                    vm_id,
+                    terminated_by="requestor",
+                    termination_reason="requestor_terminated",
+                    settlement_tx_hash=None,
+                    cleanup_state="not_started",
+                )
+            await self._delete_terminated_vm(vm_id)
+            await self._emit_webhook(
+                "vm.deleted",
+                vm_id,
+                "info",
+                "VM lease was terminated by requestor",
+                {},
+            )
+            return
+
         try:
             await self.stream_status_service.require_vm_action_authorized(
                 vm_id, action_signer
@@ -847,6 +897,170 @@ class VMApplicationService:
                 "Provider VM delete failed", extra={"vm_id": vm_id}, exc_info=True
             )
             raise ExternalServiceError(f"failed to delete VM {vm_id}: {exc}") from exc
+
+    async def terminate_lease_by_provider(self, vm_id: str) -> LeaseTerminationResult:
+        record = await self._required_stream_record(vm_id)
+        if record["state"] == "terminated":
+            if record.get("cleanup_state") != "completed":
+                await self._delete_terminated_vm(vm_id)
+                record = await self._required_stream_record(vm_id)
+            return self._lease_termination_result(vm_id, record)
+
+        stream_id = int(record["stream_id"])
+        settlement_tx_hash: str | None = None
+        try:
+            stream_client = self._stream_client()
+            if stream_client is None:
+                raise RuntimeError("provider stream payment client unavailable")
+            settlement_tx_hash = stream_client.terminate(stream_id)
+        except Exception as exc:
+            if not await self._is_chain_stream_terminated(stream_id):
+                logger.error(
+                    "Provider lease termination failed",
+                    extra={"vm_id": vm_id, "stream_id": stream_id},
+                    exc_info=True,
+                )
+                raise ExternalServiceError(
+                    f"failed to terminate lease for {vm_id}: {exc}"
+                ) from exc
+
+        await self.stream_status_service.mark_vm_stream_terminated(
+            vm_id,
+            terminated_by="provider",
+            termination_reason="provider_terminated",
+            settlement_tx_hash=settlement_tx_hash,
+            cleanup_state="not_started",
+        )
+        await self._delete_terminated_vm(vm_id)
+        record = await self._required_stream_record(vm_id)
+        logger.info(
+            "Provider lease terminated",
+            extra={"vm_id": vm_id, "stream_id": stream_id},
+        )
+        await self._emit_webhook(
+            "vm.deleted",
+            vm_id,
+            "info",
+            "VM lease was terminated by provider",
+            {"stream_id": stream_id, "settlement_tx_hash": settlement_tx_hash},
+        )
+        return self._lease_termination_result(vm_id, record)
+
+    async def cleanup_requestor_terminated_stream(
+        self, vm_id: str, stream_id: int
+    ) -> None:
+        if not await self._is_chain_stream_terminated(int(stream_id)):
+            return
+        record = await self.stream_status_service.terminal_record(vm_id)
+        if record is None:
+            await self.stream_status_service.mark_vm_stream_terminated(
+                vm_id,
+                terminated_by="requestor",
+                termination_reason="requestor_terminated",
+                settlement_tx_hash=None,
+                cleanup_state="not_started",
+            )
+        await self._delete_terminated_vm(vm_id)
+
+    async def _delete_terminated_vm(self, vm_id: str) -> None:
+        try:
+            await self.vm_service.delete_vm(vm_id)
+        except VMNotFoundError:
+            logger.info(
+                "Terminated lease VM already deleted",
+                extra={"vm_id": vm_id},
+            )
+        except Exception as exc:
+            await self.stream_status_service.set_vm_stream_cleanup_state(
+                vm_id, "failed"
+            )
+            await self._publish_live(
+                ["vms", "summary", "streams", "monitoring", "metrics"],
+                vm_id=vm_id,
+                vm_scopes=["lifecycle", "access", "stream", "metrics_live"],
+            )
+            logger.error(
+                "Terminated lease VM cleanup failed",
+                extra={"vm_id": vm_id},
+                exc_info=True,
+            )
+            raise ExternalServiceError(
+                f"lease terminated but failed to delete VM {vm_id}: {exc}"
+            ) from exc
+
+        await self.stream_status_service.set_vm_stream_cleanup_state(vm_id, "completed")
+        await self._publish_live(
+            ["vms", "summary", "streams", "monitoring", "metrics"],
+            vm_id=vm_id,
+            vm_scopes=["lifecycle", "access", "stream", "metrics_live"],
+        )
+
+    async def _is_chain_stream_terminated(self, stream_id: int) -> bool:
+        reader = self.stream_status_service._reader()
+        try:
+            stream = reader.get_stream(int(stream_id))
+        except Exception as exc:
+            raise ExternalServiceError(f"stream lookup failed: {exc}") from exc
+        return str(stream.get("recipient") or "").lower() == ZERO_ADDRESS
+
+    async def _required_stream_record(self, vm_id: str) -> dict[str, Any]:
+        record = await self.stream_status_service._stream_record(vm_id)
+        if record is None:
+            raise NotFoundError("no stream mapped for this VM")
+        return record
+
+    async def _stream_records(self) -> dict[str, dict[str, Any]]:
+        records = getattr(self.stream_status_service.stream_map, "records", None)
+        if records is None:
+            raise RuntimeError("structured stream map is required")
+        return await records()
+
+    def _terminal_vm_info(self, vm_id: str, record: dict[str, Any]) -> VMInfo:
+        terminated_by = str(record.get("terminated_by") or "requestor")
+        message = (
+            "VM lease was terminated by provider"
+            if terminated_by == "provider"
+            else "VM lease was terminated by requestor"
+        )
+        resources = None
+        if hasattr(self.vm_service, "resource_tracker"):
+            resources = self.vm_service.resource_tracker.get_allocated_resources_for(
+                vm_id
+            )
+        return VMInfo(
+            id=vm_id,
+            name=vm_id,
+            status=VMStatus.TERMINATED,
+            resources=resources or VMResources(cpu=1, memory=1, storage=10),
+            ip_address=None,
+            ssh_port=None,
+            lifecycle_stage=str(record.get("termination_reason") or "terminated"),
+            status_message=message,
+            progress=100,
+            transitioning=False,
+            next_poll_seconds=8,
+        )
+
+    def _lease_termination_result(
+        self, vm_id: str, record: dict[str, Any]
+    ) -> LeaseTerminationResult:
+        return LeaseTerminationResult(
+            vm=self._terminal_vm_info(vm_id, record),
+            stream_id=int(record["stream_id"]),
+            payment_state="terminated",
+            termination_reason=str(record["termination_reason"]),
+            terminated_by=str(record["terminated_by"]),
+            terminated_at=record.get("terminated_at"),
+            settlement_tx_hash=record.get("settlement_tx_hash"),
+            cleanup_state=str(record["cleanup_state"]),
+        )
+
+    def _stream_client(self) -> Any:
+        if self.stream_client is None:
+            return None
+        if hasattr(self.stream_client, "terminate"):
+            return self.stream_client
+        return self.stream_client()
 
     async def _publish_live(
         self,

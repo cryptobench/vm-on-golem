@@ -137,6 +137,8 @@ export interface CreateVMJobStatus {
   vm_id: string;
 }
 
+export type CreateVMRequestImage = string | null;
+
 /**
  * V2 lease-bound on-chain StreamPayment proof used to fund this VM
  */
@@ -150,7 +152,7 @@ export type CreateVMRequestSize = VMSize | null;
  * Request model for creating a VM.
  */
 export interface CreateVMRequest {
-  image?: string;
+  image?: CreateVMRequestImage;
   /**
    * @minLength 3
    * @maxLength 64
@@ -244,6 +246,21 @@ export interface LeaseQuoteCommand {
   requestor_address: string;
   storage: number;
   vm_name: string;
+}
+
+export type LeaseTerminationResultSettlementTxHash = string | null;
+
+export type LeaseTerminationResultTerminatedAt = string | null;
+
+export interface LeaseTerminationResult {
+  cleanup_state: string;
+  payment_state: string;
+  settlement_tx_hash?: LeaseTerminationResultSettlementTxHash;
+  stream_id: number;
+  terminated_at: LeaseTerminationResultTerminatedAt;
+  terminated_by: string;
+  termination_reason: string;
+  vm: VMInfo;
 }
 
 export type MetricHistoryPointVmId = string | null;
@@ -390,13 +407,18 @@ export interface ProviderSummary {
   vms: ProviderSummaryVmsItem[];
 }
 
+export type RequestorSessionVmId = string | null;
+
 export interface RequestorSession {
   access_token: string;
   expires_at: number;
   requestor_address: string;
+  scope?: string;
   token_type?: string;
-  vm_id: string;
+  vm_id?: RequestorSessionVmId;
 }
+
+export type RequestorSessionCommandVmId = string | null;
 
 export interface RequestorSessionCommand {
   deadline: number;
@@ -408,11 +430,7 @@ export interface RequestorSessionCommand {
   requestor_address: string;
   scope?: string;
   signature: string;
-  /**
-   * @minLength 3
-   * @maxLength 64
-   */
-  vm_id: string;
+  vm_id?: RequestorSessionCommandVmId;
 }
 
 /**
@@ -500,12 +518,14 @@ export interface VMAccessInfo {
   vm_id: string;
 }
 
+export type VMAccessPendingResponseMultipassName = string | null;
+
 /**
  * Response returned while VM access details are not ready yet.
  */
 export interface VMAccessPendingResponse {
   lifecycle_stage?: string;
-  multipass_name: string;
+  multipass_name?: VMAccessPendingResponseMultipassName;
   /** @minimum 1 */
   next_poll_seconds?: number;
   /**
@@ -637,6 +657,7 @@ export const VMStatus = {
   suspended: "suspended",
   stopping: "stopping",
   stopped: "stopped",
+  terminated: "terminated",
   error: "error",
   deleted: "deleted",
   unknown: "unknown",
@@ -931,6 +952,56 @@ export const adminShutdownApiV1AdminShutdownPost = async (
     },
   );
 };
+
+/**
+ * @summary Terminate Vm Lease
+ */
+export type terminateVmLeaseApiV1AdminVmsRequestorNameTerminateLeasePostResponse200 =
+  {
+    data: LeaseTerminationResult;
+    status: 200;
+  };
+
+export type terminateVmLeaseApiV1AdminVmsRequestorNameTerminateLeasePostResponse422 =
+  {
+    data: HTTPValidationError;
+    status: 422;
+  };
+
+export type terminateVmLeaseApiV1AdminVmsRequestorNameTerminateLeasePostResponseSuccess =
+  terminateVmLeaseApiV1AdminVmsRequestorNameTerminateLeasePostResponse200 & {
+    headers: Headers;
+  };
+export type terminateVmLeaseApiV1AdminVmsRequestorNameTerminateLeasePostResponseError =
+  terminateVmLeaseApiV1AdminVmsRequestorNameTerminateLeasePostResponse422 & {
+    headers: Headers;
+  };
+
+export type terminateVmLeaseApiV1AdminVmsRequestorNameTerminateLeasePostResponse =
+
+    | terminateVmLeaseApiV1AdminVmsRequestorNameTerminateLeasePostResponseSuccess
+    | terminateVmLeaseApiV1AdminVmsRequestorNameTerminateLeasePostResponseError;
+
+export const getTerminateVmLeaseApiV1AdminVmsRequestorNameTerminateLeasePostUrl =
+  (requestorName: string) => {
+    return `/api/v1/admin/vms/${requestorName}/terminate-lease`;
+  };
+
+export const terminateVmLeaseApiV1AdminVmsRequestorNameTerminateLeasePost =
+  async (
+    requestorName: string,
+    options?: RequestInit,
+  ): Promise<terminateVmLeaseApiV1AdminVmsRequestorNameTerminateLeasePostResponse> => {
+    return orvalFetch<terminateVmLeaseApiV1AdminVmsRequestorNameTerminateLeasePostResponse>(
+      getTerminateVmLeaseApiV1AdminVmsRequestorNameTerminateLeasePostUrl(
+        requestorName,
+      ),
+      {
+        ...options,
+        method: "POST",
+      },
+    );
+  };
 
 /**
  * @summary Create Requestor Session

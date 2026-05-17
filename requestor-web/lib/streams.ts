@@ -45,6 +45,14 @@ export function humanDuration(totalSec: number | bigint): string {
 
 export async function fetchStreamWithMeta(spAddr: string, streamId: bigint) {
   const provider = await getPaymentsBrowserProvider();
+  return fetchStreamWithMetaFromProvider(spAddr, streamId, provider);
+}
+
+export async function fetchStreamWithMetaFromProvider(
+  spAddr: string,
+  streamId: bigint,
+  provider: any,
+) {
   const contract = new Contract(spAddr, (streamPayment as any).abi, provider);
   const chain = (await contract.streams(streamId)) as ChainStream;
   const block = await provider.getBlock("latest");

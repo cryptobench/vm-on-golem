@@ -22,7 +22,9 @@ REQUESTOR_SESSION_VERSION = "1"
 REQUESTOR_TOKEN_AUDIENCE = "golem-provider-requestor"
 ADMIN_TOKEN_AUDIENCE = "golem-provider-admin"
 JWT_ALGORITHM = "HS256"
-DEFAULT_SESSION_TTL_SECONDS = 900
+DEFAULT_SESSION_TTL_SECONDS = 86400
+LEGACY_VM_SESSION_TTL_SECONDS = 900
+REQUESTOR_SESSION_SCOPES = {"vm", "provider"}
 
 
 class ProviderAuthService:
@@ -97,8 +99,10 @@ class ProviderAuthService:
         now = int(time.time())
         if command.deadline < now:
             raise UnauthorizedError("requestor session signature expired")
-        if command.scope != "vm":
+        if command.scope not in REQUESTOR_SESSION_SCOPES:
             raise ForbiddenError("unsupported requestor session scope")
+        if command.scope == "vm" and not command.vm_id:
+            raise ForbiddenError("requestor VM session requires vm_id")
         requestor = self._recover_session_signer(command)
         if requestor.lower() != command.requestor_address.lower():
             raise UnauthorizedError("requestor session signature mismatch")
@@ -109,12 +113,14 @@ class ProviderAuthService:
             raise UnauthorizedError("requestor session nonce already used")
         self._seen_session_nonces[nonce_key] = command.deadline
 
-        expires_at = min(now + DEFAULT_SESSION_TTL_SECONDS, command.deadline)
+        ttl = self._requestor_session_ttl(command.scope)
+        expires_at = min(now + ttl, command.deadline)
         token_id = str(uuid4())
         token = jwt.encode(
             {
                 "sub": requestor,
-                "vm_id": command.vm_id,
+                "vm_id": command.vm_id if command.scope == "vm" else "*",
+                "scope": command.scope,
                 "jti": token_id,
                 "exp": expires_at,
                 "aud": REQUESTOR_TOKEN_AUDIENCE,
@@ -128,9 +134,35 @@ class ProviderAuthService:
             expires_at=expires_at,
             requestor_address=requestor,
             vm_id=command.vm_id,
+            scope=command.scope,
         )
 
     def _recover_session_signer(self, command: RequestorSessionCommand) -> str:
+        if command.scope == "provider":
+            signable = encode_typed_data(
+                domain_data={
+                    "name": REQUESTOR_SESSION_DOMAIN,
+                    "version": REQUESTOR_SESSION_VERSION,
+                },
+                message_types={
+                    "ProviderSession": [
+                        {"name": "provider", "type": "address"},
+                        {"name": "requestor", "type": "address"},
+                        {"name": "scope", "type": "string"},
+                        {"name": "nonce", "type": "string"},
+                        {"name": "deadline", "type": "uint256"},
+                    ]
+                },
+                message_data={
+                    "provider": self._provider_id(),
+                    "requestor": command.requestor_address,
+                    "scope": command.scope,
+                    "nonce": command.nonce,
+                    "deadline": command.deadline,
+                },
+            )
+            return Account.recover_message(signable, signature=command.signature)
+
         signable = encode_typed_data(
             domain_data={
                 "name": REQUESTOR_SESSION_DOMAIN,
@@ -149,7 +181,7 @@ class ProviderAuthService:
             message_data={
                 "provider": self._provider_id(),
                 "requestor": command.requestor_address,
-                "vmId": command.vm_id,
+                "vmId": command.vm_id or "",
                 "scope": command.scope,
                 "nonce": command.nonce,
                 "deadline": command.deadline,
@@ -171,15 +203,23 @@ class ProviderAuthService:
 
         requestor = str(claims.get("sub") or "")
         vm_id = str(claims.get("vm_id") or "")
+        scope = str(claims.get("scope") or "vm")
         token_id = str(claims.get("jti") or "")
         expires_at = int(claims.get("exp") or 0)
-        if not requestor or not vm_id or not token_id or not expires_at:
+        if (
+            not requestor
+            or not vm_id
+            or scope not in REQUESTOR_SESSION_SCOPES
+            or not token_id
+            or not expires_at
+        ):
             raise UnauthorizedError("invalid requestor session claims")
         return RequestorIdentity(
             requestor_address=requestor,
             vm_id=vm_id,
             token_id=token_id,
             expires_at=expires_at,
+            scope=scope,
         )
 
     def validate_admin_token(self, token: str) -> AdminIdentity:
@@ -191,7 +231,7 @@ class ProviderAuthService:
     async def require_vm_access(
         self, identity: RequestorIdentity, vm_id: str
     ) -> RequestorIdentity:
-        if identity.vm_id != vm_id:
+        if identity.scope == "vm" and identity.vm_id != vm_id:
             raise ForbiddenError("requestor session is scoped to a different VM")
         owner = await self.resolve_vm_owner(vm_id)
         if owner.lower() != identity.requestor_address.lower():
@@ -204,7 +244,7 @@ class ProviderAuthService:
         job = await self.job_store.get_job(job_id)
         if not job:
             raise ForbiddenError("job owner unavailable")
-        if str(job.get("vm_id") or "") != identity.vm_id:
+        if identity.scope == "vm" and str(job.get("vm_id") or "") != identity.vm_id:
             raise ForbiddenError("requestor session is scoped to a different VM")
         owner = str(job.get("requestor_address") or "")
         if not owner:
@@ -212,6 +252,15 @@ class ProviderAuthService:
         if owner.lower() != identity.requestor_address.lower():
             raise ForbiddenError("requestor does not own this VM job")
         return identity
+
+    def _requestor_session_ttl(self, scope: str) -> int:
+        if scope == "vm":
+            return LEGACY_VM_SESSION_TTL_SECONDS
+        value = int(
+            self._setting("REQUESTOR_SESSION_TTL_SECONDS", DEFAULT_SESSION_TTL_SECONDS)
+            or DEFAULT_SESSION_TTL_SECONDS
+        )
+        return max(60, value)
 
     async def resolve_vm_owner(self, vm_id: str) -> str:
         get_owner = getattr(self.stream_map, "get_owner", None)

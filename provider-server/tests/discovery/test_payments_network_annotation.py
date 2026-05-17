@@ -49,7 +49,7 @@ async def test_arkiv_publisher_includes_payments_network(monkeypatch):
     )
 
     # Set a known payments profile
-    settings.PAYMENTS_NETWORK = "l2.hoodi"
+    settings.PAYMENTS_NETWORK = "hoodi"
 
     await adv.post_advertisement()
     str_anns = {a.key: a.value for a in nonlocal_capture["string_annotations"]}

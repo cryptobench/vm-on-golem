@@ -3,7 +3,6 @@ import {
   CardBody,
   DataTable,
   IconTile,
-  LineAreaChart,
   PageHeader,
   ProgressBar,
   SectionHeader,
@@ -16,14 +15,14 @@ import {
   RiCpuLine,
   RiDatabase2Line,
   RiHardDrive3Line,
-  RiLineChartLine,
   RiMoneyDollarCircleLine,
   RiStackLine,
 } from "@remixicon/react";
 import { EndpointErrors, LoadingGrid } from "../../components/StateViews";
 import type { NavigateTarget } from "../../components/types";
-import { countVms, resourcePair, streamEarningsPoints, streamsTotals, utilization, vmStatusTone } from "../../lib/derived";
-import { EMPTY_VALUE, formatCurrency, formatGlm, formatPercent, titleCase, vmStatusLabel } from "../../lib/format";
+import { countVms, resourcePair, streamsTotals, utilization, vmStatusTone } from "../../lib/derived";
+import { EMPTY_VALUE, formatCurrency, formatGlm, titleCase, vmStatusLabel } from "../../lib/format";
+import { projectStreams, useStreamNowSeconds } from "../../lib/liveStreamValues";
 import { glmToUsd, usdToGlm, useGlmUsdPrice } from "../../lib/prices";
 import type { DashboardData } from "../../lib/useProviderData";
 
@@ -37,10 +36,12 @@ export function OverviewPage({
   onNavigate: (target: NavigateTarget) => void;
 }) {
   const glmUsd = useGlmUsdPrice();
+  const nowSeconds = useStreamNowSeconds();
   if (loading && !data) return <LoadingGrid />;
   const vms = data?.vms ?? [];
   const counts = countVms(vms);
-  const totals = streamsTotals(data?.streams ?? []);
+  const streams = projectStreams(data?.streams ?? [], nowSeconds);
+  const totals = streamsTotals(streams);
   const totalEarnedUsd = glmToUsd(totals.vested, glmUsd);
   const { total, available } = resourcePair(data?.summary ?? undefined);
   const usedCpu = (total.cpu ?? 0) - (available.cpu ?? 0);
@@ -57,18 +58,18 @@ export function OverviewPage({
       />
       <EndpointErrors errors={data?.errors ?? {}} />
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-3">
         <StatCard
           label="Total earned (USD)"
           value={formatCurrency(totalEarnedUsd)}
-          detail={glmUsd == null ? "Waiting for GLM/USD quote" : "Converted from active stream GLM"}
+          detail={glmUsd == null ? "Waiting for GLM/USD quote" : "Converted from stream GLM"}
           icon={<RiMoneyDollarCircleLine className="h-5 w-5" />}
           tone="success"
         />
         <StatCard
           label="Total earned (GLM)"
-          value={formatGlm(totals.vested)}
-          detail="From active stream values"
+          value={formatGlm(totals.vested, 4)}
+          detail="Earned by elapsed stream time"
           icon={<RiStackLine className="h-5 w-5" />}
           tone="primary"
         />
@@ -79,44 +80,31 @@ export function OverviewPage({
           icon={<RiStackLine className="h-5 w-5" />}
           tone="primary"
         />
-        <StatCard
-          label="Service health"
-          value={titleCase(data?.monitoring?.status ?? data?.summary?.status)}
-          detail={formatLocalDateTime(data?.monitoring?.last_sample_at) ?? "Last sample unavailable"}
-          icon={<RiLineChartLine className="h-5 w-5" />}
-          tone={data?.monitoring?.status === "healthy" ? "success" : "neutral"}
-        />
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[1.5fr_0.85fr]">
         <Card>
           <CardBody className="space-y-5">
             <SectionHeader title="Resources" />
-            <div className="grid gap-6 md:grid-cols-3">
-              <ResourceColumn
-                title="Total resources"
-                cpu={total.cpu}
-                memory={total.memory}
-                storage={total.storage}
+            <div className="divide-y divide-border rounded-lg border border-border">
+              <ResourceUsageRow
+                icon={<RiCpuLine />}
+                label="CPU"
+                value={formatResourceUsage(usedCpu, total.cpu, "Cores")}
+                progress={utilization(usedCpu, total.cpu)}
               />
-              <ResourceColumn
-                title="Available resources"
-                cpu={available.cpu}
-                memory={available.memory}
-                storage={available.storage}
+              <ResourceUsageRow
+                icon={<RiDatabase2Line />}
+                label="Memory"
+                value={formatResourceUsage(usedMemory, total.memory, "GB Memory")}
+                progress={utilization(usedMemory, total.memory)}
               />
-              <div className="space-y-4">
-                <h3 className="text-sm font-medium text-text-secondary">Utilization</h3>
-                <Utilization label="CPU" value={utilization(usedCpu, total.cpu)} />
-                <Utilization
-                  label="Memory"
-                  value={utilization(usedMemory, total.memory)}
-                />
-                <Utilization
-                  label="Storage"
-                  value={utilization(usedStorage, total.storage)}
-                />
-              </div>
+              <ResourceUsageRow
+                icon={<RiHardDrive3Line />}
+                label="Disk"
+                value={formatResourceUsage(usedStorage, total.storage, "GB Disk")}
+                progress={utilization(usedStorage, total.storage)}
+              />
             </div>
             <button
               type="button"
@@ -154,7 +142,7 @@ export function OverviewPage({
         </Card>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[1.1fr_1fr_0.8fr]">
+      <div className="grid gap-4 xl:grid-cols-[1.1fr_0.8fr]">
         <Card>
           <CardBody>
             <SectionHeader
@@ -196,13 +184,6 @@ export function OverviewPage({
                 ]}
               />
             </div>
-          </CardBody>
-        </Card>
-
-        <Card>
-          <CardBody>
-            <SectionHeader title="Earnings trend (GLM)" description={formatGlm(totals.vested)} />
-            <LineAreaChart data={streamEarningsPoints(data?.streams ?? [])} height={220} />
           </CardBody>
         </Card>
 
@@ -250,44 +231,34 @@ function positiveNumber(value: unknown) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
-function ResourceColumn({
-  title,
-  cpu,
-  memory,
-  storage,
+function formatResourceUsage(used: number, total?: number, unit?: string) {
+  if (typeof total !== "number") return `${EMPTY_VALUE} ${unit}`;
+  return `${Math.max(0, used)}/${total} ${unit}`;
+}
+
+function ResourceUsageRow({
+  icon,
+  label,
+  value,
+  progress,
 }: {
-  title: string;
-  cpu?: number;
-  memory?: number;
-  storage?: number;
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  progress: number;
 }) {
   return (
-    <div className="space-y-3">
-      <h3 className="text-sm font-medium text-text-secondary">{title}</h3>
-      <ResourceRow icon={<RiCpuLine />} label={`${cpu ?? EMPTY_VALUE} CPU`} />
-      <ResourceRow icon={<RiDatabase2Line />} label={`${memory ?? EMPTY_VALUE} GB RAM`} />
-      <ResourceRow icon={<RiHardDrive3Line />} label={`${storage ?? EMPTY_VALUE} GB Storage`} />
-    </div>
-  );
-}
-
-function ResourceRow({ icon, label }: { icon: React.ReactNode; label: string }) {
-  return (
-    <div className="flex items-center gap-3 text-sm text-text-primary">
-      <IconTile className="h-7 w-7" tone="neutral">
-        <span className="[&>svg]:h-4 [&>svg]:w-4">{icon}</span>
-      </IconTile>
-      {label}
-    </div>
-  );
-}
-
-function Utilization({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="grid grid-cols-[4rem_1fr_3rem] items-center gap-3 text-sm">
-      <span className="font-medium text-text-primary">{label}</span>
-      <ProgressBar value={value} />
-      <span className="text-right text-text-secondary">{formatPercent(value, 0)}</span>
+    <div className="grid gap-4 px-4 py-4 sm:grid-cols-[minmax(8rem,1fr)_minmax(10rem,18rem)_8rem] sm:items-center">
+      <div className="flex items-center gap-3">
+        <IconTile className="h-8 w-8" tone="neutral">
+          <span className="[&>svg]:h-4 [&>svg]:w-4">{icon}</span>
+        </IconTile>
+        <span className="font-medium text-text-primary">{label}</span>
+      </div>
+      <ProgressBar value={progress} className="sm:justify-self-stretch" />
+      <span className="text-sm font-medium text-text-secondary sm:text-right">
+        {value}
+      </span>
     </div>
   );
 }
