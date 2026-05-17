@@ -101,7 +101,7 @@ graph TB
     VMM --> PM[Proxy Manager]
     RT --> RM[Resource Monitor]
     RT --> AD[Discovery Publisher]
-    AD --> ARK[Arkiv or Central Discovery]
+    AD --> CD[Central Discovery WebSocket]
     PM --> SSH[SSH Proxy]
     PV --> PM
     MP --> VM1[VM 1]
@@ -282,13 +282,10 @@ GOLEM_PROVIDER_CERT_RENEWAL_RETRY_MAX_SECONDS=21600
 # If your router forwards public 80/443 to different local ports, set the
 # matching internal ports above and forward to those exact local ports.
 
-# Central discovery (default)
-# GOLEM_PROVIDER_DISCOVERY_URL="http://discovery.golem.network:9001"
-# GOLEM_PROVIDER_DISCOVERY_BACKEND="central"  # central|arkiv|both
-# GOLEM_PROVIDER_ADVERTISEMENT_INTERVAL=240
+# Central discovery websocket
+# GOLEM_PROVIDER_DISCOVERY_WS_URL="ws://discovery.golem.network:9001/api/v1/discovery/providers"
 
 # Network Selection
-# Adds an annotation to on-chain advertisements and can be used by requestors to filter
 GOLEM_PROVIDER_NETWORK="testnet"  # or "mainnet"
 ```
 
@@ -462,9 +459,7 @@ golem-provider status [--json]
   - Does not decide which chain you target.
 
 - Network Selection (`--network` or `GOLEM_PROVIDER_NETWORK`)
-  - Chooses the discovery/advertisement scope: providers advertise `golem_network=development|testnet|mainnet` and requestors filter accordingly.
-  - If using Arkiv, pair with appropriate Arkiv RPC envs (`GOLEM_PROVIDER_ARKIV_RPC_URL`, `GOLEM_PROVIDER_ARKIV_WS_URL`).
-  - If using Arkiv in development, you can supply separate dev endpoints via `GOLEM_PROVIDER_ARKIV_DEV_RPC_URL` / `GOLEM_PROVIDER_ARKIV_DEV_WS_URL`.
+  - Chooses the provider network profile: `development|testnet|mainnet`.
   - Does not change dev ergonomics (logging, reload, or port verification behavior).
 
 - Payments Network (`GOLEM_PROVIDER_PAYMENTS_NETWORK`)
@@ -491,7 +486,6 @@ Notes:
 
 ### Faucet
 
-- Arkiv adverts: provider auto-requests funds on startup from `FAUCET_URL` (defaults to Kaolin Hoodi) protected by CAPTCHA at `CAPTCHA_URL/05381a2cef5e`.
 - Ethereum Hoodi payments: fund the provider wallet with Hoodi ETH through
   external Hoodi faucet links. This provider CLI does not mint Hoodi tGLM; see
   `../contracts/README.md` for the tGLM minter.

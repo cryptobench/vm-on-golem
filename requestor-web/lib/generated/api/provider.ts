@@ -176,11 +176,15 @@ export interface GuestMetricAccepted {
   status?: string;
 }
 
+export type GuestMetricPayloadAgentReady = boolean | null;
+
 export type GuestMetricPayloadCpuPercent = number | null;
 
 export type GuestMetricPayloadDiskTotalBytes = number | null;
 
 export type GuestMetricPayloadDiskUsedBytes = number | null;
+
+export type GuestMetricPayloadHardeningApplied = boolean | null;
 
 export type GuestMetricPayloadLoad1m = number | null;
 
@@ -192,18 +196,23 @@ export type GuestMetricPayloadNetworkRxBytes = number | null;
 
 export type GuestMetricPayloadNetworkTxBytes = number | null;
 
+export type GuestMetricPayloadSshdReady = boolean | null;
+
 export type GuestMetricPayloadTimestamp = string | null;
 
 export interface GuestMetricPayload {
+  agent_ready?: GuestMetricPayloadAgentReady;
   agent_version?: string;
   cpu_percent?: GuestMetricPayloadCpuPercent;
   disk_total_bytes?: GuestMetricPayloadDiskTotalBytes;
   disk_used_bytes?: GuestMetricPayloadDiskUsedBytes;
+  hardening_applied?: GuestMetricPayloadHardeningApplied;
   load_1m?: GuestMetricPayloadLoad1m;
   memory_total_bytes?: GuestMetricPayloadMemoryTotalBytes;
   memory_used_bytes?: GuestMetricPayloadMemoryUsedBytes;
   network_rx_bytes?: GuestMetricPayloadNetworkRxBytes;
   network_tx_bytes?: GuestMetricPayloadNetworkTxBytes;
+  sshd_ready?: GuestMetricPayloadSshdReady;
   timestamp?: GuestMetricPayloadTimestamp;
   token: string;
 }
@@ -534,7 +543,7 @@ export interface VMAccessPendingResponse {
    */
   progress?: number;
   ssh_port?: null;
-  /** SSH login user for this VM, currently ubuntu */
+  /** SSH login user for this VM, currently golem */
   ssh_user: string;
   status?: string;
   status_message?: string;

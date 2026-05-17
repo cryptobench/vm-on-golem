@@ -2,12 +2,14 @@ import asyncio
 import json
 import subprocess
 import uuid
+from datetime import timedelta
 from typing import Dict, List, Optional
 
 from ..config import settings
 from ..utils.logging import setup_logger
 from ..utils.retry import NonRetryableError, async_retry_unless_not_found
-from .lifecycle import ProgressCallback, creation_lifecycle, lifecycle_for_status
+from ..utils.time import utc_now
+from .lifecycle import ProgressCallback, creation_lifecycle
 from .models import (
     VMConfig,
     VMError,
@@ -43,12 +45,16 @@ class NonRetryableMultipassError(MultipassError, NonRetryableError):
 class MultipassAdapter(VMProvider):
     """Manages VMs using Multipass."""
 
-    def __init__(self, proxy_manager, name_mapper):
+    def __init__(
+        self, proxy_manager, name_mapper, monitoring_repo=None, resource_tracker=None
+    ):
         self.multipass_path = (
             settings.MULTIPASS_BINARY_PATH or detect_multipass_binary() or "multipass"
         )
         self.proxy_manager = proxy_manager
         self.name_mapper = name_mapper
+        self.monitoring_repo = monitoring_repo
+        self.resource_tracker = resource_tracker
         self._creating_multipass_names: set[str] = set()
 
     @staticmethod
@@ -223,6 +229,8 @@ class MultipassAdapter(VMProvider):
             multipass_name,
             "--cloud-init",
             config.cloud_init_path,
+            "--timeout",
+            str(settings.MULTIPASS_LAUNCH_INIT_TIMEOUT_SECONDS),
             "--cpus",
             str(config.resources.cpu),
             "--memory",
@@ -238,45 +246,21 @@ class MultipassAdapter(VMProvider):
                 "Launching VM image",
                 35,
             )
-            await self._run_multipass(launch_cmd)
+            try:
+                await self._run_multipass(launch_cmd)
+            except MultipassError as launch_error:
+                await self._handle_launch_init_exit(multipass_name, launch_error)
             logger.info(f"VM {multipass_name} launched, waiting for it to be ready...")
             await self._report_progress(
                 progress_callback,
                 "waiting_for_guest",
-                "Waiting for VM to start",
+                "Waiting for guest agent",
                 60,
             )
 
-            ip_address = None
-            max_retries = settings.CREATE_VM_MAX_RETRIES
-            retry_delay = settings.CREATE_VM_RETRY_DELAY_SECONDS  # seconds
-            for attempt in range(max_retries):
-                try:
-                    info = await self._get_vm_info(multipass_name)
-                    if info.get("state", "").lower() == "running" and info.get("ipv4"):
-                        ip_address = info["ipv4"][0]
-                        break
-                    state = info.get("state") or "starting"
-                    await self._report_progress(
-                        progress_callback,
-                        "waiting_for_guest",
-                        f"Multipass reports {state}",
-                        min(85, 60 + attempt),
-                    )
-                    logger.debug(
-                        f"VM {config.name} status is {info.get('state')}, waiting..."
-                    )
-                except (MultipassError, VMNotFoundError):
-                    logger.debug(
-                        f"VM {config.name} not found yet, retrying in {retry_delay}s..."
-                    )
-
-                await asyncio.sleep(retry_delay)
-
-            if not ip_address:
-                raise MultipassError(
-                    f"VM {config.name} did not become ready or get an IP in time."
-                )
+            agent_state = await self._wait_for_guest_agent_state(
+                config.name, progress_callback
+            )
 
             # Configure proxy to allocate a port
             await self._report_progress(
@@ -285,13 +269,16 @@ class MultipassAdapter(VMProvider):
                 "Configuring SSH access",
                 90,
             )
-            if not await self.proxy_manager.add_vm(multipass_name, ip_address):
+            if not await self.proxy_manager.add_vm(
+                multipass_name, agent_state.source_ip
+            ):
                 raise MultipassError(
                     f"Failed to configure proxy for VM {multipass_name}"
                 )
 
-            # Now get the full status, which will include the allocated port
-            vm_info = await self.get_vm_status(config.name)
+            vm_info = self._vm_info_from_agent_state(
+                config.name, multipass_name, config.resources, agent_state
+            )
             await self._report_progress(
                 progress_callback,
                 "ready",
@@ -346,6 +333,134 @@ class MultipassAdapter(VMProvider):
             raise MultipassError(f"Failed to create VM {config.name}: {e}") from e
         finally:
             self._creating_multipass_names.discard(multipass_name)
+
+    async def _handle_launch_init_exit(
+        self, multipass_name: str, launch_error: MultipassError
+    ) -> None:
+        """Treat Multipass launch initialization timeout as an expected detach."""
+
+        if self._is_launch_timeout_error(launch_error):
+            logger.warning(
+                "Detached from Multipass guest initialization; continuing with guest-agent readiness",
+                extra={"multipass_name": multipass_name, "error": str(launch_error)},
+            )
+            return
+
+        raise launch_error
+
+    @staticmethod
+    def _is_launch_timeout_error(error: MultipassError) -> bool:
+        message = str(error).lower()
+        return "timed out" in message or "timeout" in message
+
+    async def _wait_for_guest_agent_state(
+        self,
+        vm_id: str,
+        progress_callback: ProgressCallback | None = None,
+    ):
+        max_retries = settings.CREATE_VM_MAX_RETRIES
+        retry_delay = settings.CREATE_VM_RETRY_DELAY_SECONDS
+        for attempt in range(max_retries):
+            state = self._fresh_guest_agent_state(vm_id)
+            if state is not None:
+                logger.info(
+                    "Guest agent reported VM readiness",
+                    extra={
+                        "vm_id": vm_id,
+                        "source_ip": state.source_ip,
+                        "agent_version": state.agent_version,
+                    },
+                )
+                return state
+
+            latest_state = self._guest_agent_state(vm_id)
+            await self._report_progress(
+                progress_callback,
+                "waiting_for_guest_agent",
+                self._agent_wait_message(latest_state),
+                min(85, 60 + attempt),
+            )
+            await asyncio.sleep(retry_delay)
+
+        raise MultipassError(f"VM {vm_id} did not report guest metrics in time.")
+
+    def _guest_agent_state(self, vm_id: str):
+        if self.monitoring_repo is None:
+            return None
+        return self.monitoring_repo.get_guest_agent_state(vm_id)
+
+    def _fresh_guest_agent_state(self, vm_id: str):
+        state = self._guest_agent_state(vm_id)
+        if state is None or not state.source_ip:
+            return None
+        stale_seconds = int(getattr(settings, "VM_AGENT_STATE_STALE_SECONDS", 90))
+        if utc_now() - state.last_seen_at > timedelta(seconds=stale_seconds):
+            return None
+        return state
+
+    @staticmethod
+    def _agent_wait_message(state) -> str:
+        if state is None:
+            return "Waiting for guest metrics"
+        return "Waiting for fresh guest metrics"
+
+    def _vm_info_from_agent_state(
+        self,
+        requestor_name: str,
+        multipass_name: str,
+        resources: VMResources,
+        state,
+    ) -> VMInfo:
+        return VMInfo(
+            id=requestor_name,
+            name=requestor_name,
+            status=VMStatus.RUNNING,
+            resources=resources,
+            ip_address=state.source_ip,
+            ssh_port=self.proxy_manager.get_port(multipass_name),
+            lifecycle_stage="ready",
+            status_message="VM is online",
+            progress=100,
+            transitioning=False,
+            next_poll_seconds=8,
+        )
+
+    def _agent_unavailable_vm_info(
+        self,
+        requestor_name: str,
+        multipass_name: str,
+        resources: VMResources,
+        state,
+    ) -> VMInfo:
+        has_state = state is not None
+        stage = "agent_stale" if has_state else "agent_unavailable"
+        message = (
+            "Guest agent heartbeat is stale"
+            if has_state
+            else self._agent_wait_message(state)
+        )
+        return VMInfo(
+            id=requestor_name,
+            name=requestor_name,
+            status=VMStatus.UNKNOWN,
+            resources=resources,
+            ip_address=state.source_ip if state is not None else None,
+            ssh_port=self.proxy_manager.get_port(multipass_name),
+            lifecycle_stage=stage,
+            status_message=message,
+            progress=0,
+            transitioning=False,
+            next_poll_seconds=8,
+        )
+
+    def _resources_for(self, requestor_name: str) -> VMResources:
+        if self.resource_tracker is not None:
+            resources = self.resource_tracker.get_allocated_resources_for(
+                requestor_name
+            )
+            if resources is not None:
+                return resources
+        return VMResources(cpu=1, memory=1, storage=10)
 
     async def delete_vm(self, multipass_name: str) -> None:
         """Delete a VM."""
@@ -586,7 +701,7 @@ class MultipassAdapter(VMProvider):
         return requestor_name or multipass_name
 
     async def get_vm_status(self, name_or_id: str) -> VMInfo:
-        """Get VM status by multipass name or requestor id."""
+        """Get requestor-facing VM status from the guest agent state."""
         # Resolve identifiers flexibly
         requestor_name = await self.name_mapper.get_requestor_name(name_or_id)
         if requestor_name:
@@ -596,42 +711,18 @@ class MultipassAdapter(VMProvider):
             if not multipass_name:
                 raise VMNotFoundError(f"VM {name_or_id} mapping not found")
             requestor_name = name_or_id
-        try:
-            info = await self._get_vm_info(multipass_name)
-        except MultipassError:
-            raise VMNotFoundError(f"VM {multipass_name} not found in multipass")
 
-        ipv4 = info.get("ipv4")
-        ip_address = ipv4[0] if ipv4 else None
-        logger.debug(f"Parsed VM info for {requestor_name}: {info}")
+        resources = self._resources_for(requestor_name)
+        fresh_state = self._fresh_guest_agent_state(requestor_name)
+        if fresh_state is not None:
+            return self._vm_info_from_agent_state(
+                requestor_name, multipass_name, resources, fresh_state
+            )
 
-        disks_info = info.get("disks", {})
-        total_storage = 0
-        for disk in disks_info.values():
-            total_storage += self._safe_int(disk.get("total"), 0)
-
-        # Memory reported by multipass is in bytes; default to 1 GiB if missing/blank
-        mem_total_bytes = self._safe_int(info.get("memory", {}).get("total"), 1024**3)
-        vm_info_obj = VMInfo(
-            id=requestor_name,
-            name=requestor_name,
-            status=VMStatus.from_multipass(info.get("state")),
-            resources=VMResources(
-                cpu=self._safe_int(info.get("cpu_count"), 1),
-                memory=round(mem_total_bytes / (1024**3)),
-                storage=round(total_storage / (1024**3)) if total_storage > 0 else 10,
-            ),
-            ip_address=ip_address,
-            ssh_port=self.proxy_manager.get_port(multipass_name),
+        state = self._guest_agent_state(requestor_name)
+        return self._agent_unavailable_vm_info(
+            requestor_name, multipass_name, resources, state
         )
-        lifecycle = lifecycle_for_status(vm_info_obj.status)
-        vm_info_obj.lifecycle_stage = lifecycle.lifecycle_stage
-        vm_info_obj.status_message = lifecycle.status_message
-        vm_info_obj.progress = lifecycle.progress
-        vm_info_obj.transitioning = lifecycle.transitioning
-        vm_info_obj.next_poll_seconds = lifecycle.next_poll_seconds
-        logger.debug(f"Constructed VMInfo object: {vm_info_obj.dict()}")
-        return vm_info_obj
 
     async def _restore_missing_proxy_listeners(self) -> None:
         """Start SSH proxies for running mapped VMs whose proxy is not listening."""

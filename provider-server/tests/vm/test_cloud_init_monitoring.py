@@ -27,6 +27,10 @@ def test_cloud_init_installs_push_only_monitoring_agent():
         assert "golem-metrics-agent.service" in content
         assert "token-123" in content
         assert "urllib.request" in agent_content
+        assert '"agent_ready": True' in agent_content
+        assert '"sshd_ready": _sshd_ready()' in agent_content
+        assert '"hardening_applied": _hardening_applied()' in agent_content
+        assert "AllowUsers {REQUESTOR_SSH_USER}" in agent_content
         assert "multipass exec" not in content
         assert "ssh " not in agent_content
         assert "except Exception as exc:" in agent_content

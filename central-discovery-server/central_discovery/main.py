@@ -1,18 +1,15 @@
-import asyncio
 import logging
 import time
 from typing import Callable
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from .api.models import ErrorResponse, HealthResponse
+from .domain import HealthResponse
 from .api.routes import router
 from .config import settings
-from .db.repository import AdvertisementRepository
-from .db.session import AsyncSessionLocal, cleanup_db, init_db
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -33,18 +30,20 @@ app.add_middleware(
 )
 
 # Rate limiting middleware
-from starlette.middleware.base import BaseHTTPMiddleware
-
-
-class RateLimitMiddleware(BaseHTTPMiddleware):
+class RateLimitMiddleware:
     def __init__(self, app, requests_per_minute: int = 100):
-        super().__init__(app)
+        self.app = app
         self.requests_per_minute = requests_per_minute
         self.requests = {}
 
-    async def dispatch(self, request: Request, call_next: Callable):
+    async def __call__(self, scope, receive: Callable, send: Callable):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
         # Get client IP
-        client_ip = request.client.host
+        client = scope.get("client")
+        client_ip = client[0] if client else "unknown"
 
         # Check rate limit
         current_time = time.time()
@@ -60,17 +59,17 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                         "requests_per_minute": self.requests_per_minute,
                     },
                 )
-                return JSONResponse(
+                response = JSONResponse(
                     status_code=429,
-                    content=jsonable_encoder(
-                        ErrorResponse(code="RATE_001", message="Rate limit exceeded")
-                    ),
+                    content=jsonable_encoder({"detail": "Rate limit exceeded"}),
                 )
+                await response(scope, receive, send)
+                return
             self.requests[client_ip] = requests + [current_time]
         else:
             self.requests[client_ip] = [current_time]
 
-        return await call_next(request)
+        await self.app(scope, receive, send)
 
 
 # Add rate limiting
@@ -78,53 +77,20 @@ app.add_middleware(
     RateLimitMiddleware, requests_per_minute=settings.RATE_LIMIT_PER_MINUTE
 )
 
-# Include API routes
-app.include_router(router)  # Remove prefix as it's already set in the router
-
-# Background task for cleaning up expired advertisements
-async def cleanup_expired_advertisements():
-    """Periodically remove expired advertisements."""
-    while True:
-        try:
-            async with AsyncSessionLocal() as session:
-                repo = AdvertisementRepository(session)
-                removed = await repo.cleanup_expired()
-                if removed > 0:
-                    logger.info(f"Removed {removed} expired advertisements")
-                else:
-                    logger.debug("No expired advertisements to remove")
-        except Exception as e:
-            logger.error(f"Error cleaning up advertisements: {e}", exc_info=True)
-
-        await asyncio.sleep(settings.CLEANUP_INTERVAL_SECONDS)
+# Include websocket API routes
+app.include_router(router, prefix=settings.API_V1_PREFIX)
 
 
 @app.on_event("startup")
 async def startup_event():
     """Initialize application on startup."""
-    try:
-        logger.info("Starting central discovery service")
-        # Initialize database
-        await init_db()
-        logger.info("Database initialized")
-
-        # Start cleanup task
-        asyncio.create_task(cleanup_expired_advertisements())
-        logger.info("Advertisement cleanup task started")
-    except Exception as e:
-        logger.error(f"Error during startup: {e}", exc_info=True)
-        raise
+    logger.info("Starting central discovery service")
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Clean up resources on shutdown."""
-    try:
-        logger.info("Shutting down central discovery service")
-        await cleanup_db()
-        logger.info("Database connection closed")
-    except Exception as e:
-        logger.error(f"Error during shutdown: {e}", exc_info=True)
+    logger.info("Shutting down central discovery service")
 
 
 @app.get("/health", response_model=HealthResponse)

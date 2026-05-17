@@ -4,207 +4,213 @@ from abc import ABC, abstractmethod
 from typing import Any, Optional
 
 import aiohttp
+from eth_account import Account
+from eth_account.messages import encode_defunct
 
 from ..config import settings
 from ..utils.retry import async_retry
+from ..utils.time import utc_now
 from .resource_tracker import ResourceTracker
 
 logger = logging.getLogger(__name__)
 
 
-class DiscoveryPublisher(ABC):
-    """Abstract base class for discovery advertisement publishers."""
+def provider_auth_message(provider_id: str, nonce: str, timestamp: str) -> str:
+    return f"central-discovery-auth:{provider_id}:{nonce}:{timestamp}"
 
+
+class DiscoveryPublisher(ABC):
     @abstractmethod
     async def initialize(self):
-        """Initialize the publisher."""
         pass
 
     @abstractmethod
     async def start_loop(self):
-        """Start the advertising loop."""
         pass
 
     @abstractmethod
     async def stop(self):
-        """Stop the advertising loop."""
         pass
 
     @abstractmethod
     async def post_advertisement(self):
-        """Post a single advertisement."""
         pass
 
 
 class CentralDiscoveryPublisher(DiscoveryPublisher):
-    """Publish provider advertisements to the centralized discovery service."""
+    """Maintain one live central-discovery provider websocket."""
 
     def __init__(
         self,
-        resource_tracker: "ResourceTracker",
-        discovery_url: Optional[str] = None,
+        resource_tracker: ResourceTracker,
+        discovery_ws_url: Optional[str] = None,
         provider_id: Optional[str] = None,
         certificate_service: Any = None,
     ):
         self.resource_tracker = resource_tracker
-        self.discovery_url = discovery_url or settings.DISCOVERY_URL
+        self.discovery_ws_url = discovery_ws_url or settings.DISCOVERY_WS_URL
         self.provider_id = provider_id or settings.PROVIDER_ID
         self.certificate_service = certificate_service
         self.session: Optional[aiohttp.ClientSession] = None
+        self.websocket: Optional[aiohttp.ClientWebSocketResponse] = None
         self._stop_event = asyncio.Event()
+        self._publish_lock = asyncio.Lock()
 
     async def initialize(self):
-        """Initialize the publisher."""
-        logger.info("Initializing central discovery publisher")
+        logger.info("Initializing central discovery websocket publisher")
         self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10))
         self.resource_tracker.on_update(
-            lambda: (
-                logger.debug("Resource update triggered central advertisement post"),
-                asyncio.create_task(self.post_advertisement()),
-            )
+            lambda: asyncio.create_task(self.post_advertisement())
         )
-        try:
-            await self._check_discovery_health()
-        except Exception as e:
-            logger.warning(
-                f"Could not connect to central discovery after retries, continuing without advertising: {e}"
-            )
-            return
-        logger.info("Central discovery publisher initialized")
+        await self._connect()
+        await self.post_advertisement()
+        logger.info("Central discovery websocket publisher initialized")
 
     async def start_loop(self):
-        """Start publishing resource advertisements in a loop."""
-        logger.info("Central discovery advertisement loop started")
-        try:
-            while not self._stop_event.is_set():
-                logger.debug("Posting periodic central discovery advertisement")
-                await self.post_advertisement()
-                await asyncio.sleep(settings.DISCOVERY_ADVERTISEMENT_INTERVAL)
-        finally:
-            await self.stop()
+        logger.info("Central discovery websocket listener started")
+        while not self._stop_event.is_set():
+            try:
+                if self.websocket is None or self.websocket.closed:
+                    await self._connect()
+                    await self.post_advertisement()
+
+                async for message in self.websocket:
+                    if self._stop_event.is_set():
+                        break
+                    if message.type == aiohttp.WSMsgType.ERROR:
+                        raise RuntimeError(
+                            f"central discovery websocket error: {self.websocket.exception()}"
+                        )
+                    if message.type in {
+                        aiohttp.WSMsgType.CLOSE,
+                        aiohttp.WSMsgType.CLOSED,
+                    }:
+                        break
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                if self._stop_event.is_set():
+                    break
+                logger.error("Central discovery websocket disconnected", exc_info=True)
+                await self._close_websocket()
+                await asyncio.sleep(5)
 
     async def stop(self):
-        """Stop publishing resource advertisements."""
         self._stop_event.set()
+        await self._close_websocket()
         if self.session:
             await self.session.close()
             self.session = None
-        logger.info("Central discovery publisher stopped")
+        logger.info("Central discovery websocket publisher stopped")
 
-    @async_retry(
-        retries=settings.RETRY_ATTEMPTS,
-        delay=settings.RETRY_DELAY_SECONDS,
-        backoff=settings.RETRY_BACKOFF,
-        exceptions=(aiohttp.ClientError, asyncio.TimeoutError),
-    )
-    async def _check_discovery_health(self):
-        """Check central discovery service health with retries."""
-        if not self.session:
-            raise RuntimeError("Session not initialized")
-
-        async with self.session.get(f"{self.discovery_url}/health") as response:
-            if not response.ok:
-                raise Exception(
-                    f"Central discovery health check failed: {response.status}"
-                )
-
-    @async_retry(
-        retries=settings.RETRY_ATTEMPTS,
-        delay=settings.RETRY_DELAY_SECONDS,
-        backoff=settings.RETRY_BACKOFF,
-        exceptions=(aiohttp.ClientError, asyncio.TimeoutError),
-    )
     async def post_advertisement(self):
-        """Post resource advertisement to central discovery."""
-        if not self.session:
-            raise RuntimeError("Session not initialized")
-
-        if not _endpoint_is_advertisable(self.certificate_service):
-            logger.warning(
-                "Skipping central discovery advertisement because provider "
-                "certificate is not usable"
-            )
-            return
-
-        resources = self.resource_tracker.get_available_resources()
-        logger.debug(
-            "Prepared central discovery advertisement resources",
-            extra={
-                "cpu": resources.get("cpu"),
-                "memory": resources.get("memory"),
-                "storage": resources.get("storage"),
-            },
-        )
-
-        if not self.resource_tracker._meets_minimum_requirements(resources):
-            logger.warning("Resources too low, skipping advertisement")
-            return
-
-        ip_address = settings.PUBLIC_IP
-        if not ip_address:
-            try:
-                ip_address = await self._get_public_ip()
-            except Exception as e:
-                logger.error(f"Could not get public IP after retries: {e}")
+        async with self._publish_lock:
+            await self._ensure_connected()
+            if not _endpoint_is_advertisable(self.certificate_service):
+                await self._send_remove()
                 return
 
-        try:
-            import platform as _plat
+            resources = self.resource_tracker.get_available_resources()
+            if not self.resource_tracker._meets_minimum_requirements(resources):
+                await self._send_remove()
+                return
 
-            raw = (_plat.machine() or "").lower()
-            platform_str = None
-            if raw:
-                if "aarch64" in raw or "arm64" in raw or raw.startswith("arm"):
-                    platform_str = "arm64"
-                elif "x86_64" in raw or "amd64" in raw or "x64" in raw:
-                    platform_str = "x86_64"
-                else:
-                    platform_str = raw
-            (
-                endpoint_protocol,
-                endpoint_host,
-                endpoint_port,
-                endpoint_url,
-            ) = _provider_endpoint(settings, ip_address)
-            async with self.session.post(
-                f"{self.discovery_url}/api/v1/advertisements",
-                headers={
-                    "X-Provider-ID": self.provider_id,
-                    "X-Provider-Signature": "signature",
-                    "Content-Type": "application/json",
+            advertisement = await self._advertisement(resources)
+            await self.websocket.send_json(
+                {"type": "advertisement.upsert", "advertisement": advertisement}
+            )
+            logger.info(
+                "Published central discovery advertisement",
+                extra={
+                    "provider_id": self.provider_id,
+                    "cpu": resources["cpu"],
+                    "memory": resources["memory"],
+                    "storage": resources["storage"],
                 },
-                json={
-                    "ip_address": ip_address,
-                    "country": settings.PROVIDER_COUNTRY,
-                    "platform": platform_str,
-                    "endpoint_protocol": endpoint_protocol,
-                    "endpoint_host": endpoint_host,
-                    "endpoint_port": endpoint_port,
-                    "endpoint_url": endpoint_url,
-                    "resources": resources,
-                    "pricing": {
-                        "usd_per_core_month": settings.PRICE_USD_PER_CORE_MONTH,
-                        "usd_per_gb_ram_month": settings.PRICE_USD_PER_GB_RAM_MONTH,
-                        "usd_per_gb_storage_month": settings.PRICE_USD_PER_GB_STORAGE_MONTH,
-                        "glm_per_core_month": settings.PRICE_GLM_PER_CORE_MONTH,
-                        "glm_per_gb_ram_month": settings.PRICE_GLM_PER_GB_RAM_MONTH,
-                        "glm_per_gb_storage_month": settings.PRICE_GLM_PER_GB_STORAGE_MONTH,
-                    },
-                },
-                timeout=aiohttp.ClientTimeout(total=5),
-            ) as response:
-                if not response.ok:
-                    error_text = await response.text()
-                    raise Exception(
-                        f"Failed to post advertisement: {response.status} - {error_text}"
-                    )
-                logger.info(
-                    f"Posted central discovery advertisement with resources: CPU={resources['cpu']}, "
-                    f"Memory={resources['memory']}GB, Storage={resources['storage']}GB"
-                )
-        except asyncio.TimeoutError:
-            logger.error("Advertisement request timed out", exc_info=True)
-            raise
+            )
+
+    async def _connect(self):
+        if not self.session:
+            raise RuntimeError("central discovery websocket session not initialized")
+        await self._close_websocket()
+        websocket = await self.session.ws_connect(self.discovery_ws_url)
+        hello = await websocket.receive_json()
+        if hello.get("type") != "hello" or not hello.get("nonce"):
+            await websocket.close()
+            raise RuntimeError("central discovery websocket did not send auth nonce")
+
+        timestamp = utc_now().isoformat()
+        await websocket.send_json(
+            {
+                "type": "authenticate",
+                "provider_id": self.provider_id,
+                "nonce": hello["nonce"],
+                "timestamp": timestamp,
+                "signature": self._sign_auth(hello["nonce"], timestamp),
+            }
+        )
+        response = await websocket.receive_json()
+        if response.get("type") != "authenticated":
+            await websocket.close()
+            raise RuntimeError(f"central discovery auth failed: {response}")
+        self.websocket = websocket
+
+    async def _ensure_connected(self):
+        if self.websocket is None or self.websocket.closed:
+            await self._connect()
+
+    async def _close_websocket(self):
+        if self.websocket and not self.websocket.closed:
+            await self.websocket.close()
+        self.websocket = None
+
+    async def _send_remove(self):
+        await self.websocket.send_json({"type": "advertisement.remove"})
+        logger.info(
+            "Removed central discovery advertisement",
+            extra={"provider_id": self.provider_id},
+        )
+
+    async def _advertisement(self, resources: dict[str, int]) -> dict[str, Any]:
+        ip_address = settings.PUBLIC_IP or await self._get_public_ip()
+        platform_str = _platform()
+        (
+            endpoint_protocol,
+            endpoint_host,
+            endpoint_port,
+            endpoint_url,
+        ) = _provider_endpoint(settings, ip_address)
+        return {
+            "ip_address": ip_address,
+            "country": settings.PROVIDER_COUNTRY,
+            "platform": platform_str,
+            "endpoint_protocol": endpoint_protocol,
+            "endpoint_host": endpoint_host,
+            "endpoint_port": endpoint_port,
+            "endpoint_url": endpoint_url,
+            "resources": resources,
+            "pricing": {
+                "usd_per_core_month": settings.PRICE_USD_PER_CORE_MONTH,
+                "usd_per_gb_ram_month": settings.PRICE_USD_PER_GB_RAM_MONTH,
+                "usd_per_gb_storage_month": settings.PRICE_USD_PER_GB_STORAGE_MONTH,
+                "glm_per_core_month": settings.PRICE_GLM_PER_CORE_MONTH,
+                "glm_per_gb_ram_month": settings.PRICE_GLM_PER_GB_RAM_MONTH,
+                "glm_per_gb_storage_month": settings.PRICE_GLM_PER_GB_STORAGE_MONTH,
+            },
+        }
+
+    def _sign_auth(self, nonce: str, timestamp: str) -> str:
+        private_key = settings.ETHEREUM_PRIVATE_KEY
+        if not private_key:
+            raise RuntimeError("ETHEREUM_PRIVATE_KEY is required for discovery auth")
+        signed = Account.sign_message(
+            encode_defunct(
+                text=provider_auth_message(self.provider_id, nonce, timestamp)
+            ),
+            private_key=private_key,
+        )
+        signature = signed.signature.hex()
+        return signature if signature.startswith("0x") else f"0x{signature}"
 
     @async_retry(
         retries=settings.RETRY_ATTEMPTS,
@@ -213,7 +219,6 @@ class CentralDiscoveryPublisher(DiscoveryPublisher):
         exceptions=(aiohttp.ClientError, asyncio.TimeoutError),
     )
     async def _get_public_ip(self) -> str:
-        """Get public IP address with retries."""
         if not self.session:
             raise RuntimeError("Session not initialized")
 
@@ -229,12 +234,11 @@ class CentralDiscoveryPublisher(DiscoveryPublisher):
                 async with self.session.get(service) as response:
                     if response.ok:
                         return (await response.text()).strip()
-            except Exception as e:
-                errors.append(f"{service}: {str(e)}")
-                continue
+            except Exception as exc:
+                errors.append(f"{service}: {exc}")
 
-        raise Exception(
-            f"Failed to get public IP address from all services: {'; '.join(errors)}"
+        raise RuntimeError(
+            f"failed to get public IP address from all services: {'; '.join(errors)}"
         )
 
 
@@ -259,3 +263,16 @@ def _endpoint_url(protocol: str, host: str, port: int, default_port: int) -> str
     if int(port) == int(default_port):
         return f"{protocol}://{host}"
     return f"{protocol}://{host}:{port}"
+
+
+def _platform() -> Optional[str]:
+    import platform as _plat
+
+    raw = (_plat.machine() or "").lower()
+    if not raw:
+        return None
+    if "aarch64" in raw or "arm64" in raw or raw.startswith("arm"):
+        return "arm64"
+    if "x86_64" in raw or "amd64" in raw or "x64" in raw:
+        return "x86_64"
+    return raw

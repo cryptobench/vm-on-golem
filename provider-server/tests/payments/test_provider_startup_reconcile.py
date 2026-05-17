@@ -1,6 +1,4 @@
 import asyncio
-import types
-
 import pytest
 
 from provider.service import ProviderService
@@ -186,17 +184,7 @@ async def test_startup_fails_when_vm_has_no_active_stream_record(monkeypatch):
     settings.PAYMENTS_RPC_URL = "http://localhost"
     settings.STREAM_MONITOR_ENABLED = False
     settings.STREAM_WITHDRAW_ENABLED = False
-    settings.DISCOVERY_BACKEND = "arkiv"
-    settings.ARKIV_FAUCET_ENABLED = True
-
-    # Patch external collaborators (faucet + pricing updater)
-    import provider.security.faucet as faucet_mod
-
-    monkeypatch.setattr(
-        faucet_mod,
-        "FaucetClient",
-        lambda *a, **k: types.SimpleNamespace(get_funds=lambda *_: asyncio.sleep(0)),
-    )
+    # Patch external collaborators.
     monkeypatch.setattr(ps, "PricingAutoUpdater", DummyPricingUpdater)
 
     # One VM present, no stream mapping -> fail visibly instead of guessing.
@@ -253,17 +241,7 @@ async def test_startup_keeps_vms_with_active_stream(monkeypatch):
     settings.PAYMENTS_RPC_URL = "http://localhost"
     settings.STREAM_MONITOR_ENABLED = False
     settings.STREAM_WITHDRAW_ENABLED = False
-    settings.DISCOVERY_BACKEND = "arkiv"
-    settings.ARKIV_FAUCET_ENABLED = True
-
-    # Patch external collaborators
-    import provider.security.faucet as faucet_mod
-
-    monkeypatch.setattr(
-        faucet_mod,
-        "FaucetClient",
-        lambda *a, **k: types.SimpleNamespace(get_funds=lambda *_: asyncio.sleep(0)),
-    )
+    # Patch external collaborators.
     monkeypatch.setattr(ps, "PricingAutoUpdater", DummyPricingUpdater)
 
     vm_resources = {"vm-b": VMResources(cpu=2, memory=4, storage=20)}
@@ -297,16 +275,6 @@ async def test_startup_deletes_vm_with_chain_terminated_stream(monkeypatch):
     settings.PAYMENTS_RPC_URL = "http://localhost"
     settings.STREAM_MONITOR_ENABLED = False
     settings.STREAM_WITHDRAW_ENABLED = False
-    settings.DISCOVERY_BACKEND = "arkiv"
-    settings.ARKIV_FAUCET_ENABLED = True
-
-    import provider.security.faucet as faucet_mod
-
-    monkeypatch.setattr(
-        faucet_mod,
-        "FaucetClient",
-        lambda *a, **k: types.SimpleNamespace(get_funds=lambda *_: asyncio.sleep(0)),
-    )
     monkeypatch.setattr(ps, "PricingAutoUpdater", DummyPricingUpdater)
 
     vm_resources = {"vm-a": VMResources(cpu=2, memory=4, storage=20)}
@@ -337,16 +305,6 @@ async def test_startup_surfaces_chain_lookup_failure(monkeypatch):
     settings.PAYMENTS_RPC_URL = "http://localhost"
     settings.STREAM_MONITOR_ENABLED = False
     settings.STREAM_WITHDRAW_ENABLED = False
-    settings.DISCOVERY_BACKEND = "arkiv"
-    settings.ARKIV_FAUCET_ENABLED = True
-
-    import provider.security.faucet as faucet_mod
-
-    monkeypatch.setattr(
-        faucet_mod,
-        "FaucetClient",
-        lambda *a, **k: types.SimpleNamespace(get_funds=lambda *_: asyncio.sleep(0)),
-    )
     monkeypatch.setattr(ps, "PricingAutoUpdater", DummyPricingUpdater)
 
     vm_service = DummyVMService({"vm-a": VMResources(cpu=2, memory=4, storage=20)})
@@ -379,17 +337,7 @@ async def test_startup_skips_stream_checks_when_payments_disabled(monkeypatch):
     settings.PAYMENTS_RPC_URL = ""
     settings.STREAM_MONITOR_ENABLED = False
     settings.STREAM_WITHDRAW_ENABLED = False
-    settings.DISCOVERY_BACKEND = "arkiv"
-    settings.ARKIV_FAUCET_ENABLED = True
-
-    # Patch external collaborators
-    import provider.security.faucet as faucet_mod
-
-    monkeypatch.setattr(
-        faucet_mod,
-        "FaucetClient",
-        lambda *a, **k: types.SimpleNamespace(get_funds=lambda *_: asyncio.sleep(0)),
-    )
+    # Patch external collaborators.
     monkeypatch.setattr(ps, "PricingAutoUpdater", DummyPricingUpdater)
 
     vm_resources = {"vm-c": VMResources(cpu=2, memory=4, storage=20)}
@@ -426,7 +374,7 @@ async def test_startup_skips_stream_checks_when_payments_disabled(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_startup_skips_arkiv_faucet_for_central_discovery(monkeypatch):
+async def test_startup_starts_discovery_without_faucet_dependency(monkeypatch):
     from provider import service as ps
     from provider.config import settings
 
@@ -434,16 +382,6 @@ async def test_startup_skips_arkiv_faucet_for_central_discovery(monkeypatch):
     settings.PAYMENTS_RPC_URL = ""
     settings.STREAM_MONITOR_ENABLED = False
     settings.STREAM_WITHDRAW_ENABLED = False
-    settings.DISCOVERY_BACKEND = "central"
-    settings.ARKIV_FAUCET_ENABLED = True
-
-    import provider.security.faucet as faucet_mod
-
-    monkeypatch.setattr(
-        faucet_mod,
-        "FaucetClient",
-        lambda *a, **k: pytest.fail("Arkiv faucet should not be constructed"),
-    )
     monkeypatch.setattr(ps, "PricingAutoUpdater", DummyPricingUpdater)
 
     vm_service = DummyVMService({})

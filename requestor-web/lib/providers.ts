@@ -1,9 +1,6 @@
-import type { AdsConfig } from "./api";
-import { fetchAllProviders } from "./api";
+import type { ProviderAd } from "./api";
+import { countriesFromProviders } from "./discovery";
 
-export async function listCountries(ads: AdsConfig) {
-  const providers = await fetchAllProviders(ads);
-  return Array.from(
-    new Set(providers.map((provider) => provider.country).filter(Boolean) as string[]),
-  ).sort();
+export function listCountries(providers: ProviderAd[]) {
+  return countriesFromProviders(providers);
 }

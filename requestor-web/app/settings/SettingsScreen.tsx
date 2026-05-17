@@ -21,7 +21,7 @@ const SETTINGS_TABS: Array<TabItem<SettingsTab>> = [
 
 export default function SettingsPage() {
   const router = useRouter();
-  const { ads, setAds, profiles, activeId, setActive, addProfile, removeProfile, renameProfile } = useAds();
+  const { ads, setAds } = useAds();
   // Mount gate to avoid hydration mismatches from localStorage/env reads
   const [mounted, setMounted] = React.useState(false);
   React.useEffect(() => { setMounted(true); }, []);
@@ -34,16 +34,12 @@ export default function SettingsPage() {
   const [defaultKeyId, setDefaultKeyId] = React.useState<string | undefined>(undefined);
   const [saved, setSaved] = React.useState(false);
   const [displayCurrency, setDisplayCurrency] = React.useState<'fiat'|'token'>('fiat');
-  const [mode, setMode] = React.useState<"arkiv"|"central">(ads.mode);
-  const [disc, setDisc] = React.useState<string>(ads.discovery_url);
-  const [rpc, setRpc] = React.useState<string>(ads.arkiv_rpc_url);
-  const [ws, setWs] = React.useState<string>(ads.arkiv_ws_url);
+  const [discoveryWsUrl, setDiscoveryWsUrl] = React.useState<string>(ads.discovery_ws_url);
   const [evmChainIdText, setEvmChainIdText] = React.useState<string>(runtimeConfig.evmChainId || "0x88bb0");
   const [evmChainName, setEvmChainName] = React.useState<string>(runtimeConfig.evmChainName || "Ethereum Hoodi");
   const [evmRpcUrl, setEvmRpcUrl] = React.useState<string>(runtimeConfig.evmRpcUrl || "https://rpc.hoodi.ethpandaops.io");
   const [evmWsUrl, setEvmWsUrl] = React.useState<string>(runtimeConfig.evmWsUrl || "wss://ethereum-hoodi-rpc.publicnode.com");
   const [evmExplorerUrl, setEvmExplorerUrl] = React.useState<string>(runtimeConfig.evmExplorerUrl || "https://hoodi.etherscan.io");
-  const [profileName, setProfileName] = React.useState<string>(profiles.find(p => p.id === activeId)?.name || "");
   const [pendingProvider, setPendingProvider] = React.useState<string | null>(null);
   // SSH key add handled by KeyPicker
   const [tab, setTab] = React.useState<SettingsTab>('connections');
@@ -71,12 +67,7 @@ export default function SettingsPage() {
     setEvmRpcUrl(initial.evm_rpc_url || (runtimeConfig.evmRpcUrl || "https://rpc.hoodi.ethpandaops.io"));
     setEvmWsUrl(initial.evm_ws_url || (runtimeConfig.evmWsUrl || "wss://ethereum-hoodi-rpc.publicnode.com"));
     setEvmExplorerUrl(initial.evm_explorer_url || (runtimeConfig.evmExplorerUrl || "https://hoodi.etherscan.io"));
-    // Sync ads-derived fields (profiles/context already mounted)
-    setMode(ads.mode);
-    setDisc(ads.discovery_url);
-    setRpc(ads.arkiv_rpc_url);
-    setWs(ads.arkiv_ws_url);
-    setProfileName(profiles.find(p => p.id === activeId)?.name || "");
+    setDiscoveryWsUrl(ads.discovery_ws_url);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mounted]);
 
@@ -94,14 +85,8 @@ export default function SettingsPage() {
       display_currency: displayCurrency,
     });
     setAds({
-      mode,
-      discovery_url: disc,
-      arkiv_rpc_url: rpc,
-      arkiv_ws_url: ws,
-      chain_id: ads.chain_id,
-      advertisement_interval_seconds: ads.advertisement_interval_seconds,
+      discovery_ws_url: discoveryWsUrl,
     });
-    if (profileName.trim().length) renameProfile(activeId, profileName.trim());
     setSaved(true);
     setTimeout(() => setSaved(false), 1500);
   };
@@ -148,47 +133,18 @@ export default function SettingsPage() {
       {tab === 'connections' && (
         <div className="grid max-w-3xl gap-4">
           <div className="card">
-            <div className="card-body grid gap-3">
-              <div className="grid gap-2 sm:grid-cols-[1fr_auto_auto] sm:items-end">
-                <FormField label="Active profile">
-                  <Select value={activeId} onChange={(e) => { const id = e.target.value; setActive(id); const p = profiles.find(x => x.id === id); if (p) { setProfileName(p.name); setMode(p.config.mode); setDisc(p.config.discovery_url); setRpc(p.config.arkiv_rpc_url); setWs(p.config.arkiv_ws_url); } }}>
-                    {profiles.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                  </Select>
-                </FormField>
-                <Button variant="secondary" onClick={() => addProfile(`Profile ${profiles.length + 1}`)}>New profile</Button>
-                <Button variant="danger" onClick={() => removeProfile(activeId)} disabled={profiles.length <= 1}>Delete</Button>
-              </div>
-              <FormField label="Profile name">
-                <Input value={profileName} onChange={(e) => setProfileName(e.target.value)} placeholder="Default" />
-              </FormField>
-            </div>
-          </div>
-          <div className="card">
             <div className="card-body">
               <div className="text-sm font-medium">Discovery & Network</div>
               <div className="mt-3 grid gap-3">
-                <FormField label="Mode">
-                  <Select value={mode} onChange={e => setMode(e.target.value as "arkiv" | "central")}>
-                    <option value="arkiv">Arkiv</option>
-                    <option value="central">Central Discovery</option>
-                  </Select>
+                <FormField label="Discovery websocket URL">
+                  <Input
+                    value={discoveryWsUrl}
+                    onChange={e => setDiscoveryWsUrl(e.target.value)}
+                    placeholder="ws://host:9001/api/v1/discovery/requestors"
+                  />
                 </FormField>
-                {mode === 'central' ? (
-                  <FormField label="Central discovery URL">
-                    <Input value={disc} onChange={e => setDisc(e.target.value)} placeholder="http://host:9001/api/v1" />
-                  </FormField>
-                ) : (
-                  <>
-                    <FormField label="Arkiv RPC URL">
-                      <Input value={rpc} onChange={e => setRpc(e.target.value)} placeholder="https://.../rpc" />
-                    </FormField>
-                    <FormField label="Arkiv WS URL">
-                      <Input value={ws} onChange={e => setWs(e.target.value)} placeholder="wss://.../rpc/ws" />
-                    </FormField>
-                  </>
-                )}
                 <div className="text-sm text-text-secondary">
-                  Listing and provider resolution use the selected server configuration.
+                  Provider listing uses this live discovery stream.
                 </div>
                 <div className="flex items-center gap-3 pt-2">
                   <Button onClick={save}>Save</Button>

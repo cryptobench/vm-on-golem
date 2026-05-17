@@ -27,20 +27,27 @@ def test_guest_token_auth_and_sample_storage(tmp_path: Path):
 
     with pytest.raises(UnauthorizedError):
         asyncio_run(
-            service.record_guest_sample("vm-a", GuestMetricPayload(token="bad"))
+            service.record_guest_sample(
+                "vm-a", GuestMetricPayload(token="bad"), "192.168.2.17"
+            )
         )
+    assert service.guest_agent_state("vm-a") is None
 
     asyncio_run(
         service.record_guest_sample(
             "vm-a",
             GuestMetricPayload(
                 token=token,
+                agent_ready=True,
+                sshd_ready=True,
+                hardening_applied=True,
                 cpu_percent=12.5,
                 memory_used_bytes=512,
                 memory_total_bytes=1024,
                 disk_used_bytes=10,
                 disk_total_bytes=100,
             ),
+            "192.168.2.17",
         )
     )
     latest = service.latest()
@@ -48,6 +55,58 @@ def test_guest_token_auth_and_sample_storage(tmp_path: Path):
     assert guest["cpu_percent"]["value"] == 12.5
     assert guest["memory_percent"]["value"] == 50.0
     assert guest["disk_percent"]["value"] == 10.0
+    assert guest["agent_ready"]["value"] == 1.0
+    assert guest["sshd_ready"]["value"] == 1.0
+    assert guest["hardening_applied"]["value"] == 1.0
+    state = service.fresh_guest_agent_state("vm-a")
+    assert state is not None
+    assert state.source_ip == "192.168.2.17"
+
+
+def test_guest_agent_state_requires_only_fresh_authenticated_metrics(
+    tmp_path: Path, monkeypatch
+):
+    repo = MonitoringRepository(str(tmp_path / "monitoring.sqlite"))
+    repo.init_schema()
+    token = repo.issue_guest_token("vm-a")
+    service = MonitoringService(
+        {"VM_AGENT_STATE_STALE_SECONDS": 90}, repo, MagicMock(), MagicMock()
+    )
+
+    asyncio_run(
+        service.record_guest_sample(
+            "vm-a",
+            GuestMetricPayload(
+                token=token,
+                agent_ready=True,
+                sshd_ready=True,
+                hardening_applied=False,
+            ),
+            "192.168.2.17",
+        )
+    )
+    state = service.fresh_guest_agent_state("vm-a")
+    assert state is not None
+    assert state.source_ip == "192.168.2.17"
+
+    now = datetime(2026, 5, 17, 18, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr("provider.monitoring.services.utc_now", lambda: now)
+    asyncio_run(
+        service.record_guest_sample(
+            "vm-a",
+            GuestMetricPayload(
+                token=token,
+                agent_ready=True,
+                sshd_ready=True,
+                hardening_applied=True,
+                timestamp=now - timedelta(seconds=120),
+            ),
+            "192.168.2.17",
+        )
+    )
+
+    assert service.guest_agent_state("vm-a") is not None
+    assert service.fresh_guest_agent_state("vm-a") is None
 
 
 def test_history_range_filters_24h_samples(tmp_path: Path, monkeypatch):

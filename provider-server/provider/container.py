@@ -5,8 +5,6 @@ from dependency_injector import containers, providers
 
 from .auth.services import ProviderAuthService
 from .config import settings as provider_settings
-from .discovery.arkiv_publisher import ArkivDiscoveryPublisher
-from .discovery.composite_publisher import CompositeDiscoveryPublisher
 from .discovery.publishers import CentralDiscoveryPublisher
 from .discovery.publishing_service import DiscoveryPublishingService
 from .discovery.resource_tracker import ResourceTracker
@@ -53,23 +51,10 @@ class Container(containers.DeclarativeContainer):
         settings=provider_settings,
     )
 
-    discovery_publisher = providers.Selector(
-        config.DISCOVERY_BACKEND,
-        arkiv=providers.Singleton(
-            ArkivDiscoveryPublisher,
-            resource_tracker=resource_tracker,
-            certificate_service=certificate_maintenance_service,
-        ),
-        central=providers.Singleton(
-            CentralDiscoveryPublisher,
-            resource_tracker=resource_tracker,
-            certificate_service=certificate_maintenance_service,
-        ),
-        both=providers.Singleton(
-            CompositeDiscoveryPublisher,
-            resource_tracker=resource_tracker,
-            certificate_service=certificate_maintenance_service,
-        ),
+    discovery_publisher = providers.Singleton(
+        CentralDiscoveryPublisher,
+        resource_tracker=resource_tracker,
+        certificate_service=certificate_maintenance_service,
     )
 
     advertisement_service = providers.Singleton(
@@ -136,6 +121,8 @@ class Container(containers.DeclarativeContainer):
         MultipassAdapter,
         proxy_manager=proxy_manager,
         name_mapper=vm_name_mapper,
+        monitoring_repo=monitoring_repo,
+        resource_tracker=resource_tracker,
     )
 
     vm_service = providers.Singleton(

@@ -66,6 +66,9 @@ class MetricHistoryPoint(BaseModel):
 
 class GuestMetricPayload(BaseModel):
     token: str
+    agent_ready: Optional[bool] = None
+    sshd_ready: Optional[bool] = None
+    hardening_applied: Optional[bool] = None
     cpu_percent: Optional[float] = None
     memory_used_bytes: Optional[float] = None
     memory_total_bytes: Optional[float] = None
@@ -93,6 +96,21 @@ class GuestMetricAccepted(BaseModel):
     status: str = "accepted"
     next_interval_seconds: int
     live_mode: bool
+
+
+class GuestAgentState(BaseModel):
+    vm_id: str
+    source_ip: str
+    agent_ready: Optional[bool] = None
+    sshd_ready: Optional[bool] = None
+    hardening_applied: Optional[bool] = None
+    agent_version: str = "unknown"
+    last_seen_at: datetime
+
+    @field_validator("last_seen_at")
+    @classmethod
+    def ensure_last_seen_at_timezone(cls, value: datetime) -> datetime:
+        return ensure_utc(value)
 
 
 class MetricsLatestResponse(BaseModel):

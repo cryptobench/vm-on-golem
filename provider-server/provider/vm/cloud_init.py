@@ -208,6 +208,7 @@ TOKEN = {token!r}
 VERSION = "0.2.0"
 DEFAULT_INTERVAL_SECONDS = 30
 PUBLISH_FAILURE_PREFIX = "failed to publish sample"
+REQUESTOR_SSH_USER = {MULTIPASS_SSH_USER!r}
 
 
 def _warn(message):
@@ -291,12 +292,57 @@ def _load():
         return None
 
 
+def _command_ok(args):
+    return subprocess.run(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
+
+
+def _sshd_ready():
+    service_active = _command_ok(["systemctl", "is-active", "--quiet", "ssh"]) or _command_ok(
+        ["systemctl", "is-active", "--quiet", "sshd"]
+    )
+    if not service_active:
+        return False
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(1)
+    try:
+        return sock.connect_ex(("127.0.0.1", 22)) == 0
+    finally:
+        sock.close()
+
+
+def _hardening_applied():
+    try:
+        with open("/etc/ssh/sshd_config.d/99-golem-requestor-only.conf", "r", encoding="utf-8") as fh:
+            sshd_config = fh.read()
+        if "DenyUsers ubuntu" not in sshd_config:
+            return False
+        if f"AllowUsers {{REQUESTOR_SSH_USER}}" not in sshd_config:
+            return False
+        if os.path.exists("/home/ubuntu/.ssh"):
+            return False
+        try:
+            import pwd
+
+            ubuntu = pwd.getpwnam("ubuntu")
+            if ubuntu.pw_shell != "/usr/sbin/nologin":
+                return False
+        except KeyError:
+            pass
+        return True
+    except Exception as exc:
+        _warn(f"failed to check guest hardening: {{exc}}")
+        return False
+
+
 def collect():
     mem_used, mem_total = _meminfo()
     disk_used, disk_total = _disk()
     rx, tx = _net()
     return {{
         "token": TOKEN,
+        "agent_ready": True,
+        "sshd_ready": _sshd_ready(),
+        "hardening_applied": _hardening_applied(),
         "cpu_percent": _read_cpu(),
         "memory_used_bytes": mem_used,
         "memory_total_bytes": mem_total,

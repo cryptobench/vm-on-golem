@@ -46,16 +46,14 @@ SSH Keys
 
 Env vars (public)
 
-- NEXT_PUBLIC_DISCOVERY_API_URL: discovery service base, e.g. http://localhost:9001/api/v1
-- NEXT_PUBLIC_DISCOVERY_MODE: default profile mode, `arkiv` or `central`
+- NEXT_PUBLIC_DISCOVERY_WS_URL: discovery websocket, e.g. ws://localhost:9001/api/v1/discovery/requestors
 - NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS: default StreamPayment contract (can be overridden in Settings or provider info)
 - NEXT_PUBLIC_GLM_TOKEN_ADDRESS: GLM token address for stream deposits (Ethereum Hoodi tGLM is `0x55555555555556AcFf9C332Ed151758858bd7a26`)
 - NEXT_PUBLIC_EVM_CHAIN_ID: hex chain id for MetaMask (Ethereum Hoodi is `0x88bb0`)
 - NEXT_PUBLIC_EVM_CHAIN_NAME: wallet display name for the payments chain
 - NEXT_PUBLIC_EVM_RPC_URL: wallet RPC URL for the payments chain
 - NEXT_PUBLIC_EVM_EXPLORER_URL: block explorer URL for the payments chain
-- NEXT_PUBLIC_GOLEM_ENVIRONMENT: set to `development` to switch Arkiv defaults to the dev RPC/WS when Arkiv mode is selected
-- NEXT_PUBLIC_ARKIV_DEV_RPC_URL / NEXT_PUBLIC_ARKIV_DEV_WS_URL: dev Arkiv endpoints used when environment=development
+- NEXT_PUBLIC_GOLEM_ENVIRONMENT: set to `development` for local stack behavior
 
 Payment chain values can also be overridden in Settings -> Payments. Wallet
 connection, stream reads, stream creation, and top-ups all use the same payment
@@ -69,7 +67,7 @@ ETH and the tGLM minter documented in `../contracts/README.md`.
 
 Notes and alignment with backend
 
-- Discovery uses central discovery by default. Arkiv remains available as an optional decentralized backend.
+- Discovery uses the central discovery websocket only.
 - Requestor web only lists providers with a usable `endpoint_url`.
 - Provider API access goes directly to the advertised endpoint. Production endpoints must be HTTPS; development mode also accepts HTTP for local stacks. Live VM sessions convert `https:` to `wss:` and development `http:` to `ws:`.
 - SSH is shown as host:port for your terminal client.

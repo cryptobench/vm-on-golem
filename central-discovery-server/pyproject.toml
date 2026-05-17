@@ -18,28 +18,25 @@ classifiers = [
     "Topic :: System :: Distributed Computing"
 ]
 packages = [
-    { include = "central_discovery" },
-    { include = "discovery" }
+    { include = "central_discovery" }
 ]
 
 [tool.poetry.scripts]
 golem-central-discovery = "central_discovery.main:start"
-golem-discovery = "central_discovery.main:start"
 
 [tool.poetry.dependencies]
 python = "^3.9"
 fastapi = "^0.68.0"
 uvicorn = "^0.15.0"
-sqlalchemy = {extras = ["asyncio"], version = "^1.4.23"}
-greenlet = "^3.0.0"
-alembic = "^1.7.1"
-aiosqlite = "^0.17.0"
+websockets = ">=9.1,<16.0.0"
 pydantic = "^1.8.2"
 cryptography = "^3.4.7"
 prometheus-client = "^0.11.0"
 python-multipart = "^0.0.5"
 python-jose = {extras = ["cryptography"], version = "^3.3.0"}
 python-dotenv = "^1.0.0"
+eth-account = ">=0.8,<0.9"
+setuptools = "^69.0.3"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.2.0"

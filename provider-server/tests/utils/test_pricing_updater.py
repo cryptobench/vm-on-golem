@@ -19,8 +19,6 @@ async def test_pricing_auto_updater_calls_callback_with_platform(monkeypatch):
 
     updater = PricingAutoUpdater(on_updated_callback=on_updated)
 
-    settings.DISCOVERY_BACKEND = "central"
-
     calls = {"n": 0}
 
     def fake_fetch():

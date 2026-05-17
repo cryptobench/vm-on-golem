@@ -1,11 +1,6 @@
 "use client";
 
 import {
-  listAdvertisementsApiV1AdvertisementsGet,
-  type AdvertisementResponse,
-  type ListAdvertisementsApiV1AdvertisementsGetParams,
-} from "./generated/api/central-discovery";
-import {
   providerInfoApiV1ProviderInfoGet,
   type CreateSnapshotRequest,
   type CreateVMJobResponse,
@@ -23,7 +18,6 @@ import {
   type MetricsHistoryResponse,
   type MetricsLatestResponse,
 } from "./generated/api/provider";
-import type { AdsConfig } from "../context/AdsContext";
 import type { ApiRequestOptions } from "./api/orval-fetch";
 import {
   isUsableProviderEndpoint,
@@ -34,7 +28,20 @@ import {
 import { getProviderVmSession } from "./providerSession";
 
 export type { AdsConfig } from "../context/AdsContext";
-export type ProviderAd = AdvertisementResponse;
+export type ProviderAd = {
+  provider_id: string;
+  ip_address: string;
+  country: string;
+  platform?: string | null;
+  endpoint_protocol?: string | null;
+  endpoint_host?: string | null;
+  endpoint_port?: number | null;
+  endpoint_url?: string | null;
+  resources: VMResources;
+  pricing?: Record<string, any> | null;
+  created_at: string;
+  updated_at: string;
+};
 export type { CreateVMRequest, VMResources };
 export { loadSettings, saveSettings, type Settings, type SSHKey } from "./settings";
 
@@ -152,44 +159,6 @@ export function saveRentals(next: Rental[]) {
   window.dispatchEvent(
     new CustomEvent("requestor_rentals_changed", { detail: next }),
   );
-}
-
-export async function fetchAllProviders(ads: AdsConfig): Promise<ProviderAd[]> {
-  const providers = await unwrapAs<ProviderAd[]>(
-    await listAdvertisementsApiV1AdvertisementsGet(
-      {},
-      withBaseUrl(centralDiscoveryOrigin(ads)),
-    ),
-    200,
-  );
-  return filterProvidersWithUsableEndpoint(providers);
-}
-
-export async function fetchProviders(
-  query: Partial<{
-    cpu: number;
-    memory: number;
-    storage: number;
-    country: string;
-    platform: string;
-  }>,
-  ads: AdsConfig,
-): Promise<ProviderAd[]> {
-  const params: ListAdvertisementsApiV1AdvertisementsGetParams = {};
-  if (query.cpu != null) params.cpu = query.cpu;
-  if (query.memory != null) params.memory = query.memory;
-  if (query.storage != null) params.storage = query.storage;
-  if (query.country) params.country = query.country;
-  if (query.platform) params.platform = query.platform;
-
-  const providers = await unwrapAs<ProviderAd[]>(
-    await listAdvertisementsApiV1AdvertisementsGet(
-      params,
-      withBaseUrl(centralDiscoveryOrigin(ads)),
-    ),
-    200,
-  );
-  return filterProvidersWithUsableEndpoint(providers);
 }
 
 export function filterProvidersWithUsableEndpoint(
@@ -564,10 +533,6 @@ function apiError(status: number, data: unknown): Error & { status: number } {
   };
   error.status = status;
   return error;
-}
-
-function centralDiscoveryOrigin(ads: AdsConfig): string {
-  return ads.discovery_url.replace(/\/api\/v1\/?$/, "").replace(/\/$/, "");
 }
 
 function providerOptions(providerEndpointUrl: string): RequestInit {

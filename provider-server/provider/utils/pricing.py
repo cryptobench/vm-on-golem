@@ -20,13 +20,6 @@ def _get_settings():
     return _s
 
 
-def _active_discovery_backend(settings) -> str:
-    """Return canonical discovery backend name."""
-    raw = getattr(settings, "DISCOVERY_BACKEND", "central")
-    value = str(raw).lower().replace("_", "-")
-    return value
-
-
 # Increase precision for financial calcs
 getcontext().prec = 28
 
@@ -161,14 +154,7 @@ class PricingAutoUpdater:
         if not settings.PRICING_UPDATE_ENABLED:
             return
 
-        # Choose update interval based on backend to avoid excessive on-chain updates.
-        backend = _active_discovery_backend(settings)
-        interval = (
-            settings.PRICING_UPDATE_INTERVAL_ARKIV
-            if backend == "arkiv"
-            else settings.PRICING_UPDATE_INTERVAL_DISCOVERY
-        )
-        await self._run_loop(interval)
+        await self._run_loop(settings.PRICING_UPDATE_INTERVAL_DISCOVERY)
 
     def stop(self):
         self._stop = True
@@ -184,9 +170,7 @@ class PricingAutoUpdater:
                     if changed:
                         update_glm_unit_prices_from_usd(glm_usd)
                         if callable(self._on_updated):
-                            _s = _get_settings()
-                            platform = _active_discovery_backend(_s)
-                            await self._on_updated(platform=platform, glm_usd=glm_usd)
+                            await self._on_updated(platform="central", glm_usd=glm_usd)
                 else:
                     logger.warning("Skipping pricing update; failed to fetch GLM price")
             except Exception as e:
