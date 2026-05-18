@@ -411,14 +411,7 @@ export type VmDetailData = {
   vm: VMInfo | null;
   access: VMAccessInfo | null;
   stream: StreamStatus | null;
-  latest: MetricsLatestResponse | null;
   errors: Record<string, string>;
-};
-
-export type VmMetricHistoryState = {
-  history: MetricsHistoryResponse | null;
-  loading: boolean;
-  error: string | null;
 };
 
 export function useVmDetail(vmId: string | null) {
@@ -431,25 +424,22 @@ export function useVmDetail(vmId: string | null) {
       return;
     }
     setLoading(true);
-    const [vm, access, stream, latest] = await Promise.all([
+    const [vm, access, stream] = await Promise.all([
       capture(() => providerApi.vm(vmId)),
       capture(() => providerApi.vmAccess(vmId)),
       capture(() => providerApi.vmStream(vmId)),
-      capture(() => providerApi.vmMetricsLatest(vmId)),
     ]);
     const errors = Object.fromEntries(
       Object.entries({
         vm: vm.error,
         access: access.error,
         stream: stream.error,
-        latest: latest.error,
       }).filter(([, error]) => error != null),
     ) as Record<string, string>;
     setData({
       vm: vm.value,
       access: access.value,
       stream: stream.value,
-      latest: latest.value,
       errors,
     });
     setLoading(false);
@@ -460,46 +450,4 @@ export function useVmDetail(vmId: string | null) {
   }, [refresh]);
 
   return { data, loading, refresh };
-}
-
-export function useVmMetricHistory(
-  vmId: string | null,
-  range: HistoryRange,
-): VmMetricHistoryState {
-  const [state, setState] = React.useState<VmMetricHistoryState>({
-    history: null,
-    loading: false,
-    error: null,
-  });
-
-  React.useEffect(() => {
-    if (!vmId) {
-      setState({ history: null, loading: false, error: null });
-      return;
-    }
-
-    let active = true;
-    setState((current) => ({ ...current, loading: true, error: null }));
-
-    providerApi
-      .vmMetricsHistory(vmId, range)
-      .then((history) => {
-        if (!active) return;
-        setState({ history, loading: false, error: null });
-      })
-      .catch((error) => {
-        if (!active) return;
-        setState((current) => ({
-          ...current,
-          loading: false,
-          error: error instanceof Error ? error.message : String(error),
-        }));
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [range, vmId]);
-
-  return state;
 }

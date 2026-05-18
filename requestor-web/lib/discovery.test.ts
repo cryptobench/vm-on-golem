@@ -4,6 +4,9 @@ import test from "node:test";
 import {
   applyDiscoveryEvent,
   countriesFromProviders,
+  DISCOVERY_RECONNECT_INITIAL_DELAY_MS,
+  DISCOVERY_RECONNECT_MAX_DELAY_MS,
+  nextDiscoveryReconnectDelayMs,
   subscribeMessage,
 } from "./discovery";
 import type { ProviderAd } from "./api";
@@ -49,6 +52,19 @@ test("countries derive from current connected providers", () => {
     countriesFromProviders([provider("p1", 2, "se"), provider("p2", 2, "US")]),
     ["SE", "US"],
   );
+});
+
+test("discovery reconnect delay backs off and caps", () => {
+  let delay = DISCOVERY_RECONNECT_INITIAL_DELAY_MS;
+
+  delay = nextDiscoveryReconnectDelayMs(delay);
+  assert.equal(delay, 2000);
+
+  delay = nextDiscoveryReconnectDelayMs(delay);
+  assert.equal(delay, 4000);
+
+  delay = nextDiscoveryReconnectDelayMs(DISCOVERY_RECONNECT_MAX_DELAY_MS);
+  assert.equal(delay, DISCOVERY_RECONNECT_MAX_DELAY_MS);
 });
 
 function provider(id: string, cpu: number, country = "US"): ProviderAd {

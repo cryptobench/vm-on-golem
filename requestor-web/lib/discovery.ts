@@ -5,6 +5,9 @@ import {
   type ProviderAd,
 } from "./api";
 
+export const DISCOVERY_RECONNECT_INITIAL_DELAY_MS = 1000;
+export const DISCOVERY_RECONNECT_MAX_DELAY_MS = 10000;
+
 export type DiscoveryFilters = Partial<{
   cpu: number;
   memory: number;
@@ -60,6 +63,12 @@ export function countriesFromProviders(providers: ProviderAd[]): string[] {
         .map((country) => String(country).toUpperCase()),
     ),
   ).sort();
+}
+
+export function nextDiscoveryReconnectDelayMs(
+  currentDelayMs: number,
+): number {
+  return Math.min(currentDelayMs * 2, DISCOVERY_RECONNECT_MAX_DELAY_MS);
 }
 
 function cleanFilters(filters: DiscoveryFilters): DiscoveryFilters {

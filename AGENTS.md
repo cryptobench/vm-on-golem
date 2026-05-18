@@ -6,7 +6,7 @@ This document is the **architectural baseline** for the repo. Some sections desc
 
 ## Project Structure & Module Organization
 
-- `central-discovery-server/` (Python 3.9): centralized FastAPI discovery backend (`central_discovery`, entries: `golem-central-discovery`, legacy `golem-discovery`).
+- `central-discovery-server/` (Go): centralized websocket discovery backend (`golem-central-discovery`).
 - `provider-server/` (Python 3.11): Provider API/CLI (`provider`, entry: `golem-provider`).
 - `port-checker-server/` (Python 3.10+): FastAPI utility (`port_checker`, entry: `port-checker`).
 - `requestor-web/`: Next.js + Tailwind + ethers.js web app for requestors.
@@ -22,7 +22,7 @@ This document is the **architectural baseline** for the repo. Some sections desc
 - `make test` - Run pytest for the four core Python services.
 - `make local` - Preferred full-stack local workflow on ARM macOS: starts local central discovery, provider, port-checker proxy, and requestor web with one supervisor process. This intentionally uses local central discovery for deterministic development; Arkiv remains the canonical product default outside this local workflow.
 - `make start` - Start provider CLI, port-checker proxy, and requestor web (development mode).
-- Per-service: `poetry -C <svc> run pytest`, `GOLEM_ENVIRONMENT=development poetry -C provider-server run golem-provider start`, `poetry -C central-discovery-server run golem-central-discovery`.
+- Per-service: `poetry -C <svc> run pytest`, `GOLEM_ENVIRONMENT=development poetry -C provider-server run golem-provider start`, `cd central-discovery-server && go run ./cmd/golem-central-discovery`.
 - Provider desktop: `npm install && npm --workspace @golem/provider-desktop run dev` for local desktop development; `npm --workspace @golem/provider-desktop run tauri:build` for installers.
 
 ## Agent Server Policy
@@ -61,13 +61,13 @@ The provider API is publicly reachable by requestor web clients, so authorizatio
 
 Discovery is a capability, not a single server. The repo supports two provider-discovery backends:
 
-- **Central discovery**: the centralized FastAPI backend in `central-discovery-server/`. This is the default backend for packaged/distributed app flows.
+- **Central discovery**: the centralized Go websocket backend in `central-discovery-server/`. This is the default backend for packaged/distributed app flows.
 - **Arkiv**: decentralized discovery through the current `golem-base-sdk` package. This remains a supported optional backend and the canonical product name for the decentralized backend in docs, user-facing UI, config, and new code.
 
 Naming rules:
 
 - Use `discovery` for the capability or package area, not as a synonym for the centralized server.
-- Use `central-discovery-server/`, `central_discovery`, `CentralDiscovery*`, and `central` for the centralized backend. Do not add new `discovery-server` paths or names.
+- Use `central-discovery-server/`, `CentralDiscovery*`, and `central` for the centralized backend. Do not add new `discovery-server` paths or names.
 - Use `Arkiv*`, `arkiv`, and `ARKIV_*` for the decentralized backend. Do not use "Golem Base" in new user-facing docs/UI/config except when referring to legacy compatibility or the current SDK/package name.
 - Keep existing `golem-base`, `GOLEM_BASE_*`, `GolemBase*`, and `golem_base_*` aliases working where they are already part of persisted config, public config fields, tests, or SDK imports. Treat them as compatibility shims, not canonical names.
 - Provider-side publishing uses publisher terminology: `DiscoveryPublisher`, `CentralDiscoveryPublisher`, `ArkivDiscoveryPublisher`, `CompositeDiscoveryPublisher`, and `DiscoveryPublishingService`.
@@ -252,7 +252,7 @@ DISCOVERY_URL = "http://discovery.golem.network:9001"
 
 ## Time & Date Handling
 
-- Backend timestamps crossing API, websocket, webhook, persistence, or DTO boundaries MUST be absolute UTC instants with explicit timezone offsets. In Python, use `provider.utils.time.utc_now()` in `provider-server/`, `central_discovery.time.utc_now()` in `central-discovery-server/`, or `datetime.now(timezone.utc)` when a service-local helper does not exist; do not add new `datetime.utcnow()` uses.
+- Backend timestamps crossing API, websocket, webhook, persistence, or DTO boundaries MUST be absolute UTC instants with explicit timezone offsets. In Python, use `provider.utils.time.utc_now()` in `provider-server/` or `datetime.now(timezone.utc)` when a service-local helper does not exist; in Go central discovery, use UTC `time.Time` values formatted with `time.RFC3339Nano`.
 - When serializing datetimes, preserve the timezone offset in `isoformat()` output. If legacy stored data is naive, normalize it on the backend before returning it to clients; frontend code must not repair missing timezones.
 - Frontend display formatting MUST use the user agent's system locale and clock settings: `Intl.DateTimeFormat(undefined, ...)`, `toLocaleString(undefined, ...)`, or shared helpers that do the same. Do not hardcode `"en"`, `"en-US"`, `hour12`, or app-specific 12h/24h behavior for user-visible dates/times.
 - Frontend timestamp parsing MUST require timezone-bearing ISO strings or numeric Unix timestamps. Do not append `"Z"`, guess UTC/local time, or reinterpret naive strings in UI code.
