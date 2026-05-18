@@ -363,12 +363,12 @@ def stream_payment_state(
     try:
         state = str(stream_state(int(stream_id))).lower()
     except Exception:
-        logger.error(
-            "Payment stream state lookup failed",
+        logger.warning(
+            "Payment stream state lookup failed; deriving state from stream data",
             extra={"stream_id": stream_id},
             exc_info=True,
         )
-        raise
+        return _payment_state(stream, now, verified)
     if state in {
         ACTIVE_PAYMENT_STATE,
         GRACE_PAYMENT_STATE,
