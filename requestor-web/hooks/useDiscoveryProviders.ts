@@ -53,7 +53,14 @@ export function useDiscoveryProviders(
 
     const connect = () => {
       if (closedByEffect) return;
-      socket = new WebSocket(ads.discovery_ws_url);
+      try {
+        socket = new WebSocket(ads.discovery_ws_url);
+      } catch (socketError) {
+        scheduleReconnect(
+          socketError instanceof Error ? socketError.message : String(socketError),
+        );
+        return;
+      }
       const currentSocket = socket;
 
       currentSocket.addEventListener("open", () => {
@@ -84,6 +91,7 @@ export function useDiscoveryProviders(
       });
 
       currentSocket.addEventListener("error", () => {
+        currentSocket.close();
         scheduleReconnect("Discovery websocket connection failed");
       });
 
