@@ -135,6 +135,35 @@ class DummyReader:
         return "active" if ok else "invalid"
 
 
+class DummyEth:
+    def __init__(self, timestamp):
+        self.timestamp = timestamp
+
+    def get_block(self, block_id):
+        assert block_id == "latest"
+        return {"timestamp": self.timestamp}
+
+
+class DummyWeb3:
+    def __init__(self, timestamp):
+        self.eth = DummyEth(timestamp)
+
+
+class RevertingStateReader(DummyReader):
+    def __init__(self, validity_by_stream, *, stop_time, latest_timestamp):
+        super().__init__(validity_by_stream)
+        self.stop_time = stop_time
+        self.web3 = DummyWeb3(latest_timestamp)
+
+    def get_stream(self, sid):
+        stream = super().get_stream(sid)
+        stream["stopTime"] = self.stop_time
+        return stream
+
+    def stream_state(self, sid):
+        raise RuntimeError("execution reverted")
+
+
 class DummyStreamMonitor:
     def start(self):
         pass
@@ -327,6 +356,43 @@ async def test_startup_deletes_vm_with_expired_stream_after_grace(monkeypatch):
     )
     stream_map = DummyStreamMap({"vm-a": 42})
     app = DummyApp(stream_map, DummyReader({42: (False, "stream expired")}))
+
+    await provider_service.setup(app)  # type: ignore[arg-type]
+
+    assert vm_service.deleted == ["vm-a"]
+    assert stream_map.terminated[0][0] == "vm-a"
+    assert stream_map.terminated[0][1]["termination_reason"] == "stream_expired"
+    assert stream_map.cleanup == [("vm-a", "completed")]
+    assert adv.started is True
+
+
+@pytest.mark.asyncio
+async def test_startup_falls_back_when_stream_state_call_reverts(monkeypatch):
+    from provider import service as ps
+    from provider.config import settings
+
+    settings.STREAM_PAYMENT_ADDRESS = "0x1234567890abcdef1234567890abcdef12345678"
+    settings.PAYMENTS_RPC_URL = "http://localhost"
+    settings.STREAM_MONITOR_ENABLED = False
+    settings.STREAM_WITHDRAW_ENABLED = False
+    monkeypatch.setattr(ps, "PricingAutoUpdater", DummyPricingUpdater)
+
+    vm_service = DummyVMService({"vm-a": VMResources(cpu=2, memory=4, storage=20)})
+    adv = DummyDiscoveryPublishingService()
+    provider_service = ProviderService(
+        vm_service=vm_service,
+        advertisement_service=adv,
+        port_manager=DummyPortManager(),
+    )
+    stream_map = DummyStreamMap({"vm-a": 42})
+    app = DummyApp(
+        stream_map,
+        RevertingStateReader(
+            {42: (True, "ok")},
+            stop_time=100,
+            latest_timestamp=200,
+        ),
+    )
 
     await provider_service.setup(app)  # type: ignore[arg-type]
 

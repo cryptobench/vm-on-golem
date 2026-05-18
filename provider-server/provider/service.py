@@ -222,8 +222,19 @@ class ProviderService:
     @staticmethod
     def _startup_stream_state(reader, stream_id: int, stream: dict) -> str:
         stream_state = getattr(reader, "stream_state", None)
+        state_lookup_error: Exception | None = None
         if stream_state is not None:
-            return str(stream_state(stream_id)).lower()
+            try:
+                return str(stream_state(stream_id)).lower()
+            except Exception:
+                state_lookup_error = RuntimeError(
+                    f"payment stream state lookup failed for stream {stream_id}"
+                )
+                logger.warning(
+                    "Payment stream state lookup failed; deriving state from stream data",
+                    extra={"stream_id": stream_id},
+                    exc_info=True,
+                )
         if (
             str(stream.get("recipient", "")).lower()
             == "0x0000000000000000000000000000000000000000"
@@ -233,6 +244,8 @@ class ProviderService:
         eth = getattr(web3, "eth", None)
         get_block = getattr(eth, "get_block", None)
         if get_block is None:
+            if state_lookup_error is not None:
+                raise state_lookup_error
             return "active"
         now = int(get_block("latest")["timestamp"])
         if now >= int(stream["stopTime"]) + STREAM_GRACE_PERIOD_SECONDS:
