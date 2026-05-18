@@ -7,27 +7,20 @@ import {
   KeyValueList,
   ProgressBar,
   SectionHeader,
-  StatCard,
   StatusBadge,
   Tabs,
-  TimeSeriesAreaChart,
 } from "@golem/ui";
 import {
   RiArrowLeftLine,
   RiCheckboxCircleLine,
   RiCloseCircleLine,
-  RiCpuLine,
   RiFileCopyLine,
-  RiHardDrive3Line,
 } from "@remixicon/react";
 import { EmptyPanel, EndpointErrors, LoadingGrid } from "../../components/StateViews";
-import { metricChartPoints } from "../../components/metricChartPoints";
-import { RangePicker } from "../../components/RangePicker";
 import type { NavigateTarget } from "../../components/types";
-import { metricNumber, vmStatusTone } from "../../lib/derived";
+import { vmStatusTone } from "../../lib/derived";
 import {
   EMPTY_VALUE,
-  formatBytes,
   formatDateTime,
   formatDuration,
   formatGlm,
@@ -38,10 +31,10 @@ import {
 } from "../../lib/format";
 import { projectStream, useStreamNowSeconds } from "../../lib/liveStreamValues";
 import { providerApi } from "../../lib/providerApi";
-import type { HistoryRange, MetricsHistoryResponse, VMInfo } from "../../lib/types";
-import { useVmDetail, useVmMetricHistory } from "../../lib/useProviderData";
+import type { VMInfo } from "../../lib/types";
+import { useVmDetail } from "../../lib/useProviderData";
 
-type VmTab = "overview" | "metrics" | "stream" | "settings";
+type VmTab = "overview" | "stream" | "settings";
 
 export function VmDetailsPage({
   vmId,
@@ -53,7 +46,6 @@ export function VmDetailsPage({
   const [tab, setTab] = React.useState<VmTab>("overview");
   const { data, loading, refresh } = useVmDetail(vmId);
   const vm = data?.vm;
-  const latestVmMetrics = data?.latest?.vms?.[vmId] ?? {};
 
   if (loading && !data) return <LoadingGrid />;
 
@@ -90,7 +82,6 @@ export function VmDetailsPage({
       <Tabs<VmTab>
         tabs={[
           { id: "overview", label: "Overview" },
-          { id: "metrics", label: "Metrics" },
           { id: "stream", label: "Stream" },
           { id: "settings", label: "Settings" },
         ]}
@@ -102,14 +93,7 @@ export function VmDetailsPage({
         <OverviewTab
           vmId={vmId}
           data={data}
-          latestVmMetrics={latestVmMetrics}
           onRefresh={refresh}
-        />
-      ) : null}
-      {tab === "metrics" ? (
-        <MetricsTab
-          vmId={vmId}
-          latestVmMetrics={latestVmMetrics}
         />
       ) : null}
       {tab === "stream" ? <StreamTab data={data} /> : null}
@@ -123,12 +107,10 @@ export function VmDetailsPage({
 function OverviewTab({
   vmId,
   data,
-  latestVmMetrics,
   onRefresh,
 }: {
   vmId: string;
   data: ReturnType<typeof useVmDetail>["data"];
-  latestVmMetrics: Record<string, unknown>;
   onRefresh: () => void;
 }) {
   const vm = data?.vm;
@@ -198,79 +180,7 @@ function OverviewTab({
       </div>
 
       <ProviderActions vmId={vmId} vm={vm ?? null} onRefresh={onRefresh} />
-
-      <div className="grid gap-4 md:grid-cols-4">
-        <StatCard label="CPU" value={`${metricNumber(latestVmMetrics, "cpu_percent") ?? EMPTY_VALUE}%`} icon={<RiCpuLine className="h-5 w-5" />} />
-        <StatCard label="Memory" value={formatBytes(latestVmMetrics.memory_used_bytes)} icon={<RiCpuLine className="h-5 w-5" />} />
-        <StatCard label="Disk" value={formatBytes(latestVmMetrics.disk_used_bytes)} icon={<RiHardDrive3Line className="h-5 w-5" />} />
-        <StatCard label="Network RX" value={formatBytes(latestVmMetrics.network_rx_bytes)} icon={<RiHardDrive3Line className="h-5 w-5" />} />
-      </div>
     </div>
-  );
-}
-
-function MetricsTab({
-  vmId,
-  latestVmMetrics,
-}: {
-  vmId: string;
-  latestVmMetrics: Record<string, unknown>;
-}) {
-  return (
-    <div className="space-y-4">
-      <div className="grid gap-4 md:grid-cols-4">
-        <StatCard label="CPU" value={`${metricNumber(latestVmMetrics, "cpu_percent") ?? EMPTY_VALUE}%`} detail="Current usage" icon={<RiCpuLine className="h-5 w-5" />} tone="primary" />
-        <StatCard label="Memory" value={`${formatBytes(latestVmMetrics.memory_used_bytes)} / ${formatBytes(latestVmMetrics.memory_total_bytes)}`} detail="Current usage" icon={<RiCpuLine className="h-5 w-5" />} tone="primary" />
-        <StatCard label="Disk" value={`${formatBytes(latestVmMetrics.disk_used_bytes)} / ${formatBytes(latestVmMetrics.disk_total_bytes)}`} detail="Current usage" icon={<RiHardDrive3Line className="h-5 w-5" />} tone="success" />
-        <StatCard label="Network" value={formatBytes(latestVmMetrics.network_rx_bytes)} detail={`${formatBytes(latestVmMetrics.network_tx_bytes)} TX`} icon={<RiHardDrive3Line className="h-5 w-5" />} tone="primary" />
-      </div>
-      <VmMetricCharts vmId={vmId} />
-    </div>
-  );
-}
-
-function VmMetricCharts({ vmId }: { vmId: string }) {
-  const [range, setRange] = React.useState<HistoryRange>("1h");
-  const history = useVmMetricHistory(vmId, range);
-
-  return (
-    <div className="space-y-4">
-      {history.error ? <EndpointErrors errors={{ history: history.error }} /> : null}
-      <MetricChart title="CPU (%)" metric="cpu_percent" history={history.history} range={range} setRange={setRange} />
-      <MetricChart title="Memory" metric="memory_used_bytes" history={history.history} range={range} setRange={setRange} />
-    </div>
-  );
-}
-
-function MetricChart({
-  title,
-  metric,
-  history,
-  range,
-  setRange,
-}: {
-  title: string;
-  metric: string;
-  history: MetricsHistoryResponse | null;
-  range: HistoryRange;
-  setRange: (range: HistoryRange) => void;
-}) {
-  return (
-    <Card>
-      <CardBody>
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <h2 className="text-base font-semibold text-text-primary">{title}</h2>
-          <RangePicker value={range} onChange={setRange} />
-        </div>
-        <TimeSeriesAreaChart
-          data={metricChartPoints(history, metric)}
-          range={range}
-          height={240}
-          yUnit={metric === "cpu_percent" ? "%" : undefined}
-          valueFormatter={metric.endsWith("_bytes") ? formatBytes : undefined}
-        />
-      </CardBody>
-    </Card>
   );
 }
 

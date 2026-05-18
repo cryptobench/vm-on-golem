@@ -128,7 +128,6 @@ def test_local_stack_build_services_passes_log_env_to_every_service(tmp_path):
     assert {
         "central-discovery",
         "provider",
-        "central-advertisement",
         "port-checker",
         "requestor-web",
         "provider-desktop",
@@ -151,6 +150,8 @@ def test_local_stack_build_services_passes_log_env_to_every_service(tmp_path):
     central = next(
         service for service in services if service.name == "central-discovery"
     )
+    assert central.command == ["go", "run", "./cmd/golem-central-discovery"]
+    assert central.cwd == local_stack.ROOT / "central-discovery-server"
     requestor_web = next(
         service for service in services if service.name == "requestor-web"
     )
@@ -173,10 +174,9 @@ def test_local_stack_build_services_passes_log_env_to_every_service(tmp_path):
         "3000",
     ]
     assert requestor_web.env["NEXT_PUBLIC_GOLEM_ENVIRONMENT"] == "development"
-    assert requestor_web.env["NEXT_PUBLIC_DISCOVERY_MODE"] == "central"
     assert (
-        requestor_web.env["NEXT_PUBLIC_DISCOVERY_API_URL"]
-        == "http://127.0.0.1:9001/api/v1"
+        requestor_web.env["NEXT_PUBLIC_DISCOVERY_WS_URL"]
+        == "ws://127.0.0.1:9001/api/v1/discovery/requestors"
     )
     assert (
         requestor_web.env["NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS"]
@@ -190,16 +190,12 @@ def test_local_stack_build_services_passes_log_env_to_every_service(tmp_path):
     assert requestor_web.env["NEXT_PUBLIC_EVM_CHAIN_NAME"] == "Ethereum Hoodi"
     assert requestor_web.env["NEXT_PUBLIC_EVM_RPC_URL"] == deployment()["rpc_url"]
     assert (
+        requestor_web.env["NEXT_PUBLIC_EVM_WS_URL"]
+        == "wss://ethereum-hoodi-rpc.publicnode.com"
+    )
+    assert (
         requestor_web.env["NEXT_PUBLIC_EVM_EXPLORER_URL"]
         == "https://hoodi.etherscan.io"
-    )
-    assert (
-        requestor_web.env["NEXT_PUBLIC_ARKIV_DEV_RPC_URL"]
-        == "https://kaolin.hoodi.arkiv.network/rpc"
-    )
-    assert (
-        requestor_web.env["NEXT_PUBLIC_ARKIV_DEV_WS_URL"]
-        == "wss://kaolin.hoodi.arkiv.network/rpc/ws"
     )
     assert requestor_web.env["WATCHPACK_POLLING"] == "true"
     assert requestor_web.env["CHOKIDAR_USEPOLLING"] == "true"

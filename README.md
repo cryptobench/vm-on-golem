@@ -55,14 +55,14 @@ Useful smoke-check variant:
 make local LOCAL_STACK_ARGS="--no-open --skip-chain-check"
 ```
 
-Requirements: Poetry, Node/npm, and Multipass.
+Requirements: Go, Poetry, Node/npm, and Multipass.
 
 ## Project Structure
 
 - `requestor-web/`: requestor web app.
 - `provider-server/`: provider API and provider command surface.
 - `apps/provider-desktop/`: provider desktop shell.
-- `central-discovery-server/`: central discovery backend.
+- `central-discovery-server/`: Go central discovery backend.
 - `port-checker-server/`: provider port verification utility.
 - `packages/design-system/`: shared design tokens.
 - `packages/ui/`: shared React UI components.

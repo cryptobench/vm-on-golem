@@ -7,7 +7,6 @@ on:
       - "Makefile"
       - "openapi/**"
       - "scripts/export_openapi.py"
-      - "central-discovery-server/**"
       - "port-checker-server/**"
       - "provider-server/**"
       - "requestor-server/**"
@@ -37,7 +36,6 @@ jobs:
 
       - name: Install backend dependencies
         run: |
-          poetry -C central-discovery-server install --with dev --no-interaction
           poetry -C port-checker-server install --with dev --no-interaction
           poetry -C provider-server install --with dev --no-interaction
           poetry -C requestor-server install --with dev --no-interaction

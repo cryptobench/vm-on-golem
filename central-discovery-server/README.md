@@ -1,15 +1,19 @@
 # VM on Golem Central Discovery
 
-Central discovery is a websocket-only live provider registry. Providers publish
-advertisements over `WS /api/v1/discovery/providers`; requestors browse through
+Central discovery is a Go websocket service with an in-memory live provider
+registry. Providers publish advertisements over
+`WS /api/v1/discovery/providers`; requestors browse through
 `WS /api/v1/discovery/requestors`. A provider is discoverable only while its
 websocket is connected.
 
 ## Install
 
 ```bash
-pip install golem-vm-central-discovery
+go install ./cmd/golem-central-discovery
 ```
+
+Release builds are published as `golem-central-discovery-<os>-<arch>.tar.gz`
+assets on GitHub releases tagged `central-discovery-v*`.
 
 ## Run
 
@@ -39,7 +43,13 @@ There are no HTTP advertisement endpoints and no persisted advertisement store.
 ## Development
 
 ```bash
-poetry -C central-discovery-server install --with dev
-poetry -C central-discovery-server run pytest
-poetry -C central-discovery-server run golem-central-discovery
+cd central-discovery-server
+go test ./...
+go run ./cmd/golem-central-discovery
+```
+
+To update an installed release binary in place:
+
+```bash
+scripts/update_central_discovery.sh /usr/local/bin/golem-central-discovery
 ```

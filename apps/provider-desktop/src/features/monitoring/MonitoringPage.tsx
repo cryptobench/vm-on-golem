@@ -2,9 +2,7 @@ import React from "react";
 import {
   Card,
   CardBody,
-  DataTable,
   PageHeader,
-  ProgressBar,
   StatCard,
   TimeSeriesAreaChart,
 } from "@golem/ui";
@@ -40,7 +38,7 @@ export function MonitoringPage({
     <div className="space-y-6">
       <PageHeader
         title="Monitoring"
-        description="Track host performance and VM usage."
+        description="Track host performance."
       />
       <EndpointErrors
         errors={{
@@ -65,48 +63,6 @@ export function MonitoringPage({
         history={live.state.metricsHistory}
         onRangeChange={live.setHistoryRange}
       />
-
-      <Card>
-        <CardBody className="p-0">
-          <div className="p-4">
-            <h2 className="text-base font-semibold text-text-primary">VM Metrics</h2>
-          </div>
-          <DataTable
-            rows={data?.monitoring?.vms ?? []}
-            getRowKey={(row, index) => String(row.vm_id ?? index)}
-            empty="No VM metrics have been sampled"
-            columns={[
-              { key: "name", header: "Name", render: (row) => String(row.vm_id ?? EMPTY_VALUE) },
-              {
-                key: "cpu",
-                header: "CPU %",
-                render: (row) => (
-                  <div className="flex min-w-32 items-center gap-3">
-                    <span>{formatPercent(typeof row.cpu_percent === "number" ? row.cpu_percent : null)}</span>
-                    <ProgressBar value={typeof row.cpu_percent === "number" ? row.cpu_percent : 0} className="w-16" />
-                  </div>
-                ),
-              },
-              {
-                key: "memory",
-                header: "Memory (Used / Total)",
-                render: (row) => `${formatBytes(row.memory_used_bytes)} / ${formatBytes(row.memory_total_bytes)}`,
-              },
-              {
-                key: "disk",
-                header: "Disk (Used / Total)",
-                render: (row) => `${formatBytes(row.disk_used_bytes)} / ${formatBytes(row.disk_total_bytes)}`,
-              },
-              {
-                key: "network",
-                header: "Network (RX / TX)",
-                render: (row) => `${formatBytes(row.network_rx_bytes)} / ${formatBytes(row.network_tx_bytes)}`,
-              },
-              { key: "agent", header: "Agent Version", render: (row) => String(row.agent_version ?? EMPTY_VALUE) },
-            ]}
-          />
-        </CardBody>
-      </Card>
     </div>
   );
 }

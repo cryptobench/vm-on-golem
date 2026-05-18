@@ -483,13 +483,14 @@ def check_multipass_compatibility(multipass_version: str) -> None:
 
 
 def ensure_python_deps() -> None:
-    for service in (
-        "central-discovery-server",
-        "port-checker-server",
-        "provider-server",
-    ):
+    for service in ("port-checker-server", "provider-server"):
         log_setup(f"[setup] poetry install: {service}")
         run_checked(["poetry", "-C", service, "install", "--no-interaction"])
+
+
+def ensure_go_deps() -> None:
+    log_setup("[setup] go mod download: central-discovery-server")
+    run_checked(["go", "mod", "download"], cwd=ROOT / "central-discovery-server")
 
 
 def ensure_node_deps(package_dir: str) -> None:
@@ -635,6 +636,7 @@ def stop_existing_provider_daemon() -> None:
 def ensure_deps(skip_install: bool, start_provider_desktop: bool) -> None:
     if skip_install:
         return
+    ensure_go_deps()
     ensure_python_deps()
     ensure_node_deps("requestor-web")
     if start_provider_desktop:
@@ -826,13 +828,8 @@ def build_services(
     services = [
         Service(
             name="central-discovery",
-            command=[
-                "poetry",
-                "-C",
-                "central-discovery-server",
-                "run",
-                "golem-central-discovery",
-            ],
+            command=["go", "run", "./cmd/golem-central-discovery"],
+            cwd=ROOT / "central-discovery-server",
             env={
                 **service_log_env("GOLEM_CENTRAL_DISCOVERY"),
                 "GOLEM_CENTRAL_DISCOVERY_HOST": CENTRAL_HOST,
@@ -992,7 +989,6 @@ def build_services(
 
 def run_stack(args: argparse.Namespace) -> int:
     running: list[Service] = []
-    checkpoint: Service | None = None
     log_config = LogConfig(
         log_dir=Path(args.log_dir),
         max_bytes=args.log_max_bytes,
@@ -1023,16 +1019,6 @@ def run_stack(args: argparse.Namespace) -> int:
         signal.signal(signal.SIGTERM, handle_signal)
 
         for service in services:
-            if service.name == "central-advertisement":
-                checkpoint = service
-                log("[stack] waiting for provider advertisement in central discovery")
-                log_service(
-                    service.name,
-                    "[stack] waiting for provider advertisement in central discovery",
-                    echo=False,
-                )
-                wait_ready(service, args.timeout)
-                continue
             running.append(service)
             start_service(service, args.timeout)
 
@@ -1077,8 +1063,6 @@ def run_stack(args: argparse.Namespace) -> int:
         log(f"[stack] logs: {log_config.log_dir}")
         return 1
     finally:
-        if checkpoint and checkpoint.process is not None:
-            running.append(checkpoint)
         stop_services(running)
         if _stack_logs is not None:
             _stack_logs.close()

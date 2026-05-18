@@ -16,21 +16,17 @@ STREAM_PAYMENT_ADDRESS ?= $(shell python3 -c "import json; print(json.load(open(
 GLM_TOKEN_ADDRESS ?= $(shell python3 -c "import json; print(json.load(open('contracts/deployments/hoodi.json'))['StreamPayment'].get('glmToken') or '0x55555555555556AcFf9C332Ed151758858bd7a26')")
 
 install: lock
-	poetry -C central-discovery-server install
+	cd central-discovery-server && go mod download
 	poetry -C port-checker-server install
 	poetry -C provider-server install
 	poetry -C shared-faucet install
 
 lock:
-	poetry -C central-discovery-server lock
 	poetry -C port-checker-server lock
 	poetry -C provider-server lock
 
 test:
-	# Ensure dev deps (e.g., requests for TestClient) are installed per service
-	poetry -C central-discovery-server lock
-	poetry -C central-discovery-server install --with dev --no-interaction
-	poetry -C central-discovery-server run pytest central-discovery-server/tests --cov=central_discovery --cov-report=term-missing --cov-fail-under=100 || [ $$? -eq 5 ]
+	cd central-discovery-server && go test ./...
 	poetry -C port-checker-server lock
 	poetry -C port-checker-server install --with dev --no-interaction
 	poetry -C port-checker-server run pytest port-checker-server/tests || [ $$? -eq 5 ]
@@ -79,13 +75,13 @@ start:
 
 start-testnet:
 	@set -e; \
-	GOLEM_PROVIDER_NETWORK=testnet GOLEM_ENVIRONMENT=development poetry -C central-discovery-server run golem-central-discovery & \
+	(cd central-discovery-server && GOLEM_PROVIDER_NETWORK=testnet GOLEM_ENVIRONMENT=development go run ./cmd/golem-central-discovery) & \
 	GOLEM_PROVIDER_NETWORK=testnet GOLEM_ENVIRONMENT=development GOLEM_PROVIDER_DISCOVERY_WS_URL=$(CENTRAL_DISCOVERY_PROVIDER_WS_URL) poetry -C provider-server run golem-provider start --network testnet & \
 	wait
 
 start-mainnet:
 	@set -e; \
-	GOLEM_PROVIDER_NETWORK=mainnet GOLEM_ENVIRONMENT=production poetry -C central-discovery-server run golem-central-discovery & \
+	(cd central-discovery-server && GOLEM_PROVIDER_NETWORK=mainnet GOLEM_ENVIRONMENT=production go run ./cmd/golem-central-discovery) & \
 	GOLEM_PROVIDER_NETWORK=mainnet GOLEM_ENVIRONMENT=production GOLEM_PROVIDER_DISCOVERY_WS_URL=$(CENTRAL_DISCOVERY_PROVIDER_WS_URL) poetry -C provider-server run golem-provider start & \
 	wait
 

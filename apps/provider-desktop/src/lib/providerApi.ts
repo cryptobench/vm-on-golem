@@ -116,22 +116,12 @@ export const providerApi = {
   monitoringOverview: () => request<MonitoringOverview>("/monitoring/overview"),
   metricsLatest: () =>
     request<MetricsLatestResponse>("/monitoring/metrics/latest"),
-  metricsHistory: (range: HistoryRange, vmId?: string) => {
+  metricsHistory: (range: HistoryRange) => {
     const params = new URLSearchParams({ range });
-    if (vmId) {
-      params.set("scope", "vm");
-      params.set("vm_id", vmId);
-    }
     return request<MetricsHistoryResponse>(
       `/monitoring/metrics/history?${params.toString()}`,
     );
   },
-  vmMetricsLatest: (id: string) =>
-    request<MetricsLatestResponse>(`/vms/${encodeURIComponent(id)}/metrics/latest`),
-  vmMetricsHistory: (id: string, range: HistoryRange) =>
-    request<MetricsHistoryResponse>(
-      `/vms/${encodeURIComponent(id)}/metrics/history?range=${encodeURIComponent(range)}`,
-    ),
   alerts: () => request<MonitoringOverview["active_alerts"]>("/monitoring/alerts"),
   alertRules: () => request<AlertRule[]>("/monitoring/alert-rules"),
   createAlertRule: (rule: AlertRule) =>
