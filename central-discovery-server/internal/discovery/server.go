@@ -1,10 +1,13 @@
 package discovery
 
 import (
+	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -26,8 +29,31 @@ func NewServer(config Config) *Server {
 }
 
 func (s *Server) ListenAndServe() error {
+	if s.config.TLSEnabled {
+		return s.listenAndServeTLS(context.Background())
+	}
 	log.Printf("Starting central discovery service on %s", s.config.Address())
 	return http.ListenAndServe(s.config.Address(), s.Handler())
+}
+
+func (s *Server) listenAndServeTLS(ctx context.Context) error {
+	certificates := newCertificateManager(s.config)
+	if err := certificates.ensureCertificate(ctx); err != nil {
+		return err
+	}
+	go certificates.startRenewalLoop(ctx)
+
+	server := &http.Server{
+		Addr:              s.config.Address(),
+		Handler:           s.Handler(),
+		ReadHeaderTimeout: 10 * time.Second,
+		TLSConfig: &tls.Config{
+			MinVersion:     tls.VersionTLS12,
+			GetCertificate: certificates.getCertificate,
+		},
+	}
+	log.Printf("Starting central discovery TLS service on %s", s.config.Address())
+	return server.ListenAndServeTLS("", "")
 }
 
 func (s *Server) Handler() http.Handler {

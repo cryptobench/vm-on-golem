@@ -21,6 +21,14 @@ Provider nodes connect to:
 GOLEM_PROVIDER_DISCOVERY_WS_URL=ws://host:9001/api/v1/discovery/providers
 ```
 
+For public browser-facing deployments, central discovery can serve TLS directly
+with a Let's Encrypt IP certificate. In that case providers use the same path
+with `wss://`, usually on port 443:
+
+```bash
+GOLEM_PROVIDER_DISCOVERY_WS_URL=wss://94.130.182.147/api/v1/discovery/providers
+```
+
 The server sends a nonce, the provider authenticates with an Ethereum signature
 from `ETHEREUM_PRIVATE_KEY`, then sends `advertisement.upsert` whenever
 resources, pricing, or endpoint state changes. If the endpoint is not
@@ -33,6 +41,12 @@ Requestor web connects to:
 
 ```bash
 NEXT_PUBLIC_DISCOVERY_WS_URL=ws://host:9001/api/v1/discovery/requestors
+```
+
+For HTTPS requestor-web deployments, use the TLS websocket URL:
+
+```bash
+NEXT_PUBLIC_DISCOVERY_WS_URL=wss://94.130.182.147/api/v1/discovery/requestors
 ```
 
 The requestor sends `subscribe` with resource, country, and platform filters.

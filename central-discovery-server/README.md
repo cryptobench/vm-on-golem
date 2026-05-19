@@ -31,6 +31,40 @@ Only `GOLEM_CENTRAL_DISCOVERY_*` variables are accepted.
 | Port | `GOLEM_CENTRAL_DISCOVERY_PORT` | `9001` |
 | Debug | `GOLEM_CENTRAL_DISCOVERY_DEBUG` | `false` |
 | Rate limit | `GOLEM_CENTRAL_DISCOVERY_RATE_LIMIT_PER_MINUTE` | `100` |
+| TLS enabled | `GOLEM_CENTRAL_DISCOVERY_TLS_ENABLED` | `false` |
+| Public IP for IP certificate | `GOLEM_CENTRAL_DISCOVERY_PUBLIC_IP` | `auto` |
+| Public IP lookup URL | `GOLEM_CENTRAL_DISCOVERY_PUBLIC_IP_LOOKUP_URL` | `https://api.ipify.org` |
+| ACME HTTP-01 host | `GOLEM_CENTRAL_DISCOVERY_ACME_HTTP_HOST` | `0.0.0.0` |
+| ACME HTTP-01 port | `GOLEM_CENTRAL_DISCOVERY_ACME_HTTP_PORT` | `80` |
+| ACME directory URL | `GOLEM_CENTRAL_DISCOVERY_ACME_DIRECTORY_URL` | `https://acme-v02.api.letsencrypt.org/directory` |
+| ACME profile | `GOLEM_CENTRAL_DISCOVERY_ACME_PROFILE` | `shortlived` |
+| ACME account email | `GOLEM_CENTRAL_DISCOVERY_ACME_ACCOUNT_EMAIL` | empty |
+| Certificate directory | `GOLEM_CENTRAL_DISCOVERY_CERT_DIR` | `~/.golem/central-discovery/certs` |
+| Renew before expiry | `GOLEM_CENTRAL_DISCOVERY_CERT_RENEW_BEFORE_HOURS` | `48` |
+| Renewal check interval | `GOLEM_CENTRAL_DISCOVERY_CERT_RENEWAL_CHECK_INTERVAL_SECONDS` | `3600` |
+
+## Built-in TLS for bare IP deployments
+
+Central discovery can obtain and renew a Let's Encrypt IP certificate directly
+from the binary. This mode uses ACME HTTP-01 validation on port 80 and serves
+HTTPS/WSS on the configured service port, usually 443 for browser clients.
+
+```bash
+sudo GOLEM_CENTRAL_DISCOVERY_TLS_ENABLED=true \
+  GOLEM_CENTRAL_DISCOVERY_PORT=443 \
+  GOLEM_CENTRAL_DISCOVERY_PUBLIC_IP=94.130.182.147 \
+  /usr/local/bin/golem-central-discovery
+```
+
+When `GOLEM_CENTRAL_DISCOVERY_PUBLIC_IP=auto`, the binary resolves the public IP
+from `GOLEM_CENTRAL_DISCOVERY_PUBLIC_IP_LOOKUP_URL`. The HTTP-01 port must be
+reachable publicly as port 80, and the service port must be reachable publicly
+as the port used in client URLs. For a bare IP production requestor web deploy:
+
+```bash
+NEXT_PUBLIC_DISCOVERY_WS_URL=wss://94.130.182.147/api/v1/discovery/requestors
+GOLEM_PROVIDER_DISCOVERY_WS_URL=wss://94.130.182.147/api/v1/discovery/providers
+```
 
 ## Endpoints
 
