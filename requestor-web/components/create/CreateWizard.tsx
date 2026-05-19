@@ -10,10 +10,12 @@ import { ProviderRow } from "../providers/ProviderRow";
 import { RentDialog as RentDialogExt } from "../providers/RentDialog";
 import { KeyPicker } from "../ssh/KeyPicker";
 import { countryFullName, countryFlagEmoji } from "../../lib/intl";
+import { useAds } from "../../context/AdsContext";
 
 type Step = 0 | 1 | 2 | 3;
 
 export function CreateWizard({ open, onClose, onComplete }: { open: boolean; onClose: () => void; onComplete: (data: { countries?: string[]; cpu?: number; memory?: number; storage?: number; platform?: string; sshKeyId?: string; max_usd_per_month?: number; provider_id?: string }) => void }) {
+  const { ads } = useAds();
   const settings = loadSettings();
   const discovery = useDiscoveryProviders({}, open);
   const initialKeys: SSHKey[] = settings.ssh_keys || (settings.ssh_public_key ? [{ id: 'default', name: 'Default', value: settings.ssh_public_key }] : []);
