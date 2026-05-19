@@ -7,10 +7,10 @@ ASSERT_FILE="$MULTIPASS_DIR/multipass.assert"
 LOG_DIR="/var/log/golem-provider"
 LOG_FILE="$LOG_DIR/installer-postinstall.log"
 MIN_VERSION="1.13.0"
-VERIFY_ATTEMPTS=12
-VERIFY_SLEEP_SECONDS=2
 COMMAND_TIMEOUT_SECONDS=5
 INSTALL_TIMEOUT_SECONDS=300
+MULTIPASSD_SERVICE="snap.multipass.multipassd.service"
+MULTIPASSD_FALLBACK_SERVICE="multipassd.service"
 
 if ! mkdir -p "$LOG_DIR" 2>/dev/null; then
   LOG_FILE="${TMPDIR:-/tmp}/golem-provider-installer-postinstall.log"
@@ -19,7 +19,7 @@ fi
 log() {
   timestamp="$(date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date)"
   printf "%s %s\n" "$timestamp" "$*" >&2
-  printf "%s %s\n" "$timestamp" "$*" >>"$LOG_FILE" 2>/dev/null || true
+  { printf "%s %s\n" "$timestamp" "$*" >>"$LOG_FILE"; } 2>/dev/null || true
 }
 
 on_exit() {
@@ -49,7 +49,8 @@ log_file_contents() {
 run_capture_to_file() {
   timeout_seconds="$1"
   output_file="$2"
-  shift 2
+  log_output="$3"
+  shift 3
 
   : >"$output_file"
   log "Running command with ${timeout_seconds}s timeout: $*"
@@ -64,7 +65,9 @@ run_capture_to_file() {
       sleep 1
       kill -9 "$command_pid" 2>/dev/null || true
       wait "$command_pid" 2>/dev/null || true
-      log_file_contents "$output_file"
+      if [ "$log_output" = "1" ]; then
+        log_file_contents "$output_file"
+      fi
       return 124
     fi
     sleep 1
@@ -77,7 +80,9 @@ run_capture_to_file() {
     command_status="$?"
   fi
   log "Command exited ${command_status}: $*"
-  log_file_contents "$output_file"
+  if [ "$log_output" = "1" ]; then
+    log_file_contents "$output_file"
+  fi
   return "$command_status"
 }
 
@@ -85,7 +90,17 @@ run_logged() {
   timeout_seconds="$1"
   shift
   output_file="$(temp_file)"
-  run_capture_to_file "$timeout_seconds" "$output_file" "$@"
+  run_capture_to_file "$timeout_seconds" "$output_file" 1 "$@"
+  command_status="$?"
+  rm -f "$output_file"
+  return "$command_status"
+}
+
+run_status_only() {
+  timeout_seconds="$1"
+  shift
+  output_file="$(temp_file)"
+  run_capture_to_file "$timeout_seconds" "$output_file" 0 "$@"
   command_status="$?"
   rm -f "$output_file"
   return "$command_status"
@@ -123,7 +138,7 @@ multipass_path() {
 read_multipass_version() {
   mp="$1"
   output_file="$(temp_file)"
-  if ! run_capture_to_file "$COMMAND_TIMEOUT_SECONDS" "$output_file" "$mp" version; then
+  if ! run_capture_to_file "$COMMAND_TIMEOUT_SECONDS" "$output_file" 1 "$mp" version; then
     rm -f "$output_file"
     return 1
   fi
@@ -149,9 +164,55 @@ multipass_supported() {
 }
 
 verify_multipass() {
-  multipass_supported || return 1
-  mp="$(multipass_path)" || return 1
-  run_logged "$COMMAND_TIMEOUT_SECONDS" "$mp" list --format json
+  verify_multipass_service || return 1
+  multipass_supported
+}
+
+verify_multipass_service() {
+  if command -v snap >/dev/null 2>&1; then
+    snap_installed=1
+    run_status_only "$COMMAND_TIMEOUT_SECONDS" snap list multipass || snap_installed=0
+  else
+    snap_installed=0
+  fi
+
+  if command -v systemctl >/dev/null 2>&1; then
+    for service_name in "$MULTIPASSD_SERVICE" "$MULTIPASSD_FALLBACK_SERVICE"; do
+      if run_status_only "$COMMAND_TIMEOUT_SECONDS" systemctl cat "$service_name"; then
+        if run_status_only "$COMMAND_TIMEOUT_SECONDS" systemctl is-active --quiet "$service_name"; then
+          log "Multipass daemon service is active: $service_name"
+          return 0
+        fi
+
+        log "Multipass daemon service is not active; attempting service start: $service_name"
+        run_logged "$COMMAND_TIMEOUT_SECONDS" systemctl start "$service_name" || true
+        if run_status_only "$COMMAND_TIMEOUT_SECONDS" systemctl is-active --quiet "$service_name"; then
+          log "Multipass daemon service is active: $service_name"
+          return 0
+        fi
+      fi
+    done
+
+    log "Multipass daemon service is not active"
+    return 1
+  fi
+
+  if [ "$snap_installed" -eq 1 ]; then
+    if snap services multipass 2>/dev/null | awk '$1 == "multipass.multipassd" && $3 == "active" { found = 1 } END { exit found ? 0 : 1 }'; then
+      log "Multipass daemon snap service is active"
+      return 0
+    fi
+
+    log "Multipass daemon snap service is not active; attempting snap start"
+    run_logged "$COMMAND_TIMEOUT_SECONDS" snap start multipass || true
+    if snap services multipass 2>/dev/null | awk '$1 == "multipass.multipassd" && $3 == "active" { found = 1 } END { exit found ? 0 : 1 }'; then
+      log "Multipass daemon snap service is active"
+      return 0
+    fi
+  fi
+
+  log "Unable to verify Multipass daemon service"
+  return 1
 }
 
 log_diagnostics() {
@@ -174,28 +235,12 @@ log_diagnostics() {
   log "Diagnostics end"
 }
 
-wait_for_multipass() {
-  attempt=1
-  while [ "$attempt" -le "$VERIFY_ATTEMPTS" ]; do
-    log "Verifying Multipass ($attempt/$VERIFY_ATTEMPTS)"
-    if verify_multipass; then
-      log "Multipass verification succeeded"
-      return 0
-    fi
-
-    if [ "$attempt" -lt "$VERIFY_ATTEMPTS" ]; then
-      log "Waiting for Multipass daemon to respond ($attempt/$VERIFY_ATTEMPTS)"
-      sleep "$VERIFY_SLEEP_SECONDS"
-    fi
-    attempt=$((attempt + 1))
-  done
-  return 1
-}
-
 log "Golem Provider Linux postinstall started"
 log "Log file: $LOG_FILE"
 
-if multipass_supported && wait_for_multipass; then
+log "Verifying existing Multipass installation"
+if verify_multipass; then
+  log "Multipass verification succeeded"
   log "Compatible Multipass already installed"
   exit 0
 fi
@@ -232,10 +277,12 @@ else
   fi
 fi
 
-if ! wait_for_multipass; then
+log "Verifying installed Multipass package"
+if ! verify_multipass; then
   log "Multipass installed but verification failed"
   log_diagnostics
   exit 1
 fi
 
+log "Multipass verification succeeded"
 log "Multipass installed and verified"

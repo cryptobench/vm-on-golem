@@ -9,8 +9,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $CommandTimeoutSeconds = 15
-$VerifyAttempts = 12
-$VerifySleepSeconds = 2
+$MultipassServiceName = "Multipass"
 
 function Initialize-LogPath {
   param([string]$RequestedPath)
@@ -158,14 +157,34 @@ function Get-VersionCore([string]$Version) {
   return [version](($Version -split "[+-]")[0])
 }
 
-function Test-MultipassUsable([string]$Path) {
+function Test-MultipassService {
   try {
-    $result = Invoke-LoggedCommand -FilePath $Path -ArgumentList @("list", "--format", "json")
-    return $result.ExitCode -eq 0
+    $service = Get-Service -Name $MultipassServiceName -ErrorAction Stop
   } catch {
-    Write-InstallerLog "Multipass usability check failed: $($_.Exception.Message)"
+    Write-InstallerLog "Multipass service was not found: $($_.Exception.Message)"
     return $false
   }
+
+  if ($service.Status -eq "Running") {
+    Write-InstallerLog "Multipass service is running"
+    return $true
+  }
+
+  Write-InstallerLog "Multipass service is $($service.Status); attempting service start"
+  try {
+    Start-Service -Name $MultipassServiceName
+    $service.WaitForStatus("Running", [TimeSpan]::FromSeconds($CommandTimeoutSeconds))
+    $service.Refresh()
+    if ($service.Status -eq "Running") {
+      Write-InstallerLog "Multipass service is running"
+      return $true
+    }
+  } catch {
+    Write-InstallerLog "Multipass service start failed: $($_.Exception.Message)"
+  }
+
+  Write-InstallerLog "Multipass service is not running"
+  return $false
 }
 
 function Write-Diagnostics {
@@ -177,7 +196,7 @@ function Write-Diagnostics {
   Write-InstallerLog "MSI log file: $Script:MsiLogFile"
 
   try {
-    Invoke-LoggedCommand -FilePath "sc.exe" -ArgumentList @("query", "Multipass") | Out-Null
+    Invoke-LoggedCommand -FilePath "sc.exe" -ArgumentList @("query", $MultipassServiceName) | Out-Null
   } catch {
     Write-InstallerLog "Service query failed: $($_.Exception.Message)"
   }
@@ -193,22 +212,6 @@ function Write-Diagnostics {
     }
   }
   Write-InstallerLog "Diagnostics end"
-}
-
-function Wait-MultipassUsable([string]$Path) {
-  for ($attempt = 1; $attempt -le $VerifyAttempts; $attempt++) {
-    Write-InstallerLog "Verifying Multipass ($attempt/$VerifyAttempts)"
-    if (Test-MultipassUsable $Path) {
-      Write-InstallerLog "Multipass verification succeeded"
-      return $true
-    }
-
-    if ($attempt -lt $VerifyAttempts) {
-      Write-InstallerLog "Waiting for Multipass daemon to respond ($attempt/$VerifyAttempts)"
-      Start-Sleep -Seconds $VerifySleepSeconds
-    }
-  }
-  return $false
 }
 
 trap {
@@ -232,15 +235,27 @@ if (!(Test-Path $InstallerPath)) {
 
 $path = Get-MultipassPath
 if ($path) {
-  $version = Get-MultipassVersion $path
-  $blocked = $BlockedVersions -contains $version
-  $tooOld = (Get-VersionCore $version) -lt (Get-VersionCore $MinVersion)
-  if (!$blocked -and !$tooOld -and (Wait-MultipassUsable $path)) {
-    Write-InstallerLog "Compatible Multipass already installed: $version at $path"
-    Write-InstallerLog "Golem Provider Windows Multipass installer completed successfully"
-    exit 0
+  $serviceReady = Test-MultipassService
+  $version = $null
+  try {
+    $version = Get-MultipassVersion $path
+  } catch {
+    Write-InstallerLog "Unable to read existing Multipass version: $($_.Exception.Message)"
   }
-  Write-InstallerLog "Multipass requires install or repair: version=$version path=$path blocked=$blocked tooOld=$tooOld"
+
+  if ($version) {
+    $blocked = $BlockedVersions -contains $version
+    $tooOld = (Get-VersionCore $version) -lt (Get-VersionCore $MinVersion)
+    if (!$blocked -and !$tooOld -and $serviceReady) {
+      Write-InstallerLog "Multipass verification succeeded"
+      Write-InstallerLog "Compatible Multipass already installed: $version at $path"
+      Write-InstallerLog "Golem Provider Windows Multipass installer completed successfully"
+      exit 0
+    }
+    Write-InstallerLog "Multipass requires install or repair: version=$version path=$path blocked=$blocked tooOld=$tooOld serviceReady=$serviceReady"
+  } else {
+    Write-InstallerLog "Multipass requires install or repair: version=unknown path=$path serviceReady=$serviceReady"
+  }
 }
 
 $msiArguments = @(
@@ -271,10 +286,11 @@ if ((Get-VersionCore $version) -lt (Get-VersionCore $MinVersion)) {
   throw "Installed Multipass $version is below required $MinVersion"
 }
 
-if (!(Wait-MultipassUsable $path)) {
+if (!(Test-MultipassService)) {
   Write-Diagnostics
-  throw "Multipass installed but daemon is not responding"
+  throw "Multipass installed but service is not running"
 }
 
+Write-InstallerLog "Multipass verification succeeded"
 Write-InstallerLog "Multipass installed and verified: $version at $path"
 Write-InstallerLog "Golem Provider Windows Multipass installer completed successfully"

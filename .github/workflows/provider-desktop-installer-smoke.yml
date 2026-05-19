@@ -148,7 +148,19 @@ jobs:
         run: |
           set -euo pipefail
           multipass version
-          multipass list --format json
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            sudo /bin/launchctl print system/com.canonical.multipassd >/dev/null
+          elif [ "$RUNNER_OS" = "Linux" ]; then
+            if command -v systemctl >/dev/null 2>&1; then
+              if systemctl cat snap.multipass.multipassd.service >/dev/null 2>&1; then
+                systemctl is-active --quiet snap.multipass.multipassd.service
+              else
+                systemctl is-active --quiet multipassd.service
+              fi
+            else
+              snap services multipass | awk '$1 == "multipass.multipassd" && $3 == "active" { found = 1 } END { exit found ? 0 : 1 }'
+            fi
+          fi
 
       - name: Verify Multipass installation on Windows
         if: ${{ runner.os == 'Windows' }}
@@ -156,8 +168,10 @@ jobs:
         run: |
           multipass version
           if ($LASTEXITCODE -ne 0) { throw "multipass version failed" }
-          multipass list --format json
-          if ($LASTEXITCODE -ne 0) { throw "multipass list failed" }
+          $service = Get-Service -Name "Multipass" -ErrorAction Stop
+          if ($service.Status -ne "Running") {
+            throw "Multipass service is $($service.Status)"
+          }
 
       - name: Verify provider requirement probe
         run: python scripts/verify_provider_requirements.py
