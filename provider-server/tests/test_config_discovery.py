@@ -22,7 +22,10 @@ def test_discovery_ws_url_has_central_websocket_default(monkeypatch, tmp_path):
 
     settings = Settings()
 
-    assert settings.DISCOVERY_WS_URL.endswith("/api/v1/discovery/providers")
+    assert (
+        settings.DISCOVERY_WS_URL
+        == "wss://78.46.172.104/api/v1/discovery/providers"
+    )
 
 
 def test_discovery_ws_url_override_wins(monkeypatch, tmp_path):

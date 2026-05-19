@@ -283,7 +283,7 @@ GOLEM_PROVIDER_CERT_RENEWAL_RETRY_MAX_SECONDS=21600
 # matching internal ports above and forward to those exact local ports.
 
 # Central discovery websocket
-# GOLEM_PROVIDER_DISCOVERY_WS_URL="ws://discovery.golem.network:9001/api/v1/discovery/providers"
+# GOLEM_PROVIDER_DISCOVERY_WS_URL="wss://78.46.172.104/api/v1/discovery/providers"
 
 # Network Selection
 GOLEM_PROVIDER_NETWORK="testnet"  # or "mainnet"

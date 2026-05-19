@@ -15,8 +15,13 @@ on:
       - "apps/provider-desktop/**"
       - "packages/design-system/**"
       - "packages/ui/**"
+      - "packages/prices/**"
       - "provider-server/**"
       - "scripts/build_provider_cli.py"
+      - "scripts/vendor_multipass.py"
+      - "scripts/package_provider_desktop_macos.py"
+      - ".github/workflows/auto-tag-provider-desktop.yml"
+      - ".github/workflows/release-provider-desktop.yml"
 
 jobs:
   bump_and_tag:

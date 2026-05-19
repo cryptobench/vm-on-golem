@@ -5,6 +5,7 @@ on:
     paths:
       - "central-discovery-server/**"
       - "scripts/update_central_discovery.sh"
+      - ".github/workflows/auto-tag-central-discovery.yml"
       - ".github/workflows/release-central-discovery.yml"
   workflow_dispatch:
     inputs:

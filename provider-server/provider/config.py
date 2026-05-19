@@ -232,7 +232,7 @@ class Settings(BaseSettings):
 
     # Discovery settings. Central discovery is websocket-only.
     DISCOVERY_WS_URL: str = Field(
-        default="ws://195.201.39.101:9001/api/v1/discovery/providers",
+        default="wss://78.46.172.104/api/v1/discovery/providers",
         description="Central discovery provider websocket URL",
     )
 

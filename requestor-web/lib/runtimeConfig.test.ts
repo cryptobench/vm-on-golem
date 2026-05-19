@@ -28,7 +28,7 @@ test("runtime config keeps built-in defaults when env values are unset", () => {
 
   assert.equal(
     config.discoveryWsUrl,
-    "ws://195.201.39.101:9001/api/v1/discovery/requestors",
+    "wss://78.46.172.104/api/v1/discovery/requestors",
   );
   assert.equal(config.evmChainId, "0x88bb0");
 });

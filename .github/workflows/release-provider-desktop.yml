@@ -1,6 +1,18 @@
 name: Build and Release Provider Desktop
 
 on:
+  pull_request:
+    paths:
+      - "apps/provider-desktop/**"
+      - "packages/design-system/**"
+      - "packages/ui/**"
+      - "packages/prices/**"
+      - "provider-server/**"
+      - "scripts/build_provider_cli.py"
+      - "scripts/vendor_multipass.py"
+      - "scripts/package_provider_desktop_macos.py"
+      - ".github/workflows/auto-tag-provider-desktop.yml"
+      - ".github/workflows/release-provider-desktop.yml"
   workflow_dispatch:
     inputs:
       tag:
@@ -48,7 +60,7 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag != '' && inputs.tag || (github.event_name == 'workflow_dispatch' && inputs.ref != '' && inputs.ref || github.ref) }}
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || (github.event_name == 'workflow_dispatch' && inputs.tag != '' && inputs.tag || (github.event_name == 'workflow_dispatch' && inputs.ref != '' && inputs.ref || github.ref)) }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -174,11 +186,12 @@ jobs:
     name: Create GitHub Release
     runs-on: ubuntu-latest
     needs: [build]
+    if: ${{ github.event_name != 'pull_request' }}
     steps:
       - name: Check out code
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag != '' && inputs.tag || (github.event_name == 'workflow_dispatch' && inputs.ref != '' && inputs.ref || github.ref) }}
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || (github.event_name == 'workflow_dispatch' && inputs.tag != '' && inputs.tag || (github.event_name == 'workflow_dispatch' && inputs.ref != '' && inputs.ref || github.ref)) }}
 
       - name: Determine tag/version
         id: meta

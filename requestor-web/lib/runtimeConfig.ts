@@ -19,7 +19,7 @@ declare global {
 }
 
 const DEFAULTS: RequestorRuntimeConfig = {
-  discoveryWsUrl: "ws://195.201.39.101:9001/api/v1/discovery/requestors",
+  discoveryWsUrl: "wss://78.46.172.104/api/v1/discovery/requestors",
   streamPaymentAddress: "0x479044F8A58276DC15d0d924a6A92Ec663877D00",
   glmTokenAddress: "0x55555555555556AcFf9C332Ed151758858bd7a26",
   evmChainId: "0x88bb0",
