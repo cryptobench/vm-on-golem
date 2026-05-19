@@ -3,6 +3,8 @@ set -eu
 
 MULTIPASS_DIR="/Library/Application Support/Golem Provider/multipass"
 MIN_VERSION="1.13.0"
+VERIFY_ATTEMPTS=30
+VERIFY_SLEEP_SECONDS=2
 
 version_core() {
   printf "%s" "$1" | sed 's/[+-].*$//'
@@ -35,20 +37,39 @@ multipass_path() {
 }
 
 multipass_version() {
-  "$1" version 2>&1 | sed -n 's/.*multipass[[:space:]]\+\([0-9][^[:space:]]*\).*/\1/p' | head -n 1
+  "$1" version 2>&1 | sed -n 's/.*multipass[[:space:]][[:space:]]*\([0-9][^[:space:]]*\).*/\1/p' | head -n 1
 }
 
-verify_multipass() {
+multipass_supported() {
   mp="$(multipass_path)" || return 1
   version="$(multipass_version "$mp")"
   [ -n "$version" ] || return 1
-  if version_lt "$version" "$MIN_VERSION"; then
-    return 1
-  fi
+  ! version_lt "$version" "$MIN_VERSION"
+}
+
+verify_multipass() {
+  multipass_supported || return 1
+  mp="$(multipass_path)" || return 1
   "$mp" list --format json >/dev/null 2>&1
 }
 
-if verify_multipass; then
+wait_for_multipass() {
+  attempt=1
+  while [ "$attempt" -le "$VERIFY_ATTEMPTS" ]; do
+    if verify_multipass; then
+      return 0
+    fi
+
+    if [ "$attempt" -lt "$VERIFY_ATTEMPTS" ]; then
+      echo "Waiting for Multipass daemon to respond ($attempt/$VERIFY_ATTEMPTS)"
+      sleep "$VERIFY_SLEEP_SECONDS"
+    fi
+    attempt=$((attempt + 1))
+  done
+  return 1
+}
+
+if multipass_supported && wait_for_multipass; then
   echo "Compatible Multipass already installed"
   exit 0
 fi
@@ -61,7 +82,7 @@ fi
 
 /usr/sbin/installer -pkg "$pkg" -target /
 
-if ! verify_multipass; then
+if ! wait_for_multipass; then
   echo "Multipass installed but verification failed" >&2
   exit 1
 fi
