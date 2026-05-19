@@ -6,9 +6,8 @@ This document is the **architectural baseline** for the repo. Some sections desc
 
 ## Project Structure & Module Organization
 
-- `central-discovery-server/` (Go): centralized websocket discovery backend (`golem-central-discovery`).
+- `central-discovery-server/` (Go): centralized websocket discovery backend and bundled provider port-check API (`golem-central-discovery`).
 - `provider-server/` (Python 3.11): Provider API/CLI (`provider`, entry: `golem-provider`).
-- `port-checker-server/` (Python 3.10+): FastAPI utility (`port_checker`, entry: `port-checker`).
 - `requestor-web/`: Next.js + Tailwind + ethers.js web app for requestors.
 - `apps/provider-desktop/`: Tauri + Vite + React desktop shell for providers.
 - `packages/design-system/`: shared Golem design tokens, Tailwind preset, and theme CSS.
@@ -18,16 +17,16 @@ This document is the **architectural baseline** for the repo. Some sections desc
 
 ## Build, Test, and Development Commands
 
-- `make install` - Install Poetry dependencies for central discovery, port-checker, provider, requestor, and shared packages.
-- `make test` - Run pytest for the four core Python services.
-- `make local` - Preferred full-stack local workflow on ARM macOS: starts local central discovery, provider, port-checker proxy, and requestor web with one supervisor process. This intentionally uses local central discovery for deterministic development; Arkiv remains the canonical product default outside this local workflow.
-- `make start` - Start provider CLI, port-checker proxy, and requestor web (development mode).
+- `make install` - Install dependencies for central discovery, provider, requestor, and shared packages.
+- `make test` - Run Go and Python tests for the core services.
+- `make local` - Preferred full-stack local workflow on ARM macOS: starts local central discovery, provider, and requestor web with one supervisor process. This intentionally uses local central discovery for deterministic development; Arkiv remains the canonical product default outside this local workflow.
+- `make start` - Start central discovery, provider CLI, and requestor web (development mode).
 - Per-service: `poetry -C <svc> run pytest`, `GOLEM_ENVIRONMENT=development poetry -C provider-server run golem-provider start`, `cd central-discovery-server && go run ./cmd/golem-central-discovery`.
 - Provider desktop: `npm install && npm --workspace @golem/provider-desktop run dev` for local desktop development; `npm --workspace @golem/provider-desktop run tauri:build` for installers.
 
 ## Agent Server Policy
 
-Codex agents MUST NOT start long-running local servers or GUI processes in this repository unless the user explicitly asks for it in the current turn. This includes `make local`, `make start`, `npm run dev`, `npm start`, `next dev`, Tauri apps, Uvicorn/FastAPI servers, provider CLI commands, central discovery, and port-checker. For UI work, prefer static checks, unit/type tests, code inspection, or ask the user to run the app and provide a URL/screenshot.
+Codex agents MUST NOT start long-running local servers or GUI processes in this repository unless the user explicitly asks for it in the current turn. This includes `make local`, `make start`, `npm run dev`, `npm start`, `next dev`, Tauri apps, Uvicorn/FastAPI servers, provider CLI commands, and central discovery. For UI work, prefer static checks, unit/type tests, code inspection, or ask the user to run the app and provide a URL/screenshot.
 
 ## Provider API Authorization
 

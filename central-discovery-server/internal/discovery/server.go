@@ -13,15 +13,17 @@ import (
 )
 
 type Server struct {
-	config   Config
-	registry *Registry
-	upgrader websocket.Upgrader
+	config      Config
+	registry    *Registry
+	portChecker *PortChecker
+	upgrader    websocket.Upgrader
 }
 
 func NewServer(config Config) *Server {
 	return &Server{
-		config:   config,
-		registry: NewRegistry(),
+		config:      config,
+		registry:    NewRegistry(),
+		portChecker: newPortChecker(config),
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool { return true },
 		},
@@ -59,6 +61,8 @@ func (s *Server) listenAndServeTLS(ctx context.Context) error {
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", s.health)
+	mux.HandleFunc("/check-ports", s.checkPorts)
+	mux.HandleFunc("/check-tls", s.checkTLS)
 	mux.HandleFunc(apiV1Prefix+"/discovery/providers", s.providerDiscoverySocket)
 	mux.HandleFunc(apiV1Prefix+"/discovery/requestors", s.requestorDiscoverySocket)
 	return newRateLimitMiddleware(mux, s.config.RateLimitPerMinute)

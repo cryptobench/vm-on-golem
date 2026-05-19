@@ -530,8 +530,8 @@ def status(
         local["ok"] = False
         local["detail"] = str(e)
 
-    # Always use shared external port-checker for public reachability
-    servers = ["http://195.201.39.101:9000"]
+    # Use the shared central discovery origin for public reachability checks.
+    servers = [str(_settings.PORT_CHECK_TLS_URL).rstrip("/")]
 
     external = {"status": "unknown", "verified_by": None, "error": None}
     try:
@@ -987,7 +987,7 @@ def status(
     if not mp["ok"]:
         tips.append("Install Multipass and/or set GOLEM_PROVIDER_MULTIPASS_BINARY_PATH")
     if external["status"] != "reachable":
-        tips.append("Ensure at least one port-check server is online (see above)")
+        tips.append("Ensure the central discovery port-check endpoint is online (see above)")
     # Tips are included in the single panel under Notes
 
     # Restore logger level

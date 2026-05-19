@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::fs::{self, File};
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::net::{SocketAddr, TcpStream};
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
@@ -20,6 +20,8 @@ const PROVIDER_START_TIMEOUT: Duration = Duration::from_secs(180);
 struct ProviderStatus {
     running: bool,
     api_base_url: String,
+    admin_authenticated: bool,
+    admin_auth_error: Option<String>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -211,6 +213,64 @@ fn provider_is_listening() -> bool {
     TcpStream::connect_timeout(&addr, Duration::from_millis(300)).is_ok()
 }
 
+fn provider_admin_auth_status() -> (bool, Option<String>) {
+    if !provider_is_listening() {
+        return (false, None);
+    }
+
+    let token = match read_or_create_admin_token() {
+        Ok(token) => token,
+        Err(err) => return (false, Some(err)),
+    };
+    let addr = SocketAddr::from(([127, 0, 0, 1], PROVIDER_PORT));
+    let mut stream = match TcpStream::connect_timeout(&addr, Duration::from_millis(500)) {
+        Ok(stream) => stream,
+        Err(err) => return (false, Some(format!("Provider API unavailable: {err}"))),
+    };
+    let _ = stream.set_read_timeout(Some(Duration::from_millis(700)));
+    let _ = stream.set_write_timeout(Some(Duration::from_millis(700)));
+
+    let request = format!(
+        "GET /api/v1/provider/settings HTTP/1.1\r\n\
+         Host: {PROVIDER_HOST}:{PROVIDER_PORT}\r\n\
+         Accept: application/json\r\n\
+         Authorization: Bearer {token}\r\n\
+         Connection: close\r\n\r\n"
+    );
+    if let Err(err) = stream.write_all(request.as_bytes()) {
+        return (
+            false,
+            Some(format!("Provider API auth check failed: {err}")),
+        );
+    }
+
+    let mut response = String::new();
+    if let Err(err) = stream.read_to_string(&mut response) {
+        return (
+            false,
+            Some(format!("Provider API auth check failed: {err}")),
+        );
+    }
+    let status_line = response.lines().next().unwrap_or_default().to_string();
+    if status_line.contains(" 200 ") {
+        return (true, None);
+    }
+    if status_line.contains(" 401 ") || status_line.contains(" 403 ") {
+        return (
+            false,
+            Some("Provider admin token rejected by the running provider".to_string()),
+        );
+    }
+    (
+        false,
+        Some(if status_line.is_empty() {
+            "Provider API auth check returned an empty response".to_string()
+        } else {
+            format!("Provider API auth check returned {status_line}")
+        }),
+    )
+}
+
 fn daemon_stdio_log_path() -> Option<PathBuf> {
     std::env::var("GOLEM_PROVIDER_LOG_DIR")
         .ok()
@@ -332,9 +392,13 @@ async fn run_provider_sidecar_output(
     app: tauri::AppHandle,
     args: &[&str],
 ) -> Result<tauri_plugin_shell::process::Output, String> {
+    let admin_token = read_or_create_admin_token()?;
+    let vm_data_dir = provider_vm_data_dir()?.to_string_lossy().to_string();
     app.shell()
         .sidecar("golem-provider")
         .map_err(|err| err.to_string())?
+        .env("GOLEM_PROVIDER_ADMIN_TOKEN", admin_token)
+        .env("GOLEM_PROVIDER_VM_DATA_DIR", vm_data_dir)
         .args(args)
         .output()
         .await
@@ -342,10 +406,14 @@ async fn run_provider_sidecar_output(
 }
 
 async fn run_secure_setup_stream(app: tauri::AppHandle) -> Result<Value, String> {
+    let admin_token = read_or_create_admin_token()?;
+    let vm_data_dir = provider_vm_data_dir()?.to_string_lossy().to_string();
     let (mut rx, _child) = app
         .shell()
         .sidecar("golem-provider")
         .map_err(|err| err.to_string())?
+        .env("GOLEM_PROVIDER_ADMIN_TOKEN", admin_token)
+        .env("GOLEM_PROVIDER_VM_DATA_DIR", vm_data_dir)
         .args(["secure-setup", "check", "--json-stream"])
         .spawn()
         .map_err(|err| err.to_string())?;
@@ -413,10 +481,14 @@ async fn provider_requirements_stream(
     app: tauri::AppHandle,
     status: &mut Value,
 ) -> Result<ProviderRequirements, String> {
+    let admin_token = read_or_create_admin_token()?;
+    let vm_data_dir = provider_vm_data_dir()?.to_string_lossy().to_string();
     let (mut rx, _child) = app
         .shell()
         .sidecar("golem-provider")
         .map_err(|err| err.to_string())?
+        .env("GOLEM_PROVIDER_ADMIN_TOKEN", admin_token)
+        .env("GOLEM_PROVIDER_VM_DATA_DIR", vm_data_dir)
         .args(["requirements", "check", "--json-stream"])
         .spawn()
         .map_err(|err| err.to_string())?;
@@ -500,6 +572,12 @@ async fn provider_requirements_stream(
 
 #[tauri::command]
 async fn start_provider(app: tauri::AppHandle) -> Result<(), String> {
+    let (admin_authenticated, _) = provider_admin_auth_status();
+    if provider_is_listening() && !admin_authenticated {
+        eprintln!("[provider-sidecar] Running provider rejected desktop admin token; stopping stale daemon");
+        let _ = run_provider_sidecar(app.clone(), &["stop"]).await;
+    }
+
     let mut status = setup_status_starting();
     emit_setup_status(&app, status.clone());
     eprintln!("[provider-sidecar] Checking provider host requirements");
@@ -581,9 +659,13 @@ async fn stop_provider(app: tauri::AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 fn provider_status() -> ProviderStatus {
+    let running = provider_is_listening();
+    let (admin_authenticated, admin_auth_error) = provider_admin_auth_status();
     ProviderStatus {
-        running: provider_is_listening(),
+        running,
         api_base_url: provider_api_base_url_value(),
+        admin_authenticated,
+        admin_auth_error,
     }
 }
 

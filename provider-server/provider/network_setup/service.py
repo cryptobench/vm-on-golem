@@ -247,7 +247,7 @@ class NetworkSetupService:
                 self._fail(
                     SetupStageName.NETWORK_ACCESS,
                     "verification failed",
-                    "Could not verify public access through the port-checker service.",
+                    "Could not verify public access through the central discovery port-check service.",
                 )
             logger.warning(
                 "Public port verification failed after %.2fs: ports=%s error=%s",
@@ -341,7 +341,7 @@ class NetworkSetupService:
                 self._fail(
                     SetupStageName.VM_PORT_RANGE,
                     "verification failed",
-                    "Could not verify VM port forwarding through the port-checker service.",
+                    "Could not verify VM port forwarding through the central discovery port-check service.",
                 )
             logger.warning(
                 "VM port verification failed after %.2fs: range=%s error=%s",
@@ -707,7 +707,7 @@ def _port_result_accessible(results: dict, port: int) -> bool:
 
 def _verification_error_detail(exc: Exception) -> str:
     if isinstance(exc, asyncio.TimeoutError):
-        return "port-checker request timed out"
+        return "central discovery port-check request timed out"
     return str(exc) or exc.__class__.__name__
 
 

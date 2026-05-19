@@ -1,7 +1,7 @@
 # VM on Golem Central Discovery
 
-Central discovery is a Go websocket service with an in-memory live provider
-registry. Providers publish advertisements over
+Central discovery is a Go service with an in-memory live provider registry and
+bundled provider port verification. Providers publish advertisements over
 `WS /api/v1/discovery/providers`; requestors browse through
 `WS /api/v1/discovery/requestors`. A provider is discoverable only while its
 websocket is connected.
@@ -31,6 +31,9 @@ Only `GOLEM_CENTRAL_DISCOVERY_*` variables are accepted.
 | Port | `GOLEM_CENTRAL_DISCOVERY_PORT` | `9001` |
 | Debug | `GOLEM_CENTRAL_DISCOVERY_DEBUG` | `false` |
 | Rate limit | `GOLEM_CENTRAL_DISCOVERY_RATE_LIMIT_PER_MINUTE` | `100` |
+| Port check retries | `GOLEM_CENTRAL_DISCOVERY_PORT_CHECK_RETRIES` | `1` |
+| Port check retry delay | `GOLEM_CENTRAL_DISCOVERY_PORT_CHECK_RETRY_DELAY_SECONDS` | `0.25` |
+| Port check timeout | `GOLEM_CENTRAL_DISCOVERY_PORT_CHECK_TIMEOUT_SECONDS` | `3` |
 | TLS enabled | `GOLEM_CENTRAL_DISCOVERY_TLS_ENABLED` | `false` |
 | Public IP for IP certificate | `GOLEM_CENTRAL_DISCOVERY_PUBLIC_IP` | `auto` |
 | Public IP lookup URL | `GOLEM_CENTRAL_DISCOVERY_PUBLIC_IP_LOOKUP_URL` | `https://api.ipify.org` |
@@ -66,9 +69,16 @@ NEXT_PUBLIC_DISCOVERY_WS_URL=wss://94.130.182.147/api/v1/discovery/requestors
 GOLEM_PROVIDER_DISCOVERY_WS_URL=wss://94.130.182.147/api/v1/discovery/providers
 ```
 
+Providers derive their port-check URL from the discovery websocket origin by
+default, so `wss://94.130.182.147/api/v1/discovery/providers` also means port
+verification uses `https://94.130.182.147/check-ports` and
+`https://94.130.182.147/check-tls`.
+
 ## Endpoints
 
 - `GET /health`
+- `POST /check-ports`
+- `POST /check-tls`
 - `WS /api/v1/discovery/providers`
 - `WS /api/v1/discovery/requestors`
 

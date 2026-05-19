@@ -4,6 +4,7 @@ import socket
 import uuid
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlsplit, urlunsplit
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings
@@ -21,6 +22,20 @@ def normalize_acme_env(value: str | None) -> str:
     if raw in {"production", "prod"}:
         return "production"
     raise ValueError("ACME environment must be 'staging', 'production', or 'prod'")
+
+
+def derive_port_check_url(discovery_ws_url: str) -> str:
+    """Derive the shared port-check HTTP origin from a central discovery WS URL."""
+    parsed = urlsplit(discovery_ws_url)
+    if parsed.scheme == "ws":
+        scheme = "http"
+    elif parsed.scheme == "wss":
+        scheme = "https"
+    else:
+        raise ValueError("Discovery websocket URL must use ws:// or wss://")
+    if not parsed.netloc:
+        raise ValueError("Discovery websocket URL must include a host")
+    return urlunsplit((scheme, parsed.netloc, "", "", ""))
 
 
 def _default_route_local_ip() -> str | None:
@@ -684,8 +699,16 @@ class Settings(BaseSettings):
     CERT_RENEWAL_RETRY_INITIAL_SECONDS: int = 300
     CERT_RENEWAL_RETRY_MAX_SECONDS: int = 21600
     NAT_AUTO_MAPPING_ENABLED: bool = False
-    PORT_CHECK_TLS_URL: str = "http://195.201.39.101:9000"
+    PORT_CHECK_TLS_URL: str = ""
     PORT_CHECK_REQUEST_TIMEOUT: float = 8.0
+
+    @field_validator("PORT_CHECK_TLS_URL", mode="before")
+    @classmethod
+    def default_port_check_tls_url(cls, v: str, values: dict) -> str:
+        if v:
+            return str(v).rstrip("/")
+        discovery_ws_url = str(values.data.get("DISCOVERY_WS_URL") or "").strip()
+        return derive_port_check_url(discovery_ws_url)
 
     @field_validator("ACME_ENV", mode="before")
     @classmethod

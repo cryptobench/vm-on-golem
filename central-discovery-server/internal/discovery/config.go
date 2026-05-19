@@ -11,42 +11,48 @@ import (
 const apiV1Prefix = "/api/v1"
 
 type Config struct {
-	Host               string
-	Port               int
-	Debug              bool
-	RateLimitPerMinute int
-	ProjectName        string
-	TLSEnabled         bool
-	PublicIP           string
-	PublicIPLookupURL  string
-	ACMEHTTPHost       string
-	ACMEHTTPPort       int
-	ACMEDirectoryURL   string
-	ACMEProfile        string
-	ACMEAccountEmail   string
-	CertDir            string
-	RenewBeforeHours   int
-	RenewCheckSeconds  int
+	Host                       string
+	Port                       int
+	Debug                      bool
+	RateLimitPerMinute         int
+	ProjectName                string
+	PortCheckRetries           int
+	PortCheckRetryDelaySeconds float64
+	PortCheckTimeoutSeconds    float64
+	TLSEnabled                 bool
+	PublicIP                   string
+	PublicIPLookupURL          string
+	ACMEHTTPHost               string
+	ACMEHTTPPort               int
+	ACMEDirectoryURL           string
+	ACMEProfile                string
+	ACMEAccountEmail           string
+	CertDir                    string
+	RenewBeforeHours           int
+	RenewCheckSeconds          int
 }
 
 func LoadConfig() (Config, error) {
 	config := Config{
-		Host:               "0.0.0.0",
-		Port:               9001,
-		Debug:              false,
-		RateLimitPerMinute: 100,
-		ProjectName:        "VM on Golem Central Discovery Service",
-		TLSEnabled:         false,
-		PublicIP:           "auto",
-		PublicIPLookupURL:  "https://api.ipify.org",
-		ACMEHTTPHost:       "0.0.0.0",
-		ACMEHTTPPort:       80,
-		ACMEDirectoryURL:   "https://acme-v02.api.letsencrypt.org/directory",
-		ACMEProfile:        "shortlived",
-		ACMEAccountEmail:   "",
-		CertDir:            defaultCertDir(),
-		RenewBeforeHours:   48,
-		RenewCheckSeconds:  3600,
+		Host:                       "0.0.0.0",
+		Port:                       9001,
+		Debug:                      false,
+		RateLimitPerMinute:         100,
+		ProjectName:                "VM on Golem Central Discovery Service",
+		PortCheckRetries:           1,
+		PortCheckRetryDelaySeconds: 0.25,
+		PortCheckTimeoutSeconds:    3,
+		TLSEnabled:                 false,
+		PublicIP:                   "auto",
+		PublicIPLookupURL:          "https://api.ipify.org",
+		ACMEHTTPHost:               "0.0.0.0",
+		ACMEHTTPPort:               80,
+		ACMEDirectoryURL:           "https://acme-v02.api.letsencrypt.org/directory",
+		ACMEProfile:                "shortlived",
+		ACMEAccountEmail:           "",
+		CertDir:                    defaultCertDir(),
+		RenewBeforeHours:           48,
+		RenewCheckSeconds:          3600,
 	}
 
 	if value := os.Getenv("GOLEM_CENTRAL_DISCOVERY_HOST"); value != "" {
@@ -72,6 +78,27 @@ func LoadConfig() (Config, error) {
 			return Config{}, fmt.Errorf("GOLEM_CENTRAL_DISCOVERY_RATE_LIMIT_PER_MINUTE must be >= 1")
 		}
 		config.RateLimitPerMinute = limit
+	}
+	if value := os.Getenv("GOLEM_CENTRAL_DISCOVERY_PORT_CHECK_RETRIES"); value != "" {
+		retries, err := strconv.Atoi(value)
+		if err != nil || retries < 1 {
+			return Config{}, fmt.Errorf("GOLEM_CENTRAL_DISCOVERY_PORT_CHECK_RETRIES must be >= 1")
+		}
+		config.PortCheckRetries = retries
+	}
+	if value := os.Getenv("GOLEM_CENTRAL_DISCOVERY_PORT_CHECK_RETRY_DELAY_SECONDS"); value != "" {
+		seconds, err := strconv.ParseFloat(value, 64)
+		if err != nil || seconds < 0 {
+			return Config{}, fmt.Errorf("GOLEM_CENTRAL_DISCOVERY_PORT_CHECK_RETRY_DELAY_SECONDS must be >= 0")
+		}
+		config.PortCheckRetryDelaySeconds = seconds
+	}
+	if value := os.Getenv("GOLEM_CENTRAL_DISCOVERY_PORT_CHECK_TIMEOUT_SECONDS"); value != "" {
+		seconds, err := strconv.ParseFloat(value, 64)
+		if err != nil || seconds <= 0 {
+			return Config{}, fmt.Errorf("GOLEM_CENTRAL_DISCOVERY_PORT_CHECK_TIMEOUT_SECONDS must be > 0")
+		}
+		config.PortCheckTimeoutSeconds = seconds
 	}
 	if value := os.Getenv("GOLEM_CENTRAL_DISCOVERY_TLS_ENABLED"); value != "" {
 		enabled, err := strconv.ParseBool(value)

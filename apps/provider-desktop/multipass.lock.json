@@ -8,6 +8,7 @@
       "platform": "windows",
       "arch": "x86_64",
       "kind": "msi",
+      "version": "1.16.2",
       "file_name": "multipass-1.16.2+win-win64.msi",
       "asset_url": "https://github.com/canonical/multipass/releases/download/v1.16.2/multipass-1.16.2%2Bwin-win64.msi",
       "sha256": "8bd3c5dd29889caa406a6fd3fff92f87f077a42315050f850f9484733fd310de"
@@ -16,14 +17,16 @@
       "platform": "darwin",
       "arch": "universal",
       "kind": "pkg",
-      "file_name": "multipass-1.16.2+mac-Darwin.pkg",
-      "asset_url": "https://github.com/canonical/multipass/releases/download/v1.16.2/multipass-1.16.2%2Bmac-Darwin.pkg",
-      "sha256": "ae54883b8f60f71d2b9ea8ceaeb9cf68284e13189e519955e3e57a400f730c50"
+      "version": "1.16.1",
+      "file_name": "multipass-1.16.1+mac-Darwin.pkg",
+      "asset_url": "https://github.com/canonical/multipass/releases/download/v1.16.1/multipass-1.16.1%2Bmac-Darwin.pkg",
+      "sha256": "758d10dc1b71872b0ee7a17070b93fc788dba5ba45c36b980e42fd895d273489"
     },
     {
       "platform": "linux",
       "arch": "x86_64",
       "kind": "snap",
+      "version": "1.16.2",
       "file_name": "multipass_1.16.2_amd64.snap",
       "asset_url": "https://api.snapcraft.io/api/v1/snaps/download/mA11087v6dR3IEcQLgICQVjuvhUUBUKM_17096.snap",
       "sha256": "41ca8a4a8445a5bd1a74a5e34ad34354928c5d75c71cfc6739ebef16a38f3c0b",

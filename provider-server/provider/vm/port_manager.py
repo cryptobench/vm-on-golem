@@ -47,14 +47,9 @@ class PortManager:
         self.verified_ports: Set[int] = set()
         self._existing_ports = existing_ports or set()
 
-        # Initialize port verifier with default servers
-        if settings.DEV_MODE:
-            self.port_check_servers = ["http://localhost:9000"]
-        else:
-            self.port_check_servers = port_check_servers or [
-                "http://localhost:9000",  # Local development server
-                "http://195.201.39.101:9000",  # Production servers
-            ]
+        # Initialize port verifier with the central discovery server origin.
+        default_port_check_url = str(settings.PORT_CHECK_TLS_URL).rstrip("/")
+        self.port_check_servers = port_check_servers or [default_port_check_url]
         self.discovery_port = discovery_port or settings.PORT
         self.skip_verification = skip_verification
         self.port_verifier = PortVerifier(

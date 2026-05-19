@@ -3,6 +3,7 @@ from pydantic import ValidationError
 
 from provider.config import (
     Settings,
+    derive_port_check_url,
     _development_public_ip,
     normalize_acme_env,
 )
@@ -38,6 +39,50 @@ def test_discovery_ws_url_override_wins(monkeypatch, tmp_path):
     settings = Settings()
 
     assert settings.DISCOVERY_WS_URL == "ws://127.0.0.1:9001/api/v1/discovery/providers"
+
+
+def test_port_check_url_defaults_to_discovery_http_origin(monkeypatch, tmp_path):
+    monkeypatch.delenv("GOLEM_PROVIDER_PORT_CHECK_TLS_URL", raising=False)
+    monkeypatch.setenv(
+        "GOLEM_PROVIDER_DISCOVERY_WS_URL",
+        "ws://127.0.0.1:9001/api/v1/discovery/providers",
+    )
+    _set_settings_paths(monkeypatch, tmp_path)
+
+    settings = Settings()
+
+    assert settings.PORT_CHECK_TLS_URL == "http://127.0.0.1:9001"
+
+
+def test_port_check_url_defaults_to_discovery_https_origin(monkeypatch, tmp_path):
+    monkeypatch.delenv("GOLEM_PROVIDER_PORT_CHECK_TLS_URL", raising=False)
+    monkeypatch.setenv(
+        "GOLEM_PROVIDER_DISCOVERY_WS_URL",
+        "wss://central.example.test/api/v1/discovery/providers",
+    )
+    _set_settings_paths(monkeypatch, tmp_path)
+
+    settings = Settings()
+
+    assert settings.PORT_CHECK_TLS_URL == "https://central.example.test"
+
+
+def test_port_check_url_override_wins(monkeypatch, tmp_path):
+    monkeypatch.setenv(
+        "GOLEM_PROVIDER_DISCOVERY_WS_URL",
+        "wss://central.example.test/api/v1/discovery/providers",
+    )
+    monkeypatch.setenv("GOLEM_PROVIDER_PORT_CHECK_TLS_URL", "https://checks.example")
+    _set_settings_paths(monkeypatch, tmp_path)
+
+    settings = Settings()
+
+    assert settings.PORT_CHECK_TLS_URL == "https://checks.example"
+
+
+def test_derive_port_check_url_rejects_non_websocket_url():
+    with pytest.raises(ValueError):
+        derive_port_check_url("https://central.example.test")
 
 
 def test_acme_env_normalization_accepts_prod_alias():

@@ -1,6 +1,8 @@
 export type ProviderServiceStatus = {
   running: boolean;
   apiBaseUrl: string;
+  adminAuthenticated: boolean;
+  adminAuthError?: string | null;
 };
 
 export type SetupStageState = "pending" | "running" | "success" | "failed";

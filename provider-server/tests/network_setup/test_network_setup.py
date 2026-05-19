@@ -126,7 +126,7 @@ def _assert_port_progression(
     assert states == ["pending", "checking", final_state]
 
 
-async def _start_fake_port_checker(
+async def _start_fake_central_port_check_api(
     blocked_ports: set[int] | None = None,
     tls_response: dict | None = None,
 ):
@@ -337,14 +337,14 @@ async def test_network_setup_verifies_public_ports_from_checker(tmp_path):
     _write_ip_cert(tmp_path)
     http_port = _free_port()
     https_port = _free_port()
-    runner, checker_url, requests = await _start_fake_port_checker()
+    runner, central_check_url, requests = await _start_fake_central_port_check_api()
     settings = _settings(
         tmp_path,
         ACME_HTTP_PUBLIC_PORT=http_port,
         ACME_HTTP_INTERNAL_PORT=http_port,
         PUBLIC_HTTPS_PORT=https_port,
         PUBLIC_HTTPS_INTERNAL_PORT=https_port,
-        PORT_CHECK_TLS_URL=checker_url,
+        PORT_CHECK_TLS_URL=central_check_url,
     )
     service = NetworkSetupService(settings, nat_mapper=FakeNatMapper())
     events = []
@@ -379,7 +379,7 @@ async def test_network_setup_fails_when_public_port_check_fails(tmp_path):
     _write_ip_cert(tmp_path)
     http_port = _free_port()
     https_port = _free_port()
-    runner, checker_url, _requests = await _start_fake_port_checker(
+    runner, central_check_url, _requests = await _start_fake_central_port_check_api(
         blocked_ports={http_port}
     )
     settings = _settings(
@@ -388,7 +388,7 @@ async def test_network_setup_fails_when_public_port_check_fails(tmp_path):
         ACME_HTTP_INTERNAL_PORT=http_port,
         PUBLIC_HTTPS_PORT=https_port,
         PUBLIC_HTTPS_INTERNAL_PORT=https_port,
-        PORT_CHECK_TLS_URL=checker_url,
+        PORT_CHECK_TLS_URL=central_check_url,
     )
     service = NetworkSetupService(settings, nat_mapper=FakeNatMapper())
     events = []
@@ -419,7 +419,7 @@ async def test_network_setup_allows_staging_certificate_trust_failure(tmp_path):
     _write_ip_cert(tmp_path)
     http_port = _free_port()
     https_port = _free_port()
-    runner, checker_url, _requests = await _start_fake_port_checker(
+    runner, central_check_url, _requests = await _start_fake_central_port_check_api(
         tls_response={
             "valid": False,
             "peer": "127.0.0.1:443",
@@ -436,7 +436,7 @@ async def test_network_setup_allows_staging_certificate_trust_failure(tmp_path):
         ACME_HTTP_INTERNAL_PORT=http_port,
         PUBLIC_HTTPS_PORT=https_port,
         PUBLIC_HTTPS_INTERNAL_PORT=https_port,
-        PORT_CHECK_TLS_URL=checker_url,
+        PORT_CHECK_TLS_URL=central_check_url,
     )
     service = NetworkSetupService(settings, nat_mapper=FakeNatMapper())
 
@@ -455,7 +455,7 @@ async def test_network_setup_fails_production_certificate_trust_failure(tmp_path
     _write_ip_cert(tmp_path)
     http_port = _free_port()
     https_port = _free_port()
-    runner, checker_url, _requests = await _start_fake_port_checker(
+    runner, central_check_url, _requests = await _start_fake_central_port_check_api(
         tls_response={
             "valid": False,
             "peer": "127.0.0.1:443",
@@ -472,7 +472,7 @@ async def test_network_setup_fails_production_certificate_trust_failure(tmp_path
         ACME_HTTP_INTERNAL_PORT=http_port,
         PUBLIC_HTTPS_PORT=https_port,
         PUBLIC_HTTPS_INTERNAL_PORT=https_port,
-        PORT_CHECK_TLS_URL=checker_url,
+        PORT_CHECK_TLS_URL=central_check_url,
     )
     service = NetworkSetupService(settings, nat_mapper=FakeNatMapper())
 
@@ -493,7 +493,7 @@ async def test_network_setup_fails_when_vm_port_range_check_fails(tmp_path):
     http_port = _free_port()
     https_port = _free_port()
     blocked_ports = set()
-    runner, checker_url, _requests = await _start_fake_port_checker(
+    runner, central_check_url, _requests = await _start_fake_central_port_check_api(
         blocked_ports=blocked_ports
     )
     vm_port_start = _free_port()
@@ -506,7 +506,7 @@ async def test_network_setup_fails_when_vm_port_range_check_fails(tmp_path):
         PUBLIC_HTTPS_INTERNAL_PORT=https_port,
         PORT_RANGE_START=vm_port_start,
         PORT_RANGE_END=vm_port_start + 2,
-        PORT_CHECK_TLS_URL=checker_url,
+        PORT_CHECK_TLS_URL=central_check_url,
     )
     service = NetworkSetupService(settings, nat_mapper=FakeNatMapper())
     events = []

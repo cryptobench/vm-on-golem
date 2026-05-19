@@ -1,11 +1,20 @@
 package discovery
 
 import (
+	"bytes"
+	"context"
 	"crypto/ecdsa"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -25,6 +34,163 @@ func TestHealthEndpoint(t *testing.T) {
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200, got %d", response.StatusCode)
+	}
+}
+
+func TestCheckPortsEndpointReportsAccessibleAndRefusedPorts(t *testing.T) {
+	server := NewServer(testConfig())
+	server.portChecker.dialContext = func(_ context.Context, _ string, address string) (net.Conn, error) {
+		_, port, err := net.SplitHostPort(address)
+		if err != nil {
+			return nil, err
+		}
+		if port == "80" {
+			client, peer := net.Pipe()
+			_ = peer.Close()
+			return client, nil
+		}
+		return nil, errors.New("dial tcp: connect: connection refused")
+	}
+	testServer := httptest.NewServer(server.Handler())
+	defer testServer.Close()
+
+	response := postJSON(t, testServer.URL+"/check-ports", `{"provider_ip":"8.8.8.8","ports":[80,1234]}`)
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", response.StatusCode)
+	}
+	var body portCheckResponse
+	decodeJSONBody(t, response, &body)
+	if !body.Success {
+		t.Fatalf("expected success response: %#v", body)
+	}
+	if !body.Results[80].Accessible {
+		t.Fatalf("expected port 80 accessible: %#v", body.Results)
+	}
+	if body.Results[1234].Accessible || body.Results[1234].Error == nil || *body.Results[1234].Error != "Connection refused" {
+		t.Fatalf("expected port 1234 refused: %#v", body.Results[1234])
+	}
+}
+
+func TestCheckPortsEndpointReportsTimeout(t *testing.T) {
+	server := NewServer(testConfig())
+	server.portChecker.dialContext = func(_ context.Context, _ string, _ string) (net.Conn, error) {
+		return nil, context.DeadlineExceeded
+	}
+	testServer := httptest.NewServer(server.Handler())
+	defer testServer.Close()
+
+	response := postJSON(t, testServer.URL+"/check-ports", `{"provider_ip":"203.0.113.1","ports":[443]}`)
+	defer response.Body.Close()
+
+	var body portCheckResponse
+	decodeJSONBody(t, response, &body)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", response.StatusCode)
+	}
+	if body.Success || body.Results[443].Error == nil || *body.Results[443].Error != "Connection timed out" {
+		t.Fatalf("expected timeout result: %#v", body)
+	}
+}
+
+func TestCheckPortsEndpointRejectsMalformedJSON(t *testing.T) {
+	testServer := httptest.NewServer(NewServer(testConfig()).Handler())
+	defer testServer.Close()
+
+	response := postJSON(t, testServer.URL+"/check-ports", `{`)
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", response.StatusCode)
+	}
+}
+
+func TestCheckPortsEndpointRejectsOutOfRangePort(t *testing.T) {
+	testServer := httptest.NewServer(NewServer(testConfig()).Handler())
+	defer testServer.Close()
+
+	response := postJSON(t, testServer.URL+"/check-ports", `{"provider_ip":"8.8.8.8","ports":[70000]}`)
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422, got %d", response.StatusCode)
+	}
+}
+
+func TestCheckTLSEndpointReportsValidCertificate(t *testing.T) {
+	tlsServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer tlsServer.Close()
+	host, port := splitURLHostPort(t, tlsServer.URL)
+
+	server := NewServer(testConfig())
+	server.portChecker.tlsConfig = tlsRootConfigForTest(t, tlsServer)
+	testServer := httptest.NewServer(server.Handler())
+	defer testServer.Close()
+
+	response := postJSON(t, testServer.URL+"/check-tls", `{"host":"`+host+`","port":`+port+`,"expected_ip":"`+host+`"}`)
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", response.StatusCode)
+	}
+	var body tlsCheckResponse
+	decodeJSONBody(t, response, &body)
+	if !body.Valid || body.Error != nil || body.NotAfter == nil {
+		t.Fatalf("expected valid TLS response: %#v", body)
+	}
+}
+
+func TestCheckTLSEndpointReportsExpectedIPMismatch(t *testing.T) {
+	tlsServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer tlsServer.Close()
+	host, port := splitURLHostPort(t, tlsServer.URL)
+
+	server := NewServer(testConfig())
+	server.portChecker.tlsConfig = tlsRootConfigForTest(t, tlsServer)
+	testServer := httptest.NewServer(server.Handler())
+	defer testServer.Close()
+
+	response := postJSON(t, testServer.URL+"/check-tls", `{"host":"`+host+`","port":`+port+`,"expected_ip":"203.0.113.9"}`)
+	defer response.Body.Close()
+
+	var body tlsCheckResponse
+	decodeJSONBody(t, response, &body)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", response.StatusCode)
+	}
+	if body.Valid || body.Error == nil || *body.Error != "certificate does not match expected IP" {
+		t.Fatalf("expected expected_ip mismatch: %#v", body)
+	}
+}
+
+func TestCheckTLSEndpointReportsUnreachableEndpoint(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := listener.Addr().(*net.TCPAddr)
+	if err := listener.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	testServer := httptest.NewServer(NewServer(testConfig()).Handler())
+	defer testServer.Close()
+
+	response := postJSON(t, testServer.URL+"/check-tls", `{"host":"127.0.0.1","port":`+fmt.Sprintf("%d", addr.Port)+`}`)
+	defer response.Body.Close()
+
+	var body tlsCheckResponse
+	decodeJSONBody(t, response, &body)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", response.StatusCode)
+	}
+	if body.Valid || body.Error == nil {
+		t.Fatalf("expected TLS failure: %#v", body)
 	}
 }
 
@@ -241,6 +407,48 @@ func writeJSONMessage(t *testing.T, conn *websocket.Conn, message interface{}) {
 	}
 }
 
+func postJSON(t *testing.T, endpoint string, body string) *http.Response {
+	t.Helper()
+	response, err := http.Post(endpoint, "application/json", bytes.NewBufferString(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return response
+}
+
+func decodeJSONBody(t *testing.T, response *http.Response, target interface{}) {
+	t.Helper()
+	raw, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(raw, target); err != nil {
+		t.Fatalf("failed to decode JSON body %s: %v", string(raw), err)
+	}
+}
+
+func splitURLHostPort(t *testing.T, rawURL string) (string, string) {
+	t.Helper()
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	host, port, err := net.SplitHostPort(parsed.Host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return host, port
+}
+
+func tlsRootConfigForTest(t *testing.T, server *httptest.Server) *tls.Config {
+	t.Helper()
+	pool := x509.NewCertPool()
+	if len(server.Certificate().Raw) == 0 || !pool.AppendCertsFromPEM(nil) {
+		pool.AddCert(server.Certificate())
+	}
+	return &tls.Config{RootCAs: pool}
+}
+
 func signAuthForTest(t *testing.T, privateKey *ecdsa.PrivateKey, providerID string, nonce string, timestamp string) string {
 	t.Helper()
 	hash := personalSignHash(providerAuthMessage(providerID, nonce, timestamp))
@@ -294,9 +502,12 @@ func advertisementForTest(cpu int, country string) map[string]interface{} {
 
 func testConfig() Config {
 	return Config{
-		Host:               "127.0.0.1",
-		Port:               9001,
-		RateLimitPerMinute: 100,
-		ProjectName:        "VM on Golem Central Discovery Service",
+		Host:                       "127.0.0.1",
+		Port:                       9001,
+		RateLimitPerMinute:         100,
+		ProjectName:                "VM on Golem Central Discovery Service",
+		PortCheckRetries:           1,
+		PortCheckRetryDelaySeconds: 0,
+		PortCheckTimeoutSeconds:    1,
 	}
 }

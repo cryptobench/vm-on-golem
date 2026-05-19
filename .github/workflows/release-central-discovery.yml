@@ -146,6 +146,9 @@ jobs:
           sha256sum golem-central-discovery-*.tar.gz | sort -k2 > checksums.txt
           {
             echo "### Central discovery release assets"
+            echo
+            echo "These binaries include discovery websockets and bundled port-check endpoints."
+            echo
             sed 's#^#- #' checksums.txt
           } >> "$GITHUB_STEP_SUMMARY"
 

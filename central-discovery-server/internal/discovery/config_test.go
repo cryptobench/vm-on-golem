@@ -35,6 +35,18 @@ func TestLoadConfigRejectsInvalidValues(t *testing.T) {
 	if _, err := LoadConfig(); err == nil {
 		t.Fatal("expected invalid rate limit error")
 	}
+
+	t.Setenv("GOLEM_CENTRAL_DISCOVERY_RATE_LIMIT_PER_MINUTE", "100")
+	t.Setenv("GOLEM_CENTRAL_DISCOVERY_PORT_CHECK_RETRIES", "0")
+	if _, err := LoadConfig(); err == nil {
+		t.Fatal("expected invalid port check retries error")
+	}
+
+	t.Setenv("GOLEM_CENTRAL_DISCOVERY_PORT_CHECK_RETRIES", "1")
+	t.Setenv("GOLEM_CENTRAL_DISCOVERY_PORT_CHECK_TIMEOUT_SECONDS", "0")
+	if _, err := LoadConfig(); err == nil {
+		t.Fatal("expected invalid port check timeout error")
+	}
 }
 
 func TestLoadConfigReadsTLSSettings(t *testing.T) {
@@ -71,5 +83,25 @@ func TestLoadConfigReadsTLSSettings(t *testing.T) {
 	}
 	if config.RenewBeforeHours != 24 || config.RenewCheckSeconds != 60 {
 		t.Fatalf("unexpected renewal config: %#v", config)
+	}
+}
+
+func TestLoadConfigReadsPortCheckSettings(t *testing.T) {
+	t.Setenv("GOLEM_CENTRAL_DISCOVERY_PORT_CHECK_RETRIES", "2")
+	t.Setenv("GOLEM_CENTRAL_DISCOVERY_PORT_CHECK_RETRY_DELAY_SECONDS", "0.5")
+	t.Setenv("GOLEM_CENTRAL_DISCOVERY_PORT_CHECK_TIMEOUT_SECONDS", "4.25")
+
+	config, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.PortCheckRetries != 2 {
+		t.Fatalf("unexpected port check retries: %d", config.PortCheckRetries)
+	}
+	if config.PortCheckRetryDelaySeconds != 0.5 {
+		t.Fatalf("unexpected port check retry delay: %f", config.PortCheckRetryDelaySeconds)
+	}
+	if config.PortCheckTimeoutSeconds != 4.25 {
+		t.Fatalf("unexpected port check timeout: %f", config.PortCheckTimeoutSeconds)
 	}
 }

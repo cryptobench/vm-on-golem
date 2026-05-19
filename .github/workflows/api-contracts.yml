@@ -7,7 +7,6 @@ on:
       - "Makefile"
       - "openapi/**"
       - "scripts/export_openapi.py"
-      - "port-checker-server/**"
       - "provider-server/**"
       - "requestor-web/**"
       - ".github/workflows/api-contracts.yml"
@@ -34,9 +33,7 @@ jobs:
         run: pipx install poetry==2.2.1
 
       - name: Install backend dependencies
-        run: |
-          poetry -C port-checker-server install --with dev --no-interaction
-          poetry -C provider-server install --with dev --no-interaction
+        run: poetry -C provider-server install --with dev --no-interaction
 
       - name: Install requestor-web dependencies
         run: npm ci --prefix requestor-web

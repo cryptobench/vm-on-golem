@@ -18,6 +18,7 @@ def test_vendor_multipass_dry_run_selects_platform_asset(tmp_path):
                         "platform": "windows",
                         "arch": "x86_64",
                         "kind": "msi",
+                        "version": "1.16.1",
                         "file_name": "multipass.msi",
                         "asset_url": "https://example.invalid/multipass.msi",
                         "sha256": "0" * 64,
@@ -46,4 +47,5 @@ def test_vendor_multipass_dry_run_selects_platform_asset(tmp_path):
     )
 
     assert result.returncode == 0
+    assert "Selected Multipass 1.16.1" in result.stdout
     assert "multipass.msi" in result.stdout

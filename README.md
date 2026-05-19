@@ -44,8 +44,9 @@ make local
 make test
 ```
 
-`make local` starts central discovery, the provider API, provider desktop,
-port-checker, and requestor web with one supervisor process.
+`make local` starts central discovery, the provider API, provider desktop, and
+requestor web with one supervisor process. Central discovery also serves the
+port-check API used by providers.
 The requestor web app opens in your browser by default so MetaMask and other
 browser wallets are available.
 
@@ -62,8 +63,7 @@ Requirements: Go, Poetry, Node/npm, and Multipass.
 - `requestor-web/`: requestor web app.
 - `provider-server/`: provider API and provider command surface.
 - `apps/provider-desktop/`: provider desktop shell.
-- `central-discovery-server/`: Go central discovery backend.
-- `port-checker-server/`: provider port verification utility.
+- `central-discovery-server/`: Go central discovery backend with bundled provider port verification.
 - `packages/design-system/`: shared design tokens.
 - `packages/ui/`: shared React UI components.
 

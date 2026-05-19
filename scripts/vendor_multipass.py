@@ -88,6 +88,10 @@ def verify_sha256(path: Path, expected: str) -> None:
         )
 
 
+def selected_version(manifest: dict[str, Any], asset: dict[str, Any]) -> str:
+    return asset.get("version", manifest["preferred_version"])
+
+
 def download_url(url: str, dest: Path) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
     with urllib.request.urlopen(url, timeout=180) as response, dest.open("wb") as fh:
@@ -137,7 +141,7 @@ def write_metadata(
     manifest: dict[str, Any], asset: dict[str, Any], out_dir: Path
 ) -> Path:
     metadata = {
-        "preferred_version": manifest["preferred_version"],
+        "preferred_version": selected_version(manifest, asset),
         "min_version": manifest["min_version"],
         "allow_newer": manifest.get("allow_newer", True),
         "blocked_versions": manifest.get("blocked_versions", []),
@@ -165,7 +169,7 @@ def main() -> int:
     asset = select_asset(manifest, target_platform, target_arch)
 
     print(
-        f"Selected Multipass {manifest['preferred_version']} "
+        f"Selected Multipass {selected_version(manifest, asset)} "
         f"for {target_platform}/{target_arch}: {asset['file_name']}"
     )
     if args.dry_run:

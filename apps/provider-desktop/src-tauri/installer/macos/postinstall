@@ -5,6 +5,7 @@ MULTIPASS_DIR="/Library/Application Support/Golem Provider/multipass"
 LOG_DIR="/Library/Logs/Golem Provider"
 LOG_FILE="$LOG_DIR/installer-postinstall.log"
 MIN_VERSION="1.13.0"
+BLOCKED_APPLE_SILICON_VERSION="1.16.2+mac"
 COMMAND_TIMEOUT_SECONDS=5
 INSTALL_TIMEOUT_SECONDS=300
 MULTIPASSD_LABEL="system/com.canonical.multipassd"
@@ -161,6 +162,11 @@ multipass_supported() {
   [ -n "$version" ] || return 1
   if version_lt "$version" "$MIN_VERSION"; then
     log "Multipass version $version is older than required $MIN_VERSION"
+    return 1
+  fi
+  host_arch="$(uname -m 2>/dev/null || true)"
+  if [ "$host_arch" = "arm64" ] && [ "$version" = "$BLOCKED_APPLE_SILICON_VERSION" ]; then
+    log "Multipass version $version is blocked on Apple Silicon; installing bundled package"
     return 1
   fi
   return 0

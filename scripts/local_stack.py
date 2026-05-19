@@ -32,8 +32,6 @@ CENTRAL_PORT = 9001
 PROVIDER_BIND_HOST = "0.0.0.0"
 PROVIDER_HOST = "127.0.0.1"
 PROVIDER_PORT = 7466
-PORT_CHECKER_HOST = "127.0.0.1"
-PORT_CHECKER_PORT = 9000
 WEB_HOST = "127.0.0.1"
 WEB_PORT = 3000
 PROVIDER_DESKTOP_HOST = "127.0.0.1"
@@ -49,7 +47,6 @@ CENTRAL_URL = f"http://{CENTRAL_HOST}:{CENTRAL_PORT}"
 CENTRAL_PROVIDER_WS_URL = f"ws://{CENTRAL_HOST}:{CENTRAL_PORT}/api/v1/discovery/providers"
 CENTRAL_REQUESTOR_WS_URL = f"ws://{CENTRAL_HOST}:{CENTRAL_PORT}/api/v1/discovery/requestors"
 PROVIDER_API_URL = f"http://{PROVIDER_HOST}:{PROVIDER_PORT}/api/v1"
-PORT_CHECKER_URL = f"http://{PORT_CHECKER_HOST}:{PORT_CHECKER_PORT}"
 WEB_URL = f"http://{WEB_HOST}:{WEB_PORT}"
 PROVIDER_DESKTOP_URL = f"http://{PROVIDER_DESKTOP_HOST}:{PROVIDER_DESKTOP_PORT}"
 PAYMENTS_RPC_URL = "https://rpc.hoodi.ethpandaops.io"
@@ -333,7 +330,6 @@ def preflight(start_provider_desktop: bool) -> None:
     for host, port in (
         (CENTRAL_HOST, CENTRAL_PORT),
         (PROVIDER_HOST, PROVIDER_PORT),
-        (PORT_CHECKER_HOST, PORT_CHECKER_PORT),
     ):
         log_setup(f"[setup] checking port: {host}:{port}")
         ensure_port_free(host, port)
@@ -483,7 +479,7 @@ def check_multipass_compatibility(multipass_version: str) -> None:
 
 
 def ensure_python_deps() -> None:
-    for service in ("port-checker-server", "provider-server"):
+    for service in ("provider-server",):
         log_setup(f"[setup] poetry install: {service}")
         run_checked(["poetry", "-C", service, "install", "--no-interaction"])
 
@@ -813,7 +809,6 @@ def build_services(
         "GOLEM_PROVIDER_PUBLIC_IP": "auto",
         "GOLEM_PROVIDER_SECURE_SETUP_IN_DEVELOPMENT": "false",
         "GOLEM_PROVIDER_SHOW_JSON_LOGS": "1",
-        "GOLEM_PROVIDER_PORT_CHECK_TLS_URL": PORT_CHECKER_URL,
         "GOLEM_PROVIDER_PORT_CHECK_REQUEST_TIMEOUT": "5",
         "GOLEM_PROVIDER_ACME_ENV": "staging",
         "GOLEM_PROVIDER_ETHEREUM_KEY_DIR": str(provider_dir / "keys"),
@@ -837,27 +832,6 @@ def build_services(
                 "GOLEM_CENTRAL_DISCOVERY_DEBUG": "false",
             },
             ready=lambda: http_ok(f"{CENTRAL_URL}/health"),
-        ),
-        Service(
-            name="port-checker",
-            command=[
-                "poetry",
-                "-C",
-                "port-checker-server",
-                "run",
-                "port-checker",
-            ],
-            env={
-                **service_log_env("PORT_CHECKER"),
-                "GOLEM_ENVIRONMENT": "development",
-                "PORT_CHECKER_HOST": PORT_CHECKER_HOST,
-                "PORT_CHECKER_PORT": str(PORT_CHECKER_PORT),
-                "PORT_CHECKER_EXPECTED_NETWORK": "development",
-                "PORT_CHECK_RETRIES": "1",
-                "PORT_CHECK_TIMEOUT": "3",
-                "PORT_CHECK_RETRY_DELAY": "0.25",
-            },
-            ready=lambda: http_ok(f"{PORT_CHECKER_URL}/health"),
         ),
     ]
 
@@ -1031,7 +1005,7 @@ def run_stack(args: argparse.Namespace) -> int:
             log("  Provider API:       started from provider desktop")
         else:
             log(f"  Provider API:       {PROVIDER_API_URL}")
-        log(f"  Port checker:       {PORT_CHECKER_URL}")
+        log(f"  Port checking:      {CENTRAL_URL}")
         log(f"  Payments network:   {PAYMENTS_NETWORK} ({L2_CHAIN_ID_HEX})")
         log(f"  Payments RPC:       {deployment.get('rpc_url', PAYMENTS_RPC_URL)}")
         log(f"  StreamPayment:      {deployment['stream_payment_address']}")

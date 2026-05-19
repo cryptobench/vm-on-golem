@@ -128,7 +128,6 @@ def test_local_stack_build_services_passes_log_env_to_every_service(tmp_path):
     assert {
         "central-discovery",
         "provider",
-        "port-checker",
         "requestor-web",
         "provider-desktop",
     }.issubset(service_names)
@@ -144,9 +143,6 @@ def test_local_stack_build_services_passes_log_env_to_every_service(tmp_path):
     provider_desktop = next(
         service for service in services if service.name == "provider-desktop"
     )
-    port_checker = next(
-        service for service in services if service.name == "port-checker"
-    )
     central = next(
         service for service in services if service.name == "central-discovery"
     )
@@ -159,8 +155,8 @@ def test_local_stack_build_services_passes_log_env_to_every_service(tmp_path):
     assert provider.env["GOLEM_PROVIDER_LOG_DIR"] == str(tmp_path)
     assert any(service.write_service_log is False for service in providers)
     assert provider_desktop.env["GOLEM_PROVIDER_LOG_DIR"] == str(tmp_path)
-    assert port_checker.env["PORT_CHECKER_LOG_DIR"] == str(tmp_path)
     assert central.env["GOLEM_CENTRAL_DISCOVERY_LOG_DIR"] == str(tmp_path)
+    assert "GOLEM_PROVIDER_PORT_CHECK_TLS_URL" not in provider.env
     assert requestor_web.command == [
         "npm",
         "--prefix",

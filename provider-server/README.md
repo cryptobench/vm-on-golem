@@ -260,10 +260,8 @@ GOLEM_PROVIDER_MIN_STORAGE_GB=10
 
 # Port Verification Settings
 GOLEM_PROVIDER_PORT={provider_port}  # Default: 7466
-GOLEM_PROVIDER_PORT_CHECK_SERVERS=[
-    "https://ports1.golem.network",
-    "https://ports2.golem.network"
-]
+# Defaults to the HTTP(S) origin derived from GOLEM_PROVIDER_DISCOVERY_WS_URL.
+GOLEM_PROVIDER_PORT_CHECK_TLS_URL="https://central-discovery.example"
 
 # Network Settings
 GOLEM_PROVIDER_PORT_RANGE_START={start_port}  # Default: 50800

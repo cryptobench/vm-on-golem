@@ -109,3 +109,4 @@ else
 fi
 
 echo "Installed golem-central-discovery $tag to $install_path"
+echo "This binary includes central discovery websockets and bundled port-check endpoints."

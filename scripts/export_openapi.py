@@ -14,11 +14,6 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 
 SERVICES = {
-    "port-checker": {
-        "path": ROOT / "port-checker-server",
-        "module": "port_checker.app",
-        "factory": "create_app",
-    },
     "provider": {
         "path": ROOT / "provider-server",
         "module": "provider.app",

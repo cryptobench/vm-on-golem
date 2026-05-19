@@ -23,10 +23,12 @@ export function App() {
   const setupComplete = service.setupStatus
     ? isStartupSetupComplete(service.setupStatus)
     : false;
+  const serviceReady =
+    service.status?.running === true && service.status.adminAuthenticated === true;
   const startupReadyForDashboard =
-    !service.error && setupComplete && service.status?.running === true;
+    !service.error && setupComplete && serviceReady;
   const [startupHandoffComplete, setStartupHandoffComplete] = React.useState(false);
-  const dashboardEnabled = service.status?.running === true;
+  const dashboardEnabled = serviceReady;
   const dashboard = useDashboardData(dashboardEnabled);
 
   React.useEffect(() => startPricePolling(), []);
@@ -35,7 +37,7 @@ export function App() {
     if (
       autoStartAttempted.current ||
       !service.status ||
-      service.status.running ||
+      (service.status.running && service.status.adminAuthenticated) ||
       service.busyAction !== null ||
       service.setupStatus ||
       service.error
@@ -68,12 +70,13 @@ export function App() {
   }, []);
 
   if (
+    (!service.status && !startupHandoffComplete) ||
     (startupReadyForDashboard && !startupHandoffComplete) ||
-    (service.status && !service.status.running && !startupHandoffComplete)
+    (service.status && !serviceReady && !startupHandoffComplete)
   ) {
     return (
       <ServiceStopped
-        error={service.error}
+        error={service.error ?? service.status?.adminAuthError ?? null}
         busy={service.busyAction === "start"}
         setupStatus={service.setupStatus}
         exiting={startupReadyForDashboard}

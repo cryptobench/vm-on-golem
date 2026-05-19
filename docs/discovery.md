@@ -1,8 +1,8 @@
 # Discovery Architecture
 
-Discovery is a live websocket capability. Providers are discoverable only while
-their central-discovery provider websocket is connected, and requestors browse
-providers through a requestor websocket subscription.
+Discovery is a live websocket capability. The central discovery binary also
+serves the public port-check API used by providers to verify reachability, so
+deployments only need one public service origin.
 
 ## Central Discovery
 
@@ -10,8 +10,23 @@ Central discovery keeps an in-memory registry keyed by provider ID. The registry
 is connection-authoritative: provider disconnect removes that provider
 immediately and broadcasts a removal to subscribed requestors.
 
-HTTP is limited to `/health`. Discovery data is never read or written through
-HTTP endpoints.
+HTTP is limited to `/health`, `/check-ports`, and `/check-tls`. Discovery data
+is never read or written through HTTP endpoints.
+
+## Port Verification
+
+The same central discovery listener exposes:
+
+```bash
+POST /check-ports
+POST /check-tls
+```
+
+Providers derive the HTTP(S) port-check origin from
+`GOLEM_PROVIDER_DISCOVERY_WS_URL` by default. For example,
+`wss://host/api/v1/discovery/providers` uses `https://host/check-ports` and
+`https://host/check-tls`. `GOLEM_PROVIDER_PORT_CHECK_TLS_URL` remains available
+as an explicit override.
 
 ## Provider Flow
 
