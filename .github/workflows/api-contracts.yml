@@ -9,7 +9,6 @@ on:
       - "scripts/export_openapi.py"
       - "port-checker-server/**"
       - "provider-server/**"
-      - "requestor-server/**"
       - "requestor-web/**"
       - ".github/workflows/api-contracts.yml"
 
@@ -32,13 +31,12 @@ jobs:
           cache-dependency-path: requestor-web/package-lock.json
 
       - name: Install Poetry
-        run: pipx install poetry
+        run: pipx install poetry==2.2.1
 
       - name: Install backend dependencies
         run: |
           poetry -C port-checker-server install --with dev --no-interaction
           poetry -C provider-server install --with dev --no-interaction
-          poetry -C requestor-server install --with dev --no-interaction
 
       - name: Install requestor-web dependencies
         run: npm ci --prefix requestor-web

@@ -6,7 +6,7 @@ Describe the change, motivation, and context. Link any relevant issues.
 
 - [ ] central-discovery-server
 - [ ] provider-server
-- [ ] requestor-server
+- [ ] requestor-web
 - [ ] streaming-abi
 - [ ] scripts / docs
 

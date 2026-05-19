@@ -109,15 +109,11 @@ def vendor_snap(asset: dict[str, Any], out_dir: Path) -> list[Path]:
 
     out_dir.mkdir(parents=True, exist_ok=True)
     before = set(out_dir.iterdir()) if out_dir.exists() else set()
-    command = [
-        snap,
-        "download",
-        asset["snap_name"],
-        "--revision",
-        str(asset["snap_revision"]),
-        "--channel",
-        asset["snap_channel"],
-    ]
+    command = [snap, "download", asset["snap_name"]]
+    if "snap_revision" in asset:
+        command.extend(["--revision", str(asset["snap_revision"])])
+    elif "snap_channel" in asset:
+        command.extend(["--channel", asset["snap_channel"]])
     print("Running:", " ".join(command))
     subprocess.run(command, cwd=out_dir, check=True)
 
