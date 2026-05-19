@@ -1,46 +1,127 @@
-from enum import Enum
-from pydantic import BaseModel, Field, field_validator
-from typing import Dict, Optional
 from datetime import datetime
+from enum import Enum
+from typing import Dict, Optional
+
+from pydantic import BaseModel, Field, field_validator
+
+from provider.payments.domain import LeasePayment
+from provider.utils.time import ensure_utc, utc_now
 
 
 class VMStatus(str, Enum):
     """VM status enum."""
+
     CREATING = "creating"
+    STARTING = "starting"
+    RESTARTING = "restarting"
     RUNNING = "running"
+    DELAYED_SHUTDOWN = "delayed_shutdown"
+    SUSPENDING = "suspending"
+    SUSPENDED = "suspended"
     STOPPING = "stopping"
     STOPPED = "stopped"
+    TERMINATED = "terminated"
     ERROR = "error"
     DELETED = "deleted"
+    UNKNOWN = "unknown"
+
+    @classmethod
+    def from_multipass(cls, state: str | None) -> "VMStatus":
+        """Map raw Multipass states to VMStatus, defaulting to UNKNOWN."""
+
+        if state is None:
+            return cls.UNKNOWN
+
+        normalized = state.strip().lower().replace("-", "_").replace(" ", "_")
+        mapping = {
+            "creating": cls.CREATING,
+            "starting": cls.STARTING,
+            "restarting": cls.RESTARTING,
+            "running": cls.RUNNING,
+            "delayed_shutdown": cls.DELAYED_SHUTDOWN,
+            "suspending": cls.SUSPENDING,
+            "suspended": cls.SUSPENDED,
+            "stopping": cls.STOPPING,
+            "stopped": cls.STOPPED,
+            "terminated": cls.TERMINATED,
+            "error": cls.ERROR,
+            "deleted": cls.DELETED,
+            "unknown": cls.UNKNOWN,
+        }
+        return mapping.get(normalized, cls.UNKNOWN)
+
+
+STATUS_MESSAGES = {
+    VMStatus.CREATING: "Provisioning VM",
+    VMStatus.STARTING: "Starting VM",
+    VMStatus.RESTARTING: "Restarting VM",
+    VMStatus.RUNNING: "VM is online",
+    VMStatus.DELAYED_SHUTDOWN: "Shutdown is scheduled",
+    VMStatus.SUSPENDING: "Suspending VM",
+    VMStatus.SUSPENDED: "VM is suspended",
+    VMStatus.STOPPING: "Stopping VM",
+    VMStatus.STOPPED: "VM is stopped",
+    VMStatus.TERMINATED: "VM lease has been terminated",
+    VMStatus.ERROR: "VM requires attention",
+    VMStatus.DELETED: "VM has been deleted",
+    VMStatus.UNKNOWN: "Provider status is temporarily unavailable",
+}
+
+TRANSITIONAL_STATUSES = {
+    VMStatus.CREATING,
+    VMStatus.STARTING,
+    VMStatus.RESTARTING,
+    VMStatus.DELAYED_SHUTDOWN,
+    VMStatus.SUSPENDING,
+    VMStatus.STOPPING,
+}
+
+DEFAULT_STATUS_PROGRESS = {
+    VMStatus.CREATING: 15,
+    VMStatus.STARTING: 60,
+    VMStatus.RESTARTING: 60,
+    VMStatus.RUNNING: 100,
+    VMStatus.DELAYED_SHUTDOWN: 70,
+    VMStatus.SUSPENDING: 70,
+    VMStatus.SUSPENDED: 100,
+    VMStatus.STOPPING: 70,
+    VMStatus.STOPPED: 100,
+    VMStatus.TERMINATED: 100,
+    VMStatus.ERROR: 100,
+    VMStatus.DELETED: 100,
+    VMStatus.UNKNOWN: 0,
+}
+
+MULTIPASS_SSH_USER = "golem"
+
+
+def status_message(status: VMStatus) -> str:
+    return STATUS_MESSAGES.get(status, STATUS_MESSAGES[VMStatus.UNKNOWN])
+
+
+def is_transitioning(status: VMStatus) -> bool:
+    return status in TRANSITIONAL_STATUSES
+
+
+def status_progress(status: VMStatus) -> int:
+    return DEFAULT_STATUS_PROGRESS.get(status, 0)
 
 
 class VMSize(str, Enum):
     """Predefined VM sizes."""
-    SMALL = "small"      # 1 CPU, 1GB RAM, 10GB storage
-    MEDIUM = "medium"    # 2 CPU, 4GB RAM, 20GB storage
-    LARGE = "large"      # 4 CPU, 8GB RAM, 40GB storage
-    XLARGE = "xlarge"    # 8 CPU, 16GB RAM, 80GB storage
+
+    SMALL = "small"  # 1 CPU, 1GB RAM, 10GB storage
+    MEDIUM = "medium"  # 2 CPU, 4GB RAM, 20GB storage
+    LARGE = "large"  # 4 CPU, 8GB RAM, 40GB storage
+    XLARGE = "xlarge"  # 8 CPU, 16GB RAM, 80GB storage
 
 
 class VMResources(BaseModel):
     """VM resource configuration."""
+
     cpu: int = Field(..., ge=1, description="Number of CPU cores")
     memory: int = Field(..., ge=1, description="Memory in GB")
     storage: int = Field(..., ge=10, description="Storage in GB")
-
-    @field_validator("cpu")
-    def validate_cpu(cls, v: int) -> int:
-        """Validate CPU cores."""
-        if v not in [1, 2, 4, 8, 16]:
-            raise ValueError("CPU cores must be 1, 2, 4, 8, or 16")
-        return v
-
-    @field_validator("memory")
-    def validate_memory(cls, v: int) -> int:
-        """Validate memory."""
-        if v not in [1, 2, 4, 8, 16, 32, 64]:
-            raise ValueError("Memory must be 1, 2, 4, 8, 16, 32, or 64 GB")
-        return v
 
     @classmethod
     def from_size(cls, size: VMSize) -> "VMResources":
@@ -49,22 +130,27 @@ class VMResources(BaseModel):
             VMSize.SMALL: {"cpu": 1, "memory": 1, "storage": 10},
             VMSize.MEDIUM: {"cpu": 2, "memory": 4, "storage": 20},
             VMSize.LARGE: {"cpu": 4, "memory": 8, "storage": 40},
-            VMSize.XLARGE: {"cpu": 8, "memory": 16, "storage": 80}
+            VMSize.XLARGE: {"cpu": 8, "memory": 16, "storage": 80},
         }
         return cls(**sizes[size])
 
 
 class VMCreateRequest(BaseModel):
     """Request to create a new VM."""
-    name: str = Field(..., min_length=3, max_length=64,
-                      pattern="^[a-z0-9][a-z0-9-]*[a-z0-9]$")
+
+    name: str = Field(
+        ..., min_length=3, max_length=64, pattern="^[a-z0-9][a-z0-9-]*[a-z0-9]$"
+    )
     size: Optional[VMSize] = None
     cpu_cores: Optional[int] = None
     memory_gb: Optional[int] = None
     storage_gb: Optional[int] = None
     image: Optional[str] = Field(default="24.04")  # Ubuntu 24.04 LTS
-    ssh_key: str = Field(..., pattern="^(ssh-rsa|ssh-ed25519) ",
-                         description="SSH public key for VM access")
+    ssh_key: str = Field(
+        ...,
+        pattern="^(ssh-rsa|ssh-ed25519) ",
+        description="SSH public key for VM access",
+    )
 
     @field_validator("name")
     def validate_name(cls, v: str) -> str:
@@ -90,13 +176,18 @@ class VMCreateRequest(BaseModel):
 
 class VMConfig(BaseModel):
     """VM configuration."""
-    name: str = Field(..., min_length=3, max_length=64,
-                      pattern="^[a-z0-9][a-z0-9-]*[a-z0-9]$")
+
+    name: str = Field(
+        ..., min_length=3, max_length=64, pattern="^[a-z0-9][a-z0-9-]*[a-z0-9]$"
+    )
     resources: VMResources
     image: str = Field(default="24.04")  # Ubuntu 24.04 LTS
     size: Optional[VMSize] = None
-    ssh_key: str = Field(..., pattern="^(ssh-rsa|ssh-ed25519) ",
-                         description="SSH public key for VM access")
+    ssh_key: str = Field(
+        ...,
+        pattern="^(ssh-rsa|ssh-ed25519) ",
+        description="SSH public key for VM access",
+    )
     cloud_init_path: Optional[str] = None
     # Final multipass VM name to use; if None, provider may generate one.
     multipass_name: Optional[str] = None
@@ -111,24 +202,111 @@ class VMConfig(BaseModel):
 
 class VMInfo(BaseModel):
     """VM information."""
+
     id: str
     name: str
     status: VMStatus
     resources: VMResources
     ip_address: Optional[str] = None
     ssh_port: Optional[int] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    lifecycle_stage: str = Field(
+        default="unknown",
+        description="Provider lifecycle stage for transitional or terminal states",
+    )
+    status_message: str = Field(
+        default="Provider status is temporarily unavailable",
+        description="Human-readable lifecycle status suitable for UI display",
+    )
+    progress: int = Field(
+        default=0,
+        ge=0,
+        le=100,
+        description="Best-effort lifecycle progress percentage",
+    )
+    transitioning: bool = Field(
+        default=False,
+        description="True while the VM is actively changing lifecycle state",
+    )
+    next_poll_seconds: int = Field(
+        default=8,
+        ge=1,
+        description="Suggested client polling cadence for this state",
+    )
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
     error_message: Optional[str] = None
 
     class Config:
-        json_encoders = {
-            datetime: lambda v: v.isoformat()
-        }
+        json_encoders = {datetime: lambda v: v.isoformat()}
+
+    @field_validator("created_at", "updated_at")
+    @classmethod
+    def ensure_timestamp_timezone(cls, value: datetime) -> datetime:
+        return ensure_utc(value)
+
+    def model_post_init(self, __context) -> None:
+        if self.lifecycle_stage == "unknown" and self.status != VMStatus.UNKNOWN:
+            self.lifecycle_stage = self.status.value
+        if self.status_message == STATUS_MESSAGES[VMStatus.UNKNOWN]:
+            self.status_message = status_message(self.status)
+        if self.progress == 0:
+            self.progress = status_progress(self.status)
+        if not self.transitioning:
+            self.transitioning = is_transitioning(self.status)
+        if self.next_poll_seconds == 8 and self.transitioning:
+            self.next_poll_seconds = 2
+
+
+class VMImage(BaseModel):
+    """Available VM image entry."""
+
+    alias: str
+    version: Optional[str] = None
+    description: Optional[str] = None
+
+
+class VMSnapshot(BaseModel):
+    """Snapshot metadata for a VM."""
+
+    name: str
+    vm_id: str
+    comment: Optional[str] = None
+    created_at: Optional[str] = None
+
+
+class ResizeVMRequest(BaseModel):
+    """Request to resize an existing VM."""
+
+    resources: VMResources
+    payment: Optional[LeasePayment] = Field(
+        default=None,
+        description="Replacement lease-bound StreamPayment proof for the resized VM",
+    )
+
+
+class CreateSnapshotRequest(BaseModel):
+    """Request to create a VM snapshot."""
+
+    name: Optional[str] = Field(
+        default=None,
+        min_length=1,
+        max_length=64,
+        pattern="^[a-z0-9][a-z0-9-]*[a-z0-9]$",
+    )
+    comment: Optional[str] = Field(default=None, max_length=256)
+
+
+class CloneVMRequest(BaseModel):
+    """Request to clone a stopped VM."""
+
+    name: str = Field(
+        ..., min_length=3, max_length=64, pattern="^[a-z0-9][a-z0-9-]*[a-z0-9]$"
+    )
 
 
 class SSHKey(BaseModel):
     """SSH key information."""
+
     name: str = Field(..., min_length=1, max_length=64)
     public_key: str = Field(..., pattern="^(ssh-rsa|ssh-ed25519) ")
     fingerprint: Optional[str] = None
@@ -136,11 +314,14 @@ class SSHKey(BaseModel):
 
 class VMAccessInfo(BaseModel):
     """VM access information."""
+
     ssh_host: str
     ssh_port: int
+    ssh_user: str = Field(..., description="SSH login user for this VM")
     vm_id: str = Field(..., description="Requestor's VM name")
-    multipass_name: str = Field(...,
-                                description="Full multipass VM name with timestamp")
+    multipass_name: str = Field(
+        ..., description="Full multipass VM name with timestamp"
+    )
 
 
 class VMProvider:
@@ -154,7 +335,7 @@ class VMProvider:
         """Cleanup provider resources."""
         raise NotImplementedError()
 
-    async def create_vm(self, config: VMConfig) -> VMInfo:
+    async def create_vm(self, config: VMConfig, progress_callback=None) -> VMInfo:
         """Create a new VM."""
         raise NotImplementedError()
 
@@ -190,19 +371,23 @@ class VMError(Exception):
 
 class VMCreateError(VMError):
     """Error creating VM."""
+
     pass
 
 
 class VMNotFoundError(VMError):
     """VM not found."""
+
     pass
 
 
 class VMStateError(VMError):
     """Invalid VM state for operation."""
+
     pass
 
 
 class ResourceError(VMError):
     """Resource allocation error."""
+
     pass

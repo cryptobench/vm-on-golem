@@ -1,5 +1,4 @@
 import asyncio
-import types
 import pytest
 
 from provider.service import ProviderService
@@ -11,7 +10,12 @@ class DummyPortManager:
         return None
 
 
-class DummyAdvertisementService:
+class FailingPortManager:
+    async def initialize(self):
+        return False
+
+
+class DummyDiscoveryPublishingService:
     def __init__(self):
         self.started = False
 
@@ -60,6 +64,8 @@ class DummyStreamMap:
     def __init__(self, mapping):
         self._map = dict(mapping)
         self.removed = []
+        self.terminated = []
+        self.cleanup = []
 
     async def get(self, vm_id):
         return self._map.get(vm_id)
@@ -71,6 +77,31 @@ class DummyStreamMap:
     async def all_items(self):
         return dict(self._map)
 
+    async def active_items(self):
+        return dict(self._map)
+
+    async def records(self):
+        return {
+            vm_id: {
+                "vm_id": vm_id,
+                "stream_id": stream_id,
+                "requestor_address": "0xreq",
+                "state": "active",
+                "terminated_by": None,
+                "termination_reason": None,
+                "terminated_at": None,
+                "settlement_tx_hash": None,
+                "cleanup_state": None,
+            }
+            for vm_id, stream_id in self._map.items()
+        }
+
+    async def mark_terminated(self, vm_id, **kwargs):
+        self.terminated.append((vm_id, kwargs))
+
+    async def set_cleanup_state(self, vm_id, cleanup_state):
+        self.cleanup.append((vm_id, cleanup_state))
+
 
 class DummyReader:
     def __init__(self, validity_by_stream):
@@ -79,6 +110,58 @@ class DummyReader:
 
     def verify_stream(self, sid, expected_recipient):
         return self.validity.get(int(sid), (False, "not found"))
+
+    def get_stream(self, sid):
+        ok, message = self.validity.get(int(sid), (False, "not found"))
+        if message == "lookup failed":
+            raise RuntimeError("chain unavailable")
+        return {
+            "recipient": (
+                "0x0000000000000000000000000000000000000000"
+                if message == "stream terminated"
+                else "0xprov"
+            ),
+            "ok": ok,
+        }
+
+    def stream_state(self, sid):
+        ok, message = self.validity.get(int(sid), (False, "not found"))
+        if message == "stream terminated":
+            return "terminated"
+        if message == "stream expired":
+            return "expired"
+        if message == "stream grace":
+            return "grace"
+        return "active" if ok else "invalid"
+
+
+class DummyEth:
+    def __init__(self, timestamp):
+        self.timestamp = timestamp
+
+    def get_block(self, block_id):
+        assert block_id == "latest"
+        return {"timestamp": self.timestamp}
+
+
+class DummyWeb3:
+    def __init__(self, timestamp):
+        self.eth = DummyEth(timestamp)
+
+
+class RevertingStateReader(DummyReader):
+    def __init__(self, validity_by_stream, *, stop_time, latest_timestamp):
+        super().__init__(validity_by_stream)
+        self.stop_time = stop_time
+        self.web3 = DummyWeb3(latest_timestamp)
+
+    def get_stream(self, sid):
+        stream = super().get_stream(sid)
+        stream["stopTime"] = self.stop_time
+        return stream
+
+    def stream_state(self, sid):
+        raise RuntimeError("execution reverted")
 
 
 class DummyStreamMonitor:
@@ -99,6 +182,14 @@ class DummyPricingUpdater:
 
     def stop(self):
         self.started = False
+
+
+class DummyNetworkSetup:
+    async def setup(self):
+        return None
+
+    async def cleanup(self):
+        return None
 
 
 class DummyApp:
@@ -123,40 +214,60 @@ class DummyApp:
 
 
 @pytest.mark.asyncio
-async def test_startup_terminates_vms_without_active_stream(monkeypatch):
+async def test_startup_fails_when_vm_has_no_active_stream_record(monkeypatch):
     from provider import service as ps
     from provider.config import settings
 
     # Enable payments logic
     settings.STREAM_PAYMENT_ADDRESS = "0x1234567890abcdef1234567890abcdef12345678"
-    settings.POLYGON_RPC_URL = "http://localhost"
+    settings.PAYMENTS_RPC_URL = "http://localhost"
     settings.STREAM_MONITOR_ENABLED = False
     settings.STREAM_WITHDRAW_ENABLED = False
-
-    # Patch external collaborators (faucet + pricing updater)
-    import provider.security.faucet as faucet_mod
-    monkeypatch.setattr(faucet_mod, "FaucetClient", lambda *a, **k: types.SimpleNamespace(get_funds=lambda *_: asyncio.sleep(0)))
+    # Patch external collaborators.
     monkeypatch.setattr(ps, "PricingAutoUpdater", DummyPricingUpdater)
 
-    # One VM present, no stream mapping -> should be terminated
+    # One VM present, no stream mapping -> fail visibly instead of guessing.
     vm_resources = {"vm-a": VMResources(cpu=2, memory=4, storage=20)}
     vm_service = DummyVMService(vm_resources)
-    adv = DummyAdvertisementService()
+    adv = DummyDiscoveryPublishingService()
     port = DummyPortManager()
-    provider_service = ProviderService(vm_service=vm_service, advertisement_service=adv, port_manager=port)
+    provider_service = ProviderService(
+        vm_service=vm_service, advertisement_service=adv, port_manager=port
+    )
 
     stream_map = DummyStreamMap({})
     reader = DummyReader({})
     app = DummyApp(stream_map, reader)
 
-    await provider_service.setup(app)  # type: ignore[arg-type]
+    with pytest.raises(RuntimeError, match="no active structured stream record"):
+        await provider_service.setup(app)  # type: ignore[arg-type]
 
-    # Assert VM was deleted and mapping removed
-    assert vm_service.deleted == ["vm-a"]
-    assert stream_map.removed == ["vm-a"]
-    # Synced before and after termination
-    assert vm_service.resource_tracker.sync_calls >= 2
-    assert adv.started is True
+    assert vm_service.deleted == []
+    assert adv.started is False
+
+
+@pytest.mark.asyncio
+async def test_startup_aborts_when_port_verification_fails(monkeypatch):
+    from provider import service as ps
+    from provider.config import settings
+
+    settings.STREAM_MONITOR_ENABLED = False
+    settings.STREAM_WITHDRAW_ENABLED = False
+    monkeypatch.setattr(ps, "PricingAutoUpdater", DummyPricingUpdater)
+
+    vm_service = DummyVMService({})
+    adv = DummyDiscoveryPublishingService()
+    provider_service = ProviderService(
+        vm_service=vm_service,
+        advertisement_service=adv,
+        port_manager=FailingPortManager(),
+        network_setup_service=DummyNetworkSetup(),
+    )
+
+    with pytest.raises(RuntimeError, match="externally reachable"):
+        await provider_service.setup(DummyApp(DummyStreamMap({}), DummyReader({})))  # type: ignore[arg-type]
+
+    assert adv.started is False
 
 
 @pytest.mark.asyncio
@@ -166,20 +277,19 @@ async def test_startup_keeps_vms_with_active_stream(monkeypatch):
 
     # Enable payments logic
     settings.STREAM_PAYMENT_ADDRESS = "0x1234567890abcdef1234567890abcdef12345678"
-    settings.POLYGON_RPC_URL = "http://localhost"
+    settings.PAYMENTS_RPC_URL = "http://localhost"
     settings.STREAM_MONITOR_ENABLED = False
     settings.STREAM_WITHDRAW_ENABLED = False
-
-    # Patch external collaborators
-    import provider.security.faucet as faucet_mod
-    monkeypatch.setattr(faucet_mod, "FaucetClient", lambda *a, **k: types.SimpleNamespace(get_funds=lambda *_: asyncio.sleep(0)))
+    # Patch external collaborators.
     monkeypatch.setattr(ps, "PricingAutoUpdater", DummyPricingUpdater)
 
     vm_resources = {"vm-b": VMResources(cpu=2, memory=4, storage=20)}
     vm_service = DummyVMService(vm_resources)
-    adv = DummyAdvertisementService()
+    adv = DummyDiscoveryPublishingService()
     port = DummyPortManager()
-    provider_service = ProviderService(vm_service=vm_service, advertisement_service=adv, port_manager=port)
+    provider_service = ProviderService(
+        vm_service=vm_service, advertisement_service=adv, port_manager=port
+    )
 
     # Map stream and mark it valid
     stream_map = DummyStreamMap({"vm-b": 42})
@@ -196,26 +306,154 @@ async def test_startup_keeps_vms_with_active_stream(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_startup_deletes_vm_with_chain_terminated_stream(monkeypatch):
+    from provider import service as ps
+    from provider.config import settings
+
+    settings.STREAM_PAYMENT_ADDRESS = "0x1234567890abcdef1234567890abcdef12345678"
+    settings.PAYMENTS_RPC_URL = "http://localhost"
+    settings.STREAM_MONITOR_ENABLED = False
+    settings.STREAM_WITHDRAW_ENABLED = False
+    monkeypatch.setattr(ps, "PricingAutoUpdater", DummyPricingUpdater)
+
+    vm_resources = {"vm-a": VMResources(cpu=2, memory=4, storage=20)}
+    vm_service = DummyVMService(vm_resources)
+    adv = DummyDiscoveryPublishingService()
+    provider_service = ProviderService(
+        vm_service=vm_service,
+        advertisement_service=adv,
+        port_manager=DummyPortManager(),
+    )
+    stream_map = DummyStreamMap({"vm-a": 42})
+    app = DummyApp(stream_map, DummyReader({42: (False, "stream terminated")}))
+
+    await provider_service.setup(app)  # type: ignore[arg-type]
+
+    assert vm_service.deleted == ["vm-a"]
+    assert stream_map.terminated[0][0] == "vm-a"
+    assert stream_map.cleanup == [("vm-a", "completed")]
+    assert adv.started is True
+
+
+@pytest.mark.asyncio
+async def test_startup_deletes_vm_with_expired_stream_after_grace(monkeypatch):
+    from provider import service as ps
+    from provider.config import settings
+
+    settings.STREAM_PAYMENT_ADDRESS = "0x1234567890abcdef1234567890abcdef12345678"
+    settings.PAYMENTS_RPC_URL = "http://localhost"
+    settings.STREAM_MONITOR_ENABLED = False
+    settings.STREAM_WITHDRAW_ENABLED = False
+    monkeypatch.setattr(ps, "PricingAutoUpdater", DummyPricingUpdater)
+
+    vm_resources = {"vm-a": VMResources(cpu=2, memory=4, storage=20)}
+    vm_service = DummyVMService(vm_resources)
+    adv = DummyDiscoveryPublishingService()
+    provider_service = ProviderService(
+        vm_service=vm_service,
+        advertisement_service=adv,
+        port_manager=DummyPortManager(),
+    )
+    stream_map = DummyStreamMap({"vm-a": 42})
+    app = DummyApp(stream_map, DummyReader({42: (False, "stream expired")}))
+
+    await provider_service.setup(app)  # type: ignore[arg-type]
+
+    assert vm_service.deleted == ["vm-a"]
+    assert stream_map.terminated[0][0] == "vm-a"
+    assert stream_map.terminated[0][1]["termination_reason"] == "stream_expired"
+    assert stream_map.cleanup == [("vm-a", "completed")]
+    assert adv.started is True
+
+
+@pytest.mark.asyncio
+async def test_startup_falls_back_when_stream_state_call_reverts(monkeypatch):
+    from provider import service as ps
+    from provider.config import settings
+
+    settings.STREAM_PAYMENT_ADDRESS = "0x1234567890abcdef1234567890abcdef12345678"
+    settings.PAYMENTS_RPC_URL = "http://localhost"
+    settings.STREAM_MONITOR_ENABLED = False
+    settings.STREAM_WITHDRAW_ENABLED = False
+    monkeypatch.setattr(ps, "PricingAutoUpdater", DummyPricingUpdater)
+
+    vm_service = DummyVMService({"vm-a": VMResources(cpu=2, memory=4, storage=20)})
+    adv = DummyDiscoveryPublishingService()
+    provider_service = ProviderService(
+        vm_service=vm_service,
+        advertisement_service=adv,
+        port_manager=DummyPortManager(),
+    )
+    stream_map = DummyStreamMap({"vm-a": 42})
+    app = DummyApp(
+        stream_map,
+        RevertingStateReader(
+            {42: (True, "ok")},
+            stop_time=100,
+            latest_timestamp=200,
+        ),
+    )
+
+    await provider_service.setup(app)  # type: ignore[arg-type]
+
+    assert vm_service.deleted == ["vm-a"]
+    assert stream_map.terminated[0][0] == "vm-a"
+    assert stream_map.terminated[0][1]["termination_reason"] == "stream_expired"
+    assert stream_map.cleanup == [("vm-a", "completed")]
+    assert adv.started is True
+
+
+@pytest.mark.asyncio
+async def test_startup_surfaces_chain_lookup_failure(monkeypatch):
+    from provider import service as ps
+    from provider.config import settings
+
+    settings.STREAM_PAYMENT_ADDRESS = "0x1234567890abcdef1234567890abcdef12345678"
+    settings.PAYMENTS_RPC_URL = "http://localhost"
+    settings.STREAM_MONITOR_ENABLED = False
+    settings.STREAM_WITHDRAW_ENABLED = False
+    monkeypatch.setattr(ps, "PricingAutoUpdater", DummyPricingUpdater)
+
+    vm_service = DummyVMService({"vm-a": VMResources(cpu=2, memory=4, storage=20)})
+    adv = DummyDiscoveryPublishingService()
+    provider_service = ProviderService(
+        vm_service=vm_service,
+        advertisement_service=adv,
+        port_manager=DummyPortManager(),
+    )
+
+    with pytest.raises(RuntimeError, match="stream lookup failed"):
+        await provider_service.setup(  # type: ignore[arg-type]
+            DummyApp(
+                DummyStreamMap({"vm-a": 42}),
+                DummyReader({42: (False, "lookup failed")}),
+            )
+        )
+
+    assert vm_service.deleted == []
+    assert adv.started is False
+
+
+@pytest.mark.asyncio
 async def test_startup_skips_stream_checks_when_payments_disabled(monkeypatch):
     from provider import service as ps
     from provider.config import settings
 
     # Disable payments by zero address
     settings.STREAM_PAYMENT_ADDRESS = "0x0000000000000000000000000000000000000000"
-    settings.POLYGON_RPC_URL = ""
+    settings.PAYMENTS_RPC_URL = ""
     settings.STREAM_MONITOR_ENABLED = False
     settings.STREAM_WITHDRAW_ENABLED = False
-
-    # Patch external collaborators
-    import provider.security.faucet as faucet_mod
-    monkeypatch.setattr(faucet_mod, "FaucetClient", lambda *a, **k: types.SimpleNamespace(get_funds=lambda *_: asyncio.sleep(0)))
+    # Patch external collaborators.
     monkeypatch.setattr(ps, "PricingAutoUpdater", DummyPricingUpdater)
 
     vm_resources = {"vm-c": VMResources(cpu=2, memory=4, storage=20)}
     vm_service = DummyVMService(vm_resources)
-    adv = DummyAdvertisementService()
+    adv = DummyDiscoveryPublishingService()
     port = DummyPortManager()
-    provider_service = ProviderService(vm_service=vm_service, advertisement_service=adv, port_manager=port)
+    provider_service = ProviderService(
+        vm_service=vm_service, advertisement_service=adv, port_manager=port
+    )
 
     # If called, these would raise; but payments disabled should skip them
     class RaisingStreamMap:
@@ -239,4 +477,30 @@ async def test_startup_skips_stream_checks_when_payments_disabled(monkeypatch):
     # No deletions; synced at least once and advertising started
     assert vm_service.deleted == []
     assert vm_service.resource_tracker.sync_calls >= 1
+    assert adv.started is True
+
+
+@pytest.mark.asyncio
+async def test_startup_starts_discovery_without_faucet_dependency(monkeypatch):
+    from provider import service as ps
+    from provider.config import settings
+
+    settings.STREAM_PAYMENT_ADDRESS = "0x0000000000000000000000000000000000000000"
+    settings.PAYMENTS_RPC_URL = ""
+    settings.STREAM_MONITOR_ENABLED = False
+    settings.STREAM_WITHDRAW_ENABLED = False
+    monkeypatch.setattr(ps, "PricingAutoUpdater", DummyPricingUpdater)
+
+    vm_service = DummyVMService({})
+    adv = DummyDiscoveryPublishingService()
+    provider_service = ProviderService(
+        vm_service=vm_service,
+        advertisement_service=adv,
+        port_manager=DummyPortManager(),
+    )
+
+    app = DummyApp(DummyStreamMap({}), DummyReader({}))
+
+    await provider_service.setup(app)  # type: ignore[arg-type]
+
     assert adv.started is True

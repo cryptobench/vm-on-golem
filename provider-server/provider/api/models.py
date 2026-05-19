@@ -1,25 +1,33 @@
-from pydantic import BaseModel, Field, field_validator
-from typing import Dict, Optional, List, Any
 from datetime import datetime
+from typing import Any, Dict, List, Optional
 
+from pydantic import BaseModel, Field, field_validator
+
+from ..payments.domain import LeasePayment
 from ..utils.logging import setup_logger
-from ..vm.models import VMSize, VMResources, VMStatus
+from ..utils.time import ensure_utc, utc_now
+from ..vm.models import MULTIPASS_SSH_USER, VMResources, VMSize, VMStatus
 
 logger = setup_logger(__name__)
 
 
 class CreateVMRequest(BaseModel):
     """Request model for creating a VM."""
-    name: str = Field(..., min_length=3, max_length=64,
-                      pattern="^[a-z0-9][a-z0-9-]*[a-z0-9]$")
+
+    name: str = Field(
+        ..., min_length=3, max_length=64, pattern="^[a-z0-9][a-z0-9-]*[a-z0-9]$"
+    )
     size: Optional[VMSize] = None
     resources: Optional[VMResources] = None
-    image: str = Field(default="24.04")  # Ubuntu 24.04 LTS
-    ssh_key: str = Field(..., pattern="^(ssh-rsa|ssh-ed25519) ",
-                         description="SSH public key for VM access")
-    stream_id: Optional[int] = Field(
+    image: Optional[str] = None
+    ssh_key: str = Field(
+        ...,
+        pattern="^(ssh-rsa|ssh-ed25519) ",
+        description="SSH public key for VM access",
+    )
+    payment: Optional[LeasePayment] = Field(
         default=None,
-        description="On-chain StreamPayment stream id used to fund this VM"
+        description="V2 lease-bound on-chain StreamPayment proof used to fund this VM",
     )
 
     @field_validator("name")
@@ -29,8 +37,10 @@ class CreateVMRequest(BaseModel):
             raise ValueError("VM name cannot contain consecutive hyphens")
         return v
 
-    @field_validator("resources", mode='before')
-    def validate_resources(cls, v: Optional[Dict[str, Any]], values: Dict[str, Any]) -> VMResources:
+    @field_validator("resources", mode="before")
+    def validate_resources(
+        cls, v: Optional[Dict[str, Any]], values: Dict[str, Any]
+    ) -> VMResources:
         """Validate and set resources."""
         logger.debug(f"Validating resources input: {v}")
 
@@ -50,7 +60,8 @@ class CreateVMRequest(BaseModel):
             if "size" in values.data and values.data["size"] is not None:
                 result = VMResources.from_size(values.data["size"])
                 logger.debug(
-                    f"Created resources from size {values.data['size']}: {result}")
+                    f"Created resources from size {values.data['size']}: {result}"
+                )
                 return result
 
             # Only use defaults if nothing provided
@@ -67,6 +78,7 @@ class CreateVMRequest(BaseModel):
 
 class VMResponse(BaseModel):
     """Response model for VM operations."""
+
     id: str
     name: str
     status: VMStatus
@@ -77,34 +89,41 @@ class VMResponse(BaseModel):
     updated_at: datetime
     error_message: Optional[str] = None
 
+    @field_validator("created_at", "updated_at")
+    @classmethod
+    def ensure_timestamp_timezone(cls, value: datetime) -> datetime:
+        return ensure_utc(value)
+
     class Config:
-        json_encoders = {
-            datetime: lambda v: v.isoformat()
-        }
+        json_encoders = {datetime: lambda v: v.isoformat()}
 
 
 class AddSSHKeyRequest(BaseModel):
     """Request model for adding SSH key."""
+
     name: str = Field(..., min_length=1, max_length=64)
     public_key: str = Field(..., pattern="^(ssh-rsa|ssh-ed25519) ")
 
 
 class ErrorResponse(BaseModel):
     """Error response model."""
+
     code: str
     message: str
     details: Optional[Dict] = None
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=utc_now)
 
 
 class ListVMsResponse(BaseModel):
     """Response model for listing VMs."""
+
     vms: List[VMResponse]
     total: int
 
 
 class ProviderStatusResponse(BaseModel):
     """Response model for provider status."""
+
     status: str = "healthy"
     version: str = "0.1.0"
     resources: Dict[str, int]
@@ -130,7 +149,8 @@ class StreamOnChain(BaseModel):
     ratePerSecond: int
     deposit: int
     withdrawn: int
-    halted: bool
+    leaseId: str
+    termsHash: str
 
 
 class StreamComputed(BaseModel):
@@ -151,6 +171,54 @@ class StreamStatus(BaseModel):
 
 class CreateVMJobResponse(BaseModel):
     """Lightweight response for async VM creation scheduling."""
+
     job_id: str = Field(..., description="Server-side job identifier for creation task")
     vm_id: str = Field(..., description="Requestor VM identifier (name)")
     status: str = Field("creating", description="Initial status indicator")
+    lifecycle_stage: str = Field(
+        "queued", description="Detailed lifecycle stage for the creation job"
+    )
+    status_message: str = Field(
+        "Queued VM creation", description="Human-readable lifecycle status"
+    )
+    progress: int = Field(0, ge=0, le=100, description="Creation progress percent")
+    transitioning: bool = Field(True, description="True while creation is active")
+    next_poll_seconds: int = Field(2, ge=1, description="Suggested polling cadence")
+
+
+class CreateVMJobStatus(BaseModel):
+    """Current state for an async VM creation job."""
+
+    job_id: str
+    vm_id: str
+    status: str
+    lifecycle_stage: str
+    status_message: str
+    progress: int = Field(..., ge=0, le=100)
+    transitioning: bool
+    next_poll_seconds: int = Field(2, ge=1)
+    error: Optional[str] = None
+    created_at: str
+    updated_at: str
+
+
+class VMAccessPendingResponse(BaseModel):
+    """Response returned while VM access details are not ready yet."""
+
+    vm_id: str
+    multipass_name: Optional[str] = None
+    ssh_user: str = Field(
+        ...,
+        description=f"SSH login user for this VM, currently {MULTIPASS_SSH_USER}",
+    )
+    status: str = "creating"
+    lifecycle_stage: str = "configuring_access"
+    status_message: str = "Waiting for SSH access"
+    progress: int = Field(90, ge=0, le=100)
+    transitioning: bool = True
+    next_poll_seconds: int = Field(2, ge=1)
+    ssh_port: None = None
+
+
+class AdminShutdownResponse(BaseModel):
+    ok: bool

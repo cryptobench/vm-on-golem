@@ -1,0 +1,197 @@
+name: Provider Desktop Installer Smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch, tag, or SHA to test"
+        required: false
+        type: string
+      run_vm_launch_check:
+        description: "Also launch and delete a tiny Multipass VM after installation"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: Smoke (${{ matrix.target }})
+    runs-on: ${{ fromJSON(matrix.runs_on) }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x64
+            runs_on: '["self-hosted", "Linux", "X64", "provider-desktop-smoke"]'
+            multipass_platform: linux
+            multipass_arch: x86_64
+          - target: windows-x64
+            runs_on: '["self-hosted", "Windows", "X64", "provider-desktop-smoke"]'
+            multipass_platform: windows
+            multipass_arch: x86_64
+          - target: macos-x64
+            runs_on: '["self-hosted", "macOS", "X64", "provider-desktop-smoke"]'
+            multipass_platform: darwin
+            multipass_arch: x86_64
+          - target: macos-arm64
+            runs_on: '["self-hosted", "macOS", "ARM64", "provider-desktop-smoke"]'
+            multipass_platform: darwin
+            multipass_arch: aarch64
+
+    env:
+      CI: true
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux Tauri dependencies
+        if: ${{ runner.os == 'Linux' }}
+        shell: bash
+        run: |
+          if command -v apt-get >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf snapd
+          else
+            echo "This workflow currently expects apt-based Linux smoke runners." >&2
+            exit 1
+          fi
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Poetry
+        run: python -m pip install --upgrade pip poetry
+
+      - name: Install provider dependencies
+        run: poetry -C provider-server install --no-interaction --no-ansi
+
+      - name: Install PyInstaller
+        run: poetry -C provider-server run pip install pyinstaller
+
+      - name: Build and stage provider sidecar
+        run: poetry -C provider-server run python ../scripts/build_provider_cli.py --onefile
+
+      - name: Vendor Multipass installer
+        run: python scripts/vendor_multipass.py --platform "${{ matrix.multipass_platform }}" --arch "${{ matrix.multipass_arch }}"
+
+      - name: Install npm dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Build provider desktop installer
+        run: npm --workspace @golem/provider-desktop run tauri:build
+
+      - name: Build macOS pkg with Multipass
+        if: ${{ runner.os == 'macOS' }}
+        shell: bash
+        run: python scripts/package_provider_desktop_macos.py
+        env:
+          APPLE_INSTALLER_SIGNING_IDENTITY: ${{ secrets.APPLE_INSTALLER_SIGNING_IDENTITY }}
+
+      - name: Install Linux package
+        if: ${{ runner.os == 'Linux' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          debs=(apps/provider-desktop/src-tauri/target/release/bundle/deb/*.deb)
+          rpms=(apps/provider-desktop/src-tauri/target/release/bundle/rpm/*.rpm)
+          if [ "${#debs[@]}" -gt 0 ]; then
+            sudo apt-get install -y "${debs[0]}"
+          elif [ "${#rpms[@]}" -gt 0 ] && command -v rpm >/dev/null 2>&1; then
+            sudo rpm -Uvh --replacepkgs "${rpms[0]}"
+          else
+            echo "No installable Linux package found" >&2
+            exit 1
+          fi
+
+      - name: Install Windows package
+        if: ${{ runner.os == 'Windows' }}
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem "apps/provider-desktop/src-tauri/target/release/bundle/nsis" -Filter "*setup*.exe" -Recurse | Select-Object -First 1
+          if (!$installer) {
+            throw "No NSIS setup executable found"
+          }
+          $process = Start-Process -FilePath $installer.FullName -ArgumentList "/S" -Wait -PassThru
+          if ($process.ExitCode -ne 0) {
+            throw "Provider desktop installer failed with exit code $($process.ExitCode)"
+          }
+
+      - name: Install macOS package
+        if: ${{ runner.os == 'macOS' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          pkg="$(find apps/provider-desktop/src-tauri/target/release/bundle/pkg -name '*.pkg' -print | head -n 1)"
+          if [ -z "$pkg" ]; then
+            echo "No macOS pkg found" >&2
+            exit 1
+          fi
+          sudo /usr/sbin/installer -pkg "$pkg" -target /
+
+      - name: Verify Multipass installation
+        if: ${{ runner.os != 'Windows' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          multipass version
+          multipass list --format json
+
+      - name: Verify Multipass installation on Windows
+        if: ${{ runner.os == 'Windows' }}
+        shell: pwsh
+        run: |
+          multipass version
+          if ($LASTEXITCODE -ne 0) { throw "multipass version failed" }
+          multipass list --format json
+          if ($LASTEXITCODE -ne 0) { throw "multipass list failed" }
+
+      - name: Verify provider requirement probe
+        run: python scripts/verify_provider_requirements.py
+
+      - name: Optional Multipass VM launch check
+        if: ${{ inputs.run_vm_launch_check && runner.os != 'Windows' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          name="golem-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          cleanup() {
+            multipass delete "$name" --purge >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          multipass launch noble --name "$name" --cpus 1 --memory 1G --disk 5G
+          multipass exec "$name" -- cloud-init status --wait
+          multipass info "$name"
+
+      - name: Optional Multipass VM launch check on Windows
+        if: ${{ inputs.run_vm_launch_check && runner.os == 'Windows' }}
+        shell: pwsh
+        run: |
+          $name = "golem-ci-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
+          try {
+            multipass launch noble --name $name --cpus 1 --memory 1G --disk 5G
+            if ($LASTEXITCODE -ne 0) { throw "multipass launch failed" }
+            multipass exec $name -- cloud-init status --wait
+            if ($LASTEXITCODE -ne 0) { throw "cloud-init status failed" }
+            multipass info $name
+            if ($LASTEXITCODE -ne 0) { throw "multipass info failed" }
+          } finally {
+            multipass delete $name --purge 2>$null
+          }

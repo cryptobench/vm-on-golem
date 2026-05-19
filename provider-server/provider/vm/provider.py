@@ -1,7 +1,8 @@
 from abc import ABC, abstractmethod
 from typing import Dict, List
 
-from .models import VMConfig, VMInfo, VMResources
+from .lifecycle import ProgressCallback
+from .models import VMConfig, VMImage, VMInfo, VMResources, VMSnapshot
 
 
 class VMProvider(ABC):
@@ -13,7 +14,9 @@ class VMProvider(ABC):
         pass
 
     @abstractmethod
-    async def create_vm(self, config: VMConfig) -> VMInfo:
+    async def create_vm(
+        self, config: VMConfig, progress_callback: ProgressCallback | None = None
+    ) -> VMInfo:
         """Create a new VM."""
         pass
 
@@ -30,6 +33,53 @@ class VMProvider(ABC):
     @abstractmethod
     async def stop_vm(self, vm_id: str) -> VMInfo:
         """Stop a VM."""
+        pass
+
+    @abstractmethod
+    async def restart_vm(self, vm_id: str) -> VMInfo:
+        """Restart a VM."""
+        pass
+
+    @abstractmethod
+    async def suspend_vm(self, vm_id: str) -> VMInfo:
+        """Suspend a VM."""
+        pass
+
+    @abstractmethod
+    async def resize_vm(self, vm_id: str, resources: VMResources) -> VMInfo:
+        """Resize a stopped VM."""
+        pass
+
+    @abstractmethod
+    async def list_images(self) -> list[VMImage]:
+        """List available VM images."""
+        pass
+
+    @abstractmethod
+    async def list_snapshots(self, vm_id: str) -> list[VMSnapshot]:
+        """List snapshots for a VM."""
+        pass
+
+    @abstractmethod
+    async def create_snapshot(
+        self, vm_id: str, name: str | None = None, comment: str | None = None
+    ) -> VMSnapshot:
+        """Create a snapshot for a stopped VM."""
+        pass
+
+    @abstractmethod
+    async def restore_snapshot(self, vm_id: str, snapshot_name: str) -> VMInfo:
+        """Restore a stopped VM from a snapshot."""
+        pass
+
+    @abstractmethod
+    async def delete_snapshot(self, vm_id: str, snapshot_name: str) -> None:
+        """Delete a VM snapshot."""
+        pass
+
+    @abstractmethod
+    async def clone_vm(self, source_vm_id: str, destination_vm_id: str) -> VMInfo:
+        """Clone a stopped VM."""
         pass
 
     @abstractmethod

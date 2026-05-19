@@ -1,10 +1,12 @@
 import asyncio
 import logging
-from typing import Dict, List, Callable, Optional
-from ..vm.models import VMResources
+from typing import Callable, Dict, List, Optional
+
 from ..config import settings
+from ..vm.models import VMResources
 
 logger = logging.getLogger(__name__)
+
 
 class ResourceTracker:
     """Track and manage provider resources."""
@@ -12,59 +14,75 @@ class ResourceTracker:
     def __init__(self):
         """Initialize resource tracker."""
         from .resource_monitor import ResourceMonitor
-        self.total_resources = {
+
+        self.detected_resources = {
             "cpu": ResourceMonitor.get_cpu_count(),
             "memory": ResourceMonitor.get_memory_gb(),
-            "storage": ResourceMonitor.get_storage_gb()
+            "storage": ResourceMonitor.get_storage_gb(),
         }
-        self.allocated_resources = {
-            "cpu": 0,
-            "memory": 0,
-            "storage": 0
-        }
+        self.total_resources = self._configured_offered_resources()
+        self.allocated_resources = {"cpu": 0, "memory": 0, "storage": 0}
         self._lock = asyncio.Lock()
         self._update_callbacks: List[Callable] = []
         self._allocated_vms: Dict[str, VMResources] = {}
+
+    def _configured_offered_resources(self) -> Dict[str, int]:
+        configured = {
+            "cpu": int(getattr(settings, "OFFERED_CPU_CORES", 0) or 0),
+            "memory": int(getattr(settings, "OFFERED_MEMORY_GB", 0) or 0),
+            "storage": int(getattr(settings, "OFFERED_STORAGE_GB", 0) or 0),
+        }
+        return {
+            key: min(configured[key], detected) if configured[key] > 0 else detected
+            for key, detected in self.detected_resources.items()
+        }
 
     def _can_allocate(self, resources: VMResources) -> bool:
         """Check if resources can be allocated."""
         available = self.get_available_resources()
         return (
-            resources.cpu <= available["cpu"] and
-            resources.memory <= available["memory"] and
-            resources.storage <= available["storage"]
+            resources.cpu <= available["cpu"]
+            and resources.memory <= available["memory"]
+            and resources.storage <= available["storage"]
         )
 
     def _meets_minimum_requirements(self, resources: Dict[str, int]) -> bool:
         """Check if available resources meet minimum requirements."""
         return (
-            resources["cpu"] >= settings.MIN_CPU_CORES and
-            resources["memory"] >= settings.MIN_MEMORY_GB and
-            resources["storage"] >= settings.MIN_STORAGE_GB
+            resources["cpu"] >= settings.MIN_CPU_CORES
+            and resources["memory"] >= settings.MIN_MEMORY_GB
+            and resources["storage"] >= settings.MIN_STORAGE_GB
         )
 
-    async def allocate(self, resources: VMResources, vm_id: Optional[str] = None) -> bool:
+    async def allocate(
+        self, resources: VMResources, vm_id: Optional[str] = None
+    ) -> bool:
         """Allocate resources for a VM."""
         async with self._lock:
+            if vm_id and vm_id in self._allocated_vms:
+                logger.warning("VM resources already allocated", extra={"vm_id": vm_id})
+                return False
             if not self._can_allocate(resources):
                 return False
-            
+
             self.allocated_resources["cpu"] += resources.cpu
             self.allocated_resources["memory"] += resources.memory
             self.allocated_resources["storage"] += resources.storage
-            
+
             if vm_id:
                 self._allocated_vms[vm_id] = resources
-            
+
             logger.info(
                 f"Allocated resources: CPU={resources.cpu}, "
                 f"Memory={resources.memory}GB, Storage={resources.storage}GB"
             )
-            
+
             await self._notify_update()
             return True
 
-    async def deallocate(self, resources: VMResources, vm_id: Optional[str] = None) -> None:
+    async def deallocate(
+        self, resources: VMResources, vm_id: Optional[str] = None
+    ) -> None:
         """Deallocate resources from a VM."""
         async with self._lock:
             self.allocated_resources["cpu"] = max(
@@ -76,16 +94,47 @@ class ResourceTracker:
             self.allocated_resources["storage"] = max(
                 0, self.allocated_resources["storage"] - resources.storage
             )
-            
+
             if vm_id and vm_id in self._allocated_vms:
                 del self._allocated_vms[vm_id]
-            
+
             logger.info(
                 f"Deallocated resources: CPU={resources.cpu}, "
                 f"Memory={resources.memory}GB, Storage={resources.storage}GB"
             )
-            
+
             await self._notify_update()
+
+    async def resize(self, vm_id: str, new_resources: VMResources) -> bool:
+        """Update an existing VM allocation if the provider has enough capacity."""
+        async with self._lock:
+            old_resources = self._allocated_vms.get(vm_id)
+            if old_resources is None:
+                old_resources = VMResources(cpu=0, memory=0, storage=0)
+
+            delta = {
+                "cpu": new_resources.cpu - old_resources.cpu,
+                "memory": new_resources.memory - old_resources.memory,
+                "storage": new_resources.storage - old_resources.storage,
+            }
+            available = self.get_available_resources()
+            if any(delta[key] > available[key] for key in delta):
+                return False
+
+            self.allocated_resources["cpu"] += delta["cpu"]
+            self.allocated_resources["memory"] += delta["memory"]
+            self.allocated_resources["storage"] += delta["storage"]
+            self._allocated_vms[vm_id] = new_resources
+
+            logger.info(
+                "Resized allocation for %s: CPU=%s Memory=%sGB Storage=%sGB",
+                vm_id,
+                new_resources.cpu,
+                new_resources.memory,
+                new_resources.storage,
+            )
+            await self._notify_update()
+            return True
 
     def get_allocated_vms(self) -> List[str]:
         """Get list of allocated VM IDs."""
@@ -101,19 +150,25 @@ class ResourceTracker:
     def get_available_resources(self) -> Dict[str, int]:
         """Get currently available resources."""
         return {
-            "cpu": max(0, self.total_resources["cpu"] - self.allocated_resources["cpu"]),
-            "memory": max(0, self.total_resources["memory"] - self.allocated_resources["memory"]),
-            "storage": max(0, self.total_resources["storage"] - self.allocated_resources["storage"])
+            "cpu": max(
+                0, self.total_resources["cpu"] - self.allocated_resources["cpu"]
+            ),
+            "memory": max(
+                0, self.total_resources["memory"] - self.allocated_resources["memory"]
+            ),
+            "storage": max(
+                0, self.total_resources["storage"] - self.allocated_resources["storage"]
+            ),
         }
 
     def can_accept_resources(self, resources: VMResources) -> bool:
         """Check if resources can be accepted."""
         available = self.get_available_resources()
         return (
-            resources.cpu <= available["cpu"] and
-            resources.memory <= available["memory"] and
-            resources.storage <= available["storage"] and
-            self._meets_minimum_requirements(available)
+            resources.cpu <= available["cpu"]
+            and resources.memory <= available["memory"]
+            and resources.storage <= available["storage"]
+            and self._meets_minimum_requirements(available)
         )
 
     def on_update(self, callback: Callable) -> None:
@@ -130,30 +185,42 @@ class ResourceTracker:
 
     async def sync_with_multipass(self, vm_resources: Dict[str, VMResources]) -> None:
         """Sync resource tracker state with actual multipass VM states.
-        
+
         Args:
             vm_resources: Dictionary mapping VM names to their resources
         """
         async with self._lock:
             # Reset allocated resources
-            self.allocated_resources = {
-                "cpu": 0,
-                "memory": 0,
-                "storage": 0
-            }
+            self.allocated_resources = {"cpu": 0, "memory": 0, "storage": 0}
             self._allocated_vms.clear()
-            
+
             # Add resources for each running VM
             for vm_name, resources in vm_resources.items():
                 self.allocated_resources["cpu"] += resources.cpu
                 self.allocated_resources["memory"] += resources.memory
                 self.allocated_resources["storage"] += resources.storage
                 self._allocated_vms[vm_name] = resources
-                
+
             logger.info(
                 f"Synced allocated resources: CPU={self.allocated_resources['cpu']}, "
                 f"Memory={self.allocated_resources['memory']}GB, "
                 f"Storage={self.allocated_resources['storage']}GB"
             )
-            
+
+            await self._notify_update()
+
+    async def set_offered_resources(self, resources: Dict[str, int]) -> None:
+        """Update provider-offered resource caps for future allocations."""
+        async with self._lock:
+            self.total_resources = {
+                "cpu": int(resources["cpu"]),
+                "memory": int(resources["memory"]),
+                "storage": int(resources["storage"]),
+            }
+            logger.info(
+                "Updated offered resources: CPU=%s Memory=%sGB Storage=%sGB",
+                self.total_resources["cpu"],
+                self.total_resources["memory"],
+                self.total_resources["storage"],
+            )
             await self._notify_update()

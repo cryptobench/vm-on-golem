@@ -25,9 +25,18 @@ def test_create_vm_request_accepts_vmresources_instance():
     assert req.resources.storage == 10
 
 
+def test_vmresources_accept_custom_cpu_memory_values():
+    resources = VMResources(cpu=3, memory=9, storage=10)
+
+    assert resources.cpu == 3
+    assert resources.memory == 9
+    assert resources.storage == 10
+
+
 def test_create_vm_request_uses_size_when_no_resources():
     # Call the validator directly to exercise the size path
     from types import SimpleNamespace
+
     v = None
     values = SimpleNamespace(data={"size": VMSize.MEDIUM})
     out = CreateVMRequest.validate_resources(v, values)  # type: ignore[arg-type]
@@ -38,6 +47,7 @@ def test_create_vm_request_uses_size_when_no_resources():
 def test_create_vm_request_defaults_when_no_size_or_resources():
     # Call the validator directly to exercise defaults path
     from types import SimpleNamespace
+
     v = None
     values = SimpleNamespace(data={})
     out = CreateVMRequest.validate_resources(v, values)  # type: ignore[arg-type]

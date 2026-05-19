@@ -4,7 +4,7 @@ Describe the change, motivation, and context. Link any relevant issues.
 
 ## Affected Packages
 
-- [ ] discovery-server
+- [ ] central-discovery-server
 - [ ] provider-server
 - [ ] requestor-server
 - [ ] streaming-abi
@@ -35,4 +35,3 @@ If your PR updates the on-chain interface or streaming flows, check all:
 ## Screenshots / Logs (optional)
 
 Add any visual aids or relevant logs.
-

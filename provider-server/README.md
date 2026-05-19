@@ -79,17 +79,14 @@ Notes
 - The concept of "free" in JSON is replaced by `usable_free` (free + externally reachable) to avoid misleading counts when ports are blocked.
 - When the external checker is unavailable, per‑port `status` is `"unknown"` and `listening` still reflects local state.
 
-3) Set pricing in USD (GLM rates auto‑compute):
+3) Set pricing in USD:
 
 ```bash
 golem-provider pricing set --usd-per-core 12 --usd-per-mem 4 --usd-per-disk 0.1
 ```
 
-4) On testnets, optionally fund gas for withdrawals:
-
-```bash
-golem-provider wallet faucet-l2
-```
+4) Fund the provider wallet with Hoodi ETH for withdrawal gas. Hoodi faucet
+links and tGLM details are documented in `../contracts/README.md`.
 
 You are now discoverable to requestors and will earn as your VMs run.
 
@@ -103,8 +100,8 @@ graph TB
     VMM --> MP[Multipass Provider]
     VMM --> PM[Proxy Manager]
     RT --> RM[Resource Monitor]
-    RT --> AD[Resource Advertiser]
-    AD --> DS[Discovery Service]
+    RT --> AD[Discovery Publisher]
+    AD --> CD[Central Discovery WebSocket]
     PM --> SSH[SSH Proxy]
     PV --> PM
     MP --> VM1[VM 1]
@@ -166,15 +163,15 @@ sequenceDiagram
     participant API as API
     participant RT as Resource Tracker
     participant RM as Resource Monitor
-    participant AD as Advertiser
+    participant AD as Discovery Publisher
 
     API->>RT: Request Resource Allocation
     RT->>RM: Check Available Resources
     RM-->>RT: Resource Status
     RT->>RT: Validate Requirements
     RT-->>API: Allocation Result
-    RT->>AD: Notify Resource Update
-    AD->>DS: Update Advertisement
+    RT->>AD: Notify resource update
+    AD->>AD: Publish via selected backend
 ```
 
 ### VM Management
@@ -272,29 +269,44 @@ GOLEM_PROVIDER_PORT_CHECK_SERVERS=[
 GOLEM_PROVIDER_PORT_RANGE_START={start_port}  # Default: 50800
 GOLEM_PROVIDER_PORT_RANGE_END={end_port}      # Default: 50900
 GOLEM_PROVIDER_PUBLIC_IP="auto"
+GOLEM_PROVIDER_ACME_HTTP_PUBLIC_PORT=80
+GOLEM_PROVIDER_ACME_HTTP_INTERNAL_PORT=80
+GOLEM_PROVIDER_PUBLIC_HTTPS_PORT=443
+GOLEM_PROVIDER_PUBLIC_HTTPS_INTERNAL_PORT=443
+GOLEM_PROVIDER_CERT_RENEW_BEFORE_HOURS=48
+GOLEM_PROVIDER_CERT_RENEWAL_ENABLED=true
+GOLEM_PROVIDER_CERT_RENEWAL_CHECK_INTERVAL_SECONDS=3600
+GOLEM_PROVIDER_CERT_RENEWAL_RETRY_INITIAL_SECONDS=300
+GOLEM_PROVIDER_CERT_RENEWAL_RETRY_MAX_SECONDS=21600
 
-# Legacy discovery (optional; not required in normal operation)
-# GOLEM_PROVIDER_DISCOVERY_URL="http://discovery.golem.network:9001"
-# GOLEM_PROVIDER_ADVERTISEMENT_INTERVAL=240
+# If your router forwards public 80/443 to different local ports, set the
+# matching internal ports above and forward to those exact local ports.
+
+# Central discovery websocket
+# GOLEM_PROVIDER_DISCOVERY_WS_URL="ws://discovery.golem.network:9001/api/v1/discovery/providers"
 
 # Network Selection
-# Adds an annotation to on-chain advertisements and can be used by requestors to filter
 GOLEM_PROVIDER_NETWORK="testnet"  # or "mainnet"
 ```
 
-### Streaming Payments (Native ETH on L2)
+### Streaming Payments (GLM)
 
-Enable on‑chain stream‑gated rentals funded in native ETH. By default, the provider auto‑loads the StreamPayment contract from `contracts/deployments/l2.json` and enables payments out of the box. Configure/override (env prefix `GOLEM_PROVIDER_`):
+Enable on-chain stream-gated rentals funded in GLM. By default, the provider
+uses the `hoodi` payments profile and auto-loads the StreamPayment contract from
+`contracts/deployments/hoodi.json`. Configure/override with env prefix
+`GOLEM_PROVIDER_`:
 
-- `POLYGON_RPC_URL` — EVM RPC URL (default L2 RPC)
-- `STREAM_PAYMENT_ADDRESS` — StreamPayment address (defaults from `contracts/deployments/l2.json`)
-- `GLM_TOKEN_ADDRESS` — Token address (defaults from `contracts/deployments/l2.json`; `0x0` means native ETH)
-  - Optional override of deployments directory: set `GOLEM_DEPLOYMENTS_DIR` to a folder containing `l2.json`.
+- `PAYMENTS_NETWORK` - payments network profile, for example `hoodi`, `sepolia`, or `mainnet`
+- `PAYMENTS_RPC_URL` - EVM RPC URL, defaulted from the selected profile
+- `PAYMENTS_WS_URL` - EVM WebSocket RPC URL for live StreamPayment events
+- `STREAM_PAYMENT_ADDRESS` - StreamPayment address, defaulted from `contracts/deployments/<profile>.json`
+- `GLM_TOKEN_ADDRESS` - GLM ERC20 token address used by StreamPayment
+  - Optional override of deployments directory: set `GOLEM_DEPLOYMENTS_DIR` to a folder containing the deployment JSON.
 
 Optional background automation (all disabled by default):
 
-- `STREAM_MIN_REMAINING_SECONDS` — minimum remaining runway to keep a VM running (default 0)
-- `STREAM_MONITOR_ENABLED` — stop VMs when remaining runway < threshold (default true)
+- `STREAM_MIN_REMAINING_SECONDS` — legacy compatibility setting; expiry is now driven by contract `streamState`
+- `STREAM_MONITOR_ENABLED` — delete VMs once their payment stream is expired (default true)
 - `STREAM_MONITOR_INTERVAL_SECONDS` — how frequently to check runway (default 30)
 - `STREAM_WITHDRAW_ENABLED` — periodically withdraw vested funds (default false)
 - `STREAM_WITHDRAW_INTERVAL_SECONDS` — how often to attempt withdrawals (default 1800)
@@ -302,9 +314,11 @@ Optional background automation (all disabled by default):
 
 Implementation notes:
 
-- The provider exposes `GET /api/v1/provider/info` returning `provider_id`, `stream_payment_address`, and `glm_token_address`. Requestors should prefer these values when opening streams.
-- On successful VM creation with a valid `stream_id`, the provider persists a VM→stream mapping in `streams.json`. This enables the background monitor to stop VMs with low remaining runway and to withdraw vested funds according to configured intervals.
-- When a VM is deleted, the VM→stream mapping is cleaned up.
+- The provider exposes `GET /api/v1/provider/info` returning `provider_id`, `stream_payment_address`, and `glm_token_address`.
+- On successful VM creation with a valid `stream_id`, the provider persists a VM→stream mapping in `streams.json`. This enables the background monitor to delete VMs once streams pass `stopTime + 30s` and to withdraw vested funds according to configured intervals.
+- Stopping a VM only changes power state; the stream mapping stays active and billing continues.
+- Expired streams remain withdrawable by the provider. VM compute is removed after the 30-second top-up grace period without forcing immediate withdrawal.
+- When a VM is deleted or already gone, the VM→stream mapping is marked terminal after provider-side teardown. Requestor-initiated paid termination should settle the stream before delete.
 
 When enabled, the provider verifies each VM creation request’s `stream_id` and refuses to start the VM if:
 
@@ -369,12 +383,12 @@ Response:
 {
   "provider_id": "0xProviderEthereumAddress",
   "stream_payment_address": "0xStreamPayment",
-  "glm_token_address": "0x0000000000000000000000000000000000000000"  
+  "glm_token_address": "0xGlmToken"
   
 }
 ```
 
-Use this endpoint to discover the correct recipient for creating a GLM stream.
+Use this endpoint to discover the correct recipient, contract, and GLM token for creating a stream.
 
 ### Payment Streams
 
@@ -390,7 +404,7 @@ Response (per stream):
   "verified": true,
   "reason": "ok",
   "chain": {
-    "token": "0x0000000000000000000000000000000000000000",
+    "token": "0x55555555555556AcFf9C332Ed151758858bd7a26",
     "sender": "0x...",
     "recipient": "0xProviderEthereumAddress",
     "startTime": 1700000000,
@@ -446,13 +460,11 @@ golem-provider status [--json]
   - Does not decide which chain you target.
 
 - Network Selection (`--network` or `GOLEM_PROVIDER_NETWORK`)
-  - Chooses the discovery/advertisement scope: providers advertise `golem_network=development|testnet|mainnet` and requestors filter accordingly.
-  - Pair with appropriate RPC envs (`GOLEM_PROVIDER_GOLEM_BASE_RPC_URL`, `GOLEM_PROVIDER_GOLEM_BASE_WS_URL`).
-  - In development, you can supply separate dev endpoints via `GOLEM_PROVIDER_GOLEM_BASE_DEV_RPC_URL` / `GOLEM_PROVIDER_GOLEM_BASE_DEV_WS_URL` (or generic `GOLEM_BASE_DEV_*`).
+  - Chooses the provider network profile: `development|testnet|mainnet`.
   - Does not change dev ergonomics (logging, reload, or port verification behavior).
 
 - Payments Network (`GOLEM_PROVIDER_PAYMENTS_NETWORK`)
-  - Selects the payments chain profile (e.g., `l2.holesky`, `mainnet`). Determines default payments RPC, faucet enablement, and symbols.
+  - Selects the payments chain profile (e.g., `hoodi`, `sepolia`, `mainnet`). Determines default payments RPC/WS URLs, faucet enablement, and symbols.
 
 Common setups:
 - Local dev (separate network): `GOLEM_ENVIRONMENT=development` (defaults to `network=development`).
@@ -471,21 +483,13 @@ The provider will:
 5. Listen for VM requests
 
 Notes:
-- Advertisements include both `golem_network` (testnet/mainnet) and `golem_payments_network` (e.g., `l2.holesky`). Requestors default to matching both; they can list all payments networks with a CLI flag.
+- Advertisements include both `golem_network` (testnet/mainnet) and `golem_payments_network` (e.g., `hoodi`). Requestors default to matching both; they can list all payments networks with a CLI flag.
 
 ### Faucet
 
-- L3 (Golem Base adverts): provider auto-requests funds on startup from `FAUCET_URL` (defaults to EthWarsaw Holesky) protected by CAPTCHA at `CAPTCHA_URL/05381a2cef5e`.
-- L2 (payments): Use the CLI to request native ETH (enabled only on testnet profiles):
-
-```bash
-golem-provider wallet faucet-l2
-```
-
-Defaults:
-- Faucet URL and enablement come from the active payments profile. On `mainnet` (or other profiles without faucet) the command is disabled.
-- CAPTCHA: `https://cap.gobas.me/05381a2cef5e`
-- Override with env: `GOLEM_PROVIDER_L2_FAUCET_URL`, `GOLEM_PROVIDER_L2_CAPTCHA_URL`, `GOLEM_PROVIDER_L2_CAPTCHA_API_KEY`.
+- Ethereum Hoodi payments: fund the provider wallet with Hoodi ETH through
+  external Hoodi faucet links. This provider CLI does not mint Hoodi tGLM; see
+  `../contracts/README.md` for the tGLM minter.
 
 ### Streams (CLI)
 
@@ -539,8 +543,8 @@ golem-provider config withdraw --enable true --interval 900 --min-wei 1000000000
 sequenceDiagram
     participant P as Provider
     participant RT as Resource Tracker
-    participant AD as Advertiser
-    participant DS as Discovery Service
+    participant AD as Discovery Publisher
+    participant DS as Selected Discovery Backend
 
     P->>RT: Initialize
     P->>RT: Sync with existing VMs
@@ -548,7 +552,7 @@ sequenceDiagram
     loop Every 4 minutes
         AD->>RT: Get Resources
         RT-->>AD: Available Resources
-        AD->>DS: Post Advertisement
+        AD->>DS: Publish advertisement
         DS-->>AD: Confirmation
     end
 ```

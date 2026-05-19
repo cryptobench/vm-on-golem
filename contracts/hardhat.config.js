@@ -1,43 +1,85 @@
-require("dotenv").config();
-require("@nomicfoundation/hardhat-toolbox");
+import "dotenv/config";
+
+import hardhatEthersPlugin from "@nomicfoundation/hardhat-ethers";
+import hardhatEthersChaiMatchersPlugin from "@nomicfoundation/hardhat-ethers-chai-matchers";
+import hardhatMochaPlugin from "@nomicfoundation/hardhat-mocha";
+import { defineConfig } from "hardhat/config";
 
 const {
-  POLYGON_RPC_URL,
+  PAYMENTS_RPC_URL,
   PRIVATE_KEY,
-  ETHWARSAW_RPC_URL,
-  ETHWARSAW_CHAIN_ID,
   KAOLIN_RPC_URL,
   KAOLIN_CHAIN_ID,
-  L2_RPC_URL,
-  L2_CHAIN_ID,
+  HOODI_RPC_URL,
+  SEPOLIA_RPC_URL,
+  ETHERSCAN_API_KEY,
 } = process.env;
 
-module.exports = {
-  solidity: "0.8.20",
+const DEFAULT_KAOLIN_CHAIN_ID = 60138453025;
+const DEFAULT_HOODI_CHAIN_ID = 560048;
+
+export default defineConfig({
+  plugins: [
+    hardhatEthersPlugin,
+    hardhatEthersChaiMatchersPlugin,
+    hardhatMochaPlugin,
+  ],
+  solidity: {
+    profiles: {
+      default: {
+        version: "0.8.20",
+        settings: {
+          optimizer: { enabled: true, runs: 200 },
+          viaIR: true,
+        },
+      },
+    },
+  },
   networks: {
+    hardhatMainnet: {
+      type: "edr-simulated",
+      chainType: "l1",
+    },
     polygon: {
-      url: POLYGON_RPC_URL || "https://polygon-rpc.com",
+      type: "http",
+      chainType: "l1",
+      url: PAYMENTS_RPC_URL || "https://polygon-rpc.com",
       accounts: PRIVATE_KEY ? [PRIVATE_KEY] : [],
     },
-    // ETHWARSAW Holesky network (EVM-compatible)
-    ethwarsaw: {
-      url: ETHWARSAW_RPC_URL || "https://ethwarsaw.holesky.golemdb.io/rpc",
-      // chainId is optional; if known, set ETHWARSAW_CHAIN_ID env var
-      chainId: ETHWARSAW_CHAIN_ID ? Number(ETHWARSAW_CHAIN_ID) : undefined,
-      accounts: PRIVATE_KEY ? [PRIVATE_KEY] : [],
-    },
-    // KAOLIN Holesky network (EVM-compatible)
+    // KAOLIN Hoodi network (EVM-compatible)
     kaolin: {
-      url: KAOLIN_RPC_URL || "https://kaolin.holesky.golemdb.io/rpc",
-      // chainId is optional; if known, set KAOLIN_CHAIN_ID env var
-      chainId: KAOLIN_CHAIN_ID ? Number(KAOLIN_CHAIN_ID) : undefined,
+      type: "http",
+      chainType: "generic",
+      url: KAOLIN_RPC_URL || "https://kaolin.hoodi.arkiv.network/rpc",
+      chainId: Number(KAOLIN_CHAIN_ID || DEFAULT_KAOLIN_CHAIN_ID),
       accounts: PRIVATE_KEY ? [PRIVATE_KEY] : [],
     },
-    // L2 Holesky network
-    l2: {
-      url: L2_RPC_URL || "https://l2.holesky.golemdb.io/rpc",
-      chainId: L2_CHAIN_ID ? Number(L2_CHAIN_ID) : undefined,
+    sepolia: {
+      type: "http",
+      chainType: "l1",
+      url: SEPOLIA_RPC_URL || "https://rpc.sepolia.org",
+      chainId: 11155111,
+      accounts: PRIVATE_KEY ? [PRIVATE_KEY] : [],
+    },
+    hoodi: {
+      type: "http",
+      chainType: "l1",
+      url: HOODI_RPC_URL || "https://rpc.hoodi.ethpandaops.io",
+      chainId: DEFAULT_HOODI_CHAIN_ID,
       accounts: PRIVATE_KEY ? [PRIVATE_KEY] : [],
     },
   },
-};
+  etherscan: {
+    apiKey: ETHERSCAN_API_KEY || "",
+    customChains: [
+      {
+        network: "hoodi",
+        chainId: DEFAULT_HOODI_CHAIN_ID,
+        urls: {
+          apiURL: "https://api.etherscan.io/v2/api",
+          browserURL: "https://hoodi.etherscan.io",
+        },
+      },
+    ],
+  },
+});

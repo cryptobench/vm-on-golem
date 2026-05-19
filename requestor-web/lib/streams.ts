@@ -1,0 +1,88 @@
+"use client";
+
+import { Contract } from "ethers";
+import streamPayment from "../public/abi/StreamPayment.json";
+import erc20 from "../public/abi/ERC20.json";
+import { getPriceUSD } from "./prices";
+import {
+  getPaymentsBrowserProvider,
+  getPaymentsSigner,
+} from "./walletClient";
+
+export type ChainStream = {
+  token: string;
+  sender: string;
+  recipient: string;
+  startTime: bigint;
+  stopTime: bigint;
+  ratePerSecond: bigint;
+  deposit: bigint;
+  withdrawn: bigint;
+  halted?: boolean;
+  leaseId?: string;
+  termsHash?: string;
+};
+
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+
+export function isTerminatedStream(chain: Pick<ChainStream, "recipient">) {
+  return chain.recipient.toLowerCase() === ZERO_ADDRESS;
+}
+
+export function humanDuration(totalSec: number | bigint): string {
+  const seconds = Math.max(0, Number(totalSec));
+  const d = Math.floor(seconds / 86400);
+  const h = Math.floor((seconds % 86400) / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  const parts = [];
+  if (d) parts.push(`${d}d`);
+  if (h) parts.push(`${h}h`);
+  if (m) parts.push(`${m}m`);
+  if (s && !parts.length) parts.push(`${s}s`);
+  return parts.join(" ") || "0s";
+}
+
+export async function fetchStreamWithMeta(spAddr: string, streamId: bigint) {
+  const provider = await getPaymentsBrowserProvider();
+  return fetchStreamWithMetaFromProvider(spAddr, streamId, provider);
+}
+
+export async function fetchStreamWithMetaFromProvider(
+  spAddr: string,
+  streamId: bigint,
+  provider: any,
+) {
+  const contract = new Contract(spAddr, (streamPayment as any).abi, provider);
+  const chain = (await contract.streams(streamId)) as ChainStream;
+  const block = await provider.getBlock("latest");
+  const now = BigInt(block?.timestamp || Math.floor(Date.now() / 1000));
+  const remaining =
+    chain.stopTime > now && !chain.halted ? chain.stopTime - now : 0n;
+  let tokenSymbol = chain.token.toLowerCase() === ZERO_ADDRESS ? "ETH" : "GLM";
+  let tokenDecimals = 18;
+  if (chain.token.toLowerCase() !== ZERO_ADDRESS) {
+    try {
+      const token = new Contract(chain.token, (erc20 as any).abi, provider);
+      tokenSymbol = await token.symbol();
+      tokenDecimals = Number(await token.decimals());
+    } catch {
+      tokenSymbol = "GLM";
+    }
+  }
+  return {
+    chain,
+    remaining,
+    tokenSymbol,
+    tokenDecimals,
+    usdPrice: getPriceUSD(tokenSymbol),
+  };
+}
+
+export async function terminateStreamWithWallet(spAddr: string, streamId: bigint) {
+  const signer = await getPaymentsSigner();
+  const contract = new Contract(spAddr, (streamPayment as any).abi, signer);
+  const tx = await contract.terminate(streamId, { gasLimit: 180000n });
+  await tx.wait();
+  return tx.hash as string;
+}

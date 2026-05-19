@@ -2,14 +2,24 @@
   "name": "stream-payment",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "build": "hardhat compile",
+    "deploy:hoodi": "hardhat run scripts/deploy.js --network hoodi",
     "deploy:polygon": "hardhat run scripts/deploy.js --network polygon"
   },
   "devDependencies": {
-    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "@nomicfoundation/hardhat-ethers": "^4.0.11",
+    "@nomicfoundation/hardhat-ethers-chai-matchers": "^3.0.8",
+    "@nomicfoundation/hardhat-mocha": "^3.0.19",
+    "chai": "^6.2.2",
     "dotenv": "^16.4.5",
-    "hardhat": "^2.22.8"
+    "ethers": "^6.16.0",
+    "hardhat": "^3.4.5",
+    "mocha": "^11.7.5"
+  },
+  "overrides": {
+    "diff": "^8.0.3",
+    "serialize-javascript": "^7.0.5"
   }
 }
-

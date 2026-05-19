@@ -1,0 +1,22 @@
+{
+  "name": "golem-vm-monorepo",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*",
+    "requestor-web"
+  ],
+  "scripts": {
+    "abi:sync": "node scripts/sync_stream_payment_abi.mjs",
+    "abi:check": "node scripts/sync_stream_payment_abi.mjs --check",
+    "build:requestor-web": "npm --workspace requestor-web run build",
+    "build:provider-desktop": "npm --workspace @golem/provider-desktop run build",
+    "dev:provider-desktop": "npm --workspace @golem/provider-desktop run dev",
+    "tauri:build:provider-desktop": "npm --workspace @golem/provider-desktop run tauri:build",
+    "typecheck": "npm --workspaces --if-present run typecheck"
+  },
+  "overrides": {
+    "lodash": "^4.18.1",
+    "postcss": "^8.5.10"
+  }
+}

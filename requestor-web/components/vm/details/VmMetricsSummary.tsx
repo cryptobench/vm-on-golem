@@ -1,0 +1,193 @@
+"use client";
+
+import React from "react";
+import { RiArrowDownLine, RiArrowUpLine } from "@remixicon/react";
+import { Skeleton, SlidingSparkline } from "@golem/ui";
+import type {
+  VmMonitoringLatest,
+  VmMonitoringSample,
+} from "../../../lib/api";
+import { DetailPanel, PanelTitle } from "./VmDetailPrimitives";
+import {
+  buildMetricChartRows,
+  buildRoundedSparklineRows,
+  buildSparklineRows,
+  formatMbps,
+  formatPercent,
+  latestNetworkRates,
+} from "./metrics";
+
+type GuestMetrics = Record<
+  string,
+  { value: number; unit: string; timestamp: string; source: string }
+> | null;
+
+const sparklineColors = {
+  blue: "text-blue-500",
+  violet: "text-violet-500",
+  emerald: "text-emerald-500",
+  cyan: "text-cyan-500",
+  orange: "text-orange-500",
+} as const;
+
+export function VmMetricsSummary({
+  vmId,
+  metricsLatest,
+  liveSamples,
+  loading,
+}: {
+  vmId: string;
+  metricsLatest?: VmMonitoringLatest | null;
+  liveSamples: VmMonitoringSample[];
+  loading?: boolean;
+}) {
+  const guestMetrics = React.useMemo(() => {
+    const byVm = metricsLatest?.vms || {};
+    return byVm[vmId]?.guest_agent || null;
+  }, [metricsLatest, vmId]);
+  const rows = React.useMemo(() => buildMetricChartRows(liveSamples), [liveSamples]);
+  const network = latestNetworkRates(rows);
+  const hasGuestMetrics =
+    guestMetrics != null &&
+    metricPercent(guestMetrics, "cpu_percent") != null &&
+    metricPercent(guestMetrics, "memory_percent") != null &&
+    metricPercent(guestMetrics, "disk_percent") != null;
+
+  return (
+    <DetailPanel className="vm-page-enter">
+      <PanelTitle
+        title="Live metrics"
+        hint="Metrics are reported by the guest agent inside the VM."
+      />
+
+      {loading || !hasGuestMetrics ? (
+        <MetricsSummarySkeleton />
+      ) : (
+        <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+          <MetricTile
+            label="CPU"
+            value={formatPercent(metricPercent(guestMetrics, "cpu_percent"))}
+            values={buildSparklineRows(rows, "CPU")}
+            color="blue"
+          />
+          <MetricTile
+            label="Memory"
+            value={formatPercent(metricPercent(guestMetrics, "memory_percent"))}
+            values={buildSparklineRows(rows, "Memory")}
+            color="violet"
+          />
+          <MetricTile
+            label="Disk"
+            value={formatPercent(metricPercent(guestMetrics, "disk_percent"))}
+            values={buildSparklineRows(rows, "Disk")}
+            color="emerald"
+          />
+          <NetworkRateTile
+            label="Network In"
+            value={network.rx}
+            values={buildRoundedSparklineRows(rows, "Network RX", 1)}
+            direction="in"
+          />
+          <NetworkRateTile
+            label="Network Out"
+            value={network.tx}
+            values={buildRoundedSparklineRows(rows, "Network TX", 1)}
+            direction="out"
+          />
+        </div>
+      )}
+    </DetailPanel>
+  );
+}
+
+function MetricsSummarySkeleton() {
+  return (
+    <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+      {Array.from({ length: 5 }).map((_, index) => (
+        <Skeleton key={index} className="h-24 w-full" />
+      ))}
+    </div>
+  );
+}
+
+function MetricTile({
+  label,
+  value,
+  values,
+  color,
+}: {
+  label: string;
+  value: string;
+  values: ReturnType<typeof buildSparklineRows>;
+  color: keyof typeof sparklineColors;
+}) {
+  return (
+    <div className="vm-metric-tile rounded-lg border border-border bg-surface p-4">
+      <div className="text-xs font-medium text-text-muted">{label}</div>
+      <div className="mt-2 text-lg font-semibold text-text-primary">
+        {value}
+      </div>
+      <MiniMetricChart values={values} color={color} />
+    </div>
+  );
+}
+
+function NetworkRateTile({
+  label,
+  value,
+  values,
+  direction,
+}: {
+  label: string;
+  value: number | null;
+  values: ReturnType<typeof buildSparklineRows>;
+  direction: "in" | "out";
+}) {
+  const Icon = direction === "in" ? RiArrowDownLine : RiArrowUpLine;
+
+  return (
+    <div className="vm-metric-tile rounded-lg border border-border bg-surface p-4">
+      <div className="flex items-center gap-2 text-xs font-medium text-text-muted">
+        <Icon className="h-4 w-4" aria-hidden />
+        {label}
+      </div>
+      <div className="mt-2 text-sm font-semibold text-text-primary">
+        {formatMbps(value)}
+      </div>
+      <MiniMetricChart
+        values={values}
+        color={direction === "in" ? "cyan" : "orange"}
+      />
+    </div>
+  );
+}
+
+function MiniMetricChart({
+  values,
+  color,
+}: {
+  values: ReturnType<typeof buildSparklineRows>;
+  color: keyof typeof sparklineColors;
+}) {
+  if (values.length < 2) {
+    return <div className="mt-2 h-9 rounded bg-surface-muted" />;
+  }
+
+  return (
+    <SlidingSparkline
+      className="mt-2 h-9"
+      data={values}
+      colorClassName={sparklineColors[color]}
+      xKey="point"
+      dataKey="value"
+      animationKey={(row) => row.timestamp}
+      windowSize={24}
+    />
+  );
+}
+
+function metricPercent(guestMetrics: NonNullable<GuestMetrics>, name: string) {
+  const value = Number(guestMetrics?.[name]?.value);
+  if (!Number.isFinite(value)) return null;
+  return Math.max(0, Math.min(100, value));
+}

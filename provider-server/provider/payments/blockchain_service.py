@@ -1,14 +1,15 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Any, Dict
 
-from web3 import Web3
 from eth_account import Account
 from golem_streaming_abi import STREAM_PAYMENT_ABI
+from web3 import Web3
 
-
- # ABI imported from shared package
+# ABI imported from shared package
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -24,10 +25,12 @@ class StreamPaymentClient:
         self.account = Account.from_key(cfg.private_key)
         self.web3.eth.default_account = self.account.address
         self.contract = self.web3.eth.contract(
-            address=Web3.to_checksum_address(cfg.contract_address), abi=STREAM_PAYMENT_ABI
+            address=Web3.to_checksum_address(cfg.contract_address),
+            abi=STREAM_PAYMENT_ABI,
         )
 
     def _send(self, fn) -> Dict[str, Any]:
+        logger.debug("Preparing provider stream payment transaction")
         tx = fn.build_transaction(
             {
                 "from": self.account.address,
@@ -36,23 +39,39 @@ class StreamPaymentClient:
         )
         if hasattr(self.account, "sign_transaction"):
             signed = self.account.sign_transaction(tx)
-            raw = getattr(signed, "rawTransaction", None) or getattr(signed, "raw_transaction", None)
+            raw = getattr(signed, "rawTransaction", None) or getattr(
+                signed, "raw_transaction", None
+            )
             if raw is None:
-                raise RuntimeError("sign_transaction did not return raw transaction bytes")
+                raise RuntimeError(
+                    "sign_transaction did not return raw transaction bytes"
+                )
             tx_hash = self.web3.eth.send_raw_transaction(raw)
         else:
             tx_hash = self.web3.eth.send_transaction(tx)
         receipt = self.web3.eth.wait_for_transaction_receipt(tx_hash)
+        logger.info(
+            "Provider stream payment transaction submitted",
+            extra={"transaction_hash": tx_hash.hex(), "status": receipt.status},
+        )
         return {"transactionHash": tx_hash.hex(), "status": receipt.status}
 
     def withdraw(self, stream_id: int) -> str:
+        logger.info(
+            "Withdrawing provider payment stream", extra={"stream_id": stream_id}
+        )
         fn = self.contract.functions.withdraw(int(stream_id))
         receipt = self._send(fn)
         return receipt["transactionHash"]
+
     def terminate(self, stream_id: int) -> str:
+        logger.info(
+            "Terminating provider payment stream", extra={"stream_id": stream_id}
+        )
         fn = self.contract.functions.terminate(int(stream_id))
         receipt = self._send(fn)
         return receipt["transactionHash"]
+
 
 class StreamPaymentReader:
     def __init__(self, rpc_url: str, contract_address: str):
@@ -62,9 +81,18 @@ class StreamPaymentReader:
         )
 
     def get_stream(self, stream_id: int) -> dict:
-        token, sender, recipient, startTime, stopTime, ratePerSecond, deposit, withdrawn, halted = (
-            self.contract.functions.streams(int(stream_id)).call()
-        )
+        (
+            token,
+            sender,
+            recipient,
+            startTime,
+            stopTime,
+            ratePerSecond,
+            deposit,
+            withdrawn,
+            leaseId,
+            termsHash,
+        ) = self.contract.functions.streams(int(stream_id)).call()
         return {
             "token": token,
             "sender": sender,
@@ -74,14 +102,19 @@ class StreamPaymentReader:
             "ratePerSecond": int(ratePerSecond),
             "deposit": int(deposit),
             "withdrawn": int(withdrawn),
-            "halted": bool(halted),
+            "leaseId": _bytes32_hex(leaseId),
+            "termsHash": _bytes32_hex(termsHash),
         }
 
-    def verify_stream(self, stream_id: int, expected_recipient: str) -> tuple[bool, str]:
+    def verify_stream(
+        self, stream_id: int, expected_recipient: str
+    ) -> tuple[bool, str]:
         try:
             s = self.get_stream(stream_id)
         except Exception as e:
             return False, f"stream lookup failed: {e}"
+        if s["recipient"].lower() == "0x0000000000000000000000000000000000000000":
+            return False, "stream terminated"
         if s["recipient"].lower() != expected_recipient.lower():
             return False, "recipient mismatch"
         if s["deposit"] <= 0:
@@ -89,8 +122,20 @@ class StreamPaymentReader:
         now = int(self.web3.eth.get_block("latest")["timestamp"])
         if s["startTime"] > now:
             return False, "stream not started"
-        if s["halted"]:
-            return False, "stream halted"
+        if s["stopTime"] <= now:
+            return False, "stream expired"
         return True, "ok"
 
+    def stream_state(self, stream_id: int) -> str:
+        return str(self.contract.functions.streamState(int(stream_id)).call())
+
     # Reader should remain read-only; no terminate here
+
+
+def _bytes32_hex(value: Any) -> str:
+    if isinstance(value, str):
+        return value if value.startswith("0x") else f"0x{value}"
+    if hasattr(value, "hex"):
+        raw = value.hex()
+        return raw if raw.startswith("0x") else f"0x{raw}"
+    return str(value)

@@ -1,0 +1,15 @@
+{
+  "bundle": {
+    "targets": ["nsis"],
+    "resources": {
+      "installer/windows/install-multipass.ps1": "multipass/install-multipass.ps1",
+      "vendor/multipass/multipass-1.16.2+win-win64.msi": "multipass/multipass-1.16.2+win-win64.msi"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "perMachine",
+        "installerHooks": "installer/windows/multipass-hooks.nsh"
+      }
+    }
+  }
+}

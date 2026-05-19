@@ -5,7 +5,8 @@ import { WalletProvider } from "../context/WalletContext";
 import { ProjectsProvider } from "../context/ProjectsContext";
 import "./globals.css";
 import { Sidebar } from "../components/layout/Sidebar";
-import { ToastProvider } from "../components/ui/Toast";
+import { AppTopBar } from "../components/layout/AppTopBar";
+import { ToastProvider } from "@golem/ui";
 import { CreateWizardHost } from "../components/create/CreateWizardHost";
 // Ensure Buffer is available in the browser for SDK dependencies
 import { Buffer } from "buffer";
@@ -34,11 +35,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   revalidateIfStale: false,
                   shouldRetryOnError: false,
                 }}>
-                  <div className="min-h-screen w-full grid grid-cols-1 lg:grid-cols-[16rem_1fr]">
+                  <div className="min-h-screen w-full grid grid-cols-1 lg:grid-cols-[var(--sidebar-width)_1fr]">
                     <Sidebar />
                     <div className="relative">
-                      <main className="p-4 sm:p-6 lg:p-8">
-                        <div className="mx-auto w-full max-w-6xl">{children}</div>
+                      <AppTopBar />
+                      <main className="px-4 pb-8 sm:px-6 lg:px-8">
+                        <div className="w-full">{children}</div>
                       </main>
                       {/* Mount the create wizard in the main content column */}
                       <CreateWizardHost />

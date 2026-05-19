@@ -1,10 +1,11 @@
 "use client";
 import React from "react";
-import { Spinner } from "../ui/Spinner";
-import { Skeleton } from "../ui/Skeleton";
-import { useAds } from "../../context/AdsContext";
-import { fetchAllProviders, computePriceRange, computeEstimate, loadSettings, saveSettings, type SSHKey, type ProviderAd } from "../../lib/api";
-import { Modal } from "../ui/Modal";
+import { Input, Select, Spinner } from "@golem/ui";
+import { Skeleton } from "@golem/ui";
+import { computePriceRange, computeEstimate, loadSettings, type SSHKey, type ProviderAd } from "../../lib/api";
+import { useDiscoveryProviders } from "../../hooks/useDiscoveryProviders";
+import { countriesFromProviders } from "../../lib/discovery";
+import { Modal } from "@golem/ui";
 import { ProviderRow } from "../providers/ProviderRow";
 import { RentDialog as RentDialogExt } from "../providers/RentDialog";
 import { KeyPicker } from "../ssh/KeyPicker";
@@ -13,13 +14,11 @@ import { countryFullName, countryFlagEmoji } from "../../lib/intl";
 type Step = 0 | 1 | 2 | 3;
 
 export function CreateWizard({ open, onClose, onComplete }: { open: boolean; onClose: () => void; onComplete: (data: { countries?: string[]; cpu?: number; memory?: number; storage?: number; platform?: string; sshKeyId?: string; max_usd_per_month?: number; provider_id?: string }) => void }) {
-  const { ads } = useAds();
   const settings = loadSettings();
+  const discovery = useDiscoveryProviders({}, open);
   const initialKeys: SSHKey[] = settings.ssh_keys || (settings.ssh_public_key ? [{ id: 'default', name: 'Default', value: settings.ssh_public_key }] : []);
 
   const [step, setStep] = React.useState<Step>(0);
-  const [allProviders, setAllProviders] = React.useState<ProviderAd[] | null>(null);
-  const [loadingCountries, setLoadingCountries] = React.useState(false);
   const [countryOptions, setCountryOptions] = React.useState<string[]>([]);
   const [countries, setCountries] = React.useState<string[]>([]);
   const [anyCountry, setAnyCountry] = React.useState(true);
@@ -54,42 +53,26 @@ export function CreateWizard({ open, onClose, onComplete }: { open: boolean; onC
     }
   }, [open]);
 
-  // Fetch countries and all providers
+  // Load countries and providers from the live discovery websocket.
   React.useEffect(() => {
     if (!open) return;
-    let cancelled = false;
-    (async () => {
-      setLoadingCountries(true);
-      try {
-        const { listCountries } = await import('../../lib/providers');
-        const providers = await fetchAllProviders(ads);
-        if (cancelled) return;
-        setAllProviders(providers);
-        const list = await listCountries(ads);
-        if (cancelled) return;
-        setCountryOptions(list);
-      } catch (e) {
-        console.warn('Failed to load providers for country list', e);
-        setCountryOptions([]);
-      } finally { setLoadingCountries(false); }
-    })();
-    return () => { cancelled = true; };
-  }, [open, ads]);
+    setCountryOptions(countriesFromProviders(discovery.rows));
+  }, [open, discovery.rows]);
 
   // Recompute price range when spec or provider list changes
   React.useEffect(() => {
-    if (!allProviders) { setPriceMin(null); setPriceMax(null); setMaxPrice(null); return; }
+    if (!discovery.rows.length) { setPriceMin(null); setPriceMax(null); setMaxPrice(null); return; }
     const spec = (mode === 'specific') ? { cpu, memory, storage } : undefined;
-    const range = computePriceRange(allProviders, spec);
+    const range = computePriceRange(discovery.rows, spec);
     if (!range) { setPriceMin(null); setPriceMax(null); setMaxPrice(null); return; }
     setPriceMin(range.min);
     setPriceMax(range.max);
     if (maxPrice == null || maxPrice < range.min || maxPrice > range.max) setMaxPrice(range.max);
-  }, [allProviders, cpu, memory, storage, mode]);
+  }, [discovery.rows, cpu, memory, storage, mode]);
 
   const headerId = "create-wizard-title";
   const matches = React.useMemo(() => {
-    if (!allProviders) return [] as ProviderAd[];
+    const allProviders = discovery.rows;
     const setC = new Set(countries.map(c => c.toUpperCase()));
     return allProviders.filter(p => {
       if (!anyCountry) {
@@ -108,7 +91,7 @@ export function CreateWizard({ open, onClose, onComplete }: { open: boolean; onC
       }
       return true;
     });
-  }, [allProviders, anyCountry, countries, platform, mode, cpu, memory, storage, maxPrice]);
+  }, [discovery.rows, anyCountry, countries, platform, mode, cpu, memory, storage, maxPrice]);
 
   const next = () => setStep((s) => (s < 3 ? ((s + 1) as Step) : s));
   const back = () => setStep((s) => (s > 0 ? ((s - 1) as Step) : s));
@@ -176,11 +159,16 @@ export function CreateWizard({ open, onClose, onComplete }: { open: boolean; onC
         <div className="transition-all">
           {step === 0 && (
             <div className="grid gap-4">
+              {discovery.error && (
+                <div className="rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-danger">
+                  {discovery.error}
+                </div>
+              )}
               <div className="flex items-center justify-between">
                 <div className="text-sm text-gray-700">Countries</div>
                 <label className="inline-flex items-center gap-2 text-sm"><input type="checkbox" className="accent-brand-600" checked={anyCountry} onChange={(e) => setAnyCountry(e.target.checked)} /><span>Any country</span></label>
               </div>
-              {loadingCountries ? (
+              {discovery.loading ? (
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
                   {Array.from({ length: 8 }).map((_, i) => (<Skeleton key={i} className="h-10" />))}
                 </div>
@@ -228,16 +216,15 @@ export function CreateWizard({ open, onClose, onComplete }: { open: boolean; onC
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div>
                       <label className="label">vCPU</label>
-                      <input className="input" type="number" min={1} value={cpu ?? ''} onChange={e => { setMode('specific'); setCpu(e.target.value ? Number(e.target.value) : undefined); }} placeholder="e.g., 2" />
+                      <Input type="number" min={1} value={cpu ?? ''} onChange={e => { setMode('specific'); setCpu(e.target.value ? Number(e.target.value) : undefined); }} placeholder="e.g., 2" />
                     </div>
                     <div>
                       <label className="label">RAM (GB)</label>
-                      <input className="input" type="number" min={1} value={memory ?? ''} onChange={e => { setMode('specific'); setMemory(e.target.value ? Number(e.target.value) : undefined); }} placeholder="e.g., 4" />
+                      <Input type="number" min={1} value={memory ?? ''} onChange={e => { setMode('specific'); setMemory(e.target.value ? Number(e.target.value) : undefined); }} placeholder="e.g., 4" />
                     </div>
                     <div>
                       <label className="label">Storage (GB)</label>
-                      <input
-                        className="input"
+                      <Input
                         type="number"
                         min={10}
                         value={storage ?? ''}
@@ -253,11 +240,11 @@ export function CreateWizard({ open, onClose, onComplete }: { open: boolean; onC
                   <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div>
                       <label className="label">Platform</label>
-                      <select className="input" value={platform} onChange={e => setPlatform(e.target.value)}>
+                      <Select value={platform} onChange={e => setPlatform(e.target.value)}>
                         <option value="">Any</option>
                         <option value="x86_64">x86_64</option>
                         <option value="arm64">arm64</option>
-                      </select>
+                      </Select>
                     </div>
                   </div>
                 </div>

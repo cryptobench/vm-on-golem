@@ -1,6 +1,6 @@
 Requestor Web (Next.js)
 
-Client-side only Next.js app (static export) to discover providers, open payment streams with MetaMask, and rent/manage VMs via the port-checker proxy.
+Client-side rendered Next.js app to discover providers, open payment streams with MetaMask, and rent/manage VMs through provider-advertised direct endpoints.
 
 Quick start
 
@@ -8,27 +8,30 @@ Quick start
 - cp .env.example .env.local and fill values
 - npm install
 - npm run dev
-- npm run build && npm run start (or deploy the `out/` folder as static site)
+- npm run build && npm run start
 
 Data fetching (SWR)
 
 - SWR is used for client-side fetching, caching and polling. A global `SWRConfig` is set in `app/layout.tsx`.
 - Prefer hooks in `hooks/useApiSWR.ts` over ad‑hoc `fetch` calls:
-  - `useProviderInfo(providerId, { refreshInterval })`
-  - `useVmAccess(providerId, vmId, { refreshInterval })`
-  - `useVmStatusSafe(providerId, vmId, { refreshInterval })`
-  - `useVmStreamStatus(providerId, vmId, { refreshInterval })`
+  - `useProviderInfo(providerEndpointUrl, { refreshInterval })`
+  - `useVmAccess(providerEndpointUrl, vmId, { refreshInterval })`
+  - `useVmStatusSafe(providerEndpointUrl, vmId, { refreshInterval })`
+  - `useVmStreamStatus(providerEndpointUrl, vmId, { refreshInterval })`
 - Pages that display VM status poll at intervals and use skeletons for content loading, per the Loading UX guidelines.
 
 Price cache (USD)
 
-- A centralized background poller runs in the global layout and refreshes ETH/GLM USD prices once per minute.
-- Results are stored in localStorage under `requestor_prices_v1` and broadcast via a `requestor_prices_updated` event.
-- Use helpers in `lib/prices.ts`:
+- A centralized background poller runs in the global layout and refreshes ETH/GLM USD prices at most once every 5 minutes.
+- Results are stored in localStorage under `requestor_prices_v2` and broadcast via a `requestor_prices_updated` event. The old `requestor_prices_v1` key is read only as a compatibility fallback.
+- Price lookups use one shared in-flight request and source-level backoff. Components must not fetch price APIs directly.
+- Source order is Binance, DEX Screener, CoinGecko, then CoinPaprika. This keeps normal traffic far below published public limits and reserves lower-quota sources for fallback.
+- Use helpers from shared `@golem/prices` (re-exported by `lib/prices.ts` for compatibility):
   - `startPricePolling()` to start/stop the poller (already wired in `app/layout.tsx`).
-  - `getPriceUSD(symbol)` and `usdToToken(symbol, usd)` for conversions.
+  - `getPriceUSD(symbol)` and `usdToToken(symbol, usd)` for display-only cached conversions.
+  - `ensurePricesUSD()` and `usdToTokenAsync(symbol, usd, { maxAgeMs })` for payment flows that need a fresh quote.
   - `onPricesUpdated(cb)` to subscribe to changes.
-- Cross-tab locking prevents stampedes and keeps within CoinGecko limits. Do not fetch CoinGecko directly in components.
+- Rent/payment creation prefers provider-advertised token pricing. If a provider only advertises USD pricing, the UI requires a price refreshed within 10 minutes before opening a stream.
 
 Styling
 
@@ -43,27 +46,37 @@ SSH Keys
 
 Env vars (public)
 
-- NEXT_PUBLIC_DISCOVERY_API_URL: discovery service base, e.g. http://localhost:9001/api/v1
-- NEXT_PUBLIC_PORT_CHECKER_URL: port-checker proxy base, e.g. http://localhost:9000
-- NEXT_PUBLIC_PORT_CHECKER_TOKEN: shared proxy token (exposed to users)
+- NEXT_PUBLIC_DISCOVERY_WS_URL: discovery websocket, e.g. ws://localhost:9001/api/v1/discovery/requestors
 - NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS: default StreamPayment contract (can be overridden in Settings or provider info)
-- NEXT_PUBLIC_GLM_TOKEN_ADDRESS: GLM token address (0x00.. means native)
-- NEXT_PUBLIC_EVM_CHAIN_ID: hex chain id for MetaMask (e.g., 0x4268)
-- NEXT_PUBLIC_GOLEM_ENVIRONMENT: set to `development` to switch defaults to the Golem Base dev RPC/WS
-- NEXT_PUBLIC_GOLEM_BASE_DEV_RPC_URL / NEXT_PUBLIC_GOLEM_BASE_DEV_WS_URL: dev Golem Base endpoints used when environment=development
+- NEXT_PUBLIC_GLM_TOKEN_ADDRESS: GLM token address for stream deposits (Ethereum Hoodi tGLM is `0x55555555555556AcFf9C332Ed151758858bd7a26`)
+- NEXT_PUBLIC_EVM_CHAIN_ID: hex chain id for MetaMask (Ethereum Hoodi is `0x88bb0`)
+- NEXT_PUBLIC_EVM_CHAIN_NAME: wallet display name for the payments chain
+- NEXT_PUBLIC_EVM_RPC_URL: wallet RPC URL for the payments chain
+- NEXT_PUBLIC_EVM_EXPLORER_URL: block explorer URL for the payments chain
+- NEXT_PUBLIC_GOLEM_ENVIRONMENT: set to `development` for local stack behavior
+
+Payment chain values can also be overridden in Settings -> Payments. Wallet
+connection, stream reads, stream creation, and top-ups all use the same payment
+chain configuration. The `make local` supervisor and Makefile web helper targets
+pass the StreamPayment, token, chain ID, RPC, and explorer values into the web
+app so local development uses the same payment metadata as the Python services.
+
+For Ethereum Hoodi, connected wallets need Hoodi ETH for gas and Hoodi tGLM for
+stream deposits. Use Hoodi faucet links from `https://www.hoodi.dev/` for gas
+ETH and the tGLM minter documented in `../contracts/README.md`.
 
 Notes and alignment with backend
 
-- Discovery uses GET /advertisements from discovery-server (central).
-- By default, provider IP resolution for proxy calls uses Golem Base (X-Proxy-Source: golem-base) and requires the proxy server to have Golem Base support (golem-base-sdk) and L3 RPC/WS configured. You can switch the profile to "central" in Settings to use legacy discovery instead.
-- Provider access goes through port-checker /proxy/provider/{provider_id}/... with X-Proxy-Token.
-- Only HTTP is proxied; SSH is shown as host:port for your terminal client.
+- Discovery uses the central discovery websocket only.
+- Requestor web only lists providers with a usable `endpoint_url`.
+- Provider API access goes directly to the advertised endpoint. Production endpoints must be HTTPS; development mode also accepts HTTP for local stacks. Live VM sessions convert `https:` to `wss:` and development `http:` to `ws:`.
+- SSH is shown as host:port for your terminal client.
 - Streams use the same StreamPayment ABI as requestor (createStream, streams, topUp, terminate). MetaMask signs transactions.
-- Pricing estimate logic mirrors requestor ProviderService (GLM/USD per month → ratePerSecond calculations).
+- Pricing estimate logic computes GLM stream rates from provider USD pricing and current GLM/USD.
 
 Limitations
 
 - VM ownership isn’t globally queryable; the app tracks “your rentals” in localStorage.
-- ERC20 streaming is supported with a basic approve/allowance flow; native token mode also works.
-- The proxy token is public in a static site; use a token suitable for public use and rely on the port-checker’s IP/port allowlist and timeouts. Consider rate limiting.
-- Provider listing currently uses central discovery even when “Golem Base” is selected; only per-provider resolution switches to Golem Base. A future enhancement can add a Golem Base listing backend.
+- Streaming payments are GLM-only; native ETH is still required for gas.
+- Local rental records created before provider endpoints were stored are ignored because they cannot be managed directly.
+- Provider listing uses the selected discovery backend.

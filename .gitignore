@@ -9,14 +9,16 @@ __pycache__/
 # Distribution / packaging
 .Python
 build/
-!provider-gui/build/
-!provider-gui/build/**
 develop-eggs/
 dist/
 downloads/
 eggs/
 .eggs/
 lib/
+!requestor-web/lib/
+!requestor-web/lib/**
+!apps/provider-desktop/src/lib/
+!apps/provider-desktop/src/lib/**
 lib64/
 parts/
 sdist/
@@ -45,6 +47,7 @@ htmlcov/
 .coverage
 .coverage.*
 .cache
+.local/
 nosetests.xml
 coverage.xml
 *.cover
@@ -162,12 +165,13 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
-# Electron builder outputs and embedded CLI staging
-provider-gui/dist/
-provider-gui/build/*.log
-provider-gui/resources/cli/
-## Do not track GUI dependencies (prevents cross-OS breakage in CI)
-provider-gui/node_modules/
+# Frontend workspace dependencies and build outputs
+node_modules/
+apps/provider-desktop/dist/
+apps/provider-desktop/src-tauri/binaries/
+apps/provider-desktop/src-tauri/vendor/multipass/*
+!apps/provider-desktop/src-tauri/vendor/multipass/.gitkeep
 requestor-gui/node_modules/
 python-sdk/
 typescript-sdk/
+stress_results.json

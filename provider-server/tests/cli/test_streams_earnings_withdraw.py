@@ -4,8 +4,10 @@ import types
 class FakeStreamMap:
     def __init__(self, mapping):
         self._mapping = mapping
+
     async def all_items(self):
         return dict(self._mapping)
+
     async def get(self, vm_id):
         return self._mapping.get(vm_id)
 
@@ -15,6 +17,7 @@ def test_streams_earnings_json(monkeypatch):
     class FakeContainer:
         def __init__(self):
             self.config = types.SimpleNamespace(from_pydantic=lambda *_: None)
+
         def stream_map(self):
             return FakeStreamMap({"vm-1": 1, "vm-2": 2})
 
@@ -22,7 +25,10 @@ def test_streams_earnings_json(monkeypatch):
     class FakeReader:
         def __init__(self, *_):
             self._now = 1_000_000
-            self.web3 = types.SimpleNamespace(eth=types.SimpleNamespace(get_block=lambda _: {"timestamp": self._now}))
+            self.web3 = types.SimpleNamespace(
+                eth=types.SimpleNamespace(get_block=lambda _: {"timestamp": self._now})
+            )
+
         def get_stream(self, sid):
             # token, sender, recipient, startTime, stopTime, ratePerSecond, deposit, withdrawn, halted
             if int(sid) == 1:
@@ -50,16 +56,21 @@ def test_streams_earnings_json(monkeypatch):
             }
 
     # Patch Container and Reader used by implementation
-    import provider.main as m
     import provider.container as cont
+    import provider.main as m
     from provider.main import streams_earnings
+
     monkeypatch.setattr(cont, "Container", FakeContainer)
     # Patch the class in the module path it’s imported from inside the function
     import provider.payments.blockchain_service as b
+
     monkeypatch.setattr(b, "StreamPaymentReader", FakeReader)
 
     # Call function directly and capture output
-    import io, sys, json
+    import io
+    import json
+    import sys
+
     buf = io.StringIO()
     old = sys.stdout
     sys.stdout = buf
@@ -77,23 +88,30 @@ def test_streams_withdraw_all_and_single(monkeypatch):
     class FakeContainer:
         def __init__(self):
             self.config = types.SimpleNamespace(from_pydantic=lambda *_: None)
+
         def stream_map(self):
             return FakeStreamMap({"vm-1": 1, "vm-2": 2})
+
         def stream_client(self):
             class C:
                 def __init__(self):
                     self.calls = []
+
                 def withdraw(self, sid):
                     self.calls.append(int(sid))
                     return f"0xdead{sid}"
+
             return C()
 
-    import provider.main as m
     import provider.container as cont
+    import provider.main as m
     from provider.main import streams_withdraw
+
     monkeypatch.setattr(cont, "Container", FakeContainer)
 
-    import io, sys
+    import io
+    import sys
+
     # Withdraw all
     buf = io.StringIO()
     old = sys.stdout

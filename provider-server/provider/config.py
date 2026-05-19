@@ -1,16 +1,62 @@
-import os
 import json
+import os
+import socket
+import uuid
 from pathlib import Path
 from typing import Optional
-import uuid
-import socket
 
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings
-from pydantic import field_validator, Field
-import os
+
 from .utils.logging import setup_logger
 
 logger = setup_logger(__name__)
+
+
+def normalize_acme_env(value: str | None) -> str:
+    """Normalize ACME environment names used for certificate issuance."""
+    raw = (value or "production").strip().lower()
+    if raw == "staging":
+        return "staging"
+    if raw in {"production", "prod"}:
+        return "production"
+    raise ValueError("ACME environment must be 'staging', 'production', or 'prod'")
+
+
+def _default_route_local_ip() -> str | None:
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.connect(("8.8.8.8", 80))
+        ip_address = sock.getsockname()[0]
+        if ip_address and not ip_address.startswith("127."):
+            return ip_address
+    except OSError:
+        return None
+    finally:
+        sock.close()
+
+    return None
+
+
+def _hostname_local_ips() -> list[str]:
+    try:
+        hostname = socket.gethostname()
+        return [
+            ip_address
+            for ip_address in socket.gethostbyname_ex(hostname)[2]
+            if not ip_address.startswith("127.")
+        ]
+    except socket.gaierror:
+        return []
+
+
+def _development_public_ip() -> str | None:
+    default_route_ip = _default_route_local_ip()
+    if default_route_ip:
+        return default_route_ip
+
+    local_ips = _hostname_local_ips()
+    return local_ips[0] if local_ips else None
 
 
 def ensure_config() -> None:
@@ -42,7 +88,9 @@ def ensure_config() -> None:
         logger.info("Using default settings – run with --help to customize")
 
 
-if not os.environ.get("GOLEM_PROVIDER_SKIP_BOOTSTRAP") and not os.environ.get("PYTEST_CURRENT_TEST"):
+if not os.environ.get("GOLEM_PROVIDER_SKIP_BOOTSTRAP") and not os.environ.get(
+    "PYTEST_CURRENT_TEST"
+):
     ensure_config()
 
 
@@ -50,25 +98,36 @@ class Settings(BaseSettings):
     """Provider configuration settings."""
 
     # API Settings
-    DEBUG: bool = True
+    DEBUG: bool = False
     HOST: str = "0.0.0.0"
     PORT: int = 7466
     SKIP_PORT_VERIFICATION: bool = False
+    REQUESTOR_SESSION_SECRET: str = Field(
+        default="",
+        description="Optional signing secret for provider-issued requestor VM sessions.",
+    )
+    REQUESTOR_SESSION_TTL_SECONDS: int = Field(
+        default=86400,
+        description="Maximum lifetime for provider-issued requestor API sessions.",
+    )
+    PROVIDER_ADMIN_TOKEN: str = Field(
+        default="",
+        description="Optional bearer token for provider-owner/admin API access.",
+    )
     ENVIRONMENT: str = "production"
     # Logical network selector for advertisement scope and client defaults
     # If not explicitly provided, computed by validator below (dev -> testnet, else -> mainnet)
     NETWORK: str = Field(
-        default="",
-        description="Logical Golem network: 'testnet' or 'mainnet'"
+        default="", description="Logical Golem network: 'testnet' or 'mainnet'"
     )
 
-    # Payments chain selection (modular network profiles). Keep default on l2.holesky
+    # Payments chain selection (modular network profiles).
     PAYMENTS_NETWORK: str = Field(
-        default="l2.holesky",
-        description="Payments network profile (e.g., 'l2.holesky', 'kaolin.holesky', 'mainnet')"
+        default="hoodi",
+        description="Payments network profile (e.g., 'hoodi', 'sepolia', 'mainnet')",
     )
 
-    @field_validator("PAYMENTS_NETWORK", mode='before')
+    @field_validator("PAYMENTS_NETWORK", mode="before")
     @classmethod
     def prefer_payments_network_env(cls, v: str) -> str:
         return os.environ.get("GOLEM_PROVIDER_PAYMENTS_NETWORK", v)
@@ -77,7 +136,7 @@ class Settings(BaseSettings):
     def DEV_MODE(self) -> bool:
         return self.ENVIRONMENT == "development"
 
-    @field_validator("ENVIRONMENT", mode='before')
+    @field_validator("ENVIRONMENT", mode="before")
     @classmethod
     def prefer_global_env(cls, v: str) -> str:
         """Prefer unified GOLEM_ENVIRONMENT when provided; fallback to service-specific env."""
@@ -86,7 +145,7 @@ class Settings(BaseSettings):
             return ge
         return v
 
-    @field_validator("NETWORK", mode='before')
+    @field_validator("NETWORK", mode="before")
     @classmethod
     def resolve_network(cls, v: str, values: dict) -> str:
         """Resolve logical network with sensible defaults.
@@ -108,7 +167,7 @@ class Settings(BaseSettings):
         env = (values.data.get("ENVIRONMENT") or "").lower()
         return "development" if env == "development" else "mainnet"
 
-    @field_validator("SKIP_PORT_VERIFICATION", mode='before')
+    @field_validator("SKIP_PORT_VERIFICATION", mode="before")
     def set_skip_verification(cls, v: bool, values: dict) -> bool:
         """Set skip verification based on debug mode."""
         return v or values.data.get("DEBUG", False)
@@ -119,8 +178,8 @@ class Settings(BaseSettings):
     ETHEREUM_KEY_DIR: str = ""
     ETHEREUM_PRIVATE_KEY: Optional[str] = None
     PROVIDER_ID: str = ""  # Will be set from Ethereum identity
- 
-    @field_validator("ETHEREUM_KEY_DIR", mode='before')
+
+    @field_validator("ETHEREUM_KEY_DIR", mode="before")
     def resolve_key_dir(cls, v: str) -> str:
         """Resolve Ethereum key directory path."""
         if not v:
@@ -130,20 +189,20 @@ class Settings(BaseSettings):
             path = Path.home() / path
         return str(path)
 
-    @field_validator("ETHEREUM_PRIVATE_KEY", mode='before')
+    @field_validator("ETHEREUM_PRIVATE_KEY", mode="before")
     def get_private_key(cls, v: Optional[str], values: dict) -> str:
         """Get private key from key file if not provided."""
         from provider.security.ethereum import EthereumIdentity
 
         if v:
             return v
-        
+
         key_dir = values.data.get("ETHEREUM_KEY_DIR")
         identity = EthereumIdentity(key_dir)
         _, private_key = identity.get_or_create_identity()
         return private_key
 
-    @field_validator("PROVIDER_ID", mode='before')
+    @field_validator("PROVIDER_ID", mode="before")
     def get_provider_id(cls, v: str, values: dict) -> str:
         """Get provider ID from private key."""
         from eth_account import Account
@@ -161,187 +220,98 @@ class Settings(BaseSettings):
                 f"Provider ID from env ('{v}') does not match ID from key file ('{provider_id_from_key}'). "
                 "Using ID from key file."
             )
-        
+
         return provider_id_from_key
- 
-    @field_validator("PROVIDER_NAME", mode='before')
+
+    @field_validator("PROVIDER_NAME", mode="before")
     def set_provider_name(cls, v: str, values: dict) -> str:
         """Prefix provider name with DEVMODE if in development."""
         if values.data.get("ENVIRONMENT") == "development":
             return f"DEVMODE-{v}"
         return v
- 
-    # Discovery Service Settings
-    DISCOVERY_URL: str = "http://195.201.39.101:9001"
-    ADVERTISER_TYPE: str = "golem_base"  # or "discovery_server"
-    # Deprecated: use platform-specific intervals below
-    ADVERTISEMENT_INTERVAL: int = 240  # seconds
-    DISCOVERY_ADVERTISEMENT_INTERVAL: int = 240  # seconds
-    GOLEM_BASE_ADVERTISEMENT_INTERVAL: int = 3600  # seconds (on-chain cost, keep higher)
 
-    # Golem Base Settings
-    # Default to Holesky (testnet) endpoints; in development we can switch to a separate
-    # base development network via environment variables below.
-    GOLEM_BASE_RPC_URL: str = "https://ethwarsaw.holesky.golemdb.io/rpc"
-    GOLEM_BASE_WS_URL: str = "wss://ethwarsaw.holesky.golemdb.io/rpc/ws"
-
-    # Optional dev-only overrides for a separate Golem Base development network
-    GOLEM_BASE_DEV_RPC_URL: str = Field(
-        default=os.environ.get("GOLEM_PROVIDER_GOLEM_BASE_DEV_RPC_URL", os.environ.get("GOLEM_BASE_DEV_RPC_URL", "")),
-        description="RPC URL for Golem Base development network (used when ENVIRONMENT=development)"
-    )
-    GOLEM_BASE_DEV_WS_URL: str = Field(
-        default=os.environ.get("GOLEM_PROVIDER_GOLEM_BASE_DEV_WS_URL", os.environ.get("GOLEM_BASE_DEV_WS_URL", "")),
-        description="WebSocket URL for Golem Base development network (used when ENVIRONMENT=development)"
+    # Discovery settings. Central discovery is websocket-only.
+    DISCOVERY_WS_URL: str = Field(
+        default="ws://195.201.39.101:9001/api/v1/discovery/providers",
+        description="Central discovery provider websocket URL",
     )
 
-    @field_validator("GOLEM_BASE_RPC_URL", mode='before')
-    @classmethod
-    def prefer_dev_gb_rpc(cls, v: str, values: dict) -> str:
-        env = (values.data.get("ENVIRONMENT") or "").lower()
-        if env == "development":
-            # Allow provider-scoped or generic env variables to override
-            if os.environ.get("GOLEM_PROVIDER_GOLEM_BASE_DEV_RPC_URL"):
-                return os.environ["GOLEM_PROVIDER_GOLEM_BASE_DEV_RPC_URL"]
-            if os.environ.get("GOLEM_BASE_DEV_RPC_URL"):
-                return os.environ["GOLEM_BASE_DEV_RPC_URL"]
-            # If a dev URL is configured in settings, use it
-            dev_v = (values.data.get("GOLEM_BASE_DEV_RPC_URL") or "").strip()
-            if dev_v:
-                return dev_v
-        # Also permit explicit override for non-dev via provider-scoped env
-        if os.environ.get("GOLEM_PROVIDER_GOLEM_BASE_RPC_URL"):
-            return os.environ["GOLEM_PROVIDER_GOLEM_BASE_RPC_URL"]
-        return v
-
-    @field_validator("GOLEM_BASE_WS_URL", mode='before')
-    @classmethod
-    def prefer_dev_gb_ws(cls, v: str, values: dict) -> str:
-        env = (values.data.get("ENVIRONMENT") or "").lower()
-        if env == "development":
-            if os.environ.get("GOLEM_PROVIDER_GOLEM_BASE_DEV_WS_URL"):
-                return os.environ["GOLEM_PROVIDER_GOLEM_BASE_DEV_WS_URL"]
-            if os.environ.get("GOLEM_BASE_DEV_WS_URL"):
-                return os.environ["GOLEM_BASE_DEV_WS_URL"]
-            dev_v = (values.data.get("GOLEM_BASE_DEV_WS_URL") or "").strip()
-            if dev_v:
-                return dev_v
-        if os.environ.get("GOLEM_PROVIDER_GOLEM_BASE_WS_URL"):
-            return os.environ["GOLEM_PROVIDER_GOLEM_BASE_WS_URL"]
-        return v
-
-    # Polygon / Payments
-    POLYGON_RPC_URL: str = Field(
+    # EVM / Payments
+    PAYMENTS_RPC_URL: str = Field(
         default="",
-        description="EVM RPC URL for streaming payments; defaults from PAYMENTS_NETWORK profile"
+        description="EVM RPC URL for streaming payments; defaults from PAYMENTS_NETWORK profile",
+    )
+    PAYMENTS_WS_URL: str = Field(
+        default="",
+        description="EVM WebSocket RPC URL for StreamPayment live events",
     )
     STREAM_PAYMENT_ADDRESS: str = Field(
         default="",
-        description="Deployed StreamPayment contract address (defaults to contracts/deployments/l2.json)"
+        description="Deployed StreamPayment contract address",
     )
     GLM_TOKEN_ADDRESS: str = Field(
         default="",
-        description="Token address (0x0 means native ETH). Defaults from l2.json"
+        description="GLM ERC20 token address used by StreamPayment.",
     )
     STREAM_MIN_REMAINING_SECONDS: int = Field(
         default=0,
-        description="Minimum remaining seconds required to keep a VM running"
+        description="Legacy compatibility setting; streamState drives expiry",
     )
     STREAM_MONITOR_ENABLED: bool = Field(
         default=True,
-        description="Enable background monitor to stop VMs when runway < threshold"
+        description="Enable background monitor to delete VMs after stream expiry",
     )
     STREAM_WITHDRAW_ENABLED: bool = Field(
-        default=False,
-        description="Enable background withdrawals for active streams"
+        default=False, description="Enable background withdrawals for active streams"
     )
     STREAM_MONITOR_INTERVAL_SECONDS: int = Field(
-        default=30,
-        description="How frequently to check stream runway"
+        default=30, description="How frequently to check stream runway"
     )
     STREAM_WITHDRAW_INTERVAL_SECONDS: int = Field(
-        default=1800,
-        description="How frequently to attempt withdrawals"
+        default=1800, description="How frequently to attempt withdrawals"
     )
     STREAM_MIN_WITHDRAW_WEI: int = Field(
         default=0,
-        description="Min withdrawable amount (wei) before triggering withdraw"
+        description="Min withdrawable amount (wei) before triggering withdraw",
     )
 
     # Behavior on exhausted runway
     STREAM_REMOVE_MAPPING_ON_EXHAUSTED: bool = Field(
         default=True,
-        description="When true, remove the VM->stream mapping after a successful stop on exhausted runway to prevent repeated stop attempts."
+        description="When true, remove the VM->stream mapping after a successful stop on exhausted runway to prevent repeated stop attempts.",
     )
     STREAM_DELETE_ON_EXHAUSTED: bool = Field(
         default=False,
-        description="When true, delete the VM entirely once runway is exhausted and the VM has been stopped."
+        description="When true, delete the VM entirely once runway is exhausted and the VM has been stopped.",
     )
 
     # Shutdown behavior
     STOP_VMS_ON_EXIT: bool = Field(
         default=False,
-        description="When true, stop all running VMs on provider shutdown. Default keeps VMs running."
+        description="When true, stop all running VMs on provider shutdown. Default keeps VMs running.",
     )
 
-    # Faucet settings (L3 for Golem Base adverts)
-    FAUCET_URL: str = "https://ethwarsaw.holesky.golemdb.io/faucet"
-    CAPTCHA_URL: str = "https://cap.gobas.me"
-    CAPTCHA_API_KEY: str = "05381a2cef5e"
-
-    # L2 payments faucet (native ETH)
-    L2_FAUCET_URL: str = Field(
-        default="",
-        description="Faucet base URL (no trailing /api). Only used on testnets; defaults from PAYMENTS_NETWORK profile"
-    )
-    L2_CAPTCHA_URL: str = Field(
-        default="https://cap.gobas.me",
-        description="CAPTCHA base URL"
-    )
-    L2_CAPTCHA_API_KEY: str = Field(
-        default="05381a2cef5e",
-        description="CAPTCHA API key path segment"
-    )
-
-    @field_validator("L2_CAPTCHA_URL", mode='before')
-    @classmethod
-    def prefer_l2_captcha_url(cls, v: str) -> str:
-        return os.environ.get("GOLEM_PROVIDER_L2_CAPTCHA_URL", v)
-
-    @field_validator("L2_CAPTCHA_API_KEY", mode='before')
-    @classmethod
-    def prefer_l2_captcha_key(cls, v: str) -> str:
-        return os.environ.get("GOLEM_PROVIDER_L2_CAPTCHA_API_KEY", v)
-
-    @field_validator("POLYGON_RPC_URL", mode='before')
+    @field_validator("PAYMENTS_RPC_URL", mode="before")
     @classmethod
     def prefer_custom_env(cls, v: str, values: dict) -> str:
-        # Accept alternative aliases for payments RPC
-        for key in ("GOLEM_PROVIDER_L2_RPC_URL", "GOLEM_PROVIDER_KAOLIN_RPC_URL"):
-            if os.environ.get(key):
-                return os.environ[key]
         if v:
             return v
-        # Default from profile
-        pn = values.data.get("PAYMENTS_NETWORK") or "l2.holesky"
+        pn = values.data.get("PAYMENTS_NETWORK") or "hoodi"
         return Settings._profile_defaults(pn)["rpc_url"]
 
-    @field_validator("L2_FAUCET_URL", mode='before')
+    @field_validator("PAYMENTS_WS_URL", mode="before")
     @classmethod
-    def prefer_faucet_env(cls, v: str, values: dict) -> str:
-        for key in ("GOLEM_PROVIDER_L2_FAUCET_URL",):
-            if os.environ.get(key):
-                return os.environ[key]
+    def default_payments_ws_url(cls, v: str, values: dict) -> str:
         if v:
             return v
-        pn = values.data.get("PAYMENTS_NETWORK") or "l2.holesky"
-        return Settings._profile_defaults(pn).get("faucet_url", "")
+        pn = values.data.get("PAYMENTS_NETWORK") or "hoodi"
+        return str(Settings._profile_defaults(pn).get("ws_url", ""))
 
     @staticmethod
     def _load_deployment(network: str) -> tuple[str | None, str | None]:
-        """Try to load default StreamPayment + token from contracts/deployments/l2.json.
+        """Try to load default StreamPayment deployment metadata.
 
-        Returns (stream_payment_address, glm_token_address) or (None, None) if not found.
+        Returns (stream_payment_address, payment_token_address) or (None, None) if not found.
         """
         try:
             # Allow override via env
@@ -350,11 +320,17 @@ class Settings(BaseSettings):
                 path = Path(base) / f"{Settings._deployment_basename(network)}.json"
             else:
                 # repo root = ../../ from this file
-                path = Path(__file__).resolve().parents[2] / "contracts" / "deployments" / f"{Settings._deployment_basename(network)}.json"
+                path = (
+                    Path(__file__).resolve().parents[2]
+                    / "contracts"
+                    / "deployments"
+                    / f"{Settings._deployment_basename(network)}.json"
+                )
             if not path.exists():
                 # Try package resource fallback
                 try:
                     import importlib.resources as ir
+
                     with ir.files("provider.data.deployments").joinpath(f"{Settings._deployment_basename(network)}.json").open("r") as fh:  # type: ignore[attr-defined]
                         data = json.load(fh)
                 except Exception:
@@ -363,49 +339,52 @@ class Settings(BaseSettings):
                 data = json.loads(path.read_text())
             sp = data.get("StreamPayment", {})
             addr = sp.get("address")
-            token = sp.get("glmToken")
+            token = sp.get("paymentToken") or sp.get("glmToken")
             if isinstance(addr, str) and addr:
                 return addr, token or "0x0000000000000000000000000000000000000000"
         except Exception:
             pass
         return None, None
 
-    # Backwards-compat helper used by tests expecting this method name
-    @staticmethod
-    def _load_l2_deployment() -> tuple[str | None, str | None]:
-        return Settings._load_deployment("l2.holesky")
-
     @staticmethod
     def _deployment_basename(network: str) -> str:
         n = (network or "").lower()
-        if n in ("l2", "l2.holesky"):
-            return "l2"
         if "." in n:
             return n.split(".")[0]
-        return n or "l2"
+        return n or "hoodi"
 
     @staticmethod
     def _profile_defaults(network: str) -> dict[str, str | bool]:
-        n = (network or "l2.holesky").lower()
+        n = (network or "hoodi").lower()
         profiles = {
-            "l2.holesky": {
-                "rpc_url": "https://l2.holesky.golemdb.io/rpc",
-                "faucet_url": "https://l2.holesky.golemdb.io/faucet",
-                "faucet_enabled": True,
+            "sepolia": {
+                "rpc_url": "https://rpc.sepolia.org",
+                "ws_url": "",
+                "faucet_enabled": False,
+                "glm_token_address": "",
+                "token_symbol": "GLM",
+                "gas_symbol": "ETH",
+            },
+            "hoodi": {
+                "rpc_url": "https://rpc.hoodi.ethpandaops.io",
+                "ws_url": "wss://ethereum-hoodi-rpc.publicnode.com",
+                "faucet_enabled": False,
+                "glm_token_address": "0x55555555555556AcFf9C332Ed151758858bd7a26",
                 "token_symbol": "GLM",
                 "gas_symbol": "ETH",
             },
             "mainnet": {
                 "rpc_url": "",
-                "faucet_url": "",
+                "ws_url": "",
                 "faucet_enabled": False,
+                "glm_token_address": "",
                 "token_symbol": "GLM",
                 "gas_symbol": "ETH",
             },
         }
-        return profiles.get(n, profiles["l2.holesky"])  # default to current standard
+        return profiles.get(n, profiles["hoodi"])
 
-    @field_validator("STREAM_PAYMENT_ADDRESS", mode='before')
+    @field_validator("STREAM_PAYMENT_ADDRESS", mode="before")
     @classmethod
     def default_stream_addr(cls, v: str, values: dict) -> str:
         # Disable payments during pytest to keep unit tests independent
@@ -413,20 +392,21 @@ class Settings(BaseSettings):
             return "0x0000000000000000000000000000000000000000"
         if v:
             return v
-        pn = values.data.get("PAYMENTS_NETWORK") or "l2.holesky"
+        pn = values.data.get("PAYMENTS_NETWORK") or "hoodi"
         addr, _ = Settings._load_deployment(pn)
         return addr or "0x0000000000000000000000000000000000000000"
 
-    @field_validator("GLM_TOKEN_ADDRESS", mode='before')
+    @field_validator("GLM_TOKEN_ADDRESS", mode="before")
     @classmethod
     def default_token_addr(cls, v: str, values: dict) -> str:
         if os.environ.get("PYTEST_CURRENT_TEST"):
             return "0x0000000000000000000000000000000000000000"
         if v:
             return v
-        pn = values.data.get("PAYMENTS_NETWORK") or "l2.holesky"
+        pn = values.data.get("PAYMENTS_NETWORK") or "hoodi"
         _, token = Settings._load_deployment(pn)
-        return token or "0x0000000000000000000000000000000000000000"
+        profile_token = str(Settings._profile_defaults(pn).get("glm_token_address", ""))
+        return token or profile_token or "0x0000000000000000000000000000000000000000"
 
     # VM Settings
     MAX_VMS: int = 10
@@ -435,38 +415,46 @@ class Settings(BaseSettings):
     TOKEN_SYMBOL: str = Field(default="", description="Payment token symbol, e.g., GLM")
     GAS_TOKEN_SYMBOL: str = Field(default="", description="Gas token symbol, e.g., ETH")
 
-    @field_validator("TOKEN_SYMBOL", mode='before')
+    @field_validator("TOKEN_SYMBOL", mode="before")
     @classmethod
     def default_token_symbol(cls, v: str, values: dict) -> str:
         if v:
             return v
-        pn = values.data.get("PAYMENTS_NETWORK") or "l2.holesky"
+        pn = values.data.get("PAYMENTS_NETWORK") or "hoodi"
         return str(Settings._profile_defaults(pn).get("token_symbol", ""))
 
-    @field_validator("GAS_TOKEN_SYMBOL", mode='before')
+    @field_validator("GAS_TOKEN_SYMBOL", mode="before")
     @classmethod
     def default_gas_symbol(cls, v: str, values: dict) -> str:
         if v:
             return v
-        pn = values.data.get("PAYMENTS_NETWORK") or "l2.holesky"
+        pn = values.data.get("PAYMENTS_NETWORK") or "hoodi"
         return str(Settings._profile_defaults(pn).get("gas_symbol", ""))
 
     @property
     def FAUCET_ENABLED(self) -> bool:
-        return bool(self._profile_defaults(self.PAYMENTS_NETWORK).get("faucet_enabled", False))
-    DEFAULT_VM_IMAGE: str = "ubuntu:24.04"
+        return bool(
+            self._profile_defaults(self.PAYMENTS_NETWORK).get("faucet_enabled", False)
+        )
+
+    DEFAULT_VM_IMAGE: str = "24.04"
     VM_DATA_DIR: str = ""
     SSH_KEY_DIR: str = ""
     CLOUD_INIT_DIR: str = ""
     CLOUD_INIT_FALLBACK_DIR: str = ""  # Will be set to a temp directory if needed
 
-    @field_validator("CLOUD_INIT_DIR", mode='before')
+    @field_validator("CLOUD_INIT_DIR", mode="before")
     def resolve_cloud_init_dir(cls, v: str) -> str:
         """Resolve and create cloud-init directory path."""
         import platform
         import tempfile
-        from .utils.setup import setup_cloud_init_dir, check_setup_needed, mark_setup_complete
-        
+
+        from .utils.setup import (
+            check_setup_needed,
+            mark_setup_complete,
+            setup_cloud_init_dir,
+        )
+
         def verify_dir_permissions(path: Path) -> bool:
             """Verify directory has correct permissions and is accessible."""
             try:
@@ -488,10 +476,12 @@ class Settings(BaseSettings):
             if system == "linux" and Path("/snap/bin/multipass").exists():
                 # Linux with snap
                 path = Path("/var/snap/multipass/common/cloud-init")
-                
+
                 # Check if we need to set up permissions
                 if check_setup_needed():
-                    logger.info("First run detected, setting up cloud-init directory...")
+                    logger.info(
+                        "First run detected, setting up cloud-init directory..."
+                    )
                     success, error = setup_cloud_init_dir(path)
                     if success:
                         logger.info("✓ Cloud-init directory setup complete")
@@ -499,21 +489,53 @@ class Settings(BaseSettings):
                     else:
                         logger.error(f"Failed to set up cloud-init directory: {error}")
                         logger.error("\nTo fix this manually, run these commands:")
-                        logger.error("  sudo mkdir -p /var/snap/multipass/common/cloud-init")
-                        logger.error("  sudo chown -R $USER:$USER /var/snap/multipass/common/cloud-init")
-                        logger.error("  sudo chmod -R 755 /var/snap/multipass/common/cloud-init\n")
+                        logger.error(
+                            "  sudo mkdir -p /var/snap/multipass/common/cloud-init"
+                        )
+                        logger.error(
+                            "  sudo chown -R $USER:$USER /var/snap/multipass/common/cloud-init"
+                        )
+                        logger.error(
+                            "  sudo chmod -R 755 /var/snap/multipass/common/cloud-init\n"
+                        )
                         # Fall back to user's home directory
-                        path = Path.home() / ".local" / "share" / "golem" / "provider" / "cloud-init"
-                
+                        path = (
+                            Path.home()
+                            / ".local"
+                            / "share"
+                            / "golem"
+                            / "provider"
+                            / "cloud-init"
+                        )
+
             elif system == "linux":
                 # Linux without snap
-                path = Path.home() / ".local" / "share" / "golem" / "provider" / "cloud-init"
+                path = (
+                    Path.home()
+                    / ".local"
+                    / "share"
+                    / "golem"
+                    / "provider"
+                    / "cloud-init"
+                )
             elif system == "darwin":
                 # macOS
-                path = Path.home() / "Library" / "Application Support" / "golem" / "provider" / "cloud-init"
+                path = (
+                    Path.home()
+                    / "Library"
+                    / "Application Support"
+                    / "golem"
+                    / "provider"
+                    / "cloud-init"
+                )
             elif system == "windows":
                 # Windows
-                path = Path(os.path.expandvars("%LOCALAPPDATA%")) / "golem" / "provider" / "cloud-init"
+                path = (
+                    Path(os.path.expandvars("%LOCALAPPDATA%"))
+                    / "golem"
+                    / "provider"
+                    / "cloud-init"
+                )
             else:
                 path = Path.home() / ".golem" / "provider" / "cloud-init"
 
@@ -521,29 +543,33 @@ class Settings(BaseSettings):
             # Try to create and verify the directory
             path.mkdir(parents=True, exist_ok=True)
             if platform.system().lower() != "windows":
-                path.chmod(0o755)  # Readable and executable by owner and others, writable by owner
+                path.chmod(
+                    0o755
+                )  # Readable and executable by owner and others, writable by owner
 
             if verify_dir_permissions(path):
                 logger.debug(f"Created cloud-init directory at {path}")
                 return str(path)
-            
+
             # If verification fails, fall back to temp directory
             fallback_path = Path(tempfile.gettempdir()) / "golem" / "cloud-init"
             fallback_path.mkdir(parents=True, exist_ok=True)
             if platform.system().lower() != "windows":
                 fallback_path.chmod(0o755)
-            
+
             if verify_dir_permissions(fallback_path):
-                logger.warning(f"Using fallback cloud-init directory at {fallback_path}")
+                logger.warning(
+                    f"Using fallback cloud-init directory at {fallback_path}"
+                )
                 return str(fallback_path)
-            
+
             raise ValueError("Could not create a writable cloud-init directory")
-            
+
         except Exception as e:
             logger.error(f"Failed to create cloud-init directory at {path}: {e}")
             raise ValueError(f"Failed to create cloud-init directory: {e}")
 
-    @field_validator("VM_DATA_DIR", mode='before')
+    @field_validator("VM_DATA_DIR", mode="before")
     def resolve_vm_data_dir(cls, v: str) -> str:
         """Resolve and create VM data directory path."""
         if not v:
@@ -552,17 +578,17 @@ class Settings(BaseSettings):
             path = Path(v)
             if not path.is_absolute():
                 path = Path.home() / path
-        
+
         try:
             path.mkdir(parents=True, exist_ok=True)
             logger.debug(f"Created VM data directory at {path}")
         except Exception as e:
             logger.error(f"Failed to create VM data directory at {path}: {e}")
             raise ValueError(f"Failed to create VM data directory: {e}")
-            
+
         return str(path)
 
-    @field_validator("SSH_KEY_DIR", mode='before')
+    @field_validator("SSH_KEY_DIR", mode="before")
     def resolve_ssh_key_dir(cls, v: str) -> str:
         """Resolve and create SSH key directory path with secure permissions."""
         if not v:
@@ -571,7 +597,7 @@ class Settings(BaseSettings):
             path = Path(v)
             if not path.is_absolute():
                 path = Path.home() / path
-        
+
         try:
             path.mkdir(parents=True, exist_ok=True)
             path.chmod(0o700)  # Secure permissions for SSH keys
@@ -579,18 +605,35 @@ class Settings(BaseSettings):
         except Exception as e:
             logger.error(f"Failed to create SSH key directory at {path}: {e}")
             raise ValueError(f"Failed to create SSH key directory: {e}")
-            
+
         return str(path)
 
     # Resource Settings
     MIN_MEMORY_GB: int = 1
     MIN_STORAGE_GB: int = 10
     MIN_CPU_CORES: int = 1
+    OFFERED_CPU_CORES: int = Field(default=0, ge=0)
+    OFFERED_MEMORY_GB: int = Field(default=0, ge=0)
+    OFFERED_STORAGE_GB: int = Field(default=0, ge=0)
 
     # Resource Thresholds (%)
     CPU_THRESHOLD: int = 90
     MEMORY_THRESHOLD: int = 85
     STORAGE_THRESHOLD: int = 90
+
+    # Monitoring settings
+    MONITORING_ENABLED: bool = True
+    MONITORING_SAMPLE_INTERVAL_SECONDS: int = Field(default=30, ge=5)
+    MONITORING_LIVE_ACTIVE_INTERVAL_SECONDS: int = Field(default=1, ge=1)
+    MONITORING_LIVE_IDLE_INTERVAL_SECONDS: int = Field(default=30, ge=5)
+    MONITORING_LIVE_DISCONNECT_GRACE_SECONDS: int = Field(default=60, ge=0)
+    MONITORING_HISTORY_DOWNSAMPLE_SECONDS: int = Field(default=10, ge=1)
+    MONITORING_RETENTION_DAYS: int = Field(default=30, ge=1)
+    MONITORING_GUEST_AGENT_DEFAULT: bool = True
+    VM_AGENT_STATE_STALE_SECONDS: int = Field(default=90, ge=1)
+    MONITORING_PROMETHEUS_ENABLED: bool = True
+    MONITORING_OTLP_ENDPOINT: str = ""
+    MONITORING_WEBHOOK_TIMEOUT_SECONDS: int = Field(default=5, ge=1)
 
     # Rate Limiting
     RATE_LIMIT_PER_MINUTE: int = 100
@@ -601,140 +644,65 @@ class Settings(BaseSettings):
     RETRY_BACKOFF: float = 2.0
     CREATE_VM_MAX_RETRIES: int = 15
     CREATE_VM_RETRY_DELAY_SECONDS: float = 5.0
+    MULTIPASS_LAUNCH_INIT_TIMEOUT_SECONDS: int = Field(default=1, ge=1)
     LAUNCH_TIMEOUT_SECONDS: int = 300
 
     # Multipass Settings
     MULTIPASS_BINARY_PATH: str = Field(
-        default="",
-        description="Path to multipass binary"
+        default="", description="Path to multipass binary"
     )
 
     @field_validator("MULTIPASS_BINARY_PATH")
     def detect_multipass_path(cls, v: str) -> str:
-        """Detect and validate Multipass binary path."""
-        import platform
-        import subprocess
-        
-        def validate_path(path: str) -> bool:
-            """Validate that a path exists and is executable."""
-            return os.path.isfile(path) and os.access(path, os.X_OK)
-
-        # If path provided via environment variable, ONLY validate that path
-        if v:
-            logger.info(f"Checking multipass binary at: {v}")
-            if not validate_path(v):
-                msg = f"Invalid multipass binary path: {v} (not found or not executable)"
-                logger.error(msg)
-                raise ValueError(msg)
-            logger.info(f"✓ Found valid multipass binary at: {v}")
-            return v
-
-        logger.info("No multipass path provided, attempting auto-detection...")
-        system = platform.system().lower()
-        logger.info(f"Detected OS: {system}")
-        binary_name = "multipass.exe" if system == "windows" else "multipass"
-        
-        # Try to find multipass based on OS
-        if system == "linux":
-            logger.info("Checking for snap installation...")
-            # First try to find snap and check if multipass is installed
-            try:
-                # Check if snap exists
-                snap_result = subprocess.run(
-                    ["which", "snap"],
-                    capture_output=True,
-                    text=True,
-                    check=True
-                )
-                if snap_result.returncode == 0:
-                    logger.info("✓ Found snap, checking for multipass installation...")
-                    # Check if multipass is installed via snap
-                    try:
-                        snap_list = subprocess.run(
-                            ["snap", "list", "multipass"],
-                            capture_output=True,
-                            text=True,
-                            check=True
-                        )
-                        if snap_list.returncode == 0:
-                            snap_path = "/snap/bin/multipass"
-                            if validate_path(snap_path):
-                                logger.info(f"✓ Found multipass via snap at {snap_path}")
-                                return snap_path
-                    except subprocess.CalledProcessError:
-                        logger.info("✗ Multipass not installed via snap")
-                        pass
-            except subprocess.CalledProcessError:
-                logger.info("✗ Snap not found")
-                pass
-                
-            # Common Linux paths if snap installation not found
-            search_paths = [
-                "/usr/local/bin",
-                "/usr/bin",
-                "/snap/bin"
-            ]
-            logger.info(f"Checking common Linux paths: {', '.join(search_paths)}")
-                
-        elif system == "darwin":  # macOS
-            search_paths = [
-                "/opt/homebrew/bin",    # M1 Mac
-                "/usr/local/bin",       # Intel Mac
-                "/opt/local/bin"        # MacPorts
-            ]
-            logger.info(f"Checking macOS paths: {', '.join(search_paths)}")
-                
-        elif system == "windows":
-            search_paths = [
-                os.path.join(os.path.expandvars(r"%ProgramFiles%"), "Multipass", "bin"),
-                os.path.join(os.path.expandvars(r"%ProgramFiles(x86)%"), "Multipass", "bin"),
-                os.path.join(os.path.expandvars(r"%LocalAppData%"), "Multipass", "bin")
-            ]
-            logger.info(f"Checking Windows paths: {', '.join(search_paths)}")
-                
-        else:
-            search_paths = ["/usr/local/bin", "/usr/bin"]
-            logger.info(f"Checking default paths: {', '.join(search_paths)}")
-
-        # Search for multipass binary in OS-specific paths
-        for directory in search_paths:
-            path = os.path.join(directory, binary_name)
-            if validate_path(path):
-                logger.info(f"✓ Found valid multipass binary at: {path}")
-                return path
-
-        # OS-specific installation instructions
-        if system == "linux":
-            raise ValueError(
-                "Multipass binary not found. Please install using:\n"
-                "sudo snap install multipass\n"
-                "Or set GOLEM_PROVIDER_MULTIPASS_BINARY_PATH to your Multipass binary path."
-            )
-        elif system == "darwin":
-            raise ValueError(
-                "Multipass binary not found. Please install using:\n"
-                "brew install multipass\n"
-                "Or set GOLEM_PROVIDER_MULTIPASS_BINARY_PATH to your Multipass binary path."
-            )
-        elif system == "windows":
-            raise ValueError(
-                "Multipass binary not found. Please install from:\n"
-                "Microsoft Store or https://multipass.run/download/windows\n"
-                "Or set GOLEM_PROVIDER_MULTIPASS_BINARY_PATH to your Multipass binary path."
-            )
-        else:
-            raise ValueError(
-                "Multipass binary not found. Please install Multipass or set "
-                "GOLEM_PROVIDER_MULTIPASS_BINARY_PATH to your Multipass binary path."
-            )
+        """Keep optional explicit Multipass path without probing at import time."""
+        return v.strip() if isinstance(v, str) else v
 
     # Proxy Settings
     PORT_RANGE_START: int = 50800
     PORT_RANGE_END: int = 50900
     PROXY_STATE_DIR: str = ""
     PUBLIC_IP: Optional[str] = None
+    PUBLIC_ENDPOINT_MODE: str = Field(
+        default="auto_ip_https",
+        description="Public provider endpoint mode: auto_ip_https or disabled",
+    )
+    SECURE_SETUP_IN_DEVELOPMENT: bool = False
+    PUBLIC_ENDPOINT_IP: str = "auto"
+    PUBLIC_HTTPS_PORT: int = 443
+    PUBLIC_HTTPS_INTERNAL_PORT: int = 443
+    ACME_CHALLENGE_TYPE: str = "http-01"
+    ACME_HTTP_PUBLIC_PORT: int = 80
+    ACME_HTTP_INTERNAL_PORT: int = 80
+    ACME_ENV: str = "production"
+    ACME_DIRECTORY_URL: str = "https://acme-v02.api.letsencrypt.org/directory"
+    ACME_PROFILE: str = "shortlived"
+    ACME_ACCOUNT_EMAIL: str = ""
+    CERT_DIR: str = ""
+    CERT_RENEW_BEFORE_HOURS: int = 48
+    CERT_RENEWAL_ENABLED: bool = True
+    CERT_RENEWAL_CHECK_INTERVAL_SECONDS: int = 3600
+    CERT_RENEWAL_RETRY_INITIAL_SECONDS: int = 300
+    CERT_RENEWAL_RETRY_MAX_SECONDS: int = 21600
+    NAT_AUTO_MAPPING_ENABLED: bool = False
+    PORT_CHECK_TLS_URL: str = "http://195.201.39.101:9000"
+    PORT_CHECK_REQUEST_TIMEOUT: float = 8.0
 
-    @field_validator("PROXY_STATE_DIR", mode='before')
+    @field_validator("ACME_ENV", mode="before")
+    @classmethod
+    def normalize_acme_environment(cls, v: str) -> str:
+        return normalize_acme_env(v)
+
+    @field_validator("ACME_DIRECTORY_URL", mode="before")
+    @classmethod
+    def resolve_acme_directory_url(cls, v: str, values: dict) -> str:
+        if os.environ.get("GOLEM_PROVIDER_ACME_DIRECTORY_URL"):
+            return v
+        env = normalize_acme_env(str(values.data.get("ACME_ENV") or "production"))
+        if env == "staging":
+            return "https://acme-staging-v02.api.letsencrypt.org/directory"
+        return v or "https://acme-v02.api.letsencrypt.org/directory"
+
+    @field_validator("PROXY_STATE_DIR", mode="before")
     def resolve_proxy_state_dir(cls, v: str) -> str:
         """Resolve and create proxy state directory path."""
         if not v:
@@ -743,60 +711,67 @@ class Settings(BaseSettings):
             path = Path(v)
             if not path.is_absolute():
                 path = Path.home() / path
-        
+
         try:
             path.mkdir(parents=True, exist_ok=True)
             logger.debug(f"Created proxy state directory at {path}")
         except Exception as e:
             logger.error(f"Failed to create proxy state directory at {path}: {e}")
             raise ValueError(f"Failed to create proxy state directory: {e}")
-            
+
         return str(path)
 
-    @field_validator("PUBLIC_IP", mode='before')
+    @field_validator("CERT_DIR", mode="before")
+    def resolve_cert_dir(cls, v: str) -> str:
+        """Resolve and create certificate storage directory."""
+        if not v:
+            path = Path.home() / ".golem" / "provider" / "certs"
+        else:
+            path = Path(v)
+            if not path.is_absolute():
+                path = Path.home() / path
+
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+            if os.name != "nt":
+                path.chmod(0o700)
+        except Exception as e:
+            logger.error(f"Failed to create certificate directory at {path}: {e}")
+            raise ValueError(f"Failed to create certificate directory: {e}")
+
+        return str(path)
+
+    @field_validator("PUBLIC_IP", mode="before")
     def get_public_ip(cls, v: Optional[str], values: dict) -> Optional[str]:
         """Get public IP if set to 'auto'."""
+        if v and v != "auto":
+            logger.info(f"Using manually provided IP: {v}")
+            return v
+
         if values.data.get("ENVIRONMENT") == "development":
-            try:
-                hostname = socket.gethostname()
-                ips = socket.gethostbyname_ex(hostname)[2]
-                local_ips = [ip for ip in ips if not ip.startswith("127.")]
-                if local_ips:
-                    ip = local_ips[0]
-                    logger.info(f"Found local IP for development: {ip}")
-                    return ip
-            except socket.gaierror:
-                pass
+            ip_address = _development_public_ip()
+            if ip_address:
+                logger.info(f"Found local IP for development: {ip_address}")
+                return ip_address
 
-            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            try:
-                s.connect(('8.8.8.8', 80))
-                IP = s.getsockname()[0]
-                if IP:
-                    logger.info(f"Found local IP for development: {IP}")
-                    return IP
-            except Exception:
-                pass
-            finally:
-                s.close()
-
-            raise ValueError("Could not determine local IP address in development mode. "
-                             "Please ensure you have a valid network connection.")
+            raise ValueError(
+                "Could not determine local IP address in development mode. "
+                "Please ensure you have a valid network connection."
+            )
         if v == "auto":
             try:
                 import requests
+
                 response = requests.get("https://api.ipify.org")
                 ip = response.text.strip()
                 logger.info(f"Found public IP: {ip}")
                 return ip
             except Exception:
                 return None
-        
-        if v:
-            logger.info(f"Using manually provided IP: {v}")
+
         return v
 
-    # Pricing Settings (configured in USD; auto-converted to GLM)
+    # Pricing Settings (configured in USD)
     # Per-month prices per unit
     PRICE_USD_PER_CORE_MONTH: float = Field(default=5.0, ge=0)
     PRICE_USD_PER_GB_RAM_MONTH: float = Field(default=2.0, ge=0)
@@ -812,8 +787,7 @@ class Settings(BaseSettings):
     COINGECKO_IDS: str = "golem,golem-network-tokens"  # try both, first wins
     PRICING_UPDATE_ENABLED: bool = True
     PRICING_UPDATE_MIN_DELTA_PERCENT: float = Field(default=1.0, ge=0.0)
-    PRICING_UPDATE_INTERVAL_DISCOVERY: int = 900    # 15 minutes
-    PRICING_UPDATE_INTERVAL_GOLEM_BASE: int = 14400 # 4 hours
+    PRICING_UPDATE_INTERVAL_DISCOVERY: int = 900  # 15 minutes
 
     class Config:
         env_prefix = "GOLEM_PROVIDER_"

@@ -3,8 +3,8 @@ from decimal import Decimal
 
 import pytest
 
-from provider.utils.pricing import PricingAutoUpdater
 from provider.config import settings
+from provider.utils.pricing import PricingAutoUpdater
 
 
 @pytest.mark.asyncio
@@ -19,9 +19,6 @@ async def test_pricing_auto_updater_calls_callback_with_platform(monkeypatch):
 
     updater = PricingAutoUpdater(on_updated_callback=on_updated)
 
-    # Force advertiser type to discovery to pick discovery interval
-    settings.ADVERTISER_TYPE = "discovery_server"
-
     calls = {"n": 0}
 
     def fake_fetch():
@@ -33,13 +30,15 @@ async def test_pricing_auto_updater_calls_callback_with_platform(monkeypatch):
 
     # Patch fetch and sleep to run instantly
     monkeypatch.setattr("provider.utils.pricing.fetch_glm_usd_price", fake_fetch)
+
     async def no_sleep(*_a, **_k):
         return None
+
     monkeypatch.setattr(asyncio, "sleep", no_sleep)
 
     await updater.start()
 
     assert len(events) >= 1
     platform, price = events[0]
-    assert platform in ("discovery_server", "golem_base")
+    assert platform == "central"
     assert price == Decimal("0.5")

@@ -1,141 +1,142 @@
-.PHONY: install test start lock start-testnet start-mainnet dev-proxy dev-web dev-proxy-web start-dev
+.PHONY: install test local start lock openapi api-generate api-check start-testnet start-mainnet dev-port-checker dev-web dev-port-checker-web start-dev
 
 # --- Dev convenience variables (override via env when calling make) ---
 # Ports
 PORT_CHECKER_PORT ?= 9000
-# Shared token between UI and proxy (public in UI; use dev-only value)
-PORT_CHECKER_TOKEN ?= dev-token
-# Golem Base RPC/WS for provider resolution (L3 EthWarsaw Holesky)
-GOLEM_BASE_RPC_URL ?= https://ethwarsaw.holesky.golemdb.io/rpc
-GOLEM_BASE_WS_URL ?= wss://ethwarsaw.holesky.golemdb.io/rpc/ws
-# Optional dev-only endpoints for Golem Base
-GOLEM_BASE_DEV_RPC_URL ?=
-GOLEM_BASE_DEV_WS_URL ?=
- # Discovery API used by the proxy to resolve provider IPs (central discovery). For local-only setups,
- # point this to any reachable discovery instance. Default to public demo endpoint.
-DISCOVERY_API_URL ?= http://195.201.39.101:9001/api/v1
+PROVIDER_API_PORT ?= 7466
+# Central discovery websockets used in local development.
+CENTRAL_DISCOVERY_PROVIDER_WS_URL ?= ws://127.0.0.1:9001/api/v1/discovery/providers
+CENTRAL_DISCOVERY_REQUESTOR_WS_URL ?= ws://127.0.0.1:9001/api/v1/discovery/requestors
+# Payments chain used by MetaMask/requestor-web.
+L2_RPC_URL ?= https://rpc.hoodi.ethpandaops.io
+L2_EXPLORER_URL ?= https://hoodi.etherscan.io
+L2_CHAIN_ID_HEX ?= 0x88bb0
+L2_CHAIN_NAME ?= Ethereum Hoodi
+STREAM_PAYMENT_ADDRESS ?= $(shell python3 -c "import json; print(json.load(open('contracts/deployments/hoodi.json'))['StreamPayment']['address'])")
+GLM_TOKEN_ADDRESS ?= $(shell python3 -c "import json; print(json.load(open('contracts/deployments/hoodi.json'))['StreamPayment'].get('glmToken') or '0x55555555555556AcFf9C332Ed151758858bd7a26')")
 
 install: lock
-	poetry -C discovery-server install
+	cd central-discovery-server && go mod download
+	poetry -C port-checker-server install
 	poetry -C provider-server install
-	poetry -C requestor-server install
 	poetry -C shared-faucet install
 
 lock:
-	poetry -C discovery-server lock
+	poetry -C port-checker-server lock
 	poetry -C provider-server lock
-	poetry -C requestor-server lock
 
 test:
-	# Ensure dev deps (e.g., requests for TestClient) are installed per service
-	poetry -C discovery-server lock --no-update
-	poetry -C discovery-server install --with dev --no-interaction
-	poetry -C discovery-server run pytest discovery-server/tests --cov=discovery --cov-report=term-missing --cov-fail-under=100 || [ $$? -eq 5 ]
-	poetry -C provider-server lock --no-update
+	cd central-discovery-server && go test ./...
+	poetry -C port-checker-server lock
+	poetry -C port-checker-server install --with dev --no-interaction
+	poetry -C port-checker-server run pytest port-checker-server/tests || [ $$? -eq 5 ]
+	poetry -C provider-server lock
 	poetry -C provider-server install --with dev --no-interaction
 	# Provider uses service-local pytest.ini to scope coverage sources
 	poetry -C provider-server run pytest provider-server/tests --cov-fail-under=100 || [ $$? -eq 5 ]
-	poetry -C requestor-server lock --no-update
-	poetry -C requestor-server install --with dev --no-interaction
-	# Requestor uses service-local pytest.ini to scope coverage sources
-	poetry -C requestor-server run pytest requestor-server/tests || [ $$? -eq 5 ]
+
+local:
+	python3 scripts/local_stack.py $(LOCAL_STACK_ARGS)
+
+openapi:
+	poetry -C port-checker-server run python ../scripts/export_openapi.py port-checker ../openapi/port-checker.json
+	poetry -C provider-server run python ../scripts/export_openapi.py provider ../openapi/provider.json
+
+api-generate: openapi
+	npm --prefix requestor-web run api:generate
+
+api-check: api-generate
+	git diff --exit-code -- openapi requestor-web/lib/generated/api requestor-web/package.json requestor-web/package-lock.json requestor-web/orval.config.ts
 
 start:
 	@set -e; \
 	# Start provider (development network, local IP)
 	GOLEM_ENVIRONMENT=development \
 	GOLEM_PROVIDER_NETWORK=development \
+	GOLEM_PROVIDER_DISCOVERY_WS_URL=$(CENTRAL_DISCOVERY_PROVIDER_WS_URL) \
 	poetry -C provider-server run golem-provider start & \
-	# Start port-checker (proxy) pointing at configured discovery (public demo API by default)
-	GOLEM_ENVIRONMENT=development \
-	PORT_CHECKER_HOST=127.0.0.1 \
-	PORT_CHECKER_PORT=$(PORT_CHECKER_PORT) \
-	PORT_CHECKER_PROXY_TOKEN=$(PORT_CHECKER_TOKEN) \
-	DISCOVERY_API_URL=$(DISCOVERY_API_URL) \
-	GOLEM_BASE_RPC_URL=$(if $(GOLEM_BASE_DEV_RPC_URL),$(GOLEM_BASE_DEV_RPC_URL),$(GOLEM_BASE_RPC_URL)) \
-	GOLEM_BASE_WS_URL=$(if $(GOLEM_BASE_DEV_WS_URL),$(GOLEM_BASE_DEV_WS_URL),$(GOLEM_BASE_WS_URL)) \
-	poetry -C port-checker-server run port-checker & \
+		# Start port-checker for provider port verification
+		GOLEM_ENVIRONMENT=development \
+		PORT_CHECKER_HOST=127.0.0.1 \
+		PORT_CHECKER_PORT=$(PORT_CHECKER_PORT) \
+		poetry -C port-checker-server run port-checker & \
 	# Start requestor web UI (development environment)
 	GOLEM_ENVIRONMENT=development \
-	NEXT_PUBLIC_GOLEM_ENVIRONMENT=development \
-	NEXT_PUBLIC_DISCOVERY_API_URL=$(DISCOVERY_API_URL) \
-	NEXT_PUBLIC_PORT_CHECKER_URL=http://127.0.0.1:$(PORT_CHECKER_PORT) \
-	NEXT_PUBLIC_PORT_CHECKER_TOKEN=$(PORT_CHECKER_TOKEN) \
-	NEXT_PUBLIC_GOLEM_BASE_DEV_RPC_URL=$(GOLEM_BASE_DEV_RPC_URL) \
-	NEXT_PUBLIC_GOLEM_BASE_DEV_WS_URL=$(GOLEM_BASE_DEV_WS_URL) \
+		NEXT_PUBLIC_GOLEM_ENVIRONMENT=development \
+		NEXT_PUBLIC_DISCOVERY_WS_URL=$(CENTRAL_DISCOVERY_REQUESTOR_WS_URL) \
+		NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS=$(STREAM_PAYMENT_ADDRESS) \
+	NEXT_PUBLIC_GLM_TOKEN_ADDRESS=$(GLM_TOKEN_ADDRESS) \
+	NEXT_PUBLIC_EVM_CHAIN_ID=$(L2_CHAIN_ID_HEX) \
+	NEXT_PUBLIC_EVM_CHAIN_NAME="$(L2_CHAIN_NAME)" \
+	NEXT_PUBLIC_EVM_RPC_URL=$(L2_RPC_URL) \
+	NEXT_PUBLIC_EVM_EXPLORER_URL=$(L2_EXPLORER_URL) \
 	npm --prefix requestor-web run dev & \
 	wait
 
 start-testnet:
 	@set -e; \
-	GOLEM_PROVIDER_NETWORK=testnet GOLEM_ENVIRONMENT=development poetry -C discovery-server run golem-discovery & \
-	GOLEM_PROVIDER_NETWORK=testnet GOLEM_ENVIRONMENT=development poetry -C provider-server run golem-provider start --network testnet & \
-	GOLEM_REQUESTOR_NETWORK=testnet GOLEM_ENVIRONMENT=development poetry -C requestor-server run golem server api --reload & \
+	(cd central-discovery-server && GOLEM_PROVIDER_NETWORK=testnet GOLEM_ENVIRONMENT=development go run ./cmd/golem-central-discovery) & \
+	GOLEM_PROVIDER_NETWORK=testnet GOLEM_ENVIRONMENT=development GOLEM_PROVIDER_DISCOVERY_WS_URL=$(CENTRAL_DISCOVERY_PROVIDER_WS_URL) poetry -C provider-server run golem-provider start --network testnet & \
 	wait
 
 start-mainnet:
 	@set -e; \
-	GOLEM_PROVIDER_NETWORK=mainnet GOLEM_ENVIRONMENT=production poetry -C discovery-server run golem-discovery & \
-	GOLEM_PROVIDER_NETWORK=mainnet GOLEM_ENVIRONMENT=production poetry -C provider-server run golem-provider start & \
-	GOLEM_REQUESTOR_NETWORK=mainnet GOLEM_ENVIRONMENT=production poetry -C requestor-server run golem server api --reload & \
+	(cd central-discovery-server && GOLEM_PROVIDER_NETWORK=mainnet GOLEM_ENVIRONMENT=production go run ./cmd/golem-central-discovery) & \
+	GOLEM_PROVIDER_NETWORK=mainnet GOLEM_ENVIRONMENT=production GOLEM_PROVIDER_DISCOVERY_WS_URL=$(CENTRAL_DISCOVERY_PROVIDER_WS_URL) poetry -C provider-server run golem-provider start & \
 	wait
 
-# --- Dev helpers: Port-checker proxy + Discovery + Web UI ---
+# --- Dev helpers: Port-checker + Discovery + Web UI ---
 
-dev-proxy:
+dev-port-checker:
 	@set -e; \
 	# Install deps (idempotent)
 	poetry -C port-checker-server install >/dev/null; \
-	# Start port-checker (proxy enabled) pointing at configured discovery
+	# Start port-checker for provider port verification
 	GOLEM_ENVIRONMENT=development \
 	PORT_CHECKER_HOST=127.0.0.1 \
 	PORT_CHECKER_PORT=$(PORT_CHECKER_PORT) \
-	PORT_CHECKER_PROXY_TOKEN=$(PORT_CHECKER_TOKEN) \
-	DISCOVERY_API_URL=$(DISCOVERY_API_URL) \
-	GOLEM_BASE_RPC_URL=$(if $(GOLEM_BASE_DEV_RPC_URL),$(GOLEM_BASE_DEV_RPC_URL),$(GOLEM_BASE_RPC_URL)) \
-	GOLEM_BASE_WS_URL=$(if $(GOLEM_BASE_DEV_WS_URL),$(GOLEM_BASE_DEV_WS_URL),$(GOLEM_BASE_WS_URL)) \
 	poetry -C port-checker-server run port-checker
 
 dev-web:
 	@set -e; \
 	# Install deps (idempotent)
 	npm --prefix requestor-web install >/dev/null; \
-	# Run Next.js dev with proxy + discovery env configured
+	# Run Next.js dev with discovery env configured
 	GOLEM_ENVIRONMENT=development \
 	NEXT_PUBLIC_GOLEM_ENVIRONMENT=development \
-	NEXT_PUBLIC_DISCOVERY_API_URL=$(DISCOVERY_API_URL) \
-	NEXT_PUBLIC_PORT_CHECKER_URL=http://127.0.0.1:$(PORT_CHECKER_PORT) \
-	NEXT_PUBLIC_PORT_CHECKER_TOKEN=$(PORT_CHECKER_TOKEN) \
-	NEXT_PUBLIC_GOLEM_BASE_DEV_RPC_URL=$(GOLEM_BASE_DEV_RPC_URL) \
-	NEXT_PUBLIC_GOLEM_BASE_DEV_WS_URL=$(GOLEM_BASE_DEV_WS_URL) \
+	NEXT_PUBLIC_DISCOVERY_WS_URL=$(CENTRAL_DISCOVERY_REQUESTOR_WS_URL) \
+	NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS=$(STREAM_PAYMENT_ADDRESS) \
+	NEXT_PUBLIC_GLM_TOKEN_ADDRESS=$(GLM_TOKEN_ADDRESS) \
+	NEXT_PUBLIC_EVM_CHAIN_ID=$(L2_CHAIN_ID_HEX) \
+	NEXT_PUBLIC_EVM_CHAIN_NAME="$(L2_CHAIN_NAME)" \
+	NEXT_PUBLIC_EVM_RPC_URL=$(L2_RPC_URL) \
+	NEXT_PUBLIC_EVM_EXPLORER_URL=$(L2_EXPLORER_URL) \
 	npm --prefix requestor-web run dev
 
-dev-proxy-web:
+dev-port-checker-web:
 	@set -e; \
 	# Install deps
 	poetry -C port-checker-server install >/dev/null; \
 	npm --prefix requestor-web install >/dev/null; \
-	# Start port-checker (proxy)
+	# Start port-checker for provider port verification
 	GOLEM_ENVIRONMENT=development \
 	PORT_CHECKER_HOST=127.0.0.1 \
 	PORT_CHECKER_PORT=$(PORT_CHECKER_PORT) \
-	PORT_CHECKER_PROXY_TOKEN=$(PORT_CHECKER_TOKEN) \
-	DISCOVERY_API_URL=$(DISCOVERY_API_URL) \
-	GOLEM_BASE_RPC_URL=$(if $(GOLEM_BASE_DEV_RPC_URL),$(GOLEM_BASE_DEV_RPC_URL),$(GOLEM_BASE_RPC_URL)) \
-	GOLEM_BASE_WS_URL=$(if $(GOLEM_BASE_DEV_WS_URL),$(GOLEM_BASE_DEV_WS_URL),$(GOLEM_BASE_WS_URL)) \
 	poetry -C port-checker-server run port-checker & \
 	# Start web UI
 	GOLEM_ENVIRONMENT=development \
 	NEXT_PUBLIC_GOLEM_ENVIRONMENT=development \
-	NEXT_PUBLIC_DISCOVERY_API_URL=$(DISCOVERY_API_URL) \
-	NEXT_PUBLIC_PORT_CHECKER_URL=http://127.0.0.1:$(PORT_CHECKER_PORT) \
-	NEXT_PUBLIC_PORT_CHECKER_TOKEN=$(PORT_CHECKER_TOKEN) \
-	NEXT_PUBLIC_GOLEM_BASE_DEV_RPC_URL=$(GOLEM_BASE_DEV_RPC_URL) \
-	NEXT_PUBLIC_GOLEM_BASE_DEV_WS_URL=$(GOLEM_BASE_DEV_WS_URL) \
+	NEXT_PUBLIC_DISCOVERY_WS_URL=$(CENTRAL_DISCOVERY_REQUESTOR_WS_URL) \
+	NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS=$(STREAM_PAYMENT_ADDRESS) \
+	NEXT_PUBLIC_GLM_TOKEN_ADDRESS=$(GLM_TOKEN_ADDRESS) \
+	NEXT_PUBLIC_EVM_CHAIN_ID=$(L2_CHAIN_ID_HEX) \
+	NEXT_PUBLIC_EVM_CHAIN_NAME="$(L2_CHAIN_NAME)" \
+	NEXT_PUBLIC_EVM_RPC_URL=$(L2_RPC_URL) \
+	NEXT_PUBLIC_EVM_EXPLORER_URL=$(L2_EXPLORER_URL) \
 	npm --prefix requestor-web run dev & \
 	wait
 
-# Start provider + dev proxy + web UI (development network)
+# Start provider + port-checker + web UI (development network)
 start-dev:
 	@set -e; \
 	# Ensure deps
@@ -144,30 +145,25 @@ start-dev:
 	# Start provider (development network, local IP)
 	GOLEM_ENVIRONMENT=development \
 	GOLEM_PROVIDER_NETWORK=development \
+	GOLEM_PROVIDER_DISCOVERY_WS_URL=$(CENTRAL_DISCOVERY_PROVIDER_WS_URL) \
 	poetry -C provider-server run golem-provider start & \
-	# Start port-checker (dev endpoints if provided)
+	# Start port-checker for provider port verification
 	GOLEM_ENVIRONMENT=development \
 	PORT_CHECKER_HOST=127.0.0.1 \
 	PORT_CHECKER_PORT=$(PORT_CHECKER_PORT) \
-	PORT_CHECKER_PROXY_TOKEN=$(PORT_CHECKER_TOKEN) \
-	DISCOVERY_API_URL=$(DISCOVERY_API_URL) \
-	GOLEM_BASE_RPC_URL=$(if $(GOLEM_BASE_DEV_RPC_URL),$(GOLEM_BASE_DEV_RPC_URL),$(GOLEM_BASE_RPC_URL)) \
-	GOLEM_BASE_WS_URL=$(if $(GOLEM_BASE_DEV_WS_URL),$(GOLEM_BASE_DEV_WS_URL),$(GOLEM_BASE_WS_URL)) \
 	poetry -C port-checker-server run port-checker & \
 	# Start web UI (development environment)
 	GOLEM_ENVIRONMENT=development \
 	NEXT_PUBLIC_GOLEM_ENVIRONMENT=development \
-	NEXT_PUBLIC_DISCOVERY_API_URL=$(DISCOVERY_API_URL) \
-	NEXT_PUBLIC_PORT_CHECKER_URL=http://127.0.0.1:$(PORT_CHECKER_PORT) \
-	NEXT_PUBLIC_PORT_CHECKER_TOKEN=$(PORT_CHECKER_TOKEN) \
-	NEXT_PUBLIC_GOLEM_BASE_DEV_RPC_URL=$(GOLEM_BASE_DEV_RPC_URL) \
-	NEXT_PUBLIC_GOLEM_BASE_DEV_WS_URL=$(GOLEM_BASE_DEV_WS_URL) \
+	NEXT_PUBLIC_DISCOVERY_WS_URL=$(CENTRAL_DISCOVERY_REQUESTOR_WS_URL) \
+	NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS=$(STREAM_PAYMENT_ADDRESS) \
+	NEXT_PUBLIC_GLM_TOKEN_ADDRESS=$(GLM_TOKEN_ADDRESS) \
+	NEXT_PUBLIC_EVM_CHAIN_ID=$(L2_CHAIN_ID_HEX) \
+	NEXT_PUBLIC_EVM_CHAIN_NAME="$(L2_CHAIN_NAME)" \
+	NEXT_PUBLIC_EVM_RPC_URL=$(L2_RPC_URL) \
+	NEXT_PUBLIC_EVM_EXPLORER_URL=$(L2_EXPLORER_URL) \
 	npm --prefix requestor-web run dev & \
 	wait
-
-# Alias for convenience
-.PHONY: devwebproxy
-devwebproxy: dev-proxy-web
 
 # --- Faucet helpers ---
 

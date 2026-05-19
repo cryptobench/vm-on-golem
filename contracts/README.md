@@ -1,129 +1,141 @@
-StreamPayment (EIP‑1620 inspired)
+StreamPayment
 
-This package provides a minimal streaming payments contract supporting native ETH (token=0x0) and ERC20 tokens.
+This package provides a minimal GLM streaming payments contract.
 
-- Rate‑per‑second vesting funded up‑front (ETH or ERC20)
+- Rate-per-second vesting funded up front with GLM
 - Recipient can withdraw vested funds
-- Sender or recipient can terminate (refunds unvested to sender)
-- Oracle can halt a stream (emergency stop) via `haltStream`
-- Sender can extend runtime via `topUp(streamId, amount)` (extends stopTime)
+- Sender or recipient can terminate and settle the stream
+- Sender can extend runtime with `topUp(streamId, amount)` while the stream is active or inside the 30-second grace period
 
-Tooling: Hardhat with EVM networks (Kaolin, Polygon) and a deploy script.
+The contract is deployed with one GLM ERC20 address and only accepts streams
+for that token.
 
 Core interfaces
 
-- `createStream(address token, address recipient, uint256 deposit, uint128 ratePerSecond) -> streamId` (payable when token=0x0)
-- `withdraw(uint256 streamId)` — transfers newly vested funds to recipient
-- `terminate(uint256 streamId)` — pays out vested to recipient and refunds rest to sender
-- `haltStream(uint256 streamId)` — oracle clamp; stops further vesting
-- `topUp(uint256 streamId, uint256 amount)` — increases deposit and extends `stopTime` by `amount / ratePerSecond` (payable when token=0x0; `msg.value` must equal `amount`)
-- `streams(uint256 id) -> (token, sender, recipient, startTime, stopTime, ratePerSecond, deposit, withdrawn, halted)`
+- `createStream(address recipient, uint256 deposit, uint128 ratePerSecond, bytes32 leaseId, bytes32 termsHash, uint128 quoteExpiresAt, bytes providerSignature) -> streamId`
+  - provider signature must authorize the exact lease terms
+  - `leaseId` must be unique
+  - caller must approve `deposit` GLM before calling
+- `withdraw(uint256 streamId)`
+- `terminate(uint256 streamId)`
+- `streamState(uint256 streamId) -> active|grace|expired|terminated`
+- `topUp(uint256 streamId, uint256 amount)`
+  - caller must approve `amount` GLM before calling
+  - reverts once `streamState` is `expired` or `terminated`
+- `streams(uint256 id) -> (token, sender, recipient, startTime, stopTime, ratePerSecond, deposit, withdrawn, leaseId, termsHash)`
 
 Recommended flow
 
-1) Requestor computes `ratePerSecond` from provider pricing and resources.
-2) Requestor deposits at least 1 hour of coverage (`deposit >= rate * 3600`). For ETH mode, send as `msg.value`.
-3) Requestor calls provider `POST /api/v1/vms` with `stream_id` to start rental.
-4) Requestor can call `topUp` periodically to keep the rental going indefinitely.
-5) Provider may run a background task to withdraw vested funds and to stop VMs if runway is too low.
+1. Requestor fetches a provider-signed lease quote from `POST /api/v1/payments/lease-quotes`.
+2. Requestor approves and deposits the quoted GLM coverage.
+3. Requestor calls provider `POST /api/v1/vms` with `stream_id`, `lease_id`, and `terms_hash`.
+4. Requestor can call `topUp` periodically to keep the rental running; late top-ups are accepted for 30 seconds after `stopTime`.
+5. Stopping a VM does not settle payment; billing continues while the stream remains active.
+6. Terminating a rental calls `terminate(streamId)`, paying vested GLM to the provider and refunding unvested deposit to the requestor.
+7. Provider can withdraw vested GLM during active, grace, or expired rentals and deletes VMs when streams expire or terminate.
 
 Deployment
 
-Polygon PoS
+Install dependencies:
 
-- Env vars:
-  - `POLYGON_RPC_URL` — Polygon PoS RPC endpoint
-  - `PRIVATE_KEY` — deployer key (with MATIC for gas)
-  - `GLM_TOKEN_ADDRESS` — ERC20 token address on Polygon (use only for ERC20 mode)
-  - `ORACLE_ADDRESS` — optional; defaults to deployer address
-- Commands:
-  - `npm install`
-  - `npx hardhat run scripts/deploy.js --network polygon`
-- Output: Deployment info is written to `contracts/deployments/<network>.json`.
+```bash
+npm install
+```
 
-ETHWARSAW (Holesky) test network
+Deploy to Ethereum Sepolia:
 
-- Network info
-  - RPC (HTTP): `https://ethwarsaw.holesky.golemdb.io/rpc`
-  - RPC (WS): `wss://ethwarsaw.holesky.golemdb.io/rpc/ws`
-  - Faucet: `https://ethwarsaw.holesky.golemdb.io/faucet/`
-  - Explorer: `https://explorer.ethwarsaw.holesky.golemdb.io`
-- Env vars:
-  - `ETHWARSAW_RPC_URL` — defaults to the HTTP RPC above
-  - `PRIVATE_KEY` — deployer key (fund with faucet ETH for gas)
-  - `GLM_TOKEN_ADDRESS` — ERC20 token address on this network (optional). For native ETH mode leave unset and pass `0x000...0`.
-  - `ORACLE_ADDRESS` — optional; defaults to deployer address
-- Deploy MockGLM (optional, for testing):
-  ```bash
-  npm install
-  npx hardhat run scripts/deploy_mock_glm.js --network ethwarsaw
-  # Record MockGLM address from deployments/ethwarsaw-mockglm.json
-  export GLM_TOKEN_ADDRESS=<MockGLM_address>
-  ```
-- Deploy StreamPayment:
-  ```bash
-  ETHWARSAW_RPC_URL=https://ethwarsaw.holesky.golemdb.io/rpc \
-  # For ETH mode, you may omit GLM_TOKEN_ADDRESS and pass zero from clients
-  PRIVATE_KEY=0x... \
-  npx hardhat run scripts/deploy.js --network ethwarsaw
-  ```
-- Output: Deployment info is written to `contracts/deployments/<network>.json`.
+```bash
+SEPOLIA_RPC_URL=https://rpc.sepolia.org \
+GLM_TOKEN_ADDRESS=0x... \
+PRIVATE_KEY=0x... \
+npx hardhat run scripts/deploy.js --network sepolia
+```
 
-KAOLIN (Holesky) test network
+Deploy to Ethereum Hoodi using tGLM:
 
-- Network info
-  - RPC (HTTP): `https://kaolin.holesky.golemdb.io/rpc`
-  - RPC (WS): `wss://kaolin.holesky.golemdb.io/rpc/ws`
-  - Faucet: `https://kaolin.holesky.golemdb.io/faucet/`
-  - Explorer: `https://explorer.kaolin.holesky.golemdb.io`
-  - Network ID (chainId): `60138453025`
-- Env vars:
-  - `KAOLIN_RPC_URL` — defaults to the HTTP RPC above
-  - `KAOLIN_CHAIN_ID` — optional; set to `60138453025` to avoid chainId mismatches
-  - `PRIVATE_KEY` — deployer key (fund with faucet ETH for gas)
-  - `GLM_TOKEN_ADDRESS` — ERC20 token address on this network (optional). For native ETH mode leave unset and pass `0x000...0`.
-  - `ORACLE_ADDRESS` — optional; defaults to deployer address
-- Deploy MockGLM (optional, for testing):
-  ```bash
-  npm install
-  npx hardhat run scripts/deploy_mock_glm.js --network kaolin
-  # Record MockGLM address from deployments/kaolin-mockglm.json
-  export GLM_TOKEN_ADDRESS=<MockGLM_address>
-  ```
-- Deploy StreamPayment:
-  ```bash
-  KAOLIN_RPC_URL=https://kaolin.holesky.golemdb.io/rpc \
-  KAOLIN_CHAIN_ID=60138453025 \
-  GLM_TOKEN_ADDRESS=$GLM_TOKEN_ADDRESS \
-  PRIVATE_KEY=0x... \
-  npx hardhat run scripts/deploy.js --network kaolin
-  ```
-- Output: Deployment info is written to `contracts/deployments/<network>.json` (e.g., `kaolin.json`).
+```bash
+HOODI_RPC_URL=https://rpc.hoodi.ethpandaops.io \
+GLM_TOKEN_ADDRESS=0x55555555555556AcFf9C332Ed151758858bd7a26 \
+PRIVATE_KEY=0x... \
+npx hardhat run scripts/deploy.js --network hoodi
+```
 
-L2 (Holesky) test network
+Acquire Hoodi test funds:
 
-- Network info
-  - RPC (HTTP): `https://l2.holesky.golemdb.io/rpc`
-  - RPC (WS): `wss://l2.holesky.golemdb.io/rpc/ws`
-  - Faucet: `https://l2.holesky.golemdb.io/faucet/`
-  - Explorer: `https://explorer.l2.holesky.golemdb.io`
-  - Network ID (chainId): `393530`
-- Env vars:
-  - `L2_RPC_URL` — defaults to the HTTP RPC above
-  - `L2_CHAIN_ID` — optional; set to `393530`
-  - `PRIVATE_KEY` — deployer key (fund with faucet ETH for gas)
-  - `GLM_TOKEN_ADDRESS` — ERC20 token address (optional). For native ETH mode, pass `0x000...0` from clients and leave this unset.
-  - `ORACLE_ADDRESS` — optional; defaults to deployer address
-- Deploy StreamPayment (native ETH mode):
-  ```bash
-  L2_RPC_URL=https://l2.holesky.golemdb.io/rpc \
-  L2_CHAIN_ID=393530 \
-  PRIVATE_KEY=0x... \
-  npx hardhat run scripts/deploy.js --network l2
-  ```
-- Output: Deployment info is written to `contracts/deployments/<network>.json` (e.g., `l2.json`).
+1. Fund the deployer/requestor wallet with Hoodi ETH for gas. Faucet links are
+   published at `https://www.hoodi.dev/`.
+2. Mint Hoodi tGLM by calling `create()` on the tGLM minter contract
+   `0x500F965199C63865A3E666cA3fF55B64F1c8Bc8b`. Each successful call mints
+   `1000` tGLM to the caller.
 
-Notes
+```bash
+PRIVATE_KEY=0x... node - <<'NODE'
+(async () => {
+  const { ethers } = require("ethers");
 
-- Periodic withdrawal is not automated on‑chain; do it off‑chain with thresholds to minimize gas.
-- Halting a stream via oracle stops accrual but does not auto‑terminate; sender/recipient can terminate to settle funds.
+  const rpc = "https://rpc.hoodi.ethpandaops.io";
+  const provider = new ethers.JsonRpcProvider(rpc);
+  const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
+
+  const minter = new ethers.Contract(
+    "0x500F965199C63865A3E666cA3fF55B64F1c8Bc8b",
+    ["function create() external"],
+    wallet,
+  );
+
+  const tx = await minter.create();
+  console.log("mint tx:", tx.hash);
+  await tx.wait();
+
+  const glm = new ethers.Contract(
+    "0x55555555555556AcFf9C332Ed151758858bd7a26",
+    ["function balanceOf(address) view returns (uint256)"],
+    provider,
+  );
+
+  console.log("tGLM:", ethers.formatEther(await glm.balanceOf(wallet.address)));
+})().catch((error) => {
+  console.error(error.shortMessage || error.message);
+  process.exit(1);
+});
+NODE
+```
+
+Verify on Hoodi Etherscan:
+
+```bash
+ETHERSCAN_API_KEY=... \
+npx hardhat verify --network hoodi <StreamPaymentAddress> \
+  <OracleAddress> 0x55555555555556AcFf9C332Ed151758858bd7a26
+```
+
+Deploy to Ethereum Hoodi:
+
+```bash
+HOODI_RPC_URL=https://rpc.hoodi.ethpandaops.io \
+GLM_TOKEN_ADDRESS=0x... \
+PRIVATE_KEY=0x... \
+npx hardhat run scripts/deploy.js --network hoodi
+```
+
+For local/test networks without a GLM token, deploy `MockGLM` first and pass
+its address as `GLM_TOKEN_ADDRESS`:
+
+```bash
+npx hardhat run scripts/deploy_mock_glm.js --network hoodi
+```
+
+Deployment info is written to `contracts/deployments/<network>.json`.
+After changing Solidity, run `npm --prefix contracts run build`,
+`npm run abi:sync`, and `npm run abi:check`. Provider and requestor ABIs are
+generated from `contracts/artifacts/contracts/StreamPayment.sol/StreamPayment.json`
+and must not be hand-edited.
+
+Network notes
+
+- Sepolia chain ID: `11155111` (`0xaa36a7`)
+- Sepolia explorer: `https://sepolia.etherscan.io`
+- Ethereum Hoodi chain ID: `560048` (`0x88bb0`)
+- Ethereum Hoodi GLM token: `0x55555555555556AcFf9C332Ed151758858bd7a26`
+- Ethereum Hoodi tGLM minter: `0x500F965199C63865A3E666cA3fF55B64F1c8Bc8b`
+- Ethereum Hoodi explorer: `https://hoodi.etherscan.io`

@@ -1,17 +1,18 @@
 import asyncio
-from typing import Optional, Dict
 import json
-from pathlib import Path
 import logging
+from pathlib import Path
+from typing import Dict, Optional
 
 logger = logging.getLogger(__name__)
+
 
 class VMNameMapper:
     """Maps between requestor VM names and multipass VM names."""
 
     def __init__(self, db_path: Optional[Path] = None):
         """Initialize name mapper.
-        
+
         Args:
             db_path: Optional path to persist mappings
         """
@@ -19,26 +20,34 @@ class VMNameMapper:
         self._reverse_map: Dict[str, str] = {}  # multipass_name -> requestor_name
         self._lock = asyncio.Lock()
         self._storage_path = db_path
-        
+
         # Load existing mappings if storage path provided
         if db_path and db_path.exists():
             try:
                 with open(db_path) as f:
                     data = json.load(f)
-                    self._name_map = data.get('name_map', {})
-                    self._reverse_map = data.get('reverse_map', {})
+                    self._name_map = data.get("name_map", {})
+                    self._reverse_map = data.get("reverse_map", {})
+                if self._canonicalize_mappings():
+                    self._save_mappings_sync()
                 logger.info(f"Loaded {len(self._name_map)} VM name mappings")
             except Exception as e:
                 logger.error(f"Failed to load VM name mappings: {e}")
 
     async def add_mapping(self, requestor_name: str, multipass_name: str) -> None:
         """Add a new name mapping.
-        
+
         Args:
             requestor_name: Name used by requestor
             multipass_name: Full multipass VM name
         """
         async with self._lock:
+            old_multipass_name = self._name_map.get(requestor_name)
+            if old_multipass_name and old_multipass_name != multipass_name:
+                self._reverse_map.pop(old_multipass_name, None)
+            old_requestor_name = self._reverse_map.get(multipass_name)
+            if old_requestor_name and old_requestor_name != requestor_name:
+                self._name_map.pop(old_requestor_name, None)
             self._name_map[requestor_name] = multipass_name
             self._reverse_map[multipass_name] = requestor_name
             await self._save_mappings()
@@ -46,10 +55,10 @@ class VMNameMapper:
 
     async def get_multipass_name(self, requestor_name: str) -> Optional[str]:
         """Get multipass name for a requestor name.
-        
+
         Args:
             requestor_name: Name used by requestor
-            
+
         Returns:
             Multipass VM name if found, None otherwise
         """
@@ -57,10 +66,10 @@ class VMNameMapper:
 
     async def get_requestor_name(self, multipass_name: str) -> Optional[str]:
         """Get requestor name for a multipass name.
-        
+
         Args:
             multipass_name: Full multipass VM name
-            
+
         Returns:
             Requestor name if found, None otherwise
         """
@@ -68,7 +77,7 @@ class VMNameMapper:
 
     async def remove_mapping(self, requestor_name: str) -> None:
         """Remove a name mapping.
-        
+
         Args:
             requestor_name: Name used by requestor
         """
@@ -82,27 +91,36 @@ class VMNameMapper:
 
     async def _save_mappings(self) -> None:
         """Save mappings to storage if path provided."""
-        if self._storage_path:
-            try:
-                data = {
-                    'name_map': self._name_map,
-                    'reverse_map': self._reverse_map
-                }
-                # Create parent directories if they don't exist
-                self._storage_path.parent.mkdir(parents=True, exist_ok=True)
-                # Write to temporary file first
-                temp_path = self._storage_path.with_suffix('.tmp')
-                with open(temp_path, 'w') as f:
-                    json.dump(data, f, indent=2)
-                # Rename temporary file to actual file (atomic operation)
-                temp_path.rename(self._storage_path)
-            except Exception as e:
-                logger.error(f"Failed to save VM name mappings: {e}")
+        self._save_mappings_sync()
 
     def list_mappings(self) -> Dict[str, str]:
         """Get all current name mappings.
-        
+
         Returns:
             Dictionary of requestor_name -> multipass_name mappings
         """
         return dict(self._name_map)
+
+    def _canonicalize_mappings(self) -> bool:
+        canonical_reverse = {
+            multipass_name: requestor_name
+            for requestor_name, multipass_name in self._name_map.items()
+        }
+        if canonical_reverse != self._reverse_map:
+            logger.warning("Canonicalizing stale VM reverse name mappings")
+            self._reverse_map = canonical_reverse
+            return True
+        return False
+
+    def _save_mappings_sync(self) -> None:
+        if not self._storage_path:
+            return
+        try:
+            data = {"name_map": self._name_map, "reverse_map": self._reverse_map}
+            self._storage_path.parent.mkdir(parents=True, exist_ok=True)
+            temp_path = self._storage_path.with_suffix(".tmp")
+            with open(temp_path, "w") as f:
+                json.dump(data, f, indent=2)
+            temp_path.rename(self._storage_path)
+        except Exception as e:
+            logger.error(f"Failed to save VM name mappings: {e}")

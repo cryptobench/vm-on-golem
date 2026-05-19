@@ -1,0 +1,47 @@
+name: API Contracts
+
+on:
+  pull_request:
+    paths:
+      - "AGENTS.md"
+      - "Makefile"
+      - "openapi/**"
+      - "scripts/export_openapi.py"
+      - "port-checker-server/**"
+      - "provider-server/**"
+      - "requestor-server/**"
+      - "requestor-web/**"
+      - ".github/workflows/api-contracts.yml"
+
+jobs:
+  api-contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.11.0"
+          cache: "npm"
+          cache-dependency-path: requestor-web/package-lock.json
+
+      - name: Install Poetry
+        run: pipx install poetry
+
+      - name: Install backend dependencies
+        run: |
+          poetry -C port-checker-server install --with dev --no-interaction
+          poetry -C provider-server install --with dev --no-interaction
+          poetry -C requestor-server install --with dev --no-interaction
+
+      - name: Install requestor-web dependencies
+        run: npm ci --prefix requestor-web
+
+      - name: Check generated API contracts
+        run: make api-check

@@ -1,9 +1,21 @@
 "use client";
 import React from "react";
+import { RiAddLine, RiCheckboxCircleLine, RiKey2Line } from "@remixicon/react";
 import { loadSettings, saveSettings, type SSHKey } from "../../lib/api";
 import { KeyAddModal } from "./KeyAddModal";
+import { cn } from "@golem/ui";
 
-export function KeyPicker({ value, onChange, layout = 'grid' }: { value?: string; onChange: (id: string, key: SSHKey) => void; layout?: 'grid' | 'carousel' }) {
+type KeyPickerLayout = "grid" | "carousel" | "list";
+
+function keyParts(key: SSHKey) {
+  const parts = (key.value || key.public_key || "").split(" ");
+  return {
+    type: parts[0] || "",
+    fingerprint: parts[1] ? `${parts[1].slice(0, 8)}...${parts[1].slice(-5)}` : "",
+  };
+}
+
+export function KeyPicker({ value, onChange, layout = 'grid' }: { value?: string; onChange: (id: string, key: SSHKey) => void; layout?: KeyPickerLayout }) {
   const [keys, setKeys] = React.useState<SSHKey[]>([]);
   const [selected, setSelected] = React.useState<string | undefined>(value);
   const [openAdd, setOpenAdd] = React.useState(false);
@@ -17,13 +29,13 @@ export function KeyPicker({ value, onChange, layout = 'grid' }: { value?: string
 
   React.useEffect(() => { if (value !== undefined) setSelected(value); }, [value]);
 
-  const select = (id: string) => {
+  const select = (id: string, sourceKeys = keys) => {
     setSelected(id);
-    const k = keys.find(x => x.id === id);
+    const k = sourceKeys.find(x => x.id === id);
     if (k) onChange(id, k);
     const prev = loadSettings();
     saveSettings({
-      ssh_keys: keys,
+      ssh_keys: sourceKeys,
       default_ssh_key_id: id,
       stream_payment_address: prev.stream_payment_address,
       glm_token_address: prev.glm_token_address,
@@ -34,7 +46,7 @@ export function KeyPicker({ value, onChange, layout = 'grid' }: { value?: string
     const next = keys.filter(k => k.id !== id);
     setKeys(next);
     const newSel = selected === id ? next[0]?.id : selected;
-    if (newSel && next.find(k => k.id === newSel)) select(newSel);
+    if (newSel && next.find(k => k.id === newSel)) select(newSel, next);
     const prev = loadSettings();
     saveSettings({
       ssh_keys: next,
@@ -42,6 +54,12 @@ export function KeyPicker({ value, onChange, layout = 'grid' }: { value?: string
       stream_payment_address: prev.stream_payment_address,
       glm_token_address: prev.glm_token_address,
     });
+  };
+
+  const addKey = (key: SSHKey) => {
+    const next = [...keys, key];
+    setKeys(next);
+    select(key.id, next);
   };
 
   const Tile = ({ k }: { k?: SSHKey }) => {
@@ -89,11 +107,73 @@ export function KeyPicker({ value, onChange, layout = 'grid' }: { value?: string
           <Tile />
           {keys.map((k) => (<Tile key={k.id} k={k} />))}
         </div>
-        <KeyAddModal open={openAdd} onClose={() => setOpenAdd(false)} onAdded={(key) => {
-          const next = [...keys, key];
-          setKeys(next);
-          select(key.id);
-        }} />
+        <KeyAddModal open={openAdd} onClose={() => setOpenAdd(false)} onAdded={addKey} />
+      </div>
+    );
+  }
+
+  if (layout === "list") {
+    const selectedKey = keys.find((key) => key.id === selected);
+    const selectedParts = selectedKey ? keyParts(selectedKey) : null;
+
+    return (
+      <div>
+        <div className="rounded-md border border-border bg-surface">
+          <div className="flex min-h-10 items-center gap-3 border-b border-border px-3 py-2">
+            <span className="flex h-2 w-2 rounded-full bg-success" aria-hidden />
+            {selectedKey ? (
+              <>
+                <span className="min-w-0 flex-1 truncate text-sm font-medium text-text-primary">
+                  {selectedKey.name || "Unnamed key"}
+                </span>
+                <span className="hidden text-xs text-text-secondary sm:inline">{selectedParts?.type}</span>
+                <span className="hidden max-w-36 truncate font-mono text-xs text-text-secondary sm:inline">
+                  {selectedParts?.fingerprint}
+                </span>
+              </>
+            ) : (
+              <span className="text-sm text-text-secondary">No SSH key selected</span>
+            )}
+          </div>
+          <div className="divide-y divide-border">
+            {keys.map((key) => {
+              const parts = keyParts(key);
+              const isSelected = selected === key.id;
+              return (
+                <button
+                  key={key.id}
+                  type="button"
+                  className={cn(
+                    "flex min-h-10 w-full items-center gap-3 px-3 py-2 text-left text-sm transition hover:bg-surface-muted",
+                    isSelected && "bg-primary-soft",
+                  )}
+                  onClick={() => select(key.id)}
+                >
+                  <RiKey2Line className="h-4 w-4 shrink-0 text-text-secondary" aria-hidden />
+                  <span className="min-w-0 flex-1 truncate font-medium text-text-primary">
+                    {key.name || "Unnamed key"}
+                  </span>
+                  <span className="hidden text-xs text-text-secondary sm:inline">{parts.type}</span>
+                  <span className="hidden max-w-36 truncate font-mono text-xs text-text-secondary sm:inline">
+                    {parts.fingerprint}
+                  </span>
+                  {isSelected ? (
+                    <RiCheckboxCircleLine className="h-4 w-4 shrink-0 text-primary" aria-label="Selected" />
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <button
+          type="button"
+          className="mt-3 inline-flex h-10 items-center gap-2 rounded-md px-2 text-sm font-medium text-primary hover:bg-primary-soft"
+          onClick={() => setOpenAdd(true)}
+        >
+          <RiAddLine className="h-4 w-4" aria-hidden />
+          Add new SSH key
+        </button>
+        <KeyAddModal open={openAdd} onClose={() => setOpenAdd(false)} onAdded={addKey} />
       </div>
     );
   }
@@ -103,11 +183,7 @@ export function KeyPicker({ value, onChange, layout = 'grid' }: { value?: string
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
       <Tile />
       {keys.map((k) => (<Tile key={k.id} k={k} />))}
-      <KeyAddModal open={openAdd} onClose={() => setOpenAdd(false)} onAdded={(key) => {
-        const next = [...keys, key];
-        setKeys(next);
-        select(key.id);
-      }} />
+      <KeyAddModal open={openAdd} onClose={() => setOpenAdd(false)} onAdded={addKey} />
     </div>
   );
 }

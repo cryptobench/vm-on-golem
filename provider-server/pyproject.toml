@@ -12,7 +12,7 @@ classifiers = [
     "Environment :: Console",
     "Intended Audience :: System Administrators",
     "Operating System :: POSIX :: Linux",
-    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.11",
     "Topic :: System :: Distributed Computing"
 ]
 packages = [
@@ -48,10 +48,9 @@ rich = "^13.7.0"
 httpx = "^0.23.0"
 typer = ">=0.9.0,<1.0.0"
 web3 = "==7.13.0"
-golem-base-sdk = "==0.1.0"
 dependency-injector = "^4.41.0"
-golem-streaming-abi = ">=0.1.0,<0.2.0"
-golem-faucet = ">=0.1.0,<0.2.0"
+golem-streaming-abi = { path = "../streaming-abi", develop = true }
+miniupnpc = ">=2.2.5,<3.0.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.2.0"
@@ -69,7 +68,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.black]
 line-length = 88
-target-version = ['py313']
+target-version = ['py311']
 include = '\.pyi?$'
 
 [tool.isort]

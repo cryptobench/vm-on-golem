@@ -1,28 +1,34 @@
-const fs = require("fs");
-const path = require("path");
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { network } from "hardhat";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 async function main() {
-  const hre = require("hardhat");
-  const { ethers, network } = hre;
-  const glm = process.env.GLM_TOKEN_ADDRESS || "0x0000000000000000000000000000000000000000";
-  const oracle = process.env.ORACLE_ADDRESS || (await (await ethers.getSigners())[0].getAddress());
+  const { ethers } = await network.create();
+  const glm = process.env.GLM_TOKEN_ADDRESS;
+  if (!glm) {
+    throw new Error("GLM_TOKEN_ADDRESS is required for GLM-only StreamPayment deployment");
+  }
 
   const StreamPayment = await ethers.getContractFactory("StreamPayment");
-  const contract = await StreamPayment.deploy(oracle);
+  const contract = await StreamPayment.deploy(glm);
   await contract.waitForDeployment();
   const address = await contract.getAddress();
   console.log("StreamPayment deployed to:", address);
 
   const outDir = path.join(__dirname, "..", "deployments");
   fs.mkdirSync(outDir, { recursive: true });
-  const netName = (network && network.name) ? network.name.toLowerCase() : (process.env.HARDHAT_NETWORK || "unknown");
+  const netName = process.env.HARDHAT_NETWORK || "unknown";
   const outFile = path.join(outDir, `${netName}.json`);
   const payload = {
     network: netName,
     timestamp: new Date().toISOString(),
     StreamPayment: {
       address,
-      oracle,
+      paymentToken: glm,
       glmToken: glm
     }
   };

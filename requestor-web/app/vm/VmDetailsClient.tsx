@@ -1,129 +1,246 @@
 "use client";
 import React from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { loadRentals, saveRentals, vmStop, vmDestroy, loadSettings, type Rental } from "../../lib/api";
+import {
+  RiDeleteBinLine,
+  RiExpandDiagonalLine,
+  RiPauseLine,
+  RiPlayLine,
+  RiRestartLine,
+  RiStopLine,
+} from "@remixicon/react";
+import {
+  loadRentals,
+  saveRentals,
+  createSnapshot,
+  deleteSnapshot,
+  listSnapshots,
+  restoreSnapshot,
+  vmDestroy,
+  vmRestart,
+  vmResume,
+  vmResize,
+  vmStart,
+  vmStop,
+  vmSuspend,
+  loadSettings,
+  type ProviderAd,
+  type Rental,
+} from "../../lib/api";
 import { useAds } from "../../context/AdsContext";
-import { useToast } from "../../components/ui/Toast";
-import { Spinner } from "../../components/ui/Spinner";
-import { StatusBadge } from "../../components/ui/StatusBadge";
-import { Skeleton } from "../../components/ui/Skeleton";
-import { BrowserProvider, Contract } from "ethers";
-import streamPayment from "../../public/abi/StreamPayment.json";
+import { useToast } from "@golem/ui";
 import { useStreamActions } from "../../hooks/useStreamActions";
+import { useVmLive } from "../../hooks/useVmLive";
 import { useWallet } from "../../context/WalletContext";
-import { buildSshCommand } from "../../lib/ssh";
-import { humanDuration, type ChainStream, fetchStreamWithMeta } from "../../lib/streams";
-import { parseHumanDuration } from "../../lib/time";
+import { getPaymentNetworkErrorMessage } from "../../lib/chain";
+import { usePaymentStreamsLive } from "../../lib/paymentStreamLive";
+import {
+  ensurePaidStreamCanStart,
+  terminatePaidRental,
+} from "../../lib/rentalLifecycle";
+import { getRequestorRuntimeConfig } from "../../lib/runtimeConfig";
+import { buildSshCommand, copyText } from "../../lib/ssh";
+import {
+  humanDuration,
+  type ChainStream,
+  fetchStreamWithMeta,
+  terminateStreamWithWallet,
+} from "../../lib/streams";
 import { getPriceUSD, onPricesUpdated } from "../../lib/prices";
-import { RiCpuLine, RiStackLine, RiHardDrive2Line, RiFileCopyLine } from "@remixicon/react";
-import { StreamCard } from "../../components/streams/StreamCard";
-import { countryFlagEmoji, countryFullName } from "../../lib/intl";
-import { useProviderInfo, useVmAccess, useVmStatusSafe, useVmStatus } from "../../hooks/useApiSWR";
-import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
+import { openPaymentStream } from "../../lib/paymentStreams";
+import { clampResizeResources, computeResizeLimits } from "../../lib/vmResize";
+import { ConfirmDialog } from "@golem/ui";
+import { VmMetricsCharts } from "../../components/vm/VmMetricsCharts";
+import {
+  VmDetailsHeader,
+  type VmAction,
+} from "../../components/vm/details/VmDetailsHeader";
+import { VmOverviewPanel } from "../../components/vm/details/VmOverviewPanel";
+import { VmMetricsSummary } from "../../components/vm/details/VmMetricsSummary";
+import { VmSnapshotsPanel } from "../../components/vm/details/VmSnapshotsPanel";
+import { VmResizeModal } from "../../components/vm/details/VmResizeModal";
+import { VmPaymentStreamPanel } from "../../components/vm/details/VmPaymentStreamPanel";
+import { VmDetailsSkeleton } from "../../components/vm/details/VmDetailsSkeleton";
+import { providerPublicHost } from "../../lib/providerConnection";
+import { deriveVmDisplayLifecycle } from "../../lib/vmLifecycle";
 
-// ChainStream imported from lib/streams
+type VmDetailsClientProps = {
+  vmId?: string;
+};
 
-// StatusBadge imported from shared UI
-
-// Country helpers imported from lib/intl
-
-// humanDuration provided by lib/streams
-
-const parseTimeInput = parseHumanDuration;
-
-export default function VmDetailsClient() {
+export default function VmDetailsClient({ vmId: vmIdProp }: VmDetailsClientProps) {
   const search = useSearchParams();
   const router = useRouter();
   const { ads } = useAds();
   const { show } = useToast();
   const [mounted, setMounted] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
-  const [access, setAccess] = React.useState<{ ssh_port?: number } | null>(null);
-  const [stream, setStream] = React.useState<{ chain: ChainStream; remaining: bigint } | null>(null);
+  const [access, setAccess] = React.useState<{
+    ssh_host?: string;
+    ssh_port?: number | null;
+    ssh_user?: string | null;
+  } | null>(null);
+  const [stream, setStream] = React.useState<{
+    chain: ChainStream;
+    remaining: bigint;
+  } | null>(null);
   const [remaining, setRemaining] = React.useState<number>(0);
   const [err, setErr] = React.useState<string | null>(null);
-  const { account } = useWallet();
-  const [provider, setProvider] = React.useState<{ country?: string | null; platform?: string | null; ip_address?: string | null } | null>(null);
-  const [tokenSymbol, setTokenSymbol] = React.useState<string>('');
+  const { account, ensurePaymentsNetwork, paymentReady, paymentMessage } =
+    useWallet();
+  const [provider, setProvider] = React.useState<{
+    country?: string | null;
+    platform?: string | null;
+    ip_address?: string | null;
+  } | null>(null);
+  const [tokenSymbol, setTokenSymbol] = React.useState<string>("");
   const [tokenDecimals, setTokenDecimals] = React.useState<number>(18);
   const [usdPrice, setUsdPrice] = React.useState<number | null>(null);
-  const [customTopup, setCustomTopup] = React.useState<string>("");
-  const [displayCurrency, setDisplayCurrency] = React.useState<'fiat'|'token'>(loadSettings().display_currency === 'token' ? 'token' : 'fiat');
+  const [displayCurrency, setDisplayCurrency] = React.useState<
+    "fiat" | "token"
+  >(loadSettings().display_currency === "token" ? "token" : "fiat");
+  const [snapshots, setSnapshots] = React.useState<
+    Array<{ name: string; comment?: string | null; created_at?: string | null }>
+  >([]);
+  const [snapshotBusy, setSnapshotBusy] = React.useState<string | null>(null);
+  const [resizeCpu, setResizeCpu] = React.useState<number>(1);
+  const [resizeMemory, setResizeMemory] = React.useState<number>(1);
+  const [resizeStorage, setResizeStorage] = React.useState<number>(10);
+  const [resizeInitializedKey, setResizeInitializedKey] = React.useState<
+    string | null
+  >(null);
+  const [metricsRange, setMetricsRange] = React.useState<
+    "1h" | "6h" | "24h" | "7d"
+  >("1h");
 
-  const vmId = search.get('id') || '';
-  const [vm, setVm] = React.useState<ReturnType<typeof loadRentals>[number] | null>(null);
+  const vmId = vmIdProp || search.get("id") || "";
+  const [vmLookupReady, setVmLookupReady] = React.useState(false);
+  const [authoritativeStatusReadyKey, setAuthoritativeStatusReadyKey] =
+    React.useState<string | null>(null);
+  const [vm, setVm] = React.useState<
+    ReturnType<typeof loadRentals>[number] | null
+  >(null);
 
-  const spAddr = (loadSettings().stream_payment_address || process.env.NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS || '').trim();
+  const spAddr = (
+    loadSettings().stream_payment_address ||
+    getRequestorRuntimeConfig().streamPaymentAddress ||
+    ""
+  ).trim();
+  const live = useVmLive(
+    vm?.provider_endpoint_url,
+    vm?.vm_id,
+    vm?.creation_job_id,
+    metricsRange,
+  );
+  const vmPaymentStreams = usePaymentStreamsLive(
+    spAddr,
+    vm?.stream_id ? [vm as Rental] : [],
+  );
 
   // Destroy confirmation state (must be before any early returns)
   const [confirmDestroyOpen, setConfirmDestroyOpen] = React.useState(false);
   const openDestroy = () => setConfirmDestroyOpen(true);
   const closeDestroy = () => setConfirmDestroyOpen(false);
+  const [resizeOpen, setResizeOpen] = React.useState(false);
+  const [resizePhase, setResizePhase] = React.useState<string | null>(null);
 
-  React.useEffect(() => { setMounted(true); }, []);
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
   // React to Settings changes (currency toggle) live
   React.useEffect(() => {
     const onSettings = (e: any) => {
-      try { setDisplayCurrency(e?.detail?.display_currency === 'token' ? 'token' : 'fiat'); } catch {}
+      try {
+        setDisplayCurrency(
+          e?.detail?.display_currency === "token" ? "token" : "fiat",
+        );
+      } catch {}
     };
-    const onStorage = () => setDisplayCurrency(loadSettings().display_currency === 'token' ? 'token' : 'fiat');
-    window.addEventListener('requestor_settings_changed', onSettings as any);
-    window.addEventListener('storage', onStorage);
+    const onStorage = () =>
+      setDisplayCurrency(
+        loadSettings().display_currency === "token" ? "token" : "fiat",
+      );
+    window.addEventListener("requestor_settings_changed", onSettings as any);
+    window.addEventListener("storage", onStorage);
     return () => {
-      window.removeEventListener('requestor_settings_changed', onSettings as any);
-      window.removeEventListener('storage', onStorage);
+      window.removeEventListener(
+        "requestor_settings_changed",
+        onSettings as any,
+      );
+      window.removeEventListener("storage", onStorage);
     };
   }, []);
 
   // Resolve VM from local storage after mount to avoid SSR hydration mismatches
   React.useEffect(() => {
+    setVmLookupReady(false);
     try {
       const list = loadRentals();
-      const rec = list.find(r => r.vm_id === vmId) || null;
+      const rec = list.find((r) => r.vm_id === vmId) || null;
       setVm(rec as any);
-    } catch { setVm(null); }
+    } catch {
+      setVm(null);
+    } finally {
+      setVmLookupReady(true);
+    }
   }, [vmId]);
 
-  // SWR-backed provider info, access, and VM existence polling
-  const { data: swrProvider } = useProviderInfo(vm?.provider_id, { refreshInterval: 30000 });
-  const { data: swrAccess } = useVmAccess(vm?.provider_id, vm?.vm_id, { refreshInterval: 8000 });
-  const { data: swrStatus } = useVmStatusSafe(vm?.provider_id, vm?.vm_id, { refreshInterval: 8000 });
-  const { data: swrVm } = useVmStatus(vm?.provider_id, vm?.vm_id, { refreshInterval: 8000 });
+  const { topUp: topUpAction, terminate } = useStreamActions(spAddr);
+  const providerData = live.state.providerInfo;
+  const accessData = live.state.access;
+  const jobData = live.state.job;
+  const statusData = live.state.lifecycle;
+  const vmData = live.state.lifecycle;
+  const metricsData = live.state.metricsLatest;
+  const metricsHistoryData = live.state.metricsHistory;
+  const providerCapacity = React.useMemo(
+    () =>
+      vm?.provider_available_resources
+        ? { resources: { available: vm.provider_available_resources } }
+        : null,
+    [vm?.provider_available_resources],
+  );
+  const authoritativeStatusKey = vm
+    ? [
+        vm.provider_endpoint_url,
+        vm.provider_id,
+        vm.vm_id,
+      ].join(":")
+    : null;
+  const hasAuthoritativeStatus =
+    authoritativeStatusKey != null &&
+    authoritativeStatusReadyKey === authoritativeStatusKey;
 
   React.useEffect(() => {
-    if (swrProvider) setProvider({ country: (swrProvider as any).country, platform: (swrProvider as any).platform, ip_address: (swrProvider as any).ip_address });
-  }, [swrProvider]);
+    if (!authoritativeStatusKey) return;
+    if (live.state.lifecycle) {
+      setAuthoritativeStatusReadyKey(authoritativeStatusKey);
+    }
+  }, [authoritativeStatusKey, live.state.lifecycle]);
 
   React.useEffect(() => {
-    if (swrAccess) setAccess(swrAccess as any);
-  }, [swrAccess]);
+    if (providerData)
+      setProvider({
+        country: (providerData as any).country,
+        platform: (providerData as any).platform,
+        ip_address: (providerData as any).ip_address,
+      });
+  }, [providerData]);
+
+  React.useEffect(() => {
+    if (accessData) setAccess(accessData as any);
+  }, [accessData]);
 
   // Reconcile local VM record with provider's authoritative status (full status endpoint)
   React.useEffect(() => {
-    if (!vm || !swrVm) return;
-    const s = (swrVm as any) || {};
-    const status = String(s.status || '').toLowerCase();
-    const sshPort = s.ssh_port != null ? Number(s.ssh_port) : null;
-    const ipAddr = s.ip_address || null;
-    const nowSec = Math.floor(Date.now()/1000);
-    let next: any | null = null;
-    if (status === 'running') {
-      if (vm.status !== 'running' || vm.ssh_port !== sshPort || vm.provider_ip !== ipAddr) {
-        next = { ...vm, status: 'running', ssh_port: sshPort, provider_ip: ipAddr };
-      }
-    } else if (status === 'stopped') {
-      if (vm.status !== 'stopped') {
-        next = { ...vm, status: 'stopped' };
-      }
-    } else if (status === 'terminated' || status === 'deleted') {
-      if (vm.status !== 'terminated') {
-        next = { ...vm, status: 'terminated', ssh_port: null, ended_at: nowSec };
-      }
-    }
+    if (!vm || !vmData) return;
+    const next = mergeVmStatus(vm, vmData);
     if (next) {
       try {
         const list = loadRentals();
-        const idx = list.findIndex(x => x.vm_id === vm.vm_id && x.provider_id === vm.provider_id);
+        const idx = list.findIndex(
+          (x) => x.vm_id === vm.vm_id && x.provider_id === vm.provider_id,
+        );
         if (idx >= 0) {
           const out = [...list];
           out[idx] = next as any;
@@ -134,111 +251,85 @@ export default function VmDetailsClient() {
         setVm(next);
       }
     }
-  }, [swrVm, vm?.vm_id, vm?.provider_id]);
+  }, [vmData, vm?.vm_id, vm?.provider_id]);
 
-  // Safe status endpoint: handle 404 termination and enrich provider resources.
-  // Also reconcile status when full endpoint data is unavailable.
+  // Reconcile local VM record from the websocket lifecycle read model.
   React.useEffect(() => {
-    if (!vm || !swrStatus) return;
-    const safe = swrStatus as any;
-    if (!safe.exists && safe.code === 404) {
-      setAccess(null);
-      setProvider(prev => prev ? { ...prev } : prev);
-      const createdAt = (vm as any).created_at ? Number((vm as any).created_at) : 0;
-      const ageSec = createdAt ? Math.floor(Date.now()/1000) - createdAt : Infinity;
-      const isCreating = ((vm.status || '').toLowerCase() === 'creating');
-      const withinGrace = isCreating && ageSec < 180; // 3 minutes
-      if (!withinGrace) {
-        try {
-          const list = loadRentals();
-          const idx = list.findIndex(x => x.vm_id === vm.vm_id && x.provider_id === vm.provider_id);
-          if (idx >= 0) {
-            const next: Rental = { ...list[idx], status: 'terminated', ssh_port: null, ended_at: Math.floor(Date.now()/1000) };
-            const out = [...list];
-            out[idx] = next;
-            saveRentals(out);
-            setVm(next);
-          }
-        } catch {}
-      }
-    } else {
-      const s = (safe as any).data || {};
-      // Update provider resources if present
-      if (s?.resources) {
-        setProvider(prev => ({ ...(prev || {}), resources: s.resources } as any));
-      }
-      // If we have status in the safe payload and it differs locally, reconcile.
-      if (s && s.status) {
-        const status = String(s.status || '').toLowerCase();
-        const sshPort = s.ssh_port != null ? Number(s.ssh_port) : null;
-        const ipAddr = s.ip_address || null;
-        const nowSec = Math.floor(Date.now()/1000);
-        let next: any | null = null;
-        if (status === 'running') {
-          if (vm.status !== 'running' || vm.ssh_port !== sshPort || vm.provider_ip !== ipAddr) {
-            next = { ...vm, status: 'running', ssh_port: sshPort, provider_ip: ipAddr };
-          }
-        } else if (status === 'stopped') {
-          if (vm.status !== 'stopped') {
-            next = { ...vm, status: 'stopped' };
-          }
-        } else if (status === 'terminated' || status === 'deleted') {
-          if (vm.status !== 'terminated') {
-            next = { ...vm, status: 'terminated', ssh_port: null, ended_at: nowSec };
-          }
+    if (!vm || !statusData) return;
+    const status = statusData as any;
+    if (status?.resources) {
+      setProvider((prev) => ({ ...(prev || {}), resources: status.resources }) as any);
+    }
+    if (status?.status) {
+      const next = mergeVmStatus(vm, status);
+      if (next) {
+        const list = loadRentals();
+        const idx = list.findIndex(
+          (x) => x.vm_id === vm.vm_id && x.provider_id === vm.provider_id,
+        );
+        if (idx >= 0) {
+          const out = [...list];
+          out[idx] = next as any;
+          saveRentals(out);
         }
-        if (next) {
-          try {
-            const list = loadRentals();
-            const idx = list.findIndex(x => x.vm_id === vm.vm_id && x.provider_id === vm.provider_id);
-            if (idx >= 0) {
-              const out = [...list];
-              out[idx] = next as any;
-              saveRentals(out);
-            }
-            setVm(next);
-          } catch {
-            setVm(next);
-          }
-        }
+        setVm(next);
       }
     }
-  }, [swrStatus, vm?.vm_id, vm?.provider_id]);
+  }, [statusData, vm?.vm_id, vm?.provider_id]);
 
-  // Stream details via lightweight polling + local 1s countdown
+  // Stream details from the shared requestor chain read model + local 1s countdown.
   React.useEffect(() => {
-    let cancelled = false;
-    const run = async () => {
-      if (!vm?.stream_id || !spAddr) { if (!cancelled) setStream(null); return; }
-      try {
-        const res = await fetchStreamWithMeta(spAddr, BigInt(vm.stream_id));
-        if (cancelled) return;
-        setStream({ chain: res.chain as any, remaining: BigInt(res.remaining) });
-        setRemaining(Number(res.remaining));
-        setTokenSymbol(String(res.tokenSymbol || 'ETH'));
-        setTokenDecimals(Number(res.tokenDecimals || 18));
-        setUsdPrice(res.usdPrice ?? null);
-      } catch {
-        if (!cancelled) setStream(null);
-      }
-    };
-    run();
-    const iv = setInterval(run, 15000);
-    return () => { cancelled = true; clearInterval(iv); };
-  }, [vm?.stream_id, spAddr]);
+    if (!vm?.stream_id || !spAddr) {
+      setStream(null);
+      return;
+    }
+    const entry = vmPaymentStreams.entries[String(vm.stream_id)];
+    if (!entry) {
+      setErr(vmPaymentStreams.error);
+      return;
+    }
+    if (!entry.ok) {
+      setStream(null);
+      setErr(entry.error);
+      return;
+    }
+    setErr(null);
+    setStream({
+      chain: entry.data.chain as any,
+      remaining: BigInt(entry.data.remaining),
+    });
+    setRemaining(Number(entry.data.remaining));
+    setTokenSymbol(String(entry.data.tokenSymbol || "GLM"));
+    setTokenDecimals(Number(entry.data.tokenDecimals || 18));
+    setUsdPrice(entry.data.usdPrice ?? null);
+  }, [vm?.stream_id, spAddr, vmPaymentStreams.entries, vmPaymentStreams.error]);
 
   // Keep USD price in sync with global cache
   React.useEffect(() => {
-    const addr = (stream?.chain?.token || '').toLowerCase();
+    const addr = (stream?.chain?.token || "").toLowerCase();
     if (!addr && !tokenSymbol) return;
-    const glm = (loadSettings().glm_token_address || process.env.NEXT_PUBLIC_GLM_TOKEN_ADDRESS || '').toLowerCase();
-    const symUpper = (typeof tokenSymbol === 'string' ? tokenSymbol : '').toUpperCase();
-    const isEthLike = (addr === '0x0000000000000000000000000000000000000000') || symUpper === 'ETH' || symUpper === 'WETH';
-    const isGlmLike = (glm && addr === glm) || symUpper === 'GLM';
-    const pick = () => (isEthLike ? getPriceUSD('ETH') : (isGlmLike ? getPriceUSD('GLM') : null));
+    const glm = (
+      loadSettings().glm_token_address ||
+      getRequestorRuntimeConfig().glmTokenAddress ||
+      ""
+    ).toLowerCase();
+    const symUpper = (
+      typeof tokenSymbol === "string" ? tokenSymbol : ""
+    ).toUpperCase();
+    const isEthLike =
+      addr === "0x0000000000000000000000000000000000000000" ||
+      symUpper === "ETH" ||
+      symUpper === "WETH";
+    const isGlmLike = (glm && addr === glm) || symUpper === "GLM";
+    const pick = () =>
+      isEthLike ? getPriceUSD("ETH") : isGlmLike ? getPriceUSD("GLM") : null;
     setUsdPrice(pick());
     const off = onPricesUpdated(() => setUsdPrice(pick()));
-    return () => { try { off && off(); } catch {} };
+    return () => {
+      try {
+        off && off();
+      } catch {}
+    };
   }, [stream?.chain?.token, tokenSymbol]);
 
   // Countdown ticker for remaining seconds
@@ -251,293 +342,827 @@ export default function VmDetailsClient() {
     return () => clearInterval(t);
   }, [stream?.chain?.stopTime]);
 
-  if (!mounted) {
-    // Full-page skeleton to align with Suspense fallback and prevent hydration mismatch
-    return (
-      <div className="space-y-6">
-        <div className="card"><div className="card-body">
-          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <Skeleton className="h-5 w-24" />
-                <Skeleton className="h-7 w-40" />
-              </div>
-              <div className="mt-1 flex flex-wrap items-center gap-2">
-                <Skeleton className="h-4 w-24" />
-                <Skeleton className="h-4 w-16" />
-                <Skeleton className="h-4 w-24" />
-              </div>
-            </div>
-            <div className="flex flex-col items-start gap-2 sm:items-end">
-              <Skeleton className="h-4 w-40" />
-              <div className="flex gap-2">
-                <Skeleton className="h-9 w-24" />
-                <Skeleton className="h-9 w-24" />
-                <Skeleton className="h-9 w-24" />
-              </div>
-            </div>
-          </div>
-        </div></div>
-        <div className="grid gap-4 sm:grid-cols-3">
-          <div className="card"><div className="card-body"><Skeleton className="h-6 w-24" /></div></div>
-          <div className="card"><div className="card-body"><Skeleton className="h-6 w-24" /></div></div>
-          <div className="card"><div className="card-body"><Skeleton className="h-6 w-24" /></div></div>
-        </div>
-        <div className="card"><div className="card-body">
-          <div className="grid gap-6 sm:grid-cols-2">
-            <div className="grid gap-3">
-              <Skeleton className="h-4 w-24" />
-              <Skeleton className="h-4 w-48" />
-              <Skeleton className="h-4 w-24" />
-              <Skeleton className="h-4 w-28" />
-              <Skeleton className="h-4 w-20" />
-            </div>
-            <div className="grid gap-3 content-start">
-              <Skeleton className="h-4 w-32" />
-              <div className="flex gap-2">
-                <Skeleton className="h-9 w-20" />
-                <Skeleton className="h-9 w-20" />
-                <Skeleton className="h-9 w-20" />
-              </div>
-              <div className="flex items-center gap-2">
-                <Skeleton className="h-9 w-full" />
-                <Skeleton className="h-9 w-16" />
-              </div>
-            </div>
-          </div>
-        </div></div>
-      </div>
+  React.useEffect(() => {
+    const liveStream = live.state.stream as any;
+    if (!liveStream?.chain) return;
+    setStream({
+      chain: {
+        token: String(liveStream.chain.token),
+        sender: String(liveStream.chain.sender),
+        recipient: String(liveStream.chain.recipient),
+        startTime: BigInt(liveStream.chain.startTime || 0),
+        stopTime: BigInt(liveStream.chain.stopTime || 0),
+        ratePerSecond: BigInt(liveStream.chain.ratePerSecond || 0),
+        deposit: BigInt(liveStream.chain.deposit || 0),
+        withdrawn: BigInt(liveStream.chain.withdrawn || 0),
+        halted: Boolean(liveStream.chain.halted),
+      },
+      remaining: BigInt(liveStream.computed?.remaining_seconds || 0),
+    });
+    setRemaining(Number(liveStream.computed?.remaining_seconds || 0));
+    const token = String(liveStream.chain.token || "").toLowerCase();
+    const zero = "0x0000000000000000000000000000000000000000";
+    setTokenSymbol(token === zero ? "ETH" : "GLM");
+    setTokenDecimals(18);
+  }, [live.state.stream]);
+
+  React.useEffect(() => {
+    if (Array.isArray(live.state.snapshots)) {
+      setSnapshots(live.state.snapshots as any);
+    }
+  }, [live.state.snapshots]);
+
+  React.useEffect(() => {
+    const resources = getEffectiveResources(vmData, vm);
+    if (!vm || !resources) return;
+    const key = `${vm.provider_id}:${vm.vm_id}:${resources.cpu}:${resources.memory}:${resources.storage}`;
+    if (resizeInitializedKey === key) return;
+    const next = clampResizeResources(
+      resources,
+      resources,
+      computeResizeLimits(resources, providerCapacity),
     );
+    setResizeCpu(next.cpu);
+    setResizeMemory(next.memory);
+    setResizeStorage(next.storage);
+    setResizeInitializedKey(key);
+  }, [vmData, vm, resizeInitializedKey, providerCapacity]);
+
+  if (
+    !mounted ||
+    !vmLookupReady ||
+    (vm && vm.vm_id !== vmId) ||
+    (vm && vm.vm_id === vmId && !hasAuthoritativeStatus)
+  ) {
+    return <VmDetailsSkeleton />;
   }
 
   if (!vm) {
     return (
       <div className="space-y-4">
         <div className="text-red-600">VM not found in your rentals.</div>
-        <button className="btn btn-secondary" onClick={() => router.push('/rentals')}>Back to VMs</button>
+        <button
+          className="btn btn-secondary"
+          onClick={() => router.push("/rentals")}
+        >
+          Back to VMs
+        </button>
       </div>
     );
   }
 
-  const sshHost = provider?.ip_address || vm.provider_ip || 'PROVIDER_IP';
-  const sshPort = access?.ssh_port || (swrVm as any)?.ssh_port || vm.ssh_port || null;
-  const sshCmd = sshPort ? buildSshCommand(sshHost, Number(sshPort)) : null;
+  const sshHost = access?.ssh_host || null;
+  const sshPort = access?.ssh_port != null ? Number(access.ssh_port) : null;
+  const sshUser = access?.ssh_user || null;
+  const sshCmd =
+    sshHost && sshPort && sshUser
+      ? buildSshCommand(sshHost, Number(sshPort), sshUser)
+      : null;
+  const rawProviderLifecycle =
+    (vmData as any) || (statusData as any)?.data || null;
+  const accessLifecycle = (accessData as any)?.status
+    ? (accessData as any)
+    : null;
+  const jobLifecycle = (jobData as any)?.status ? (jobData as any) : null;
+  const jobActive =
+    jobLifecycle &&
+    !["running", "failed", "error"].includes(
+      String(jobLifecycle.status || "").toLowerCase(),
+    );
+  const providerStatus = String(
+    rawProviderLifecycle?.status || "",
+  ).toLowerCase();
+  const lifecycleSource = jobActive
+    ? jobLifecycle
+    : providerStatus === "unknown" && accessLifecycle
+      ? accessLifecycle
+      : rawProviderLifecycle || jobLifecycle || accessLifecycle || {};
+  const lifecycleFallback = {
+    status: vm.status || "creating",
+    lifecycle_stage:
+      vm.lifecycle_stage ||
+      (vm.status === "creating" ? "provisioning" : vm.status),
+    status_message:
+      vm.status_message ||
+      (vm.status === "creating" ? "VM is being provisioned" : undefined),
+    progress: vm.progress ?? (vm.status === "creating" ? 15 : undefined),
+    transitioning: vm.transitioning,
+    next_poll_seconds: vm.next_poll_seconds,
+  };
+  const lifecycle = deriveVmDisplayLifecycle({
+    lifecycle: lifecycleSource,
+    fallback: lifecycleFallback,
+    statusError:
+      live.state.connection === "degraded"
+        ? live.state.errors.connection || "VM live stream unavailable"
+        : undefined,
+  });
+  const effectiveStatus = lifecycle.status;
+  const isOffline = effectiveStatus === "offline";
+  const isStopped = effectiveStatus === "stopped";
+  const isSuspended =
+    effectiveStatus === "suspended" || effectiveStatus === "suspending";
+  const isRunning = effectiveStatus === "running";
+  const isTerminated =
+    effectiveStatus === "terminated" || effectiveStatus === "deleted";
+  const isTransitioning = lifecycle.transitioning;
+  const providerActionDisabled = isOffline;
+
+  const copyValue = async (value: string) => {
+    try {
+      const copied = await copyText(value);
+      show(copied ? "Copied" : "Could not copy");
+    } catch {
+      show("Could not copy");
+    }
+  };
 
   const copySSH = async () => {
     try {
-      if (vm?.status === 'terminated') { show("VM has been terminated by provider"); return; }
-      if (!sshCmd) { show("SSH port unavailable"); return; }
-      await navigator.clipboard.writeText(sshCmd);
-      show("SSH command copied");
-    } catch { show("Could not copy SSH command"); }
+      if (isOffline) {
+        show("Provider unreachable");
+        return;
+      }
+      if (vm?.status === "terminated") {
+        show("VM has been terminated by provider");
+        return;
+      }
+      if (!sshCmd) {
+        show("SSH port unavailable");
+        return;
+      }
+      const copied = await copyText(sshCmd);
+      show(copied ? "SSH command copied" : "Could not copy SSH command");
+    } catch {
+      show("Could not copy SSH command");
+    }
   };
 
   const stopVm = async () => {
-    if (vm.status === 'terminated') { show("VM already terminated"); return; }
-    try { setBusy(true); await vmStop(vm.provider_id, vm.vm_id, ads); show("Stop requested"); }
-    catch (e) { show("Stop failed"); }
-    finally { setBusy(false); }
+    if (vm.status === "terminated") {
+      show("VM already terminated");
+      return;
+    }
+    try {
+      setBusy(true);
+      updateVmStatus("stopping");
+      await vmStop(requireProviderEndpoint(vm), vm.vm_id);
+      live.refresh(["lifecycle", "access", "metrics_live"]);
+      show("Stop requested");
+    } catch (e) {
+      show("Stop failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const startVm = async () => {
+    if (vm.status === "terminated") {
+      show("VM already terminated");
+      return;
+    }
+    try {
+      setBusy(true);
+      await ensurePaidStreamCanStart({
+        rental: vm,
+        streamPaymentAddress: spAddr,
+      });
+      updateVmStatus("starting");
+      await vmStart(requireProviderEndpoint(vm), vm.vm_id);
+      live.refresh(["lifecycle", "access", "metrics_live"]);
+      show("Start requested");
+    } catch (e) {
+      show("Start failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const restartVm = async () => {
+    if (vm.status === "terminated") {
+      show("VM already terminated");
+      return;
+    }
+    try {
+      setBusy(true);
+      updateVmStatus("restarting");
+      await vmRestart(requireProviderEndpoint(vm), vm.vm_id);
+      live.refresh(["lifecycle", "access", "metrics_live"]);
+      show("Restart requested");
+    } catch (e) {
+      show("Restart failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const suspendVm = async () => {
+    if (vm.status === "terminated") {
+      show("VM already terminated");
+      return;
+    }
+    try {
+      setBusy(true);
+      updateVmStatus("suspending");
+      await vmSuspend(requireProviderEndpoint(vm), vm.vm_id);
+      live.refresh(["lifecycle", "access", "metrics_live"]);
+      show("Suspend requested");
+    } catch (e) {
+      show("Suspend failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const resumeVm = async () => {
+    if (vm.status === "terminated") {
+      show("VM already terminated");
+      return;
+    }
+    try {
+      setBusy(true);
+      await ensurePaidStreamCanStart({
+        rental: vm,
+        streamPaymentAddress: spAddr,
+      });
+      updateVmStatus("starting");
+      await vmResume(requireProviderEndpoint(vm), vm.vm_id);
+      live.refresh(["lifecycle", "access", "metrics_live"]);
+      show("Resume requested");
+    } catch (e) {
+      show("Resume failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const updateVmStatus = (status: string) => {
+    const next = { ...vm, status } as Rental;
+    try {
+      const list = loadRentals();
+      const idx = list.findIndex(
+        (x) => x.vm_id === vm.vm_id && x.provider_id === vm.provider_id,
+      );
+      if (idx >= 0) {
+        const out = [...list];
+        out[idx] = next;
+        saveRentals(out);
+      }
+    } catch {}
+    setVm(next as any);
+  };
+  const refreshSnapshots = async () => {
+    const rows = await listSnapshots(requireProviderEndpoint(vm), vm.vm_id);
+    setSnapshots(Array.isArray(rows) ? rows : []);
+    live.refresh(["snapshots"]);
+  };
+  const createVmSnapshot = async () => {
+    try {
+      setSnapshotBusy("create");
+      await createSnapshot(requireProviderEndpoint(vm), vm.vm_id, {});
+      await refreshSnapshots();
+      show("Snapshot created");
+    } catch {
+      show("Snapshot failed. Stop the VM first and try again.");
+    } finally {
+      setSnapshotBusy(null);
+    }
+  };
+  const restoreVmSnapshot = async (name: string) => {
+    try {
+      setSnapshotBusy(`restore:${name}`);
+      await restoreSnapshot(requireProviderEndpoint(vm), vm.vm_id, name);
+      await refreshSnapshots();
+      show("Snapshot restored");
+    } catch {
+      show("Restore failed. Stop the VM first and try again.");
+    } finally {
+      setSnapshotBusy(null);
+    }
+  };
+  const deleteVmSnapshot = async (name: string) => {
+    try {
+      setSnapshotBusy(`delete:${name}`);
+      await deleteSnapshot(requireProviderEndpoint(vm), vm.vm_id, name);
+      await refreshSnapshots();
+      show("Snapshot deleted");
+    } catch {
+      show("Delete snapshot failed");
+    } finally {
+      setSnapshotBusy(null);
+    }
+  };
+  const markCurrentRental = (patch: Partial<Rental>) => {
+    const list = loadRentals();
+    const idx = list.findIndex(
+      (x) => x.vm_id === vm.vm_id && x.provider_id === vm.provider_id,
+    );
+    const next = { ...(idx >= 0 ? list[idx] : vm), ...patch } as Rental;
+    if (idx >= 0) {
+      const out = [...list];
+      out[idx] = next;
+      saveRentals(out);
+    }
+    setVm(next as any);
+  };
+  const getResizeStreamDurationSeconds = async () => {
+    if (!vm.stream_id) return 0;
+    if (remaining > 0) return remaining;
+    if (!spAddr) {
+      throw new Error(
+        "StreamPayment address missing. Configure Settings before resizing.",
+      );
+    }
+    const currentStream = await fetchStreamWithMeta(
+      spAddr,
+      BigInt(vm.stream_id),
+    );
+    setStream({
+      chain: currentStream.chain as any,
+      remaining: BigInt(currentStream.remaining),
+    });
+    setRemaining(Number(currentStream.remaining));
+    const seconds = Number(currentStream.remaining);
+    if (!Number.isFinite(seconds) || seconds <= 0) {
+      throw new Error(
+        "Payment stream has no remaining runway. Top up before resizing.",
+      );
+    }
+    return seconds;
+  };
+  const resizeVm = async () => {
+    const targetResources = clampResizeResources(
+      { cpu: resizeCpu, memory: resizeMemory, storage: resizeStorage },
+      currentResources,
+      resizeLimits,
+    );
+    let replacementStream:
+      | Awaited<ReturnType<typeof openPaymentStream>>
+      | null = null;
+    const previousStreamId = vm.stream_id;
+    try {
+      setBusy(true);
+      setResizePhase(
+        previousStreamId
+          ? "Preparing replacement payment stream"
+          : "Preparing resize",
+      );
+      if (previousStreamId != null && previousStreamId !== "") {
+        const durationSeconds = await getResizeStreamDurationSeconds();
+        replacementStream = await openPaymentStream({
+          provider: buildResizePaymentProvider(vm),
+          resources: targetResources,
+          durationSeconds,
+          ads,
+          account,
+          vmName: vm.vm_id,
+          purpose: "replacement",
+          ensurePaymentsNetwork,
+          onPhase: setResizePhase,
+        });
+      }
+
+      setResizePhase(
+        isRunning
+          ? "Stopping, resizing, and restarting VM"
+          : "Applying resource changes",
+      );
+      await vmResize(
+        requireProviderEndpoint(vm),
+        vm.vm_id,
+        targetResources,
+        replacementStream?.payment,
+      );
+      setResizeOpen(false);
+      const next = {
+        ...vm,
+        resources: targetResources,
+        stream_id: replacementStream?.id ?? vm.stream_id,
+        settlement_status: undefined,
+      } as Rental;
+      const list = loadRentals();
+      const idx = list.findIndex(
+        (x) => x.vm_id === vm.vm_id && x.provider_id === vm.provider_id,
+      );
+      if (idx >= 0) {
+        const out = [...list];
+        out[idx] = next;
+        saveRentals(out);
+      }
+      setVm(next as any);
+      live.refresh(["lifecycle", "metrics_live"]);
+
+      if (
+        previousStreamId != null &&
+        previousStreamId !== "" &&
+        replacementStream
+      ) {
+        try {
+          await terminate(previousStreamId, setResizePhase);
+        } catch (terminationError) {
+          const message =
+            "Resize applied, but old payment stream termination failed.";
+          markCurrentRental({
+            settlement_status: "failed",
+            status_message: message,
+          });
+          show(message);
+          return;
+        }
+      }
+
+      live.refresh(["lifecycle", "metrics_live", "stream"]);
+      show("Resize applied");
+    } catch (resizeError) {
+      if (replacementStream) {
+        try {
+          await terminateStreamWithWallet(
+            replacementStream.contractAddress,
+            BigInt(replacementStream.id),
+          );
+        } catch (settlementError) {
+          console.warn("Failed to settle replacement stream", settlementError);
+        }
+      }
+      show(getPaymentNetworkErrorMessage(resizeError));
+    } finally {
+      setResizePhase(null);
+      setBusy(false);
+    }
   };
   const confirmDestroy = async () => {
     try {
       setBusy(true);
-      try {
-        await vmDestroy(vm.provider_id, vm.vm_id, ads);
-      } catch (e) {
-        // Treat 404 as already deleted on provider; proceed to remove locally
-      }
-      // Remove locally
+      const next = await terminatePaidRental({
+        rental: vm,
+        terminateStream: terminate,
+        destroyVm: vmDestroy,
+      });
       try {
         const list = loadRentals();
-        const left = list.filter(x => !(x.vm_id === vm.vm_id && x.provider_id === vm.provider_id));
-        saveRentals(left);
+        const idx = list.findIndex(
+          (x) => x.vm_id === vm.vm_id && x.provider_id === vm.provider_id,
+        );
+        if (idx >= 0) {
+          const out = [...list];
+          out[idx] = next;
+          saveRentals(out);
+        }
       } catch {}
+      setVm(next as any);
       show("Terminated");
       closeDestroy();
-      router.push('/rentals');
+      router.push("/rentals");
+    } catch (e) {
+      show(getPaymentNetworkErrorMessage(e));
+    } finally {
+      setBusy(false);
     }
-    catch (e) { show("Terminate failed"); }
-    finally { setBusy(false); }
   };
 
-  const { topUp: topUpAction } = useStreamActions(spAddr);
   const topUp = async (seconds: number) => {
     if (!vm.stream_id || !stream || !spAddr) return;
     try {
       setBusy(true);
-      await topUpAction(BigInt(vm.stream_id), stream.chain.token, stream.chain.ratePerSecond, seconds);
+      await topUpAction(
+        BigInt(vm.stream_id),
+        stream.chain.token,
+        stream.chain.ratePerSecond,
+        seconds,
+      );
       show("Top-up sent");
-      // refresh stream
-      const { ethereum } = window as any;
-      const provider = new BrowserProvider(ethereum);
-      const contract = new Contract(spAddr, (streamPayment as any).abi, provider);
-      const res = (await contract.streams(BigInt(vm.stream_id))) as ChainStream;
-      const now = BigInt((await provider.getBlock("latest"))!.timestamp!);
-      const remaining = res.stopTime > now ? (res.stopTime - now) : 0n;
-      setStream({ chain: res, remaining });
-      setRemaining(Number(remaining));
+      live.refresh(["stream"]);
+      await vmPaymentStreams.refresh();
     } catch (e) {
-      show("Top-up failed");
-    } finally { setBusy(false); }
+      show(getPaymentNetworkErrorMessage(e));
+    } finally {
+      setBusy(false);
+    }
   };
 
   // Pick VM spec from provider status if exposed, else from saved rental (no hook to avoid order issues)
-  const effectiveResources = (() => {
-    const s = (swrVm as any) || {};
-    const r = (s?.resources && typeof s.resources === 'object') ? s.resources : s;
-    const cpu = Number((r as any)?.cpu);
-    const memory = Number((r as any)?.memory);
-    const storage = Number((r as any)?.storage);
-    if ([cpu, memory, storage].every((n) => Number.isFinite(n) && n > 0)) return { cpu, memory, storage };
-    return vm?.resources || null;
-  })();
+  const effectiveResources = getEffectiveResources(vmData, vm);
+  const currentResources = effectiveResources || {
+    cpu: vm.resources?.cpu || 1,
+    memory: vm.resources?.memory || 1,
+    storage: vm.resources?.storage || 10,
+  };
+  const resizeLimits = computeResizeLimits(
+    currentResources,
+    providerCapacity,
+  );
+  const resizeNext = {
+    cpu: resizeCpu,
+    memory: resizeMemory,
+    storage: resizeStorage,
+  };
+  const updateResizeResources = (patch: Partial<typeof resizeNext>) => {
+    const next = clampResizeResources(
+      { ...resizeNext, ...patch },
+      currentResources,
+      resizeLimits,
+    );
+    setResizeCpu(next.cpu);
+    setResizeMemory(next.memory);
+    setResizeStorage(next.storage);
+  };
+  const openResize = () => {
+    const next = clampResizeResources(
+      currentResources,
+      currentResources,
+      resizeLimits,
+    );
+    setResizeCpu(next.cpu);
+    setResizeMemory(next.memory);
+    setResizeStorage(next.storage);
+    setResizePhase(null);
+    setResizeOpen(true);
+  };
+
+  const explorerUrl = buildExplorerUrl(
+    loadSettings().evm_explorer_url ||
+      getRequestorRuntimeConfig().evmExplorerUrl ||
+      null,
+    spAddr,
+  );
+  const actionItems: VmAction[] = [
+    ...(isRunning
+      ? [
+          {
+            label: "Restart VM",
+            onClick: restartVm,
+            disabled:
+              busy || providerActionDisabled || isTransitioning || isTerminated,
+            icon: RiRestartLine,
+          },
+          {
+            label: "Stop VM",
+            onClick: stopVm,
+            disabled:
+              busy || providerActionDisabled || isTransitioning || isTerminated,
+            icon: RiStopLine,
+          },
+          {
+            label: "Suspend VM",
+            onClick: suspendVm,
+            disabled:
+              busy || providerActionDisabled || isTransitioning || isTerminated,
+            icon: RiPauseLine,
+          },
+        ]
+      : [
+          {
+            label: isSuspended ? "Resume VM" : "Start VM",
+            onClick: isSuspended ? resumeVm : startVm,
+            disabled:
+              busy ||
+              providerActionDisabled ||
+              isTransitioning ||
+              isTerminated ||
+              (!isStopped && !isSuspended),
+            icon: RiPlayLine,
+          },
+        ]),
+    {
+      label: "Resize VM",
+      onClick: openResize,
+      disabled:
+        busy ||
+        providerActionDisabled ||
+        isTransitioning ||
+        isTerminated ||
+        (!isRunning && !isStopped),
+      icon: RiExpandDiagonalLine,
+    },
+    {
+      label: "Terminate Lease",
+      onClick: openDestroy,
+      disabled: busy,
+      danger: true,
+      icon: RiDeleteBinLine,
+    },
+  ];
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="card">
-        <div className="card-body">
-          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <StatusBadge status={((swrVm as any)?.status || (swrStatus as any)?.data?.status || vm.status || (sshPort ? 'running' : 'creating'))} />
-                <h2 className="truncate">{vm.name}</h2>
-              </div>
-              {/* Provider wallet (secondary label) */}
-              <div className="mt-1 font-mono text-xs sm:text-sm text-gray-700 break-all" title="Provider wallet">
-                {vm.provider_id}
-              </div>
-              {/* Country and architecture */}
-              <div className="mt-1 text-sm text-gray-600">
-                {(!mounted || provider === null) ? (
-                  <div className="flex items-center gap-2">
-                    <Skeleton className="h-4 w-6" />
-                    <Skeleton className="h-4 w-32" />
-                    <Skeleton className="h-4 w-16" />
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <span className="text-lg leading-none">{provider?.country ? countryFlagEmoji(provider.country) : '🏳️'}</span>
-                    <span>{provider?.country ? countryFullName(provider.country) : 'Unknown region'}</span>
-                    {provider?.platform && (
-                      <>
-                        <span>•</span>
-                        <span className="rounded border px-1.5 py-0.5 text-[11px] text-gray-700" title="Architecture">{provider.platform}</span>
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
-              {/* IP with copy icon */}
-              <div className="mt-1 text-sm text-gray-700">
-                {(!mounted || provider === null) ? (
-                  <Skeleton className="h-4 w-40" />
-                ) : (
-                  (() => {
-                    const ip = provider?.ip_address || vm.provider_ip || null;
-                    const copy = async () => {
-                      try {
-                        if (!ip) { show('IP unavailable'); return; }
-                        await navigator.clipboard.writeText(String(ip));
-                        show('IP copied');
-                      } catch { show('Could not copy IP'); }
-                    };
-                    return (
-                      <div className="inline-flex items-center gap-1">
-                        <button type="button" onClick={copy} className="font-mono text-sm text-gray-800 hover:underline" title="Copy IP">
-                          {ip ? `${ip}` : '—'}
-                        </button>
-                        <button type="button" onClick={copy} className="text-gray-600 hover:text-gray-900" aria-label="Copy IP" title="Copy IP">
-                          <RiFileCopyLine className="h-4 w-4" />
-                        </button>
-                      </div>
-                    );
-                  })()
-                )}
-              </div>
-            </div>
-            <div className="flex flex-col items-start gap-2 sm:items-end">
-              <div className="flex gap-2">
-                <button className="btn btn-secondary" onClick={copySSH} disabled={!sshCmd || vm.status === 'terminated'}>Copy SSH</button>
-                <button className="btn btn-danger" onClick={openDestroy} disabled={busy}>Terminate</button>
-              </div>
-            </div>
-          </div>
+    <div className="space-y-5">
+      <VmDetailsHeader
+        name={vm.name}
+        status={lifecycle.status}
+        statusMessage={lifecycle.message}
+        transitioning={lifecycle.transitioning}
+        copySshDisabled={providerActionDisabled || !sshCmd || isTerminated}
+        busy={busy}
+        actions={actionItems}
+        onCopySsh={copySSH}
+      />
+
+      <VmOverviewPanel
+        providerId={vm.provider_id}
+        vmId={vm.vm_id}
+        country={provider?.country}
+        platform={provider?.platform || vm.platform}
+        providerIp={providerPublicHost({
+          access,
+          provider,
+          rental: vm,
+        })}
+        sshPort={sshPort}
+        resources={effectiveResources}
+        onCopy={copyValue}
+      />
+
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_23rem]">
+        <div className="space-y-5">
+          <VmMetricsSummary
+            vmId={vm.vm_id}
+            metricsLatest={metricsData}
+            liveSamples={live.state.metricsLiveSamples}
+            loading={live.state.connection === "connecting"}
+          />
+          <VmMetricsCharts
+            history={metricsHistoryData}
+            loading={live.state.connection === "connecting"}
+            range={metricsRange}
+            onRangeChange={setMetricsRange}
+          />
+          <VmSnapshotsPanel
+            snapshots={(live.state.snapshots as any) || snapshots}
+            stopped={isStopped}
+            disabled={providerActionDisabled}
+            busy={snapshotBusy}
+            onCreate={createVmSnapshot}
+            onRestore={restoreVmSnapshot}
+            onDelete={deleteVmSnapshot}
+          />
         </div>
-      </div>
 
-      {/* Specs */}
-      <div className="grid gap-4 sm:grid-cols-3">
-        <div className="card"><div className="card-body">
-          <div className="text-sm text-gray-500 inline-flex items-center gap-1.5"><RiCpuLine className="h-4 w-4 text-gray-500" /> vCPU</div>
-          <div className="mt-1 text-lg font-semibold">
-            {(!mounted || !effectiveResources?.cpu) ? (<Skeleton className="h-6 w-24" />) : (<>{effectiveResources.cpu} vCPU</>)}
-          </div>
-        </div></div>
-        <div className="card"><div className="card-body">
-          <div className="text-sm text-gray-500 inline-flex items-center gap-1.5"><RiStackLine className="h-4 w-4 text-gray-500" /> RAM</div>
-          <div className="mt-1 text-lg font-semibold">
-            {(!mounted || !effectiveResources?.memory) ? (<Skeleton className="h-6 w-24" />) : (<>{effectiveResources.memory} GB</>)}
-          </div>
-        </div></div>
-        <div className="card"><div className="card-body">
-          <div className="text-sm text-gray-500 inline-flex items-center gap-1.5"><RiHardDrive2Line className="h-4 w-4 text-gray-500" /> Storage</div>
-          <div className="mt-1 text-lg font-semibold">
-            {(!mounted || !effectiveResources?.storage) ? (<Skeleton className="h-6 w-24" />) : (<>{effectiveResources.storage} GB</>)}
-          </div>
-        </div></div>
-      </div>
-
-      {/* Stream section via shared component */}
-      {!vm.stream_id ? (
-        <div className="card"><div className="card-body"><div className="text-sm text-gray-600">No stream mapped for this VM.</div></div></div>
-      ) : (!mounted || !stream) ? (
-        <div className="card"><div className="card-body">
-          <div className="grid gap-6 sm:grid-cols-2">
-            <div className="grid gap-3">
-              <Skeleton className="h-4 w-24" />
-              <Skeleton className="h-4 w-48" />
-              <Skeleton className="h-4 w-24" />
-              <Skeleton className="h-4 w-28" />
-              <Skeleton className="h-4 w-20" />
-            </div>
-            <div className="grid gap-3 content-start">
-              <Skeleton className="h-4 w-32" />
-              <div className="flex gap-2">
-                <Skeleton className="h-9 w-20" />
-                <Skeleton className="h-9 w-20" />
-                <Skeleton className="h-9 w-20" />
-              </div>
-              <div className="flex items-center gap-2">
-                <Skeleton className="h-9 w-full" />
-                <Skeleton className="h-9 w-16" />
+        <aside className="space-y-5">
+          {vm.stream_id && stream ? (
+            <VmPaymentStreamPanel
+              streamId={vm.stream_id}
+              stream={stream.chain}
+              remaining={remaining}
+              tokenSymbol={tokenSymbol}
+              tokenDecimals={tokenDecimals}
+              usdPrice={usdPrice}
+              displayCurrency={displayCurrency}
+              busy={busy}
+              actionsDisabled={!paymentReady}
+              actionsDisabledReason={!paymentReady ? paymentMessage : null}
+              explorerUrl={explorerUrl}
+              onCopy={copyValue}
+              onTopUp={topUp}
+            />
+          ) : (
+            <div className="card vm-page-enter">
+              <div className="card-body">
+                <h3 className="text-base font-semibold text-text-primary">
+                  Payment stream
+                </h3>
+                <div className="mt-3 text-sm text-text-secondary">
+                  {err || "No stream mapped for this VM."}
+                </div>
               </div>
             </div>
-          </div>
-        </div></div>
-      ) : (
-        <StreamCard
-          title={`Stream`}
-          streamId={vm.stream_id}
-          chain={stream.chain as any}
-          remaining={remaining}
-          meta={{ tokenSymbol, tokenDecimals, usdPrice }}
-          displayCurrency={displayCurrency}
-          onTopUp={(secs) => topUp(secs)}
-          busy={busy}
-        />
-      )}
+          )}
+        </aside>
+      </div>
+
+      <VmResizeModal
+        open={resizeOpen}
+        current={currentResources}
+        next={{
+          cpu: resizeCpu,
+          memory: resizeMemory,
+          storage: resizeStorage,
+        }}
+        transitioning={isTransitioning}
+        busy={busy}
+        limits={resizeLimits}
+        phase={resizePhase}
+        disabledReason={
+          providerActionDisabled
+            ? "Provider unreachable. Retry when the VM is online."
+            : undefined
+        }
+        onClose={() => setResizeOpen(false)}
+        onCpuChange={(cpu) => updateResizeResources({ cpu })}
+        onMemoryChange={(memory) => updateResizeResources({ memory })}
+        onStorageChange={(storage) => updateResizeResources({ storage })}
+        onResize={resizeVm}
+      />
+
       {/* Terminate confirmation modal */}
       <ConfirmDialog
         open={confirmDestroyOpen}
         onCancel={closeDestroy}
         onConfirm={confirmDestroy}
-        title="Terminate VM"
-        description="Are you sure you want to permanently terminate this VM? This action cannot be undone."
-        confirmLabel="Terminate"
+        title="Terminate Lease"
+        description="This terminates the payment stream from your wallet first. The VM is deleted only after the lease is confirmed terminated."
+        confirmLabel="Terminate Lease"
         danger
         busy={busy}
       />
     </div>
   );
+}
+
+function getEffectiveResources(liveVm: unknown, vm: Rental | null) {
+  const status = (liveVm as any) || {};
+  const source =
+    status?.resources && typeof status.resources === "object"
+      ? status.resources
+      : status;
+  const cpu = Number(source?.cpu);
+  const memory = Number(source?.memory);
+  const storage = Number(source?.storage);
+
+  if (
+    [cpu, memory, storage].every((value) => Number.isFinite(value) && value > 0)
+  ) {
+    return { cpu, memory, storage };
+  }
+
+  return vm?.resources || null;
+}
+
+function requireProviderEndpoint(vm: Rental): string {
+  if (!vm.provider_endpoint_url) {
+    throw new Error("Provider endpoint unavailable");
+  }
+  return vm.provider_endpoint_url;
+}
+
+function mergeVmStatus(vm: Rental, payload: unknown): Rental | null {
+  const data = (payload as any) || {};
+  const status = String(data.status || "").toLowerCase();
+  if (!status || status === "unknown") return null;
+
+  const terminal = status === "terminated" || status === "deleted";
+  const sshPort =
+    terminal || data.ssh_port == null ? null : Number(data.ssh_port);
+  const vmIp = data.ip_address || vm.vm_ip || null;
+  const resources = getEffectiveResources(data, vm) || vm.resources;
+  const next: Rental = {
+    ...vm,
+    status: terminal ? "terminated" : status,
+    lifecycle_stage: data.lifecycle_stage ?? vm.lifecycle_stage,
+    status_message: data.status_message ?? vm.status_message,
+    progress: data.progress ?? vm.progress,
+    transitioning: data.transitioning ?? vm.transitioning,
+    next_poll_seconds: data.next_poll_seconds ?? vm.next_poll_seconds,
+    ssh_port: sshPort,
+    vm_ip: vmIp,
+    resources,
+    ...(terminal ? { ended_at: Math.floor(Date.now() / 1000) } : {}),
+  };
+
+  if (
+    next.status === vm.status &&
+    next.ssh_port === vm.ssh_port &&
+    next.vm_ip === vm.vm_ip &&
+    next.lifecycle_stage === vm.lifecycle_stage &&
+    next.status_message === vm.status_message &&
+    next.progress === vm.progress &&
+    next.transitioning === vm.transitioning &&
+    next.next_poll_seconds === vm.next_poll_seconds &&
+    JSON.stringify(next.resources || null) ===
+      JSON.stringify(vm.resources || null)
+  ) {
+    return null;
+  }
+
+  return next;
+}
+
+function buildResizePaymentProvider(
+  vm: Rental,
+): Pick<ProviderAd, "provider_id" | "pricing" | "endpoint_url"> {
+  const pricing = (vm.provider_pricing || {}) as ProviderAd["pricing"];
+  const hasUsdPricing = [
+    pricing?.usd_per_core_month,
+    pricing?.usd_per_gb_ram_month,
+    pricing?.usd_per_gb_storage_month,
+  ].every((value) => Number.isFinite(Number(value)) && Number(value) > 0);
+  const hasGlmPricing = [
+    pricing?.glm_per_core_month,
+    pricing?.glm_per_gb_ram_month,
+    pricing?.glm_per_gb_storage_month,
+  ].every((value) => Number.isFinite(Number(value)) && Number(value) > 0);
+
+  if (!hasUsdPricing && !hasGlmPricing) {
+    throw new Error(
+      "Provider pricing unavailable. Recreate the rental from current discovery data before resizing.",
+    );
+  }
+
+  return {
+    provider_id: vm.provider_id,
+    endpoint_url: requireProviderEndpoint(vm),
+    pricing,
+  };
+}
+
+function buildExplorerUrl(baseUrl: string | null | undefined, address: string) {
+  if (!baseUrl || !address) return null;
+  const trimmed = baseUrl.replace(/\/$/, "");
+  if (trimmed.includes("{address}")) {
+    return trimmed.replace("{address}", address);
+  }
+  return `${trimmed}/address/${address}`;
 }

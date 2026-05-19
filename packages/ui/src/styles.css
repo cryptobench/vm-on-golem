@@ -1,0 +1,84 @@
+.card {
+  @apply bg-surface rounded-lg shadow-sm ring-1 ring-border;
+}
+
+.card-body {
+  @apply p-4 sm:p-6;
+}
+
+.btn {
+  @apply inline-flex h-10 items-center justify-center rounded-md px-3 text-sm font-medium ring-1 ring-inset transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-55 disabled:shadow-none;
+}
+
+.btn-primary {
+  @apply bg-primary text-white shadow-soft ring-primary hover:bg-primary-hover;
+}
+
+.btn-secondary {
+  @apply bg-surface text-text-secondary ring-border hover:bg-surface-muted;
+}
+
+.btn-danger {
+  @apply bg-danger text-white ring-danger hover:opacity-90;
+}
+
+.label {
+  @apply block text-sm font-medium text-text-secondary;
+}
+
+.table {
+  @apply min-w-full divide-y divide-border;
+}
+
+.th {
+  @apply px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wider text-text-muted;
+}
+
+.td {
+  @apply px-3 py-2 text-[13px] text-text-primary;
+}
+
+.golem-sliding-chart .recharts-line-curve,
+.golem-sliding-chart .golem-chart-line-curve,
+.golem-sliding-chart .golem-chart-append-curve {
+  transform: translateX(var(--golem-chart-slide-x, 0));
+  transition: none;
+}
+
+.golem-sliding-chart[data-slide-active="true"] .recharts-line-curve,
+.golem-sliding-chart[data-slide-active="true"] .golem-chart-line-curve,
+.golem-sliding-chart[data-slide-active="true"] .golem-chart-append-curve {
+  transition: transform 360ms ease-out;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .golem-sliding-chart[data-draw-active="true"] .recharts-line-curve,
+  .golem-sliding-chart[data-draw-active="true"] .golem-chart-line-curve {
+    animation: golem-line-draw 560ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    stroke-dasharray: 12000;
+  }
+
+  .golem-sliding-chart .golem-chart-append-curve {
+    animation: golem-line-segment-draw 340ms ease-out both;
+    stroke-dasharray: 12000;
+    stroke-dashoffset: 12000;
+  }
+}
+
+@keyframes golem-line-draw {
+  from {
+    stroke-dashoffset: 12000;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes golem-line-segment-draw {
+  from {
+    stroke-dashoffset: 12000;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
