@@ -33,10 +33,6 @@ jobs:
             runs_on: '["self-hosted", "Windows", "X64", "provider-desktop-smoke"]'
             multipass_platform: windows
             multipass_arch: x86_64
-          - target: macos-x64
-            runs_on: '["self-hosted", "macOS", "X64", "provider-desktop-smoke"]'
-            multipass_platform: darwin
-            multipass_arch: x86_64
           - target: macos-arm64
             runs_on: '["self-hosted", "macOS", "ARM64", "provider-desktop-smoke"]'
             multipass_platform: darwin

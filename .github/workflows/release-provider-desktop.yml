@@ -35,10 +35,6 @@ jobs:
             target: linux
             multipass-platform: linux
             multipass-arch: x86_64
-          - os: macos-13
-            target: mac-x64
-            multipass-platform: darwin
-            multipass-arch: x86_64
           - os: macos-14
             target: mac-arm64
             multipass-platform: darwin

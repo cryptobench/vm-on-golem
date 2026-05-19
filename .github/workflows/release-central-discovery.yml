@@ -65,9 +65,6 @@ jobs:
           - target: linux-arm64
             goos: linux
             goarch: arm64
-          - target: darwin-amd64
-            goos: darwin
-            goarch: amd64
           - target: darwin-arm64
             goos: darwin
             goarch: arm64
