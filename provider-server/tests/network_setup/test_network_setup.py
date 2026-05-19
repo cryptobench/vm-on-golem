@@ -366,10 +366,13 @@ async def test_network_setup_verifies_public_ports_from_checker(tmp_path):
         "open",
         "open",
     ]
-    assert sorted(request["ports"][0] for request in requests[:2]) == sorted(
-        [http_port, https_port]
+    assert sorted(requests[0]["ports"]) == sorted([http_port, https_port])
+    assert requests[0]["provider_ip"] == "127.0.0.1"
+    assert requests[1]["ports"] == list(
+        range(settings.PORT_RANGE_START, settings.PORT_RANGE_END)
     )
-    assert all(request["provider_ip"] == "127.0.0.1" for request in requests[:2])
+    assert requests[1]["provider_ip"] == "127.0.0.1"
+    assert len(requests) == 2
     _assert_port_progression(events, "network_access", http_port, "open")
     _assert_port_progression(events, "network_access", https_port, "open")
 

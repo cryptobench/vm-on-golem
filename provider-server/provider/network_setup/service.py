@@ -22,8 +22,6 @@ from .nat import NatMapper
 from .render import render_startup_panel
 
 logger = setup_logger(__name__)
-PORT_CHECK_CONCURRENCY = 8
-
 
 class NetworkSetupService:
     def __init__(
@@ -246,7 +244,7 @@ class NetworkSetupService:
             ):
                 self._fail(
                     SetupStageName.NETWORK_ACCESS,
-                    "verification failed",
+                    error_detail,
                     "Could not verify public access through the central discovery port-check service.",
                 )
             logger.warning(
@@ -340,7 +338,7 @@ class NetworkSetupService:
             ):
                 self._fail(
                     SetupStageName.VM_PORT_RANGE,
-                    "verification failed",
+                    error_detail,
                     "Could not verify VM port forwarding through the central discovery port-check service.",
                 )
             logger.warning(
@@ -369,56 +367,45 @@ class NetworkSetupService:
         verifier_timeout: float,
         label: str,
     ) -> dict[int, bool]:
-        semaphore = asyncio.Semaphore(PORT_CHECK_CONCURRENCY)
-
         async with aiohttp.ClientSession() as session:
-
-            async def verify_port(port: int) -> tuple[int, bool]:
-                async with semaphore:
-                    self._set_port_check_state(stage_name, port, "checking")
-                    request_started_at = time.perf_counter()
-                    logger.debug(
-                        "Requesting external %s port verification: "
-                        "checker=%s port=%s timeout=%.2fs",
-                        label,
-                        verifier_url,
-                        port,
-                        verifier_timeout,
-                    )
-                    async with session.post(
-                        f"{verifier_url}/check-ports",
-                        json={"provider_ip": public_ip, "ports": [port]},
-                        timeout=verifier_timeout,
-                    ) as response:
-                        data = await response.json(content_type=None)
-                        logger.debug(
-                            "External %s port verification returned: "
-                            "checker=%s port=%s status=%s elapsed=%.2fs results=%s",
-                            label,
-                            verifier_url,
-                            port,
-                            response.status,
-                            time.perf_counter() - request_started_at,
-                            data.get("results", {}),
-                        )
-                        if response.status != 200:
-                            raise RuntimeError(
-                                data.get("detail") or await response.text()
-                            )
-                    accessible = _port_result_accessible(data.get("results", {}), port)
-                    self._set_port_check_state(
-                        stage_name, port, "open" if accessible else "closed"
-                    )
-                    return port, accessible
-
-            tasks = [asyncio.create_task(verify_port(port)) for port in ports]
-            try:
-                return dict(await asyncio.gather(*tasks))
-            except Exception:
-                for task in tasks:
-                    task.cancel()
-                await asyncio.gather(*tasks, return_exceptions=True)
-                raise
+            for port in ports:
+                self._set_port_check_state(stage_name, port, "checking")
+            request_started_at = time.perf_counter()
+            logger.debug(
+                "Requesting external %s port verification: "
+                "checker=%s ports=%s timeout=%.2fs",
+                label,
+                verifier_url,
+                ports,
+                verifier_timeout,
+            )
+            async with session.post(
+                f"{verifier_url}/check-ports",
+                json={"provider_ip": public_ip, "ports": ports},
+                timeout=verifier_timeout,
+            ) as response:
+                data = await response.json(content_type=None)
+                logger.debug(
+                    "External %s port verification returned: "
+                    "checker=%s ports=%s status=%s elapsed=%.2fs results=%s",
+                    label,
+                    verifier_url,
+                    ports,
+                    response.status,
+                    time.perf_counter() - request_started_at,
+                    data.get("results", {}),
+                )
+                if response.status != 200:
+                    raise RuntimeError(data.get("detail") or await response.text())
+            results = {
+                port: _port_result_accessible(data.get("results", {}), port)
+                for port in ports
+            }
+            for port, accessible in results.items():
+                self._set_port_check_state(
+                    stage_name, port, "open" if accessible else "closed"
+                )
+            return results
 
     async def _ensure_certificate(self, public_ip: str) -> None:
         self._running(SetupStageName.CERTIFICATE, "checking")
