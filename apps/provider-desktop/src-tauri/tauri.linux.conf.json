@@ -6,16 +6,16 @@
         "depends": ["snapd"],
         "postInstallScript": "installer/linux/postinstall-multipass.sh",
         "files": {
-          "vendor/multipass/multipass_1.16.2_amd64.snap": "/usr/lib/golem-provider/multipass/multipass_1.16.2_amd64.snap",
-          "vendor/multipass/multipass.assert": "/usr/lib/golem-provider/multipass/multipass.assert"
+          "/usr/lib/golem-provider/multipass/multipass_1.16.2_amd64.snap": "vendor/multipass/multipass_1.16.2_amd64.snap",
+          "/usr/lib/golem-provider/multipass/multipass.assert": "vendor/multipass/multipass.assert"
         }
       },
       "rpm": {
         "depends": ["snapd"],
         "postInstallScript": "installer/linux/postinstall-multipass.sh",
         "files": {
-          "vendor/multipass/multipass_1.16.2_amd64.snap": "/usr/lib/golem-provider/multipass/multipass_1.16.2_amd64.snap",
-          "vendor/multipass/multipass.assert": "/usr/lib/golem-provider/multipass/multipass.assert"
+          "/usr/lib/golem-provider/multipass/multipass_1.16.2_amd64.snap": "vendor/multipass/multipass_1.16.2_amd64.snap",
+          "/usr/lib/golem-provider/multipass/multipass.assert": "vendor/multipass/multipass.assert"
         }
       }
     }
