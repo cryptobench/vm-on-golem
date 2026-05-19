@@ -46,11 +46,28 @@ jobs:
         run: |
           node -e '
             const fs=require("fs");
+            const cp=require("child_process");
             const files=["apps/provider-desktop/package.json", "apps/provider-desktop/src-tauri/tauri.conf.json"];
             const pkgPath=files[0];
             const pkg=JSON.parse(fs.readFileSync(pkgPath));
             const type=(process.env.RELEASE_TYPE||"patch").toLowerCase();
-            const v=(pkg.version||"0.1.0").split(".").map(n=>parseInt(n||0,10));
+            const parseVersion=(value)=>(value||"0.0.0").split(".").map(n=>parseInt(n||0,10));
+            const compareVersion=(a,b)=>{
+              for(let i=0;i<3;i++){
+                const diff=(a[i]||0)-(b[i]||0);
+                if(diff!==0) return diff;
+              }
+              return 0;
+            };
+            const tagVersions=cp
+              .execSync("git tag --list provider-desktop-v*", {encoding:"utf8"})
+              .split(/\r?\n/)
+              .filter(Boolean)
+              .map(tag=>parseVersion(tag.replace(/^provider-desktop-v/,"")));
+            const packageVersion=parseVersion(pkg.version||"0.1.0");
+            const latestTagVersion=tagVersions.sort(compareVersion).at(-1)||[0,1,0];
+            const baseVersion=compareVersion(packageVersion, latestTagVersion)>0 ? packageVersion : latestTagVersion;
+            const v=[...baseVersion];
             if(type==="major"){v[0]++; v[1]=0; v[2]=0;} else if(type==="minor"){v[1]++; v[2]=0;} else {v[2]++;}
             const version=v.join(".");
             pkg.version=version;
@@ -83,9 +100,8 @@ jobs:
           ver=${{ steps.bump.outputs.NEW_VERSION }}
           tag="provider-desktop-v$ver"
           if git rev-parse "$tag" >/dev/null 2>&1; then
-            echo "Tag $tag already exists; skipping"
-            echo "created=false" >> $GITHUB_OUTPUT
-            exit 0
+            echo "Tag $tag already exists after version computation; refusing to skip release silently" >&2
+            exit 1
           fi
           git tag -a "$tag" -m "Golem Provider Desktop $ver"
           git push origin "$tag"
