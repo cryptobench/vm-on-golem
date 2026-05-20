@@ -424,10 +424,12 @@ def requirements_check(
 
 async def _run_secure_setup_preflight(status_callback=None) -> dict:
     from .config import settings
+    from .network.location_resolver import ensure_provider_location
     from .network_setup.service import NetworkSetupService
 
     service = NetworkSetupService(settings, status_callback=status_callback)
     try:
+        await ensure_provider_location(settings)
         status = await service.setup()
         return status.model_dump(mode="json")
     finally:

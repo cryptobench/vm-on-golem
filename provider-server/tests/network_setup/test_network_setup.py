@@ -648,7 +648,37 @@ async def test_development_secure_setup_uses_real_path_when_enabled(
 
 
 @pytest.mark.asyncio
-async def test_network_setup_requires_runtime_resolved_public_ip(tmp_path):
+async def test_network_setup_resolves_missing_public_ip_from_shared_resolver(
+    tmp_path, monkeypatch
+):
+    from provider.network.location_resolver import ProviderLocation
+
+    async def resolve(settings):
+        location = ProviderLocation(ip_address="127.0.0.1", country="DK")
+        settings.PUBLIC_IP = location.ip_address
+        settings.PROVIDER_COUNTRY = location.country
+        return location
+
+    monkeypatch.setattr(
+        "provider.network_setup.service.ensure_provider_location", resolve
+    )
+    settings = _settings(tmp_path, PUBLIC_IP=None)
+    service = NetworkSetupService(settings, nat_mapper=FakeNatMapper())
+
+    public_ip = await service._resolve_public_ip()
+
+    assert public_ip == "127.0.0.1"
+    assert settings.PROVIDER_COUNTRY == "DK"
+
+
+@pytest.mark.asyncio
+async def test_network_setup_fails_when_shared_public_ip_resolution_fails(
+    tmp_path, monkeypatch
+):
+    async def fail(_settings):
+        raise RuntimeError("lookup failed")
+
+    monkeypatch.setattr("provider.network_setup.service.ensure_provider_location", fail)
     settings = _settings(tmp_path, PUBLIC_IP=None)
     service = NetworkSetupService(settings, nat_mapper=FakeNatMapper())
 

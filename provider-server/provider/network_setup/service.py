@@ -5,6 +5,7 @@ from typing import Callable, Literal
 
 import aiohttp
 
+from ..network.location_resolver import ensure_provider_location
 from ..utils.logging import setup_logger
 from .acme import AcmeRequestError
 from .certificate_service import CertificateMaintenanceService
@@ -113,14 +114,20 @@ class NetworkSetupService:
     async def _resolve_public_ip(self) -> str:
         self._running(SetupStageName.PUBLIC_IP, "checking")
         public_ip = str(getattr(self.settings, "PUBLIC_IP", "") or "").strip()
-        if not public_ip:
+        if public_ip:
+            return public_ip
+        try:
+            location = await ensure_provider_location(self.settings)
+            return location.ip_address
+        except Exception as exc:
             self._fail(
                 SetupStageName.PUBLIC_IP,
                 "not available",
                 "Provider public IP was not resolved during startup.",
             )
-            raise RuntimeError("provider public IP was not resolved during startup")
-        return public_ip
+            raise RuntimeError(
+                f"provider public IP was not resolved during startup: {exc}"
+            ) from exc
 
     async def _prepare_network_access(self) -> None:
         self._running(SetupStageName.NETWORK_ACCESS, "checking")

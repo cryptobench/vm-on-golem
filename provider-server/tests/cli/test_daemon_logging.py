@@ -1,6 +1,7 @@
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -44,6 +45,57 @@ def test_provider_daemon_log_dir_respects_env_override(monkeypatch, tmp_path):
 
     assert log_dir == custom
     assert log_dir.exists()
+
+
+@pytest.mark.asyncio
+async def test_secure_setup_preflight_resolves_location_before_network_setup(
+    monkeypatch,
+):
+    from provider.config import settings
+    from provider.network.location_resolver import ProviderLocation
+
+    calls = []
+
+    async def resolve(location_settings):
+        location = ProviderLocation(ip_address="127.0.0.1", country="DK")
+        monkeypatch.setattr(location_settings, "PUBLIC_IP", location.ip_address)
+        monkeypatch.setattr(location_settings, "PROVIDER_COUNTRY", location.country)
+        calls.append("resolve")
+        return location
+
+    class FakeNetworkSetupService:
+        def __init__(self, service_settings, status_callback=None):
+            self.settings = service_settings
+            self.status_callback = status_callback
+
+        async def setup(self):
+            calls.append(
+                (
+                    "setup",
+                    self.settings.PUBLIC_IP,
+                    self.settings.PROVIDER_COUNTRY,
+                )
+            )
+            return SimpleNamespace(model_dump=lambda mode: {"complete": True})
+
+        async def cleanup(self):
+            calls.append("cleanup")
+
+    monkeypatch.setattr(
+        "provider.network.location_resolver.ensure_provider_location",
+        resolve,
+    )
+    monkeypatch.setattr(
+        "provider.network_setup.service.NetworkSetupService",
+        FakeNetworkSetupService,
+    )
+    monkeypatch.setattr(settings, "PUBLIC_IP", None)
+    monkeypatch.setattr(settings, "PROVIDER_COUNTRY", None)
+
+    status = await provider_main._run_secure_setup_preflight()
+
+    assert status == {"complete": True}
+    assert calls == ["resolve", ("setup", "127.0.0.1", "DK"), "cleanup"]
 
 
 def test_spawn_detached_redirects_stdio_to_rotating_log_file(monkeypatch, tmp_path):

@@ -45,6 +45,7 @@ export function ProvidersTable({
         <tbody>
           {providers.map((provider) => {
             const location = providerLocation(provider);
+            const locationFlag = countryFlagEmoji(location.code);
             const platform = providerPlatform(provider);
             const PlatformIcon = platform === "Windows" ? RiWindowsLine : RiUbuntuLine;
             const estimate = computeEstimate(provider, spec.cpu, spec.memory, spec.storage);
@@ -63,11 +64,11 @@ export function ProvidersTable({
               >
                 <td className="py-4 pr-4 font-mono">{shortProviderId(provider.provider_id)}</td>
                 <td className="px-4 py-4">
-                  <span className="flex items-center gap-2">
-                    <span>{countryFlagEmoji(location.code)}</span>
-                    <span>
-                      <span className="block font-medium">{location.code || "-"}</span>
-                      <span className="block text-xs text-text-secondary">{location.name}</span>
+                  <span className="grid grid-cols-[auto_1fr] items-start gap-x-2">
+                    {locationFlag && <span className="text-base leading-none">{locationFlag}</span>}
+                    <span className="col-start-2 block font-medium leading-none">{location.code || "-"}</span>
+                    <span className="col-start-2 mt-1 block text-xs text-text-secondary">
+                      {location.name}
                     </span>
                   </span>
                 </td>
