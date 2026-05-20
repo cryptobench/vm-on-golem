@@ -53,6 +53,8 @@ Env vars (public)
 - NEXT_PUBLIC_EVM_CHAIN_NAME: wallet display name for the payments chain
 - NEXT_PUBLIC_EVM_RPC_URL: wallet RPC URL for the payments chain
 - NEXT_PUBLIC_EVM_EXPLORER_URL: block explorer URL for the payments chain
+- NEXT_PUBLIC_TGLM_MINTER_ADDRESS: Hoodi tGLM minter contract used by the Funding page
+- NEXT_PUBLIC_HOODI_FAUCET_URL: Hoodi ETH faucet link shown by the Funding page
 - NEXT_PUBLIC_GOLEM_ENVIRONMENT: set to `development` for local stack behavior
 
 Payment chain values can also be overridden in Settings -> Payments. Wallet
@@ -64,6 +66,8 @@ app so local development uses the same payment metadata as the Python services.
 For Ethereum Hoodi, connected wallets need Hoodi ETH for gas and Hoodi tGLM for
 stream deposits. Use Hoodi faucet links from `https://www.hoodi.dev/` for gas
 ETH and the tGLM minter documented in `../contracts/README.md`.
+The in-app Funding page can mint Hoodi tGLM to the connected wallet and links to
+the configured Hoodi ETH faucet for gas.
 
 Notes and alignment with backend
 

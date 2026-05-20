@@ -28,7 +28,7 @@ export function KeyValueList({
             {item.icon ? <span className="shrink-0 text-text-muted">{item.icon}</span> : null}
             <span className="truncate">{item.label}</span>
           </div>
-          <div className="min-w-0 text-right font-medium text-text-primary">
+          <div className="min-w-0 overflow-hidden text-right font-medium text-text-primary">
             {item.value}
           </div>
         </div>

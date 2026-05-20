@@ -31,6 +31,11 @@ test("runtime config keeps built-in defaults when env values are unset", () => {
     "wss://78.46.172.104/api/v1/discovery/requestors",
   );
   assert.equal(config.evmChainId, "0x88bb0");
+  assert.equal(
+    config.tglmMinterAddress,
+    "0x500F965199C63865A3E666cA3fF55B64F1c8Bc8b",
+  );
+  assert.equal(config.hoodiFaucetUrl, "https://hoodi-faucet.pk910.de/");
 });
 
 test("runtime config prefers window runtime overrides", () => {

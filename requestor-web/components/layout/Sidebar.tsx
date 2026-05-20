@@ -3,6 +3,7 @@ import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  RiCopperCoinLine,
   RiDashboardLine,
   RiHardDrive2Line,
   RiRadioButtonLine,
@@ -46,6 +47,7 @@ export function Sidebar() {
     { href: "/providers", label: "Providers", Icon: RiRadioButtonLine },
     { href: "/rentals", label: "My VMs", Icon: RiHardDrive2Line },
     { href: "/streams", label: "Streams", Icon: RiRadioButtonLine },
+    { href: "/funding", label: "Funding", Icon: RiCopperCoinLine },
     { href: "/settings", label: "Settings", Icon: RiSettings3Line },
   ];
   return (

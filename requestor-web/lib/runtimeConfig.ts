@@ -9,6 +9,8 @@ export type RequestorRuntimeConfig = {
   evmRpcUrl: string;
   evmWsUrl: string;
   evmExplorerUrl: string;
+  tglmMinterAddress: string;
+  hoodiFaucetUrl: string;
   golemEnvironment: string;
 };
 
@@ -27,6 +29,8 @@ const DEFAULTS: RequestorRuntimeConfig = {
   evmRpcUrl: "https://rpc.hoodi.ethpandaops.io",
   evmWsUrl: "wss://ethereum-hoodi-rpc.publicnode.com",
   evmExplorerUrl: "https://hoodi.etherscan.io",
+  tglmMinterAddress: "0x500F965199C63865A3E666cA3fF55B64F1c8Bc8b",
+  hoodiFaucetUrl: "https://hoodi-faucet.pk910.de/",
   golemEnvironment: "",
 };
 
@@ -43,6 +47,8 @@ type PublicRuntimeEnv = {
   NEXT_PUBLIC_EVM_RPC_URL?: string;
   NEXT_PUBLIC_EVM_WS_URL?: string;
   NEXT_PUBLIC_EVM_EXPLORER_URL?: string;
+  NEXT_PUBLIC_TGLM_MINTER_ADDRESS?: string;
+  NEXT_PUBLIC_HOODI_FAUCET_URL?: string;
   NEXT_PUBLIC_GOLEM_ENVIRONMENT?: string;
 };
 
@@ -57,6 +63,8 @@ function publicRuntimeEnv(): PublicRuntimeEnv {
     NEXT_PUBLIC_EVM_RPC_URL: process.env.NEXT_PUBLIC_EVM_RPC_URL,
     NEXT_PUBLIC_EVM_WS_URL: process.env.NEXT_PUBLIC_EVM_WS_URL,
     NEXT_PUBLIC_EVM_EXPLORER_URL: process.env.NEXT_PUBLIC_EVM_EXPLORER_URL,
+    NEXT_PUBLIC_TGLM_MINTER_ADDRESS: process.env.NEXT_PUBLIC_TGLM_MINTER_ADDRESS,
+    NEXT_PUBLIC_HOODI_FAUCET_URL: process.env.NEXT_PUBLIC_HOODI_FAUCET_URL,
     NEXT_PUBLIC_GOLEM_ENVIRONMENT: process.env.NEXT_PUBLIC_GOLEM_ENVIRONMENT,
   };
 }
@@ -85,6 +93,8 @@ export function getRequestorRuntimeConfig(): RequestorRuntimeConfig {
     evmRpcUrl: envValue("NEXT_PUBLIC_EVM_RPC_URL"),
     evmWsUrl: envValue("NEXT_PUBLIC_EVM_WS_URL"),
     evmExplorerUrl: envValue("NEXT_PUBLIC_EVM_EXPLORER_URL"),
+    tglmMinterAddress: envValue("NEXT_PUBLIC_TGLM_MINTER_ADDRESS"),
+    hoodiFaucetUrl: envValue("NEXT_PUBLIC_HOODI_FAUCET_URL"),
     golemEnvironment: envValue("NEXT_PUBLIC_GOLEM_ENVIRONMENT"),
   };
   return { ...DEFAULTS, ...compact(env), ...compact(runtime) };
