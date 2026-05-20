@@ -81,22 +81,37 @@ export function KeyPicker({ value, onChange, layout = 'grid' }: { value?: string
     const type = parts[0] || '';
     const short = parts[1] ? `${parts[1].slice(0, 12)}…${parts[1].slice(-8)}` : '';
     return (
-      <button
+      <div
         key={k.id}
         className={"relative h-36 w-64 shrink-0 rounded-xl border bg-white p-3 text-left shadow-sm transition-colors " + (sel ? 'border-brand-500 ring-1 ring-brand-300' : 'hover:border-gray-300')}
-        onClick={() => select(k.id)}
         title={sel ? 'Default SSH key' : 'Set as default'}
       >
-        <div className={"absolute right-2 top-2 h-6 w-6 rounded-full border-2 " + (sel ? 'border-brand-500 bg-brand-500 text-white' : 'border-gray-300 bg-white text-transparent')}>
+        <button
+          type="button"
+          className="absolute inset-0 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-300"
+          onClick={() => select(k.id)}
+          aria-pressed={sel}
+          aria-label={sel ? `${k.name || "Unnamed key"} is the default SSH key` : `Set ${k.name || "Unnamed key"} as the default SSH key`}
+        />
+        <div className={"pointer-events-none absolute right-2 top-2 h-6 w-6 rounded-full border-2 " + (sel ? 'border-brand-500 bg-brand-500 text-white' : 'border-gray-300 bg-white text-transparent')}>
           <svg viewBox="0 0 20 20" className="h-full w-full p-0.5"><path fill="currentColor" d="M7.629 13.233L4.4 10.004l1.414-1.414l1.815 1.815l0.001-0.001L14.186 3.85l1.414 1.414l-7.971 7.971z"/></svg>
         </div>
-        <div className="mt-1 text-sm font-medium truncate pr-8">{k.name || 'Unnamed key'}</div>
-        <div className="mt-1 text-xs text-gray-500">{type}</div>
-        <div className="mt-1 text-xs font-mono text-gray-600 truncate">{short}</div>
+        <div className="pointer-events-none mt-1 truncate pr-8 text-sm font-medium">{k.name || 'Unnamed key'}</div>
+        <div className="pointer-events-none mt-1 text-xs text-gray-500">{type}</div>
+        <div className="pointer-events-none mt-1 truncate font-mono text-xs text-gray-600">{short}</div>
         <div className="absolute bottom-2 right-2 flex gap-2">
-          <button className="rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-700 hover:bg-red-100" onClick={(e) => { e.stopPropagation(); remove(k.id); }}>Delete</button>
+          <button
+            type="button"
+            className="rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-700 hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-red-300"
+            onClick={(event) => {
+              event.stopPropagation();
+              remove(k.id);
+            }}
+          >
+            Delete
+          </button>
         </div>
-      </button>
+      </div>
     );
   };
 
