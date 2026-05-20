@@ -1,10 +1,14 @@
 "use client";
 import React from "react";
-import { useWallet } from "../context/WalletContext";
-import { MetaMaskLogo } from "./wallet/MetaMaskLogo";
+import { useWallet } from "../../context/WalletContext";
+import { MetaMaskLogo } from "../wallet/MetaMaskLogo";
 import { Spinner } from "@golem/ui";
 
-export function Wallet() {
+function formatAccount(account: string | null) {
+  return account ? `${account.slice(0, 12)}...${account.slice(-8)}` : "";
+}
+
+export function SidebarWallet() {
   const {
     isInstalled,
     isConnected,
@@ -16,9 +20,7 @@ export function Wallet() {
     switchToPaymentsNetwork,
   } = useWallet();
   const [busy, setBusy] = React.useState(false);
-  const label = account
-    ? `${account.slice(0, 12)}...${account.slice(-8)}`
-    : "";
+  const label = formatAccount(account);
 
   const run = async (action: () => Promise<void>) => {
     setBusy(true);

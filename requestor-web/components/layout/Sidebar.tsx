@@ -8,10 +8,17 @@ import {
   RiHardDrive2Line,
   RiRadioButtonLine,
   RiSettings3Line,
-  RiWallet3Line,
 } from "@remixicon/react";
-import { Wallet } from "../Wallet";
-import { useWallet } from "../../context/WalletContext";
+import { SidebarWallet } from "./SidebarWallet";
+
+const navItems = [
+  { href: "/", label: "Dashboard", Icon: RiDashboardLine },
+  { href: "/providers", label: "Providers", Icon: RiRadioButtonLine },
+  { href: "/rentals", label: "My VMs", Icon: RiHardDrive2Line },
+  { href: "/streams", label: "Streams", Icon: RiRadioButtonLine },
+  { href: "/funding", label: "Funding", Icon: RiCopperCoinLine },
+  { href: "/settings", label: "Settings", Icon: RiSettings3Line },
+];
 
 function GolemMark() {
   return (
@@ -23,33 +30,8 @@ function GolemMark() {
   );
 }
 
-function WalletSummary() {
-  const { isConnected, account } = useWallet();
-  return (
-    <div className="rounded-lg border border-border bg-surface p-3">
-      <div className="flex items-center gap-3">
-        <RiWallet3Line className="h-5 w-5 text-text-secondary" aria-hidden />
-        <div className="min-w-0">
-          <div className="text-xs text-text-secondary">Wallet</div>
-          <div className={isConnected ? "truncate text-xs font-medium text-text-primary" : "text-xs font-medium text-danger"}>
-            {isConnected && account ? `${account.slice(0, 6)}...${account.slice(-4)}` : "Not connected"}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export function Sidebar() {
   const pathname = usePathname();
-  const nav = [
-    { href: "/", label: "Dashboard", Icon: RiDashboardLine },
-    { href: "/providers", label: "Providers", Icon: RiRadioButtonLine },
-    { href: "/rentals", label: "My VMs", Icon: RiHardDrive2Line },
-    { href: "/streams", label: "Streams", Icon: RiRadioButtonLine },
-    { href: "/funding", label: "Funding", Icon: RiCopperCoinLine },
-    { href: "/settings", label: "Settings", Icon: RiSettings3Line },
-  ];
   return (
     <aside className="hidden min-h-screen w-sidebar flex-col border-r border-border bg-surface lg:flex">
       <div className="px-5 py-8">
@@ -59,7 +41,7 @@ export function Sidebar() {
         </Link>
       </div>
       <nav className="flex-1 space-y-2 px-3">
-        {nav.map((i) => {
+        {navItems.map((i) => {
           const active = pathname === i.href || pathname.startsWith(i.href + "/");
           const Icon = i.Icon;
           return (
@@ -80,8 +62,7 @@ export function Sidebar() {
         })}
       </nav>
       <div className="space-y-4 border-t border-border p-4">
-        <WalletSummary />
-        <Wallet />
+        <SidebarWallet />
         <div className="pt-2 text-sm text-text-muted">
           <div className="mb-2 flex items-center gap-2 text-lg tracking-wider">golem <span className="text-xs tracking-normal">v0.9.4</span></div>
           <div className="flex items-center gap-2 text-xs">

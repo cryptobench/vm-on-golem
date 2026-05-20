@@ -44,8 +44,12 @@ WEB_WATCH_ENV_DEFAULTS = {
 }
 
 CENTRAL_URL = f"http://{CENTRAL_HOST}:{CENTRAL_PORT}"
-CENTRAL_PROVIDER_WS_URL = f"ws://{CENTRAL_HOST}:{CENTRAL_PORT}/api/v1/discovery/providers"
-CENTRAL_REQUESTOR_WS_URL = f"ws://{CENTRAL_HOST}:{CENTRAL_PORT}/api/v1/discovery/requestors"
+CENTRAL_PROVIDER_WS_URL = (
+    f"ws://{CENTRAL_HOST}:{CENTRAL_PORT}/api/v1/discovery/providers"
+)
+CENTRAL_REQUESTOR_WS_URL = (
+    f"ws://{CENTRAL_HOST}:{CENTRAL_PORT}/api/v1/discovery/requestors"
+)
 PROVIDER_API_URL = f"http://{PROVIDER_HOST}:{PROVIDER_PORT}/api/v1"
 WEB_URL = f"http://{WEB_HOST}:{WEB_PORT}"
 PROVIDER_DESKTOP_URL = f"http://{PROVIDER_DESKTOP_HOST}:{PROVIDER_DESKTOP_PORT}"
@@ -64,6 +68,11 @@ DEFAULT_LOG_BACKUPS = 5
 LOCAL_STACK_LOG_DIR_ENV = "LOCAL_STACK_LOG_DIR"
 LOCAL_STACK_LOG_MAX_BYTES_ENV = "LOCAL_STACK_LOG_MAX_BYTES"
 LOCAL_STACK_LOG_BACKUPS_ENV = "LOCAL_STACK_LOG_BACKUPS"
+PROVIDER_LOCATION_OVERRIDE_ENV_VARS = (
+    "GOLEM_PROVIDER_COUNTRY",
+    "GOLEM_PROVIDER_PUBLIC_IP",
+    "GOLEM_PROVIDER_PUBLIC_ENDPOINT_IP",
+)
 
 
 class LocalStackError(RuntimeError):
@@ -79,6 +88,7 @@ class Service:
     ready: Callable[[], bool] | None = None
     fatal: bool = True
     write_service_log: bool = True
+    unset_env: tuple[str, ...] = ()
     process: subprocess.Popen[str] | None = None
 
 
@@ -234,9 +244,11 @@ def service_log_env(prefix: str) -> dict[str, str]:
     }
 
 
-def merged_env(extra: dict[str, str]) -> dict[str, str]:
+def merged_env(extra: dict[str, str], unset: tuple[str, ...] = ()) -> dict[str, str]:
     env = os.environ.copy()
     env.update({key: str(value) for key, value in extra.items()})
+    for key in unset:
+        env.pop(key, None)
     return env
 
 
@@ -671,7 +683,7 @@ def start_service(service: Service, timeout: int) -> None:
     service.process = subprocess.Popen(
         service.command,
         cwd=str(service.cwd),
-        env=merged_env(service.env),
+        env=merged_env(service.env, unset=service.unset_env),
         stdin=subprocess.DEVNULL,
         text=True,
         stdout=subprocess.PIPE,
@@ -806,7 +818,6 @@ def build_services(
         "GOLEM_PROVIDER_GLM_TOKEN_ADDRESS": deployment["glm_token_address"],
         "GOLEM_PROVIDER_HOST": PROVIDER_BIND_HOST,
         "GOLEM_PROVIDER_PORT": str(PROVIDER_PORT),
-        "GOLEM_PROVIDER_PUBLIC_IP": "auto",
         "GOLEM_PROVIDER_SECURE_SETUP_IN_DEVELOPMENT": "false",
         "GOLEM_PROVIDER_SHOW_JSON_LOGS": "1",
         "GOLEM_PROVIDER_PORT_CHECK_REQUEST_TIMEOUT": "5",
@@ -853,6 +864,7 @@ def build_services(
                         "--keep-vms-on-exit",
                     ],
                     env=provider_env,
+                    unset_env=PROVIDER_LOCATION_OVERRIDE_ENV_VARS,
                     ready=lambda: http_ok(f"{PROVIDER_API_URL}/provider/info"),
                 ),
             ]
@@ -937,6 +949,7 @@ def build_services(
                 ready=None,
                 fatal=False,
                 write_service_log=False,
+                unset_env=PROVIDER_LOCATION_OVERRIDE_ENV_VARS,
             )
         )
         services.append(
@@ -954,6 +967,7 @@ def build_services(
                     "GOLEM_ENVIRONMENT": "development",
                     "TAURI_PROVIDER_API_URL": PROVIDER_API_URL,
                 },
+                unset_env=PROVIDER_LOCATION_OVERRIDE_ENV_VARS,
                 ready=lambda: http_ok(PROVIDER_DESKTOP_URL),
             )
         )
