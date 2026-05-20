@@ -1,7 +1,6 @@
 "use client";
 
 import React from "react";
-import { useProjects } from "../../context/ProjectsContext";
 import { useWallet } from "../../context/WalletContext";
 import { useStreamActions } from "../../hooks/useStreamActions";
 import {
@@ -24,7 +23,6 @@ import {
 export function useStreamsScreen() {
   const { show } = useToast();
   const { paymentReady, paymentMessage } = useWallet();
-  const { activeId: activeProjectId } = useProjects();
   const [mounted, setMounted] = React.useState(false);
   const [rentals, setRentals] = React.useState<Rental[]>([]);
   const [rows, setRows] = React.useState<StreamRow[] | null>(null);
@@ -91,23 +89,19 @@ export function useStreamsScreen() {
     };
   }, [mounted, syncRentals, syncSettings]);
 
-  const projectStreamRentals = React.useMemo(
+  const streamRentals = React.useMemo(
     () =>
-      rentals.filter(
-        (rental) =>
-          rental.stream_id &&
-          (rental.project_id || "default") === activeProjectId,
-      ),
-    [activeProjectId, rentals],
+      rentals.filter((rental) => rental.stream_id),
+    [rentals],
   );
   const liveStreams = usePaymentStreamsLive(
     streamPaymentAddress,
-    projectStreamRentals,
+    streamRentals,
   );
 
   React.useEffect(() => {
     if (!mounted) return;
-    if (!projectStreamRentals.length) {
+    if (!streamRentals.length) {
       setRows([]);
       setError(null);
       setRefreshing(false);
@@ -120,11 +114,11 @@ export function useStreamsScreen() {
       return;
     }
 
-    const entries = projectStreamRentals.map((rental) =>
+    const entries = streamRentals.map((rental) =>
       rental.stream_id ? liveStreams.entries[String(rental.stream_id)] : null,
     );
     const loadedEntries = entries.filter(Boolean);
-    if (loadedEntries.length < projectStreamRentals.length) {
+    if (loadedEntries.length < streamRentals.length) {
       setRows(null);
       return;
     }
@@ -154,7 +148,7 @@ export function useStreamsScreen() {
     liveStreams.entries,
     liveStreams.error,
     mounted,
-    projectStreamRentals,
+    streamRentals,
     streamPaymentAddress,
   ]);
 
@@ -230,7 +224,7 @@ export function useStreamsScreen() {
     displayCurrency,
     ended,
     error,
-    hasConfiguredStreams: projectStreamRentals.length > 0,
+    hasConfiguredStreams: streamRentals.length > 0,
     hasRows: !!rows && rows.length > 0,
     mounted,
     nowSec,

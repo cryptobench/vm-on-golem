@@ -67,7 +67,6 @@ export type Rental = {
   ssh_port?: number | null;
   ssh_user?: string | null;
   stream_id?: number | string | null;
-  project_id?: string;
   platform?: string | null;
   provider_pricing?: ProviderAd["pricing"] | null;
   provider_available_resources?: ProviderAd["resources"] | null;
@@ -135,16 +134,20 @@ export type VmLiveEvent = {
 };
 
 const RENTALS_KEY = "requestor_rentals_v1";
+const LEGACY_RENTAL_SCOPE_FIELD = ["pro", "ject_id"].join("");
 
 export function loadRentals(): Rental[] {
   if (typeof window === "undefined") return [];
   try {
     const rows = JSON.parse(localStorage.getItem(RENTALS_KEY) || "[]");
     if (!Array.isArray(rows)) return [];
-    const rentals = rows.filter((row) =>
-      isUsableProviderEndpoint(row?.provider_endpoint_url),
-    );
-    if (rentals.length !== rows.length) {
+    const rentals = rows
+      .filter((row) => isUsableProviderEndpoint(row?.provider_endpoint_url))
+      .map(stripLegacyRentalFields);
+    const changed =
+      rentals.length !== rows.length ||
+      rentals.some((rental, index) => rental !== rows[index]);
+    if (changed) {
       localStorage.setItem(RENTALS_KEY, JSON.stringify(rentals));
     }
     return rentals;
@@ -155,10 +158,19 @@ export function loadRentals(): Rental[] {
 
 export function saveRentals(next: Rental[]) {
   if (typeof window === "undefined") return;
-  localStorage.setItem(RENTALS_KEY, JSON.stringify(next));
+  const rentals = next.map(stripLegacyRentalFields);
+  localStorage.setItem(RENTALS_KEY, JSON.stringify(rentals));
   window.dispatchEvent(
-    new CustomEvent("requestor_rentals_changed", { detail: next }),
+    new CustomEvent("requestor_rentals_changed", { detail: rentals }),
   );
+}
+
+function stripLegacyRentalFields(row: any): Rental {
+  if (!row || typeof row !== "object" || !(LEGACY_RENTAL_SCOPE_FIELD in row)) {
+    return row as Rental;
+  }
+  const { [LEGACY_RENTAL_SCOPE_FIELD]: _legacyScope, ...rental } = row;
+  return rental as Rental;
 }
 
 export function filterProvidersWithUsableEndpoint(

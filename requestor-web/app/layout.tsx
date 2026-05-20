@@ -2,7 +2,6 @@
 import React from "react";
 import { AdsProvider } from "../context/AdsContext";
 import { WalletProvider } from "../context/WalletContext";
-import { ProjectsProvider } from "../context/ProjectsContext";
 import "./globals.css";
 import { Sidebar } from "../components/layout/Sidebar";
 import { AppTopBar } from "../components/layout/AppTopBar";
@@ -28,27 +27,25 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="min-h-screen">
         <WalletProvider>
           <AdsProvider>
-            <ProjectsProvider>
-              <ToastProvider>
-                <SWRConfig value={{
-                  revalidateOnFocus: false,
-                  revalidateIfStale: false,
-                  shouldRetryOnError: false,
-                }}>
-                  <div className="min-h-screen w-full grid grid-cols-1 lg:grid-cols-[var(--sidebar-width)_1fr]">
-                    <Sidebar />
-                    <div className="relative">
-                      <AppTopBar />
-                      <main className="px-4 pb-8 sm:px-6 lg:px-8">
-                        <div className="w-full">{children}</div>
-                      </main>
-                      {/* Mount the create wizard in the main content column */}
-                      <CreateWizardHost />
-                    </div>
+            <ToastProvider>
+              <SWRConfig value={{
+                revalidateOnFocus: false,
+                revalidateIfStale: false,
+                shouldRetryOnError: false,
+              }}>
+                <div className="min-h-screen w-full grid grid-cols-1 lg:grid-cols-[var(--sidebar-width)_1fr]">
+                  <Sidebar />
+                  <div className="relative">
+                    <AppTopBar />
+                    <main className="px-4 pb-8 sm:px-6 lg:px-8">
+                      <div className="w-full">{children}</div>
+                    </main>
+                    {/* Mount the create wizard in the main content column */}
+                    <CreateWizardHost />
                   </div>
-                </SWRConfig>
-              </ToastProvider>
-            </ProjectsProvider>
+                </div>
+              </SWRConfig>
+            </ToastProvider>
           </AdsProvider>
         </WalletProvider>
       </body>

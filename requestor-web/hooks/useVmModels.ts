@@ -16,11 +16,11 @@ import {
   type VmSafeStatus,
 } from "../lib/requestorVmModel";
 import { reconcileProviderMissingRentals } from "../lib/rentalReconciliation";
-import { useProjectRentals } from "./useProjectRentals";
+import { useRentals } from "./useRentals";
 
 type ProbeResult<T> = { ok: true; value: T } | { ok: false; error: unknown };
 
-export function useProjectVmModels(projectId: string) {
+export function useVmModels() {
   const [probes, setProbes] = React.useState<
     Record<string, RequestorVmProbe>
   >({});
@@ -35,24 +35,17 @@ export function useProjectVmModels(projectId: string) {
     isInitialLoading: rentalsLoading,
     setItems,
     refresh: refreshRentals,
-  } = useProjectRentals(projectId);
-  const projectRentals = React.useMemo(
-    () =>
-      rentalItems.filter(
-        (rental) => (rental.project_id || "default") === projectId,
-      ) as Rental[],
-    [projectId, rentalItems],
-  );
+  } = useRentals();
+  const rentals = rentalItems as Rental[];
   const probeKey = React.useMemo(
     () =>
-      projectRentals.length
+      rentals.length
         ? [
             "requestor-vm-model-probes",
-            projectId,
-            projectRentals.map(rentalProbeKey).join("|"),
+            rentals.map(rentalProbeKey).join("|"),
           ]
         : null,
-    [projectId, projectRentals],
+    [rentals],
   );
 
   React.useEffect(() => {
@@ -60,23 +53,23 @@ export function useProjectVmModels(projectId: string) {
   }, [probes]);
 
   React.useEffect(() => {
-    const activeVmIds = new Set(projectRentals.map((rental) => rental.vm_id));
+    const activeVmIds = new Set(rentals.map((rental) => rental.vm_id));
     const nextProbeKeys = Object.fromEntries(
-      projectRentals.map((rental) => [rental.vm_id, rentalProbeKey(rental)]),
+      rentals.map((rental) => [rental.vm_id, rentalProbeKey(rental)]),
     );
     latestProbeKeysRef.current = nextProbeKeys;
     setProbes((current) => filterByVmIds(current, activeVmIds));
     setPendingProbeIds((current) => filterByVmIds(current, activeVmIds));
-  }, [probeKey, projectRentals]);
+  }, [probeKey, rentals]);
 
   React.useEffect(() => {
-    if (!projectRentals.length) return;
+    if (!rentals.length) return;
 
     let cancelled = false;
     let timer: number | null = null;
 
     const loadAll = () => {
-      for (const rental of projectRentals) {
+      for (const rental of rentals) {
         const vmId = rental.vm_id;
         const currentKey = rentalProbeKey(rental);
         latestProbeKeysRef.current[vmId] = currentKey;
@@ -129,7 +122,7 @@ export function useProjectVmModels(projectId: string) {
       cancelled = true;
       if (timer != null) window.clearInterval(timer);
     };
-  }, [probeKey, projectRentals, refreshNonce]);
+  }, [probeKey, rentals, refreshNonce]);
 
   React.useEffect(() => {
     const refreshProbes = () => setRefreshNonce((current) => current + 1);
@@ -143,26 +136,22 @@ export function useProjectVmModels(projectId: string) {
 
   const items = React.useMemo<RequestorVmModel[]>(
     () =>
-      projectRentals.map((rental) =>
+      rentals.map((rental) =>
         buildRequestorVmModel(rental, probes[rental.vm_id], {
           probePending: !!pendingProbeIds[rental.vm_id],
         }),
       ),
-    [pendingProbeIds, probes, projectRentals],
+    [pendingProbeIds, probes, rentals],
   );
   React.useEffect(() => {
     if (!probes) return;
     const statuses = Object.fromEntries(
       Object.entries(probes).map(([vmId, probe]) => [vmId, probe.safeStatus]),
     );
-    const result = reconcileProviderMissingRentals(
-      rentalItems,
-      statuses,
-      projectId,
-    );
+    const result = reconcileProviderMissingRentals(rentalItems, statuses);
     if (!result.changed) return;
     setItems(result.rentals);
-  }, [probes, projectId, rentalItems, setItems]);
+  }, [probes, rentalItems, setItems]);
 
   const refresh = React.useCallback(async () => {
     refreshRentals();
@@ -173,7 +162,7 @@ export function useProjectVmModels(projectId: string) {
   return {
     setItems,
     items,
-    projectRentals,
+    rentals,
     rawItems: rentalItems,
     isInitialLoading,
     refresh,

@@ -52,15 +52,11 @@ export function reconcileTerminatedStreamRentals(
 export function reconcileProviderMissingRentals(
   rentals: Rental[],
   statuses: Record<string, VmSafeStatus | null | undefined>,
-  projectId: string,
   now = nowSeconds(),
 ) {
   let changed = false;
   const next = rentals.map((rental) => {
-    if (
-      (rental.project_id || "default") !== projectId ||
-      isTerminalRental(rental)
-    ) {
+    if (isTerminalRental(rental)) {
       return rental;
     }
 

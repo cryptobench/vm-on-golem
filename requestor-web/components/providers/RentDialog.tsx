@@ -29,7 +29,6 @@ import { parseHumanDuration } from "../../lib/time";
 import { generateVmName } from "../../lib/vmNames";
 import { walletDebug, walletWarn } from "../../lib/walletDebug";
 import { useWallet } from "../../context/WalletContext";
-import { useProjects } from "../../context/ProjectsContext";
 import { Alert } from "@golem/ui";
 import { DialogScaffold } from "@golem/ui";
 import { StepProgress } from "@golem/ui";
@@ -71,7 +70,6 @@ export function RentDialog({
   const router = useRouter();
   const { account, expectedChain, paymentReady, ensurePaymentsNetwork } =
     useWallet();
-  const { activeId: activeProjectId } = useProjects();
   const settings = React.useMemo(() => loadSettings(), []);
   const initialKeys: SSHKey[] =
     settings.ssh_keys ||
@@ -249,7 +247,6 @@ export function RentDialog({
         ssh_port: null,
         ssh_user: null,
         stream_id: String(activeStreamId),
-        project_id: activeProjectId || "default",
         status: "creating",
         lifecycle_stage: "queued",
         status_message: "Queued VM creation",
@@ -289,7 +286,6 @@ export function RentDialog({
         ssh_port: null,
         ssh_user: null,
         stream_id: String(activeStreamId),
-        project_id: activeProjectId || "default",
         status: String((vm as any)?.status || "creating"),
         lifecycle_stage: (vm as any)?.lifecycle_stage || "queued",
         status_message: (vm as any)?.status_message || "Queued VM creation",
@@ -348,9 +344,7 @@ export function RentDialog({
       (rental) =>
         (entry.stream_id != null &&
           String(rental.stream_id || "") === String(entry.stream_id)) ||
-        (rental.name === entry.name &&
-          rental.provider_id === entry.provider_id &&
-          rental.project_id === entry.project_id),
+        (rental.name === entry.name && rental.provider_id === entry.provider_id),
     );
     if (index >= 0) {
       const next = [...current];

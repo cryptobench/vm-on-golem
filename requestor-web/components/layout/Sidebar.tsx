@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   RiDashboardLine,
-  RiFolderLine,
   RiHardDrive2Line,
   RiRadioButtonLine,
   RiSettings3Line,
@@ -47,7 +46,6 @@ export function Sidebar() {
     { href: "/providers", label: "Providers", Icon: RiRadioButtonLine },
     { href: "/rentals", label: "My VMs", Icon: RiHardDrive2Line },
     { href: "/streams", label: "Streams", Icon: RiRadioButtonLine },
-    { href: "/projects", label: "Projects", Icon: RiFolderLine },
     { href: "/settings", label: "Settings", Icon: RiSettings3Line },
   ];
   return (

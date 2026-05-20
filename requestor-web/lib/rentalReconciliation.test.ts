@@ -76,7 +76,6 @@ test("provider 404 marks non-creating rental terminated", () => {
         error: "not found",
       },
     },
-    "default",
     789,
   );
 
@@ -96,7 +95,6 @@ test("provider 404 keeps fresh creating rental in grace window", () => {
         error: "not found",
       },
     },
-    "default",
     789,
   );
 

@@ -70,8 +70,8 @@ export default function StreamsPage() {
               }
               description={
                 screen.hasConfiguredStreams
-                  ? "The project has VMs with stream IDs, but their on-chain stream data could not be loaded."
-                  : "You don't have any payment streams in this project. Rent a VM to create your first payment stream."
+                  ? "Your VMs have stream IDs, but their on-chain stream data could not be loaded."
+                  : "You don't have any payment streams yet. Rent a VM to create your first payment stream."
               }
               showRentAction={!screen.hasConfiguredStreams}
             />

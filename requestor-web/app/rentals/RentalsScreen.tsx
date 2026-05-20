@@ -14,7 +14,7 @@ export default function RentalsPage() {
     <div className="rentals-shell space-y-6">
       <PageHeader
         title="My VMs"
-        description="View and manage all virtual machines in your project."
+        description="View and manage all virtual machines."
         className="border-b-0 pb-0 xl:items-end"
         actions={
           <RentalsToolbar
@@ -53,13 +53,13 @@ export default function RentalsPage() {
         </div>
       ) : (
         <RentalsEmptyState
-          title={screen.hasAnyProjectVm ? "No matching VMs" : "No VMs yet"}
+          title={screen.hasAnyVm ? "No matching VMs" : "No VMs yet"}
           description={
-            screen.hasAnyProjectVm
+            screen.hasAnyVm
               ? "Try a different search or include terminated VMs."
-              : "You don't have any virtual machines in this project."
+              : "You don't have any virtual machines yet."
           }
-          showSecondaryAction={screen.hasAnyProjectVm}
+          showSecondaryAction={screen.hasAnyVm}
           onClearSearch={() => screen.setQuery("")}
         />
       )}

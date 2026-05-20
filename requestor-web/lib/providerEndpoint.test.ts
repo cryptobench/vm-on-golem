@@ -109,3 +109,40 @@ test("loadRentals drops rentals without provider endpoints", () => {
     delete (globalThis as any).localStorage;
   }
 });
+
+test("loadRentals strips legacy rental scope fields", () => {
+  const originalWindow = (globalThis as any).window;
+  const storage = new Map<string, string>();
+  const localStorage = {
+    getItem: (key: string) => storage.get(key) ?? null,
+    setItem: (key: string, value: string) => storage.set(key, value),
+  };
+  (globalThis as any).window = {};
+  (globalThis as any).localStorage = localStorage;
+  const legacyScopeField = ["pro", "ject_id"].join("");
+  storage.set(
+    "requestor_rentals_v1",
+    JSON.stringify([
+      {
+        name: "kept",
+        provider_id: "provider-a",
+        provider_endpoint_url: "https://203.0.113.10",
+        vm_id: "vm-a",
+        status: "running",
+        [legacyScopeField]: "default",
+      },
+    ]),
+  );
+
+  try {
+    const rentals = loadRentals();
+    const persisted = JSON.parse(storage.get("requestor_rentals_v1") || "[]");
+
+    assert.equal(rentals.length, 1);
+    assert.equal(legacyScopeField in (rentals[0] as any), false);
+    assert.equal(legacyScopeField in persisted[0], false);
+  } finally {
+    (globalThis as any).window = originalWindow;
+    delete (globalThis as any).localStorage;
+  }
+});

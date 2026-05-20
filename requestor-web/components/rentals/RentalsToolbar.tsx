@@ -65,7 +65,7 @@ export function RentalsToolbar({
         <Link
           className="btn btn-secondary w-10 px-0"
           href="/settings"
-          aria-label="Open project settings"
+          aria-label="Open settings"
         >
           <RiSettings3Line className="h-5 w-5" aria-hidden />
         </Link>

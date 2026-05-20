@@ -28,7 +28,7 @@ export function RentalsEmptyState({
         <p className="mt-3 text-sm text-text-secondary">{description}</p>
         <p className="mt-1 text-sm font-medium text-text-secondary">
           {showSecondaryAction
-            ? "Filters can hide VMs that still belong to this project."
+            ? "Filters can hide VMs that are still available."
             : "Create or rent your first VM."}
         </p>
         <div className="mt-8">

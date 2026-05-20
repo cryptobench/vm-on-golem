@@ -1,8 +1,7 @@
 "use client";
 
 import React from "react";
-import { useProjects } from "../../context/ProjectsContext";
-import { useProjectVmModels } from "../../hooks/useProjectVmModels";
+import { useVmModels } from "../../hooks/useVmModels";
 import { DashboardSkeleton } from "./DashboardSkeleton";
 import { DashboardEmptyState } from "./DashboardEmptyState";
 import { DashboardSection } from "./DashboardSection";
@@ -15,10 +14,8 @@ function formatToken(value: number, token: string, digits = 2) {
   return `${value.toLocaleString(undefined, { maximumFractionDigits: digits, minimumFractionDigits: value > 0 ? Math.min(2, digits) : 0 })} ${token}`;
 }
 
-export function ProjectDashboard() {
-  const { activeId } = useProjects();
-  const { items, isInitialLoading: rentalsLoading } =
-    useProjectVmModels(activeId);
+export function Dashboard() {
+  const { items, isInitialLoading: rentalsLoading } = useVmModels();
   const [mounted, setMounted] = React.useState(false);
   React.useEffect(() => setMounted(true), []);
 

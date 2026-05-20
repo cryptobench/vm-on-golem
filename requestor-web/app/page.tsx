@@ -1,7 +1,7 @@
 "use client";
 import React from "react";
-import { ProjectDashboard } from "../components/dashboard/ProjectDashboard";
+import { Dashboard } from "../components/dashboard/Dashboard";
 
 export default function Home() {
-  return <ProjectDashboard />;
+  return <Dashboard />;
 }

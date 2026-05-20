@@ -1,8 +1,7 @@
 "use client";
 
 import React from "react";
-import { useProjects } from "../../context/ProjectsContext";
-import { useProjectVmModels } from "../../hooks/useProjectVmModels";
+import { useVmModels } from "../../hooks/useVmModels";
 import {
   loadSettings,
   saveSettings,
@@ -32,13 +31,12 @@ export function useRentalsScreen() {
   const [mounted, setMounted] = React.useState(false);
   const [showTerminated, setShowTerminated] = React.useState(false);
   const [query, setQuery] = React.useState("");
-  const { activeId } = useProjects();
   const {
     items,
-    projectRentals,
+    rentals,
     isInitialLoading: rentalsLoading,
     refresh,
-  } = useProjectVmModels(activeId);
+  } = useVmModels();
 
   React.useEffect(() => {
     setMounted(true);
@@ -92,7 +90,7 @@ export function useRentalsScreen() {
 
   return {
     active,
-    hasAnyProjectVm: projectRentals.length > 0,
+    hasAnyVm: rentals.length > 0,
     hasVisibleRows:
       active.length > 0 || (showTerminated && terminated.length > 0),
     mounted,

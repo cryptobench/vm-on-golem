@@ -14,16 +14,16 @@ function resolveStreamPaymentAddress() {
   ).trim();
 }
 
-export function useProjectRentals(projectId: string) {
+export function useRentals() {
   const [validatedKey, setValidatedKey] = React.useState<string | null>(null);
   const [streamPaymentAddress, setStreamPaymentAddress] = React.useState(
     resolveStreamPaymentAddress,
   );
 
-  const rentalsKey = projectId;
+  const rentalsKey = "rentals";
 
   const { data, isValidating, mutate } = useSWR(
-    ["project-rentals", projectId],
+    ["rentals"],
     async () => loadRentals(),
     {
       refreshInterval: 8000,
@@ -68,14 +68,13 @@ export function useProjectRentals(projectId: string) {
       items.filter((r) => {
         const status = String(r.status || "").toLowerCase();
         return (
-          (r.project_id || "default") === projectId &&
           status !== "terminated" &&
           status !== "deleted" &&
           r.stream_id != null &&
           r.stream_id !== ""
         );
       }),
-    [items, projectId],
+    [items],
   );
   const liveStreams = usePaymentStreamsLive(
     streamPaymentAddress,
