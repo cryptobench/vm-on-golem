@@ -3,6 +3,7 @@ import asyncio
 from fastapi import FastAPI
 
 from .discovery.publishing_service import DiscoveryPublishingService
+from .network.location_resolver import ensure_provider_location
 from .payments.stream_status_service import (
     EXPIRED_PAYMENT_STATE,
     STREAM_GRACE_PERIOD_SECONDS,
@@ -45,6 +46,16 @@ class ProviderService:
         try:
             logger.process("🔄 Initializing provider...")
 
+            location = await ensure_provider_location(settings)
+            self._sync_runtime_settings_to_container(app, settings)
+            logger.info(
+                "Provider public location resolved",
+                extra={
+                    "ip_address": location.ip_address,
+                    "country": location.country,
+                },
+            )
+
             # Setup directories
             self._setup_directories()
             logger.info("Provider directories ready")
@@ -52,6 +63,7 @@ class ProviderService:
             if self.network_setup_service is not None:
                 logger.info("Starting provider network setup")
                 await self.network_setup_service.setup()
+                self._sync_runtime_settings_to_container(app, settings)
                 if hasattr(self.network_setup_service, "start_certificate_maintenance"):
                     await self.network_setup_service.start_certificate_maintenance()
                 logger.info("Provider network setup complete")
@@ -344,3 +356,10 @@ class ProviderService:
         Path(settings.VM_DATA_DIR).mkdir(parents=True, exist_ok=True)
         Path(settings.SSH_KEY_DIR).mkdir(parents=True, exist_ok=True)
         Path(settings.CLOUD_INIT_DIR).mkdir(parents=True, exist_ok=True)
+
+    @staticmethod
+    def _sync_runtime_settings_to_container(app: FastAPI, settings) -> None:
+        container = getattr(app, "container", None)
+        config = getattr(container, "config", None)
+        if config is not None and hasattr(config, "from_dict"):
+            config.from_dict(settings.model_dump())

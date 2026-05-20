@@ -35,7 +35,7 @@ test("prefers provider public metadata over legacy stored VM IP", () => {
   );
 });
 
-test("falls back to provider endpoint host before stored IP", () => {
+test("does not build SSH endpoint from provider endpoint fallback", () => {
   assert.equal(
     sshEndpointLabel({
       rental: {
@@ -44,7 +44,21 @@ test("falls back to provider endpoint host before stored IP", () => {
         ssh_port: 50805,
       },
     }),
-    "provider.example:50805",
+    "-",
+  );
+});
+
+test("does not build SSH endpoint from access host without access port", () => {
+  assert.equal(
+    sshEndpointLabel({
+      access: { ssh_host: "203.0.113.10" },
+      rental: {
+        provider_endpoint_url: "https://198.51.100.2",
+        provider_ip: "192.168.2.13",
+        ssh_port: 50804,
+      },
+    }),
+    "-",
   );
 });
 

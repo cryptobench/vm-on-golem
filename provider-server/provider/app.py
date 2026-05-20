@@ -10,6 +10,7 @@ from .auth.dependencies import require_provider_admin
 from .auth.errors import ForbiddenError, UnauthorizedError
 from .container import Container
 from .errors import (
+    ConfigurationError,
     ConflictError,
     DomainError,
     ExternalServiceError,
@@ -141,6 +142,12 @@ def _register_exception_handlers(app: FastAPI) -> None:
         request: Request, exc: ExternalServiceError
     ):
         return JSONResponse(status_code=502, content={"detail": str(exc)})
+
+    @app.exception_handler(ConfigurationError)
+    async def configuration_exception_handler(
+        request: Request, exc: ConfigurationError
+    ):
+        return JSONResponse(status_code=500, content={"detail": str(exc)})
 
     @app.exception_handler(MultipassError)
     async def multipass_exception_handler(request: Request, exc: MultipassError):

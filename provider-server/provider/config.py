@@ -1,6 +1,5 @@
 import json
 import os
-import socket
 import uuid
 from pathlib import Path
 from typing import Optional
@@ -36,42 +35,6 @@ def derive_port_check_url(discovery_ws_url: str) -> str:
     if not parsed.netloc:
         raise ValueError("Discovery websocket URL must include a host")
     return urlunsplit((scheme, parsed.netloc, "", "", ""))
-
-
-def _default_route_local_ip() -> str | None:
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    try:
-        sock.connect(("8.8.8.8", 80))
-        ip_address = sock.getsockname()[0]
-        if ip_address and not ip_address.startswith("127."):
-            return ip_address
-    except OSError:
-        return None
-    finally:
-        sock.close()
-
-    return None
-
-
-def _hostname_local_ips() -> list[str]:
-    try:
-        hostname = socket.gethostname()
-        return [
-            ip_address
-            for ip_address in socket.gethostbyname_ex(hostname)[2]
-            if not ip_address.startswith("127.")
-        ]
-    except socket.gaierror:
-        return []
-
-
-def _development_public_ip() -> str | None:
-    default_route_ip = _default_route_local_ip()
-    if default_route_ip:
-        return default_route_ip
-
-    local_ips = _hostname_local_ips()
-    return local_ips[0] if local_ips else None
 
 
 def ensure_config() -> None:
@@ -189,7 +152,7 @@ class Settings(BaseSettings):
 
     # Provider Settings
     PROVIDER_NAME: str = "golem-provider"
-    PROVIDER_COUNTRY: str = "SE"
+    PROVIDER_COUNTRY: Optional[str] = None
     ETHEREUM_KEY_DIR: str = ""
     ETHEREUM_PRIVATE_KEY: Optional[str] = None
     PROVIDER_ID: str = ""  # Will be set from Ethereum identity
@@ -763,36 +726,6 @@ class Settings(BaseSettings):
             raise ValueError(f"Failed to create certificate directory: {e}")
 
         return str(path)
-
-    @field_validator("PUBLIC_IP", mode="before")
-    def get_public_ip(cls, v: Optional[str], values: dict) -> Optional[str]:
-        """Get public IP if set to 'auto'."""
-        if v and v != "auto":
-            logger.info(f"Using manually provided IP: {v}")
-            return v
-
-        if values.data.get("ENVIRONMENT") == "development":
-            ip_address = _development_public_ip()
-            if ip_address:
-                logger.info(f"Found local IP for development: {ip_address}")
-                return ip_address
-
-            raise ValueError(
-                "Could not determine local IP address in development mode. "
-                "Please ensure you have a valid network connection."
-            )
-        if v == "auto":
-            try:
-                import requests
-
-                response = requests.get("https://api.ipify.org")
-                ip = response.text.strip()
-                logger.info(f"Found public IP: {ip}")
-                return ip
-            except Exception:
-                return None
-
-        return v
 
     # Pricing Settings (configured in USD)
     # Per-month prices per unit

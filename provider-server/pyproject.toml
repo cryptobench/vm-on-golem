@@ -21,6 +21,7 @@ packages = [
 
 # Include package data (deployment JSON)
 include = [
+    { path = "provider/data/deployments/hoodi.json", format = "wheel" },
     { path = "provider/data/deployments/l2.json", format = "wheel" },
 ]
 

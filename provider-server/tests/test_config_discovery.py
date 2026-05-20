@@ -1,12 +1,9 @@
 import pytest
 from pydantic import ValidationError
 
-from provider.config import (
-    Settings,
-    derive_port_check_url,
-    _development_public_ip,
-    normalize_acme_env,
-)
+from provider.config import Settings, derive_port_check_url, normalize_acme_env
+from provider.errors import ConfigurationError
+from provider.network.location_resolver import reject_provider_location_overrides
 
 
 def _set_settings_paths(monkeypatch, tmp_path):
@@ -23,10 +20,7 @@ def test_discovery_ws_url_has_central_websocket_default(monkeypatch, tmp_path):
 
     settings = Settings()
 
-    assert (
-        settings.DISCOVERY_WS_URL
-        == "wss://78.46.172.104/api/v1/discovery/providers"
-    )
+    assert settings.DISCOVERY_WS_URL == "wss://78.46.172.104/api/v1/discovery/providers"
 
 
 def test_discovery_ws_url_override_wins(monkeypatch, tmp_path):
@@ -151,45 +145,26 @@ def test_acme_invalid_env_fails(monkeypatch, tmp_path):
         Settings()
 
 
-def test_development_public_ip_prefers_default_route(monkeypatch):
-    class RouteSocket:
-        def connect(self, target):
-            assert target == ("8.8.8.8", 80)
+def test_provider_country_has_no_static_default(monkeypatch, tmp_path):
+    monkeypatch.delenv("GOLEM_PROVIDER_COUNTRY", raising=False)
+    _set_settings_paths(monkeypatch, tmp_path)
 
-        def getsockname(self):
-            return ("192.168.50.48", 49152)
+    settings = Settings()
 
-        def close(self):
-            pass
-
-    monkeypatch.setattr("provider.config.socket.socket", lambda *args: RouteSocket())
-    monkeypatch.setattr("provider.config.socket.gethostname", lambda: "provider-host")
-    monkeypatch.setattr(
-        "provider.config.socket.gethostbyname_ex",
-        lambda hostname: (hostname, [], ["192.168.2.1"]),
-    )
-
-    assert _development_public_ip() == "192.168.50.48"
+    assert settings.PROVIDER_COUNTRY is None
 
 
-def test_development_public_ip_falls_back_to_hostname(monkeypatch):
-    class UnroutableSocket:
-        def connect(self, target):
-            raise OSError("no route")
-
-        def close(self):
-            pass
-
-    monkeypatch.setattr(
-        "provider.config.socket.socket", lambda *args: UnroutableSocket()
-    )
-    monkeypatch.setattr("provider.config.socket.gethostname", lambda: "provider-host")
-    monkeypatch.setattr(
-        "provider.config.socket.gethostbyname_ex",
-        lambda hostname: (hostname, [], ["127.0.0.1", "192.168.2.1"]),
-    )
-
-    assert _development_public_ip() == "192.168.2.1"
+@pytest.mark.parametrize(
+    "env_var",
+    [
+        "GOLEM_PROVIDER_COUNTRY",
+        "GOLEM_PROVIDER_PUBLIC_IP",
+        "GOLEM_PROVIDER_PUBLIC_ENDPOINT_IP",
+    ],
+)
+def test_provider_location_env_overrides_are_rejected(env_var):
+    with pytest.raises(ConfigurationError, match="cannot be overridden"):
+        reject_provider_location_overrides({env_var: "configured"})
 
 
 def test_public_endpoint_internal_ports_match_public_defaults(monkeypatch, tmp_path):

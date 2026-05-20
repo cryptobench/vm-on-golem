@@ -262,6 +262,52 @@ def _is_running(pid: int) -> bool:
         return False
 
 
+def _terminate_process_tree(pid: int, timeout: int) -> bool:
+    try:
+        parent = psutil.Process(pid)
+    except Exception as exc:
+        logger.warning(
+            "Failed to inspect provider daemon process",
+            extra={"pid": pid, "error": str(exc)},
+        )
+        return False
+
+    processes = [parent]
+    try:
+        processes.extend(parent.children(recursive=True))
+    except Exception as exc:
+        logger.warning(
+            "Failed to inspect provider daemon child processes",
+            extra={"pid": pid, "error": str(exc)},
+        )
+
+    for process in processes:
+        try:
+            process.terminate()
+        except psutil.NoSuchProcess:
+            continue
+        except Exception as exc:
+            logger.warning(
+                "Failed to terminate provider daemon process",
+                extra={"pid": process.pid, "error": str(exc)},
+            )
+
+    _, alive = psutil.wait_procs(processes, timeout=max(0, int(timeout)))
+    for process in alive:
+        try:
+            process.kill()
+        except psutil.NoSuchProcess:
+            continue
+        except Exception as exc:
+            logger.warning(
+                "Failed to kill provider daemon process",
+                extra={"pid": process.pid, "error": str(exc)},
+            )
+
+    _, alive = psutil.wait_procs(alive, timeout=2) if alive else ([], [])
+    return not alive
+
+
 def _spawn_detached(argv: list[str], env: dict | None = None) -> int:
     import subprocess
     import sys
@@ -987,7 +1033,9 @@ def status(
     if not mp["ok"]:
         tips.append("Install Multipass and/or set GOLEM_PROVIDER_MULTIPASS_BINARY_PATH")
     if external["status"] != "reachable":
-        tips.append("Ensure the central discovery port-check endpoint is online (see above)")
+        tips.append(
+            "Ensure the central discovery port-check endpoint is online (see above)"
+        )
     # Tips are included in the single panel under Notes
 
     # Restore logger level
@@ -1555,16 +1603,9 @@ def stop(
         print("No running provider process; cleaning up PID file")
         _remove_pid_file()
         raise typer.Exit(code=0)
-    try:
-        p = psutil.Process(pid)
-        p.terminate()
-        logger.info("Sent terminate to provider daemon", extra={"pid": pid})
-    except Exception as exc:
-        logger.warning(
-            "Failed to terminate provider daemon through psutil",
-            extra={"pid": pid, "error": str(exc)},
-        )
-        # Fallback to signal/kill
+    logger.info("Stopping provider daemon process tree", extra={"pid": pid})
+    if not _terminate_process_tree(pid, timeout):
+        logger.warning("Provider daemon process tree did not stop", extra={"pid": pid})
         try:
             if _platform.system().lower().startswith("windows"):
                 os.system(f"taskkill /PID {pid} /T /F >NUL 2>&1")
@@ -1572,25 +1613,6 @@ def stop(
                 os.kill(pid, _signal.SIGTERM)
         except Exception:
             pass
-    # Wait for exit
-    start_ts = _time.time()
-    while _time.time() - start_ts < max(0, int(timeout)):
-        if not _is_running(pid):
-            break
-        _time.sleep(0.2)
-    if _is_running(pid):
-        logger.warning(
-            "Provider daemon did not exit before timeout", extra={"pid": pid}
-        )
-        print("Process did not exit in time; sending kill")
-        try:
-            psutil.Process(pid).kill()
-        except Exception:
-            try:
-                if not _platform.system().lower().startswith("windows"):
-                    os.kill(pid, _signal.SIGKILL)
-            except Exception:
-                pass
     _remove_pid_file()
     logger.info("Provider daemon stopped", extra={"pid": pid})
     print("Provider stopped")

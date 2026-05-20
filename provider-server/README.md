@@ -250,7 +250,7 @@ Key configuration options in `.env`:
 # Provider Settings
 GOLEM_PROVIDER_ID="your-provider-id"
 GOLEM_PROVIDER_NAME="your-provider-name"
-GOLEM_PROVIDER_COUNTRY="SE"
+# Provider public IP and country are resolved automatically at startup.
 
 # Resource Limits
 GOLEM_PROVIDER_MAX_VMS=10
@@ -266,7 +266,6 @@ GOLEM_PROVIDER_PORT_CHECK_TLS_URL="https://central-discovery.example"
 # Network Settings
 GOLEM_PROVIDER_PORT_RANGE_START={start_port}  # Default: 50800
 GOLEM_PROVIDER_PORT_RANGE_END={end_port}      # Default: 50900
-GOLEM_PROVIDER_PUBLIC_IP="auto"
 GOLEM_PROVIDER_ACME_HTTP_PUBLIC_PORT=80
 GOLEM_PROVIDER_ACME_HTTP_INTERNAL_PORT=80
 GOLEM_PROVIDER_PUBLIC_HTTPS_PORT=443

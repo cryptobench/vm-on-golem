@@ -45,30 +45,17 @@ export function providerPublicHost({
   );
 }
 
-export function sshPort({
-  access,
-  rental,
-}: {
-  access?: unknown;
-  rental: Pick<Rental, "ssh_port">;
-}): number | null {
-  const accessInfo = access as AccessLike | null | undefined;
-  const value = accessInfo?.ssh_port ?? rental.ssh_port;
-  const port = Number(value);
-  return Number.isFinite(port) && port > 0 ? port : null;
-}
-
 export function sshEndpointLabel({
   access,
-  provider,
-  rental,
 }: {
   access?: unknown;
   provider?: unknown;
   rental: Pick<Rental, "provider_endpoint_url" | "provider_ip" | "ssh_port">;
 }): string {
-  const host = providerPublicHost({ access, provider, rental });
-  const port = sshPort({ access, rental });
+  const accessInfo = access as AccessLike | null | undefined;
+  const host = clean(accessInfo?.ssh_host);
+  const portValue = Number(accessInfo?.ssh_port);
+  const port = Number.isFinite(portValue) && portValue > 0 ? portValue : null;
   if (host && port) return `${host}:${port}`;
   return "-";
 }

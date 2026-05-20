@@ -12,7 +12,6 @@ from provider.discovery.publishers import (
     provider_auth_message,
 )
 
-
 PRIVATE_KEY = "0x" + "11" * 32
 PROVIDER_ID = Account.from_key(PRIVATE_KEY).address
 
@@ -134,6 +133,7 @@ def provider_identity(monkeypatch):
     monkeypatch.setattr(settings, "ETHEREUM_PRIVATE_KEY", PRIVATE_KEY)
     monkeypatch.setattr(settings, "PROVIDER_ID", PROVIDER_ID)
     monkeypatch.setattr(settings, "PUBLIC_IP", "127.0.0.1")
+    monkeypatch.setattr(settings, "PROVIDER_COUNTRY", "DK")
 
 
 def test_central_publisher_signs_auth_payload():

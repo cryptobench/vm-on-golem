@@ -193,14 +193,92 @@ def test_cert_validation_accepts_ip_san(tmp_path):
 
 
 def test_https_edge_public_routes_cover_requestor_web_paths():
+    assert _is_public_route("auth/requestor-sessions")
     assert _is_public_route("provider/info")
     assert _is_public_route("summary")
     assert _is_public_route("images")
     assert _is_public_route("vms")
     assert _is_public_route("vms/vm-a/live")
     assert _is_public_route("payments/lease-quotes")
+    assert not _is_public_route("auth/requestor-sessions/extra")
     assert not _is_public_route("payments/streams")
     assert not _is_public_route("provider/settings")
+
+
+@pytest.mark.asyncio
+async def test_https_edge_proxies_requestor_session_cors_preflight(tmp_path):
+    _write_ip_cert(tmp_path)
+    upstream_app = web.Application()
+    requests = []
+
+    async def preflight(request):
+        requests.append(
+            {
+                "method": request.method,
+                "path": str(request.rel_url),
+                "origin": request.headers.get("Origin"),
+                "request_method": request.headers.get("Access-Control-Request-Method"),
+            }
+        )
+        return web.Response(
+            status=200,
+            headers={
+                "Access-Control-Allow-Origin": request.headers["Origin"],
+                "Access-Control-Allow-Methods": "POST",
+                "Access-Control-Allow-Headers": "content-type",
+            },
+        )
+
+    upstream_app.router.add_route(
+        "OPTIONS", "/api/v1/auth/requestor-sessions", preflight
+    )
+    upstream_runner = web.AppRunner(upstream_app)
+    await upstream_runner.setup()
+    upstream_port = _free_port()
+    upstream_site = web.TCPSite(upstream_runner, "127.0.0.1", upstream_port)
+    await upstream_site.start()
+
+    edge_port = _free_port()
+    edge = HttpsEdgeServer(
+        host="127.0.0.1",
+        port=edge_port,
+        cert_path=tmp_path / "provider-ip.crt",
+        key_path=tmp_path / "provider-ip.key",
+        upstream_base_url=f"http://127.0.0.1:{upstream_port}",
+    )
+    await edge.start()
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.options(
+                f"https://127.0.0.1:{edge_port}/api/v1/auth/requestor-sessions",
+                headers={
+                    "Origin": "https://requestor.example",
+                    "Access-Control-Request-Method": "POST",
+                    "Access-Control-Request-Headers": "content-type",
+                },
+                ssl=False,
+            ) as response:
+                status = response.status
+                headers = dict(response.headers)
+                body = await response.text()
+    finally:
+        await edge.stop()
+        await upstream_runner.cleanup()
+
+    assert status == 200
+    assert body == ""
+    assert headers["Access-Control-Allow-Origin"] == "https://requestor.example"
+    assert headers["Access-Control-Allow-Methods"] == "POST"
+    assert headers["Access-Control-Allow-Headers"] == "content-type"
+    assert requests == [
+        {
+            "method": "OPTIONS",
+            "path": "/api/v1/auth/requestor-sessions",
+            "origin": "https://requestor.example",
+            "request_method": "POST",
+        }
+    ]
 
 
 @pytest.mark.asyncio
@@ -556,10 +634,9 @@ async def test_development_skips_secure_setup_unless_enabled(tmp_path):
 
 @pytest.mark.asyncio
 async def test_development_secure_setup_uses_real_path_when_enabled(
-    tmp_path, monkeypatch
+    tmp_path,
 ):
     _write_ip_cert(tmp_path)
-    monkeypatch.setenv("GOLEM_PROVIDER_PUBLIC_IP", "127.0.0.1")
     settings = _settings(tmp_path, DEV_MODE=True, SECURE_SETUP_IN_DEVELOPMENT=True)
     service = NetworkSetupService(settings, nat_mapper=FakeNatMapper())
 
@@ -570,18 +647,15 @@ async def test_development_secure_setup_uses_real_path_when_enabled(
     assert status.stage("certificate").detail.startswith("valid")
 
 
-def test_development_secure_setup_ignores_auto_lan_public_ip(tmp_path, monkeypatch):
-    monkeypatch.delenv("GOLEM_PROVIDER_PUBLIC_IP", raising=False)
-    monkeypatch.delenv("GOLEM_PROVIDER_PUBLIC_ENDPOINT_IP", raising=False)
-    settings = _settings(
-        tmp_path,
-        DEV_MODE=True,
-        SECURE_SETUP_IN_DEVELOPMENT=True,
-        PUBLIC_IP="192.168.2.1",
-    )
+@pytest.mark.asyncio
+async def test_network_setup_requires_runtime_resolved_public_ip(tmp_path):
+    settings = _settings(tmp_path, PUBLIC_IP=None)
     service = NetworkSetupService(settings, nat_mapper=FakeNatMapper())
 
-    assert service._configured_public_ip() is None
+    with pytest.raises(RuntimeError, match="public IP was not resolved"):
+        await service._resolve_public_ip()
+
+    assert service.status.stage("public_ip").state == "failed"
 
 
 @pytest.mark.asyncio

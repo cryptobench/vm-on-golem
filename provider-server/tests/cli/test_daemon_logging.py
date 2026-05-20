@@ -97,3 +97,42 @@ def test_spawn_detached_resets_pyinstaller_environment(monkeypatch, tmp_path):
     )
 
     assert captured["env"]["PYINSTALLER_RESET_ENVIRONMENT"] == "1"
+
+
+def test_terminate_process_tree_stops_daemon_children(monkeypatch):
+    class FakeProcess:
+        def __init__(self, pid, children=None):
+            self.pid = pid
+            self._children = children or []
+            self.terminated = False
+            self.killed = False
+
+        def children(self, recursive=True):
+            assert recursive is True
+            return self._children
+
+        def terminate(self):
+            self.terminated = True
+
+        def kill(self):
+            self.killed = True
+
+    child = FakeProcess(200)
+    parent = FakeProcess(100, [child])
+
+    def fake_process(pid):
+        assert pid == 100
+        return parent
+
+    def fake_wait_procs(processes, timeout):
+        assert timeout == 5
+        return list(processes), []
+
+    monkeypatch.setattr(provider_main.psutil, "Process", fake_process)
+    monkeypatch.setattr(provider_main.psutil, "wait_procs", fake_wait_procs)
+
+    assert provider_main._terminate_process_tree(100, 5) is True
+    assert parent.terminated is True
+    assert child.terminated is True
+    assert parent.killed is False
+    assert child.killed is False

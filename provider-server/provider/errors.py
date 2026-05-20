@@ -16,3 +16,7 @@ class ValidationError(DomainError):
 
 class ExternalServiceError(DomainError):
     """External boundary call failed."""
+
+
+class ConfigurationError(DomainError):
+    """Service configuration is missing or invalid."""

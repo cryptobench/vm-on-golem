@@ -13,6 +13,8 @@ def test_provider_info_endpoint_returns_eth_and_contracts():
             "PROVIDER_ID": "0xProv",
             "STREAM_PAYMENT_ADDRESS": "0xStream",
             "GLM_TOKEN_ADDRESS": "0xGLM",
+            "PUBLIC_IP": "203.0.113.44",
+            "PROVIDER_COUNTRY": "DK",
         }
     )
     try:
@@ -23,5 +25,7 @@ def test_provider_info_endpoint_returns_eth_and_contracts():
         assert data["provider_id"] == "0xProv"
         assert data["stream_payment_address"] == "0xStream"
         assert data["glm_token_address"] == "0xGLM"
+        assert data["ip_address"] == "203.0.113.44"
+        assert data["country"] == "DK"
     finally:
         app.container.config.override(old)

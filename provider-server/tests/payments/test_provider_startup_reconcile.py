@@ -1,4 +1,5 @@
 import asyncio
+
 import pytest
 
 from provider.service import ProviderService
@@ -192,13 +193,23 @@ class DummyNetworkSetup:
         return None
 
 
+class RecordingConfig:
+    def __init__(self):
+        self.snapshots = []
+
+    def from_dict(self, values):
+        self.snapshots.append(dict(values))
+
+
 class DummyApp:
-    def __init__(self, stream_map, reader, stream_monitor=None):
+    def __init__(self, stream_map, reader, stream_monitor=None, config=None):
         class _C:
-            def __init__(self, sm, rd, mon):
+            def __init__(self, sm, rd, mon, cfg):
                 self._sm = sm
                 self._rd = rd
                 self._mon = mon or DummyStreamMonitor()
+                if cfg is not None:
+                    self.config = cfg
 
             def stream_map(self):
                 return self._sm
@@ -210,7 +221,52 @@ class DummyApp:
             def stream_monitor(self):
                 return self._mon
 
-        self.container = _C(stream_map, reader, stream_monitor)
+        self.container = _C(stream_map, reader, stream_monitor, config)
+
+
+@pytest.fixture(autouse=True)
+def resolved_provider_location(monkeypatch):
+    from provider.network.location_resolver import ProviderLocation
+
+    async def resolve(settings):
+        location = ProviderLocation(ip_address="203.0.113.44", country="DK")
+        settings.PUBLIC_IP = location.ip_address
+        settings.PROVIDER_COUNTRY = location.country
+        settings.PUBLIC_ENDPOINT_IP = location.ip_address
+        return location
+
+    monkeypatch.setattr("provider.service.ensure_provider_location", resolve)
+
+
+@pytest.mark.asyncio
+async def test_startup_syncs_resolved_public_location_to_container(monkeypatch):
+    from provider.config import settings
+
+    async def noop():
+        return None
+
+    monkeypatch.setattr("provider.utils.ascii_art.startup_animation", noop)
+    monkeypatch.setattr(settings, "PUBLIC_IP", None)
+    monkeypatch.setattr(settings, "PROVIDER_COUNTRY", None)
+    settings.STREAM_MONITOR_ENABLED = False
+    settings.STREAM_WITHDRAW_ENABLED = False
+
+    recorder = RecordingConfig()
+    provider_service = ProviderService(
+        vm_service=DummyVMService({}),
+        advertisement_service=DummyDiscoveryPublishingService(),
+        port_manager=FailingPortManager(),
+        network_setup_service=DummyNetworkSetup(),
+    )
+
+    with pytest.raises(RuntimeError, match="externally reachable"):
+        await provider_service.setup(
+            DummyApp(DummyStreamMap({}), DummyReader({}), config=recorder)
+        )  # type: ignore[arg-type]
+
+    assert recorder.snapshots
+    assert recorder.snapshots[-1]["PUBLIC_IP"] == "203.0.113.44"
+    assert recorder.snapshots[-1]["PROVIDER_COUNTRY"] == "DK"
 
 
 @pytest.mark.asyncio

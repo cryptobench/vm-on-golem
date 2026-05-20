@@ -1,5 +1,4 @@
 import asyncio
-import os
 import time
 from pathlib import Path
 from typing import Callable, Literal
@@ -22,6 +21,7 @@ from .nat import NatMapper
 from .render import render_startup_panel
 
 logger = setup_logger(__name__)
+
 
 class NetworkSetupService:
     def __init__(
@@ -112,21 +112,15 @@ class NetworkSetupService:
 
     async def _resolve_public_ip(self) -> str:
         self._running(SetupStageName.PUBLIC_IP, "checking")
-        configured = self._configured_public_ip()
-        if configured:
-            return configured
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get("https://api.ipify.org", timeout=10) as response:
-                    response.raise_for_status()
-                    return (await response.text()).strip()
-        except Exception as exc:
+        public_ip = str(getattr(self.settings, "PUBLIC_IP", "") or "").strip()
+        if not public_ip:
             self._fail(
                 SetupStageName.PUBLIC_IP,
                 "not available",
-                "Check the internet connection or set GOLEM_PROVIDER_PUBLIC_IP.",
+                "Provider public IP was not resolved during startup.",
             )
-            raise RuntimeError(f"Could not detect public IP: {exc}") from exc
+            raise RuntimeError("provider public IP was not resolved during startup")
+        return public_ip
 
     async def _prepare_network_access(self) -> None:
         self._running(SetupStageName.NETWORK_ACCESS, "checking")
@@ -532,27 +526,6 @@ class NetworkSetupService:
     def _emit(self) -> None:
         if self.status_callback:
             self.status_callback(self.status)
-
-    def _configured_public_ip(self) -> str | None:
-        raw_public_ip = os.environ.get("GOLEM_PROVIDER_PUBLIC_IP")
-        if raw_public_ip and raw_public_ip != "auto":
-            return raw_public_ip
-
-        raw_endpoint_ip = os.environ.get("GOLEM_PROVIDER_PUBLIC_ENDPOINT_IP")
-        if raw_endpoint_ip and raw_endpoint_ip != "auto":
-            return raw_endpoint_ip
-
-        # Development config still supports LAN HTTP flows. Secure setup must
-        # use the real public IP so ACME and browser trust validation are honest.
-        if self.settings.DEV_MODE and bool(
-            getattr(self.settings, "SECURE_SETUP_IN_DEVELOPMENT", False)
-        ):
-            return None
-
-        configured = str(self.settings.PUBLIC_IP or self.settings.PUBLIC_ENDPOINT_IP)
-        if configured and configured != "auto":
-            return configured
-        return None
 
 
 def _default_stages(settings) -> list[SetupStage]:

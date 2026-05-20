@@ -34,7 +34,7 @@ stream_payment_address: "0x2d5F7c6D4a9B12a4e0A19E48E23b5Df6A54f1031"
 glm_token_address: "0x55555555555556AcFf9C332Ed151758858bd7a26"
 eth_token_address: "0x55555555555556AcFf9C332Ed151758858bd7a26"
 ip_address: "91.12.44.108"
-country: "SE"
+country: "resolved ISO country code"
 platform: "darwin-arm64"
 ```
 

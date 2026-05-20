@@ -5,6 +5,15 @@ from pathlib import Path
 import aiohttp
 from aiohttp import web
 
+EXACT_PUBLIC_ROUTES = (
+    "auth/requestor-sessions",
+    "provider/info",
+    "summary",
+    "images",
+    "payments/lease-quotes",
+)
+PREFIX_PUBLIC_ROUTES = ("vms",)
+
 
 class HttpsEdgeServer:
     def __init__(
@@ -125,8 +134,12 @@ class HttpsEdgeServer:
 
 
 def _is_public_route(tail: str) -> bool:
-    allowed = ("provider/info", "summary", "vms", "images", "payments/lease-quotes")
-    return any(tail == prefix or tail.startswith(f"{prefix}/") for prefix in allowed)
+    if tail in EXACT_PUBLIC_ROUTES:
+        return True
+    return any(
+        tail == prefix or tail.startswith(f"{prefix}/")
+        for prefix in PREFIX_PUBLIC_ROUTES
+    )
 
 
 def _is_websocket_upgrade(request: web.Request) -> bool:

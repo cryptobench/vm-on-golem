@@ -1,10 +1,16 @@
 import asyncio
+import ipaddress
 import logging
 import uuid
 from datetime import datetime
 from typing import Any
 
-from provider.errors import ConflictError, ExternalServiceError, NotFoundError
+from provider.errors import (
+    ConfigurationError,
+    ConflictError,
+    ExternalServiceError,
+    NotFoundError,
+)
 from provider.payments.domain import LeasePayment
 from provider.payments.errors import InvalidStreamError
 from provider.payments.stream_status_service import (
@@ -57,6 +63,31 @@ class VMApplicationService:
         if isinstance(self.settings, dict):
             return self.settings.get(name, default)
         return getattr(self.settings, name, default)
+
+    def _public_ssh_host(self) -> str:
+        host = str(self._setting("PUBLIC_IP", "") or "").strip()
+        if not host or host == "auto":
+            raise ConfigurationError(
+                "provider public IP is not configured; cannot return SSH access"
+            )
+        if self._production_environment() and self._local_or_non_public_ip(host):
+            raise ConfigurationError(
+                "provider public IP must be a public address; cannot return SSH access"
+            )
+        return host
+
+    def _production_environment(self) -> bool:
+        return str(self._setting("ENVIRONMENT", "production")).lower() != "development"
+
+    @staticmethod
+    def _local_or_non_public_ip(host: str) -> bool:
+        normalized = host.strip().strip("[]").rstrip(".").lower()
+        if normalized == "localhost":
+            return True
+        try:
+            return not ipaddress.ip_address(normalized).is_global
+        except ValueError:
+            return False
 
     async def create_vm(self, command: CreateVMCommand) -> VMInfo | CreateVMJobResult:
         logger.info(
@@ -575,7 +606,7 @@ class VMApplicationService:
             }
 
         return VMAccessInfo(
-            ssh_host=str(self._setting("PUBLIC_IP", None) or "localhost"),
+            ssh_host=self._public_ssh_host(),
             ssh_port=int(vm.ssh_port),
             ssh_user=MULTIPASS_SSH_USER,
             vm_id=vm_id,

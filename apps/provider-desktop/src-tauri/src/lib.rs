@@ -6,14 +6,23 @@ use std::net::{SocketAddr, TcpStream};
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 use std::time::{Duration, Instant};
 use tauri::Emitter;
-use tauri_plugin_shell::process::CommandEvent;
+use tauri_plugin_shell::process::{Command, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 
 const PROVIDER_HOST: &str = "127.0.0.1";
 const PROVIDER_PORT: u16 = 7466;
 const PROVIDER_START_TIMEOUT: Duration = Duration::from_secs(180);
+const PAYMENTS_NETWORK: &str = "hoodi";
+const PAYMENTS_RPC_URL: &str = "https://rpc.hoodi.ethpandaops.io";
+const PAYMENTS_WS_URL: &str = "wss://ethereum-hoodi-rpc.publicnode.com";
+const STREAM_PAYMENT_ADDRESS: &str = "0x479044F8A58276DC15d0d924a6A92Ec663877D00";
+const GLM_TOKEN_ADDRESS: &str = "0x55555555555556AcFf9C332Ed151758858bd7a26";
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -55,6 +64,51 @@ fn provider_vm_data_dir() -> Result<PathBuf, String> {
         }
     }
     Ok(provider_home_dir()?.join(".golem/provider/vms"))
+}
+
+fn env_or_default(key: &str, default: &str) -> String {
+    std::env::var(key)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| default.to_string())
+}
+
+fn provider_sidecar_command(app: &tauri::AppHandle) -> Result<Command, String> {
+    let admin_token = read_or_create_admin_token()?;
+    let vm_data_dir = provider_vm_data_dir()?.to_string_lossy().to_string();
+    app.shell()
+        .sidecar("golem-provider")
+        .map_err(|err| err.to_string())
+        .map(|command| {
+            command.envs([
+                ("GOLEM_PROVIDER_ADMIN_TOKEN", admin_token),
+                ("GOLEM_PROVIDER_VM_DATA_DIR", vm_data_dir),
+                (
+                    "GOLEM_PROVIDER_PAYMENTS_NETWORK",
+                    env_or_default("GOLEM_PROVIDER_PAYMENTS_NETWORK", PAYMENTS_NETWORK),
+                ),
+                (
+                    "GOLEM_PROVIDER_PAYMENTS_RPC_URL",
+                    env_or_default("GOLEM_PROVIDER_PAYMENTS_RPC_URL", PAYMENTS_RPC_URL),
+                ),
+                (
+                    "GOLEM_PROVIDER_PAYMENTS_WS_URL",
+                    env_or_default("GOLEM_PROVIDER_PAYMENTS_WS_URL", PAYMENTS_WS_URL),
+                ),
+                (
+                    "GOLEM_PROVIDER_STREAM_PAYMENT_ADDRESS",
+                    env_or_default(
+                        "GOLEM_PROVIDER_STREAM_PAYMENT_ADDRESS",
+                        STREAM_PAYMENT_ADDRESS,
+                    ),
+                ),
+                (
+                    "GOLEM_PROVIDER_GLM_TOKEN_ADDRESS",
+                    env_or_default("GOLEM_PROVIDER_GLM_TOKEN_ADDRESS", GLM_TOKEN_ADDRESS),
+                ),
+            ])
+        })
 }
 
 fn provider_home_dir() -> Result<PathBuf, String> {
@@ -392,13 +446,7 @@ async fn run_provider_sidecar_output(
     app: tauri::AppHandle,
     args: &[&str],
 ) -> Result<tauri_plugin_shell::process::Output, String> {
-    let admin_token = read_or_create_admin_token()?;
-    let vm_data_dir = provider_vm_data_dir()?.to_string_lossy().to_string();
-    app.shell()
-        .sidecar("golem-provider")
-        .map_err(|err| err.to_string())?
-        .env("GOLEM_PROVIDER_ADMIN_TOKEN", admin_token)
-        .env("GOLEM_PROVIDER_VM_DATA_DIR", vm_data_dir)
+    provider_sidecar_command(&app)?
         .args(args)
         .output()
         .await
@@ -406,14 +454,7 @@ async fn run_provider_sidecar_output(
 }
 
 async fn run_secure_setup_stream(app: tauri::AppHandle) -> Result<Value, String> {
-    let admin_token = read_or_create_admin_token()?;
-    let vm_data_dir = provider_vm_data_dir()?.to_string_lossy().to_string();
-    let (mut rx, _child) = app
-        .shell()
-        .sidecar("golem-provider")
-        .map_err(|err| err.to_string())?
-        .env("GOLEM_PROVIDER_ADMIN_TOKEN", admin_token)
-        .env("GOLEM_PROVIDER_VM_DATA_DIR", vm_data_dir)
+    let (mut rx, _child) = provider_sidecar_command(&app)?
         .args(["secure-setup", "check", "--json-stream"])
         .spawn()
         .map_err(|err| err.to_string())?;
@@ -481,14 +522,7 @@ async fn provider_requirements_stream(
     app: tauri::AppHandle,
     status: &mut Value,
 ) -> Result<ProviderRequirements, String> {
-    let admin_token = read_or_create_admin_token()?;
-    let vm_data_dir = provider_vm_data_dir()?.to_string_lossy().to_string();
-    let (mut rx, _child) = app
-        .shell()
-        .sidecar("golem-provider")
-        .map_err(|err| err.to_string())?
-        .env("GOLEM_PROVIDER_ADMIN_TOKEN", admin_token)
-        .env("GOLEM_PROVIDER_VM_DATA_DIR", vm_data_dir)
+    let (mut rx, _child) = provider_sidecar_command(&app)?
         .args(["requirements", "check", "--json-stream"])
         .spawn()
         .map_err(|err| err.to_string())?;
@@ -696,7 +730,7 @@ async fn provider_requirements(app: tauri::AppHandle) -> Result<ProviderRequirem
 }
 
 pub fn run() {
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![
             start_provider,
@@ -706,6 +740,24 @@ pub fn run() {
             provider_admin_token,
             provider_requirements
         ])
-        .run(tauri::generate_context!())
-        .expect("failed to run Golem Provider desktop app");
+        .build(tauri::generate_context!())
+        .expect("failed to build Golem Provider desktop app");
+
+    let stopping_provider = Arc::new(AtomicBool::new(false));
+    app.run(move |app_handle, event| {
+        if let tauri::RunEvent::ExitRequested { api, .. } = event {
+            if stopping_provider.swap(true, Ordering::SeqCst) {
+                return;
+            }
+
+            api.prevent_exit();
+            let app_handle = app_handle.clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(err) = run_provider_sidecar(app_handle.clone(), &["stop"]).await {
+                    eprintln!("[provider-sidecar] Failed to stop provider on app exit: {err}");
+                }
+                app_handle.exit(0);
+            });
+        }
+    });
 }

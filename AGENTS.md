@@ -38,7 +38,7 @@ The provider API is publicly reachable by requestor web clients, so authorizatio
 - Routes MUST NOT parse bearer tokens, wallet signatures, admin tokens, or ownership manually.
 - VM ownership MUST be resolved through `ProviderAuthService`; do not read `StreamMap`, jobs, or chain streams directly from route handlers for authorization.
 - Payment validation remains in `provider-server/provider/payments/`; payment checks MUST NOT be used as a replacement for requestor authorization.
-- Public provider endpoints are limited to `GET /api/v1/provider/info`, `GET /api/v1/images`, and `POST /api/v1/payments/lease-quotes` unless this section is intentionally updated with a new public endpoint rationale.
+- Public provider endpoints are limited to `GET /api/v1/provider/info`, `GET /api/v1/images`, `POST /api/v1/payments/lease-quotes`, and `POST /api/v1/auth/requestor-sessions` unless this section is intentionally updated with a new public endpoint rationale. The requestor session endpoint is public only for signed wallet session exchange; it must validate the requestor signature before issuing any token.
 - VM creation MUST require a valid payment stream and authenticated requestor identity; providers MUST NOT create public requestor VMs for free.
 - Requestor-web protected provider calls MUST go through `requestor-web/lib/providerSession.ts` and the shared provider API helper in `requestor-web/lib/api.ts`.
 - Requestor-web components/hooks MUST NOT use raw `fetch` for protected provider VM endpoints.

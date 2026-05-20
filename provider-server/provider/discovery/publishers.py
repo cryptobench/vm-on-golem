@@ -8,7 +8,7 @@ from eth_account import Account
 from eth_account.messages import encode_defunct
 
 from ..config import settings
-from ..utils.retry import async_retry
+from ..errors import ConfigurationError
 from ..utils.time import utc_now
 from .resource_tracker import ResourceTracker
 
@@ -251,7 +251,13 @@ class CentralDiscoveryPublisher(DiscoveryPublisher):
             return
 
     async def _advertisement(self, resources: dict[str, int]) -> dict[str, Any]:
-        ip_address = settings.PUBLIC_IP or await self._get_public_ip()
+        ip_address = settings.PUBLIC_IP
+        country = settings.PROVIDER_COUNTRY
+        if not ip_address or not country:
+            raise ConfigurationError(
+                "Provider public IP and country must be resolved before publishing "
+                "discovery advertisements"
+            )
         platform_str = _platform()
         (
             endpoint_protocol,
@@ -261,7 +267,7 @@ class CentralDiscoveryPublisher(DiscoveryPublisher):
         ) = _provider_endpoint(settings, ip_address)
         return {
             "ip_address": ip_address,
-            "country": settings.PROVIDER_COUNTRY,
+            "country": country,
             "platform": platform_str,
             "endpoint_protocol": endpoint_protocol,
             "endpoint_host": endpoint_host,
@@ -290,35 +296,6 @@ class CentralDiscoveryPublisher(DiscoveryPublisher):
         )
         signature = signed.signature.hex()
         return signature if signature.startswith("0x") else f"0x{signature}"
-
-    @async_retry(
-        retries=settings.RETRY_ATTEMPTS,
-        delay=settings.RETRY_DELAY_SECONDS,
-        backoff=settings.RETRY_BACKOFF,
-        exceptions=(aiohttp.ClientError, asyncio.TimeoutError),
-    )
-    async def _get_public_ip(self) -> str:
-        if not self.session:
-            raise RuntimeError("Session not initialized")
-
-        services = [
-            "https://api.ipify.org",
-            "https://ifconfig.me/ip",
-            "https://api.my-ip.io/ip",
-        ]
-
-        errors = []
-        for service in services:
-            try:
-                async with self.session.get(service) as response:
-                    if response.ok:
-                        return (await response.text()).strip()
-            except Exception as exc:
-                errors.append(f"{service}: {exc}")
-
-        raise RuntimeError(
-            f"failed to get public IP address from all services: {'; '.join(errors)}"
-        )
 
 
 def _endpoint_is_advertisable(certificate_service: Any) -> bool:

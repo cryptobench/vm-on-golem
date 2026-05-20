@@ -99,6 +99,87 @@ def test_get_vm_access_happy_path(monkeypatch, client: TestClient):
         app.container.config.override(old)
 
 
+def test_get_vm_access_missing_public_ip_fails_visibly(client: TestClient):
+    vm_info = VMInfo(
+        id="test-vm",
+        name="test-vm",
+        status=VMStatus.RUNNING,
+        resources=VMResources(cpu=1, memory=1, storage=10),
+        ssh_port=2222,
+    )
+    app.container.vm_service().get_vm_status = AsyncMock(return_value=vm_info)
+    app.container.vm_service().name_mapper.get_multipass_name = AsyncMock(
+        return_value="test-vm-20250101"
+    )
+    old = dict(app.container.config())
+    cfg = dict(old)
+    cfg.update({"PUBLIC_IP": None})
+    try:
+        app.container.config.override(cfg)
+        resp = client.get("/api/v1/vms/test-vm/access")
+        assert resp.status_code == 500
+        assert resp.json() == {
+            "detail": "provider public IP is not configured; cannot return SSH access"
+        }
+    finally:
+        app.container.config.override(old)
+
+
+def test_get_vm_access_auto_public_ip_fails_visibly(client: TestClient):
+    vm_info = VMInfo(
+        id="test-vm",
+        name="test-vm",
+        status=VMStatus.RUNNING,
+        resources=VMResources(cpu=1, memory=1, storage=10),
+        ssh_port=2222,
+    )
+    app.container.vm_service().get_vm_status = AsyncMock(return_value=vm_info)
+    app.container.vm_service().name_mapper.get_multipass_name = AsyncMock(
+        return_value="test-vm-20250101"
+    )
+    old = dict(app.container.config())
+    cfg = dict(old)
+    cfg.update({"PUBLIC_IP": "auto"})
+    try:
+        app.container.config.override(cfg)
+        resp = client.get("/api/v1/vms/test-vm/access")
+        assert resp.status_code == 500
+        assert resp.json() == {
+            "detail": "provider public IP is not configured; cannot return SSH access"
+        }
+    finally:
+        app.container.config.override(old)
+
+
+@pytest.mark.parametrize("public_ip", ["localhost", "127.0.0.1", "192.168.1.10"])
+def test_get_vm_access_non_public_ip_fails_visibly(
+    public_ip: str, client: TestClient
+):
+    vm_info = VMInfo(
+        id="test-vm",
+        name="test-vm",
+        status=VMStatus.RUNNING,
+        resources=VMResources(cpu=1, memory=1, storage=10),
+        ssh_port=2222,
+    )
+    app.container.vm_service().get_vm_status = AsyncMock(return_value=vm_info)
+    app.container.vm_service().name_mapper.get_multipass_name = AsyncMock(
+        return_value="test-vm-20250101"
+    )
+    old = dict(app.container.config())
+    cfg = dict(old)
+    cfg.update({"ENVIRONMENT": "production", "PUBLIC_IP": public_ip})
+    try:
+        app.container.config.override(cfg)
+        resp = client.get("/api/v1/vms/test-vm/access")
+        assert resp.status_code == 500
+        assert resp.json() == {
+            "detail": "provider public IP must be a public address; cannot return SSH access"
+        }
+    finally:
+        app.container.config.override(old)
+
+
 def test_get_vm_access_pending_includes_ssh_user(client: TestClient):
     vm_info = VMInfo(
         id="test-vm",
