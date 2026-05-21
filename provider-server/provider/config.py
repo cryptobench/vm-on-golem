@@ -252,7 +252,6 @@ class Settings(BaseSettings):
         default=0,
         description="Min withdrawable amount (wei) before triggering withdraw",
     )
-
     # Behavior on exhausted runway
     STREAM_REMOVE_MAPPING_ON_EXHAUSTED: bool = Field(
         default=True,

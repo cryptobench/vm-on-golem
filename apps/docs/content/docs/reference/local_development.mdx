@@ -1,0 +1,36 @@
+---
+title: Local Development
+description: Development commands, local stack behavior, generated APIs, ABI workflow, and tests.
+---
+
+Local development is for contributors and operators who need to run or change the repository. Normal product users should start with requestor or provider guides instead.
+
+## Install
+
+Install repository dependencies before running services or tests. The root workflow installs JavaScript, Go, Python, requestor web, provider server, and shared package dependencies.
+
+The common install command is `make install`.
+
+## Local stack
+
+The preferred full stack local workflow is `make local`. It starts central discovery, provider API, provider desktop, and requestor web through the repository supervisor.
+
+Agents should not start long running local servers unless explicitly asked in the current turn. Developers can run the local stack directly when they need manual browser testing.
+
+## Service commands
+
+Each service can be run or tested independently. Provider server uses Poetry. Central discovery uses Go commands. Requestor web and docs use npm workspaces.
+
+Use service specific commands when changing only one area.
+
+## API generation
+
+Frontend backend contracts should come from OpenAPI and generated clients. When backend API shapes change, regenerate OpenAPI and requestor clients before relying on new frontend behavior.
+
+## ABI workflow
+
+The StreamPayment ABI source of truth is the contract artifact. When the Solidity contract changes, rebuild contracts, sync ABI outputs, and run ABI checks. Do not hand edit generated ABI files.
+
+## Tests
+
+Run focused tests for the package you changed, then broader tests when touching shared behavior. Backend changes should exercise real production code paths with test databases and stubs only at true external boundaries.

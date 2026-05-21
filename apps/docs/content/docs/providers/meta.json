@@ -1,0 +1,18 @@
+{
+  "title": "Providers",
+  "pages": [
+    "index",
+    "quickstart",
+    "host_requirements",
+    "install_provider",
+    "provider_cli",
+    "provider_desktop",
+    "configure_pricing",
+    "publish_capacity",
+    "manage_vms",
+    "payments_and_withdrawals",
+    "monitoring_alerts_webhooks",
+    "production_networking",
+    "troubleshooting"
+  ]
+}

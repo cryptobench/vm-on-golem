@@ -1,0 +1,28 @@
+---
+title: Monitoring Alerts Webhooks
+description: Use provider monitoring, alerts, and webhooks to operate unattended.
+---
+
+Provider operation should not depend on watching a terminal all day. Monitoring, alerts, and webhooks help providers understand health and respond to problems.
+
+## Monitoring
+
+Monitoring tracks host and provider state. It should surface CPU, memory, storage, VM activity, stream activity, and service health where available.
+
+Use monitoring to spot resource exhaustion before it prevents new rentals or harms running VMs.
+
+## Alerts
+
+Alerts turn important conditions into action items. Examples include blocked ports, failed VM creation, unhealthy services, high resource usage, payment problems, or webhook delivery failures.
+
+Alert rules should focus on conditions that require provider attention.
+
+## Webhooks
+
+Webhooks deliver provider events to external systems. They are useful for notifications, incident response, dashboards, and automation.
+
+Webhook configuration should include destination URL, selected events, delivery status, and retry visibility.
+
+## Operating unattended
+
+A provider intended to earn reliably should be able to reveal problems without constant manual inspection. Monitoring shows state, alerts prioritize attention, and webhooks connect provider events to the operator's existing workflow.

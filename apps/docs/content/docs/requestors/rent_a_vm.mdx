@@ -1,0 +1,34 @@
+---
+title: Rent a VM
+description: Understand the requestor VM rental flow from resource selection to provisioning.
+---
+
+Renting a VM combines two actions: creating a payment stream and asking the provider to provision compute. The payment stream proves the requestor can pay. The provider verifies the stream before creating the VM.
+
+## Resource selection
+
+The rental form asks for the shape of the VM. The common inputs are CPU, memory, storage, platform or image, and SSH public key.
+
+Choose resources based on the workload you intend to run. Larger VMs require more available provider capacity and a higher stream rate.
+
+## SSH key
+
+The SSH public key is placed into the VM during provisioning. You connect later with the private key that matches it.
+
+If you use the wrong public key during rental, the VM may still be created, but you will not be able to log in with your intended private key.
+
+## Payment stream creation
+
+Before a provider creates the VM, the requestor opens a stream to the provider wallet. The stream contains a deposit and rate per second. That creates runway: the amount of time the stream can keep paying before more funds are needed.
+
+The wallet transaction must be confirmed before the provider can verify the stream.
+
+## Provider provisioning
+
+After stream verification, the provider provisions the VM and returns access details. During this period the VM may appear queued or provisioning.
+
+Provisioning can fail if resources are no longer available, the provider host cannot create the VM, payment verification fails, or networking is not reachable.
+
+## After the VM is ready
+
+The rental view shows status and access information. Use those details to connect over SSH, then monitor the stream so the VM remains funded for as long as you need it.

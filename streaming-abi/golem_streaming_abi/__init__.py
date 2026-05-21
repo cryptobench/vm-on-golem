@@ -6,6 +6,11 @@ STREAM_PAYMENT_ABI = [
                 "internalType": "address",
                 "name": "_glmToken",
                 "type": "address"
+            },
+            {
+                "internalType": "address",
+                "name": "_donationRecipient",
+                "type": "address"
             }
         ],
         "stateMutability": "nonpayable",
@@ -41,14 +46,38 @@ STREAM_PAYMENT_ABI = [
             {
                 "indexed": False,
                 "internalType": "uint256",
-                "name": "deposit",
+                "name": "providerDeposit",
                 "type": "uint256"
             },
             {
                 "indexed": False,
                 "internalType": "uint256",
-                "name": "ratePerSecond",
+                "name": "donationDeposit",
                 "type": "uint256"
+            },
+            {
+                "indexed": False,
+                "internalType": "uint256",
+                "name": "totalDeposit",
+                "type": "uint256"
+            },
+            {
+                "indexed": False,
+                "internalType": "uint256",
+                "name": "providerRatePerSecond",
+                "type": "uint256"
+            },
+            {
+                "indexed": False,
+                "internalType": "uint16",
+                "name": "donationBps",
+                "type": "uint16"
+            },
+            {
+                "indexed": False,
+                "internalType": "address",
+                "name": "donationRecipient",
+                "type": "address"
             },
             {
                 "indexed": False,
@@ -96,7 +125,13 @@ STREAM_PAYMENT_ABI = [
             {
                 "indexed": False,
                 "internalType": "uint256",
-                "name": "recipientPayout",
+                "name": "providerPayout",
+                "type": "uint256"
+            },
+            {
+                "indexed": False,
+                "internalType": "uint256",
+                "name": "donationPayout",
                 "type": "uint256"
             }
         ],
@@ -115,7 +150,19 @@ STREAM_PAYMENT_ABI = [
             {
                 "indexed": False,
                 "internalType": "uint256",
-                "name": "amount",
+                "name": "providerAmount",
+                "type": "uint256"
+            },
+            {
+                "indexed": False,
+                "internalType": "uint256",
+                "name": "donationAmount",
+                "type": "uint256"
+            },
+            {
+                "indexed": False,
+                "internalType": "uint256",
+                "name": "totalAmount",
                 "type": "uint256"
             },
             {
@@ -146,7 +193,19 @@ STREAM_PAYMENT_ABI = [
             {
                 "indexed": False,
                 "internalType": "uint256",
-                "name": "amount",
+                "name": "providerAmount",
+                "type": "uint256"
+            },
+            {
+                "indexed": True,
+                "internalType": "address",
+                "name": "donationRecipient",
+                "type": "address"
+            },
+            {
+                "indexed": False,
+                "internalType": "uint256",
+                "name": "donationAmount",
                 "type": "uint256"
             }
         ],
@@ -167,6 +226,19 @@ STREAM_PAYMENT_ABI = [
         "type": "function"
     },
     {
+        "inputs": [],
+        "name": "MAX_DONATION_BPS",
+        "outputs": [
+            {
+                "internalType": "uint16",
+                "name": "",
+                "type": "uint16"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
         "inputs": [
             {
                 "internalType": "address",
@@ -175,13 +247,18 @@ STREAM_PAYMENT_ABI = [
             },
             {
                 "internalType": "uint256",
-                "name": "deposit",
+                "name": "providerDeposit",
                 "type": "uint256"
             },
             {
                 "internalType": "uint128",
-                "name": "ratePerSecond",
+                "name": "providerRatePerSecond",
                 "type": "uint128"
+            },
+            {
+                "internalType": "uint16",
+                "name": "donationBps",
+                "type": "uint16"
             },
             {
                 "internalType": "bytes32",
@@ -213,6 +290,19 @@ STREAM_PAYMENT_ABI = [
             }
         ],
         "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "donationRecipient",
+        "outputs": [
+            {
+                "internalType": "address",
+                "name": "",
+                "type": "address"
+            }
+        ],
+        "stateMutability": "view",
         "type": "function"
     },
     {
@@ -297,17 +387,37 @@ STREAM_PAYMENT_ABI = [
             },
             {
                 "internalType": "uint128",
-                "name": "ratePerSecond",
+                "name": "providerRatePerSecond",
                 "type": "uint128"
             },
             {
                 "internalType": "uint256",
-                "name": "deposit",
+                "name": "providerDeposit",
                 "type": "uint256"
             },
             {
                 "internalType": "uint256",
-                "name": "withdrawn",
+                "name": "providerWithdrawn",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint16",
+                "name": "donationBps",
+                "type": "uint16"
+            },
+            {
+                "internalType": "address",
+                "name": "donationRecipient",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "donationDeposit",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "donationWithdrawn",
                 "type": "uint256"
             },
             {
@@ -346,7 +456,7 @@ STREAM_PAYMENT_ABI = [
             },
             {
                 "internalType": "uint256",
-                "name": "amount",
+                "name": "providerAmount",
                 "type": "uint256"
             }
         ],

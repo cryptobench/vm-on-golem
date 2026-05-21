@@ -19,7 +19,7 @@ logger = setup_logger(__name__)
 
 
 class LeaseQuoteService:
-    """Creates provider-authoritative, provider-signed V2 lease quotes."""
+    """Creates provider-authoritative, provider-signed V4 lease quotes."""
 
     def __init__(self, settings: Any):
         self.settings = settings
@@ -69,7 +69,7 @@ class LeaseQuoteService:
             cpu=command.cpu,
             memory=command.memory,
             storage=command.storage,
-            rate_per_second=rate,
+            provider_rate_per_second=rate,
             duration_seconds=command.duration_seconds,
             contract_address=contract_address,
             glm_token_address=glm_token_address,
@@ -82,8 +82,8 @@ class LeaseQuoteService:
             chain_id=chain_id,
             contract_address=contract_address,
             recipient=provider_address,
-            deposit=min_deposit,
-            rate_per_second=rate,
+            provider_deposit=min_deposit,
+            provider_rate_per_second=rate,
             lease_id=lease_id,
             terms_hash=terms_hash,
             quote_expires_at=quote_expires_at,
@@ -95,8 +95,8 @@ class LeaseQuoteService:
             glm_token_address=glm_token_address,
             lease_id=lease_id,
             terms_hash=terms_hash,
-            rate_per_second_wei=rate,
-            min_deposit_wei=min_deposit,
+            provider_rate_per_second_wei=rate,
+            provider_deposit_wei=min_deposit,
             min_runway_seconds=command.duration_seconds,
             quote_expires_at=quote_expires_at,
             signature=signature,
@@ -155,7 +155,7 @@ class LeaseQuoteService:
         cpu: int,
         memory: int,
         storage: int,
-        rate_per_second: int,
+        provider_rate_per_second: int,
         duration_seconds: int,
         contract_address: str,
         glm_token_address: str,
@@ -180,7 +180,7 @@ class LeaseQuoteService:
                 "bytes32",
             ],
             [
-                "golem-vm-lease-v2",
+                "golem-vm-lease-v4",
                 Web3.to_checksum_address(provider_address),
                 Web3.to_checksum_address(requestor_address),
                 vm_name,
@@ -188,7 +188,7 @@ class LeaseQuoteService:
                 int(cpu),
                 int(memory),
                 int(storage),
-                int(rate_per_second),
+                int(provider_rate_per_second),
                 int(duration_seconds),
                 Web3.to_checksum_address(contract_address),
                 Web3.to_checksum_address(glm_token_address),
@@ -235,8 +235,8 @@ class LeaseQuoteService:
         chain_id: int,
         contract_address: str,
         recipient: str,
-        deposit: int,
-        rate_per_second: int,
+        provider_deposit: int,
+        provider_rate_per_second: int,
         lease_id: str,
         terms_hash: str,
         quote_expires_at: int,
@@ -246,15 +246,15 @@ class LeaseQuoteService:
         message = encode_typed_data(
             domain_data={
                 "name": "GolemStreamPayment",
-                "version": "2",
+                "version": "4",
                 "chainId": int(chain_id),
                 "verifyingContract": Web3.to_checksum_address(contract_address),
             },
             message_types={
                 "LeaseQuote": [
                     {"name": "recipient", "type": "address"},
-                    {"name": "deposit", "type": "uint256"},
-                    {"name": "ratePerSecond", "type": "uint128"},
+                    {"name": "providerDeposit", "type": "uint256"},
+                    {"name": "providerRatePerSecond", "type": "uint128"},
                     {"name": "leaseId", "type": "bytes32"},
                     {"name": "termsHash", "type": "bytes32"},
                     {"name": "quoteExpiresAt", "type": "uint128"},
@@ -262,8 +262,8 @@ class LeaseQuoteService:
             },
             message_data={
                 "recipient": Web3.to_checksum_address(recipient),
-                "deposit": int(deposit),
-                "ratePerSecond": int(rate_per_second),
+                "providerDeposit": int(provider_deposit),
+                "providerRatePerSecond": int(provider_rate_per_second),
                 "leaseId": lease_id,
                 "termsHash": terms_hash,
                 "quoteExpiresAt": int(quote_expires_at),

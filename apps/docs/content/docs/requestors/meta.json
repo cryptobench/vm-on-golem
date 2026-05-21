@@ -1,0 +1,15 @@
+{
+  "title": "Requestors",
+  "pages": [
+    "index",
+    "quickstart",
+    "wallet_and_funding",
+    "find_providers",
+    "rent_a_vm",
+    "connect_with_ssh",
+    "manage_rentals",
+    "manage_streams",
+    "settings",
+    "troubleshooting"
+  ]
+}

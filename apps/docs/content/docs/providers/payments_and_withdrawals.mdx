@@ -1,0 +1,34 @@
+---
+title: Payments and Withdrawals
+description: Understand provider stream verification, earnings, expiration, and withdrawal behavior.
+---
+
+Provider rentals are stream gated. The provider should only create requestor VMs when a valid stream pays the provider wallet on the expected payment network.
+
+## Stream verification
+
+Before creating a VM, the provider checks that the stream recipient is the provider wallet, the token and contract match expectations, the stream has funds, and the stream is active enough to support the rental.
+
+If verification fails, the provider should reject the VM creation request visibly.
+
+## Earnings
+
+Funds vest to the provider over time as the stream runs. The stream deposit is not all immediately earned. Withdrawable funds depend on elapsed time, rate, and previous withdrawals.
+
+Provider Desktop and CLI stream views help operators understand active streams and available earnings.
+
+## Withdrawals
+
+Withdrawals move vested funds from the stream contract to the provider wallet. They require a transaction and therefore gas funds on the payment network.
+
+Automatic withdrawal can reduce manual work, but providers should configure thresholds carefully so gas cost does not outweigh the amount being withdrawn.
+
+## Expired streams
+
+When a stream expires or is halted, the provider can remove the VM after the configured grace behavior. Expired streams may still have withdrawable funds.
+
+Providers should monitor expired streams so unpaid compute does not remain active.
+
+## Troubleshooting payments
+
+Payment failures usually come from wrong network, wrong contract, wrong token, missing provider wallet configuration, no gas for withdrawal, insufficient stream deposit, or stream ownership mismatch.

@@ -85,7 +85,8 @@ export function streamsTotals(streams: StreamStatus[]) {
     (totals, stream) => {
       totals.vested += weiToToken(stream.computed.vested_wei) ?? 0;
       totals.withdrawable += weiToToken(stream.computed.withdrawable_wei) ?? 0;
-      totals.deposit += weiToToken(stream.chain.deposit) ?? 0;
+      totals.deposit +=
+        weiToToken(stream.chain.providerDeposit + stream.chain.donationDeposit) ?? 0;
       return totals;
     },
     { vested: 0, withdrawable: 0, deposit: 0 },

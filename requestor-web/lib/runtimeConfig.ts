@@ -22,7 +22,7 @@ declare global {
 
 const DEFAULTS: RequestorRuntimeConfig = {
   discoveryWsUrl: "wss://78.46.172.104/api/v1/discovery/requestors",
-  streamPaymentAddress: "0x479044F8A58276DC15d0d924a6A92Ec663877D00",
+  streamPaymentAddress: "0xb5a225b2f82D3eFe743D95bA7Fe3BbC475C0a12E",
   glmTokenAddress: "0x55555555555556AcFf9C332Ed151758858bd7a26",
   evmChainId: "0x88bb0",
   evmChainName: "Ethereum Hoodi",

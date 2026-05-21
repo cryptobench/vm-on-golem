@@ -27,7 +27,7 @@ class CreateVMRequest(BaseModel):
     )
     payment: Optional[LeasePayment] = Field(
         default=None,
-        description="V2 lease-bound on-chain StreamPayment proof used to fund this VM",
+        description="V4 lease-bound on-chain StreamPayment proof used to fund this VM",
     )
 
     @field_validator("name")
@@ -146,9 +146,13 @@ class StreamOnChain(BaseModel):
     recipient: str
     startTime: int
     stopTime: int
-    ratePerSecond: int
-    deposit: int
-    withdrawn: int
+    providerRatePerSecond: int
+    providerDeposit: int
+    providerWithdrawn: int
+    donationBps: int
+    donationRecipient: str
+    donationDeposit: int
+    donationWithdrawn: int
     leaseId: str
     termsHash: str
 
@@ -158,6 +162,11 @@ class StreamComputed(BaseModel):
     remaining_seconds: int
     vested_wei: int
     withdrawable_wei: int
+    provider_vested_wei: int
+    provider_withdrawable_wei: int
+    donation_vested_wei: int
+    donation_withdrawable_wei: int
+    total_deposit_wei: int
 
 
 class StreamStatus(BaseModel):

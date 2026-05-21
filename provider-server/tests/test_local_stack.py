@@ -46,3 +46,83 @@ def test_local_stack_does_not_export_provider_location_overrides(monkeypatch, tm
         merged_env = local_stack.merged_env(service.env, unset=service.unset_env)
         if service.name in {"provider", "provider-desktop"}:
             assert forbidden.isdisjoint(merged_env)
+
+
+def test_local_stack_disables_provider_reload_for_desktop(monkeypatch, tmp_path):
+    local_stack = load_local_stack_module()
+    monkeypatch.setattr(local_stack, "LOCAL_DIR", tmp_path / ".local")
+    deployment = {
+        "stream_payment_address": "0x1111111111111111111111111111111111111111",
+        "glm_token_address": "0x2222222222222222222222222222222222222222",
+        "rpc_url": "http://127.0.0.1:8545",
+        "ws_url": "ws://127.0.0.1:8545",
+    }
+
+    services = local_stack.build_services(
+        deployment,
+        start_provider_desktop=True,
+    )
+
+    provider_desktop = next(
+        service for service in services if service.name == "provider-desktop"
+    )
+    assert provider_desktop.env["GOLEM_PROVIDER_DISABLE_RELOAD"] == "1"
+
+
+def test_local_stack_local_mode_uses_loopback_provider_settings(monkeypatch, tmp_path):
+    local_stack = load_local_stack_module()
+    monkeypatch.setattr(local_stack, "LOCAL_DIR", tmp_path / ".local")
+    deployment = {
+        "stream_payment_address": "0x1111111111111111111111111111111111111111",
+        "glm_token_address": "0x2222222222222222222222222222222222222222",
+        "rpc_url": "http://127.0.0.1:8545",
+        "ws_url": "ws://127.0.0.1:8545",
+    }
+
+    services = local_stack.build_services(
+        deployment,
+        start_provider_desktop=True,
+        mode="local",
+    )
+
+    provider_desktop = next(
+        service for service in services if service.name == "provider-desktop"
+    )
+    requestor_web = next(
+        service for service in services if service.name == "requestor-web"
+    )
+    assert provider_desktop.env["GOLEM_ENVIRONMENT"] == "development"
+    assert provider_desktop.env["GOLEM_PROVIDER_NETWORK"] == "development"
+    assert provider_desktop.env["GOLEM_PROVIDER_PUBLIC_ENDPOINT_MODE"] == "disabled"
+    assert requestor_web.env["NEXT_PUBLIC_GOLEM_ENVIRONMENT"] == "development"
+
+
+def test_local_stack_prod_mode_uses_public_provider_settings(monkeypatch, tmp_path):
+    local_stack = load_local_stack_module()
+    monkeypatch.setattr(local_stack, "LOCAL_DIR", tmp_path / ".local")
+    deployment = {
+        "stream_payment_address": "0x1111111111111111111111111111111111111111",
+        "glm_token_address": "0x2222222222222222222222222222222222222222",
+        "rpc_url": "http://127.0.0.1:8545",
+        "ws_url": "ws://127.0.0.1:8545",
+    }
+
+    services = local_stack.build_services(
+        deployment,
+        start_provider_desktop=True,
+        mode="prod",
+    )
+
+    provider_desktop = next(
+        service for service in services if service.name == "provider-desktop"
+    )
+    requestor_web = next(
+        service for service in services if service.name == "requestor-web"
+    )
+    assert provider_desktop.env["GOLEM_ENVIRONMENT"] == "production"
+    assert provider_desktop.env["GOLEM_PROVIDER_NETWORK"] == "mainnet"
+    assert (
+        provider_desktop.env["GOLEM_PROVIDER_PUBLIC_ENDPOINT_MODE"] == "auto_ip_https"
+    )
+    assert provider_desktop.env["GOLEM_PROVIDER_ACME_ENV"] == "production"
+    assert requestor_web.env["NEXT_PUBLIC_GOLEM_ENVIRONMENT"] == "production"

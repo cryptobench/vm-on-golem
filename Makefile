@@ -1,4 +1,4 @@
-.PHONY: install test local start lock openapi api-generate api-check start-testnet start-mainnet dev-central-discovery dev-web start-dev
+.PHONY: install test local prod start lock openapi api-generate api-check start-testnet start-mainnet dev-central-discovery dev-web start-dev
 
 # --- Dev convenience variables (override via env when calling make) ---
 # Ports
@@ -30,7 +30,10 @@ test:
 	poetry -C provider-server run pytest provider-server/tests --cov-fail-under=100 || [ $$? -eq 5 ]
 
 local:
-	python3 scripts/local_stack.py $(LOCAL_STACK_ARGS)
+	python3 scripts/local_stack.py --mode local $(LOCAL_STACK_ARGS)
+
+prod:
+	python3 scripts/local_stack.py --mode prod $(LOCAL_STACK_ARGS)
 
 openapi:
 	poetry -C provider-server run python ../scripts/export_openapi.py provider ../openapi/provider.json

@@ -1,0 +1,32 @@
+---
+title: Find Providers
+description: Browse, filter, compare, and choose providers from the requestor web app.
+---
+
+Providers publish available capacity and connection details through discovery. The requestor web app subscribes to discovery and shows providers that match the selected filters and network profile.
+
+## What provider discovery means
+
+Discovery is a live list of providers that are currently advertising usable capacity. A provider can appear when it connects and publishes resources. It can disappear when it disconnects, loses reachability, changes network profile, or no longer has enough available capacity.
+
+The requestor does not need to know how a provider is configured internally. The important question is whether the provider currently advertises enough capacity and a reachable endpoint.
+
+## How to compare providers
+
+Compare providers using the information that affects your rental.
+
+1. CPU, memory, and storage availability.
+2. Pricing for the resources you want.
+3. Payment network and contract compatibility.
+4. Endpoint availability.
+5. Location and platform information when shown.
+
+Choose a provider that satisfies the VM size you need and appears healthy enough to create and maintain the rental.
+
+## Filters
+
+Provider filters narrow the live list. Filters are useful when many providers are available, but they can also hide valid providers. If no providers appear, loosen filters before assuming discovery is down.
+
+## Provider disappearance
+
+A provider disappearing from the list does not always mean an outage. It may have allocated its remaining capacity, disconnected from discovery, failed reachability checks, changed advertised network, or stopped publishing because minimum resource thresholds are no longer met.

@@ -148,7 +148,7 @@ function OverviewTab({
               items={[
                 { key: "stream_id", label: "Stream ID", value: stream?.stream_id ?? EMPTY_VALUE },
                 { key: "verified", label: "Verified", value: stream?.verified ? "Yes" : stream ? "No" : EMPTY_VALUE },
-                { key: "rate", label: "Rate per second", value: formatGlm(weiToToken(stream?.chain.ratePerSecond), 6) },
+                { key: "rate", label: "Rate per second", value: formatGlm(weiToToken(stream?.chain.providerRatePerSecond), 6) },
                 { key: "remaining", label: "Remaining", value: formatDuration(stream?.computed.remaining_seconds) },
               ]}
             />
@@ -217,8 +217,9 @@ function StreamTab({ data }: { data: ReturnType<typeof useVmDetail>["data"] }) {
               { key: "remaining", label: "Remaining", value: formatDuration(stream.computed.remaining_seconds) },
               { key: "vested", label: "Total earned", value: formatGlm(weiToToken(stream.computed.vested_wei), 4) },
               { key: "withdrawable", label: "Withdrawable", value: formatGlm(weiToToken(stream.computed.withdrawable_wei), 4) },
-              { key: "deposit", label: "Deposit", value: formatGlm(weiToToken(stream.chain.deposit)) },
-              { key: "withdrawn", label: "Withdrawn", value: formatGlm(weiToToken(stream.chain.withdrawn)) },
+              { key: "deposit", label: "Deposit", value: formatGlm(weiToToken(stream.chain.providerDeposit + stream.chain.donationDeposit)) },
+              { key: "withdrawn", label: "Withdrawn", value: formatGlm(weiToToken(stream.chain.providerWithdrawn + stream.chain.donationWithdrawn)) },
+              { key: "donation", label: "Donation", value: `${(stream.chain.donationBps / 100).toFixed(2)}%` },
             ]}
           />
         </CardBody>

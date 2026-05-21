@@ -4,6 +4,10 @@ import { useRouter } from "next/navigation";
 import { loadSettings, saveSettings, type SSHKey } from "../../lib/api";
 import { useAds } from "../../context/AdsContext";
 import { getRequestorRuntimeConfig } from "../../lib/runtimeConfig";
+import {
+  MAX_REQUESTOR_DONATION_BPS,
+  requestorDonationBps,
+} from "../../lib/settings";
 import { KeyPicker } from "../../components/ssh/KeyPicker";
 import { Button } from "@golem/ui";
 import { FormField, Select, Input } from "@golem/ui";
@@ -34,6 +38,7 @@ export default function SettingsPage() {
   const [defaultKeyId, setDefaultKeyId] = React.useState<string | undefined>(undefined);
   const [saved, setSaved] = React.useState(false);
   const [displayCurrency, setDisplayCurrency] = React.useState<'fiat'|'token'>('fiat');
+  const [donationBps, setDonationBps] = React.useState<number>(150);
   const [discoveryWsUrl, setDiscoveryWsUrl] = React.useState<string>(ads.discovery_ws_url);
   const [evmChainIdText, setEvmChainIdText] = React.useState<string>(runtimeConfig.evmChainId || "0x88bb0");
   const [evmChainName, setEvmChainName] = React.useState<string>(runtimeConfig.evmChainName || "Ethereum Hoodi");
@@ -62,6 +67,7 @@ export default function SettingsPage() {
     setSshKeys(keys);
     setDefaultKeyId(initial.default_ssh_key_id || (keys[0]?.id) || (initial.ssh_public_key ? 'default' : undefined));
     setDisplayCurrency(initial.display_currency === 'token' ? 'token' : 'fiat');
+    setDonationBps(requestorDonationBps(initial));
     setEvmChainIdText(initial.evm_chain_id || (runtimeConfig.evmChainId || "0x88bb0"));
     setEvmChainName(initial.evm_chain_name || (runtimeConfig.evmChainName || "Ethereum Hoodi"));
     setEvmRpcUrl(initial.evm_rpc_url || (runtimeConfig.evmRpcUrl || "https://rpc.hoodi.ethpandaops.io"));
@@ -83,6 +89,7 @@ export default function SettingsPage() {
       evm_ws_url: evmWsUrl.trim(),
       evm_explorer_url: evmExplorerUrl.trim(),
       display_currency: displayCurrency,
+      donation_bps: donationBps,
     });
     setAds({
       discovery_ws_url: discoveryWsUrl,
@@ -165,6 +172,33 @@ export default function SettingsPage() {
                   <option value="fiat">Fiat (USD)</option>
                   <option value="token">Token (GLM)</option>
                 </Select>
+              </FormField>
+              <FormField label="Stream donation percentage">
+                <label className="flex h-10 max-w-48 overflow-hidden rounded-md border border-border bg-surface">
+                  <Input
+                    className="min-w-0 flex-1 border-0 bg-transparent"
+                    type="number"
+                    min={0}
+                    max={MAX_REQUESTOR_DONATION_BPS / 100}
+                    step={0.1}
+                    value={donationBps / 100}
+                    onChange={(event) => {
+                      const next = Number(event.target.value);
+                      const bounded = Math.max(
+                        0,
+                        Math.min(MAX_REQUESTOR_DONATION_BPS / 100, Number.isFinite(next) ? next : 0),
+                      );
+                      setDonationBps(Math.round(bounded * 100));
+                    }}
+                    aria-label="Stream donation percentage"
+                  />
+                  <span className="grid place-items-center border-l border-border px-3 text-sm font-medium text-text-secondary">
+                    %
+                  </span>
+                </label>
+                <div className="mt-1 text-sm text-text-secondary">
+                  Added by you on top of the provider lease amount. Set 0% to opt out.
+                </div>
               </FormField>
               <FormField label="StreamPayment contract address">
                 <Input value={sp} onChange={e => setSp(e.target.value)} placeholder="0x..." />

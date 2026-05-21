@@ -77,11 +77,15 @@ export function useDashboardStreams(rentals: Rental[]) {
 
 function streamRowFromLiveData(rental: Rental, data: PaymentStreamData) {
   const decimals = data.tokenDecimals || 18;
-  const rps = tokenAmount(data.chain.ratePerSecond, decimals);
+  const rps = tokenAmount(data.chain.providerRatePerSecond, decimals);
+  const donationMultiplier = 1 + Number(data.chain.donationBps || 0) / 10_000;
   const remainingSeconds = Number(data.remaining);
-  const remainingTokens = Math.max(0, rps * remainingSeconds);
-  const hourlyTokens = rps * 3600;
-  const spent = tokenAmount(data.chain.withdrawn, decimals);
+  const remainingTokens = Math.max(0, rps * donationMultiplier * remainingSeconds);
+  const hourlyTokens = rps * donationMultiplier * 3600;
+  const spent = tokenAmount(
+    data.chain.providerWithdrawn + data.chain.donationWithdrawn,
+    decimals,
+  );
   const terminated = isTerminatedStream(data.chain);
   return {
     row: {

@@ -214,9 +214,11 @@ function streamValues(
   usdPrice: number | null,
 ) {
   const scale = 10 ** (decimals || 18);
-  const rateToken = Number(stream.ratePerSecond) / scale;
-  const deposit = Number(stream.deposit) / scale;
-  const withdrawn = Number(stream.withdrawn) / scale;
+  const donationMultiplier = 1 + Number(stream.donationBps || 0) / 10_000;
+  const rateToken = (Number(stream.providerRatePerSecond) / scale) * donationMultiplier;
+  const deposit = Number(stream.providerDeposit + stream.donationDeposit) / scale;
+  const withdrawn =
+    Number(stream.providerWithdrawn + stream.donationWithdrawn) / scale;
   const hourlyToken = rateToken * 3600;
   const remainingToken = Math.max(0, rateToken * remaining);
   const startTime = Number(stream.startTime || 0n);

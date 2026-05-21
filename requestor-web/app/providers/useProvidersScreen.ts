@@ -27,7 +27,7 @@ export function providerCountLabel(count: number) {
 
 export function useProvidersScreen() {
   const { ads } = useAds();
-  const { displayCurrency, setDisplayCurrency } = useSettings();
+  const { displayCurrency, setDisplayCurrency, donationBps } = useSettings();
   const [filters, setFilters] = React.useState<ProviderFilters>(readFiltersFromUrl);
   const [appliedFilters, setAppliedFilters] =
     React.useState<ProviderFilters>(filters);
@@ -53,8 +53,8 @@ export function useProvidersScreen() {
   const spec = estimateSpec(appliedFilters);
   const showTokenPrices = displayCurrency === "token";
   const rows = React.useMemo(
-    () => applyClientFilters(liveProviders.rows, appliedFilters, spec),
-    [liveProviders.rows, appliedFilters, spec],
+    () => applyClientFilters(liveProviders.rows, appliedFilters, spec, donationBps),
+    [liveProviders.rows, appliedFilters, spec, donationBps],
   );
   const pageCount = Math.max(1, Math.ceil(rows.length / PROVIDERS_PAGE_SIZE));
   const visibleRows = rows.slice(
@@ -154,6 +154,7 @@ export function useProvidersScreen() {
     setSelectedProvider,
     spec,
     showTokenPrices,
+    donationBps,
     pageCount,
     visibleRows,
     openFilters,
@@ -205,12 +206,19 @@ function applyClientFilters(
   providers: ProviderAd[],
   filters: ProviderFilters,
   spec: ReturnType<typeof estimateSpec>,
+  donationBps: number,
 ) {
   return providers.filter((provider) => {
     if (!providerMatchesSearch(provider, filters.search)) return false;
     if (filters.platform && providerPlatform(provider).toLowerCase() !== filters.platform) return false;
     if (filters.maxUsd != null) {
-      const estimate = computeEstimate(provider, spec.cpu, spec.memory, spec.storage);
+      const estimate = computeEstimate(
+        provider,
+        spec.cpu,
+        spec.memory,
+        spec.storage,
+        donationBps,
+      );
       if (estimate.usd_per_month > filters.maxUsd) return false;
     }
     return true;

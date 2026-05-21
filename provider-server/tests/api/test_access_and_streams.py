@@ -312,14 +312,18 @@ def test_get_vm_stream_status_happy_path(monkeypatch, client: TestClient):
                     "recipient": app.container.config()["PROVIDER_ID"],
                     "startTime": 100,
                     "stopTime": 300,
-                    "ratePerSecond": 2,
-                    "deposit": 400,
-                    "withdrawn": 50,
+                    "providerRatePerSecond": 2,
+                    "providerDeposit": 400,
+                    "providerWithdrawn": 50,
+                    "donationBps": 150,
+                    "donationRecipient": "0x94153E31AA476cE30C3AF64C255C623f80920BfF",
+                    "donationDeposit": int(400 * 150 / 10000),
+                    "donationWithdrawn": 0,
                     "leaseId": "0x" + "11" * 32,
                     "termsHash": "0x" + "22" * 32,
                 }
 
-            def verify_stream(self, sid, expected_recipient):
+            def verify_stream(self, sid, expected_recipient, *args):
                 assert sid == 7
                 return True, "ok"
 
@@ -335,10 +339,12 @@ def test_get_vm_stream_status_happy_path(monkeypatch, client: TestClient):
         # computed checks
         assert data["computed"]["now"] == 200
         assert data["computed"]["remaining_seconds"] == 100
-        # vested = (min(200,300)-100)*2 = 200
-        assert data["computed"]["vested_wei"] == 200
-        # withdrawable = max(vested - withdrawn, 0) = 150
-        assert data["computed"]["withdrawable_wei"] == 150
+        assert data["computed"]["provider_vested_wei"] == 200
+        assert data["computed"]["donation_vested_wei"] == 3
+        assert data["computed"]["vested_wei"] == 203
+        assert data["computed"]["provider_withdrawable_wei"] == 150
+        assert data["computed"]["donation_withdrawable_wei"] == 3
+        assert data["computed"]["withdrawable_wei"] == 153
     finally:
         app.container.stream_reader.reset_override()
         app.container.stream_map.reset_override()
@@ -368,14 +374,18 @@ def test_get_vm_stream_status_reports_grace_state(client: TestClient):
                     "recipient": app.container.config()["PROVIDER_ID"],
                     "startTime": 100,
                     "stopTime": 300,
-                    "ratePerSecond": 2,
-                    "deposit": 400,
-                    "withdrawn": 50,
+                    "providerRatePerSecond": 2,
+                    "providerDeposit": 400,
+                    "providerWithdrawn": 50,
+                    "donationBps": 150,
+                    "donationRecipient": "0x94153E31AA476cE30C3AF64C255C623f80920BfF",
+                    "donationDeposit": int(400 * 150 / 10000),
+                    "donationWithdrawn": 0,
                     "leaseId": "0x" + "11" * 32,
                     "termsHash": "0x" + "22" * 32,
                 }
 
-            def verify_stream(self, sid, expected_recipient):
+            def verify_stream(self, sid, expected_recipient, *args):
                 return False, "stream expired"
 
         app.container.stream_reader.override(providers.Factory(GraceReader))
@@ -414,14 +424,18 @@ def test_get_vm_stream_status_falls_back_when_stream_state_reverts(client: TestC
                     "recipient": app.container.config()["PROVIDER_ID"],
                     "startTime": 100,
                     "stopTime": 300,
-                    "ratePerSecond": 2,
-                    "deposit": 400,
-                    "withdrawn": 50,
+                    "providerRatePerSecond": 2,
+                    "providerDeposit": 400,
+                    "providerWithdrawn": 50,
+                    "donationBps": 150,
+                    "donationRecipient": "0x94153E31AA476cE30C3AF64C255C623f80920BfF",
+                    "donationDeposit": int(400 * 150 / 10000),
+                    "donationWithdrawn": 0,
                     "leaseId": "0x" + "11" * 32,
                     "termsHash": "0x" + "22" * 32,
                 }
 
-            def verify_stream(self, sid, expected_recipient):
+            def verify_stream(self, sid, expected_recipient, *args):
                 return False, "stream expired"
 
             def stream_state(self, sid):
@@ -479,14 +493,18 @@ def test_list_stream_statuses_happy_and_errors(monkeypatch, client: TestClient):
                     "recipient": app.container.config()["PROVIDER_ID"],
                     "startTime": 100,
                     "stopTime": 700,
-                    "ratePerSecond": 1,
-                    "deposit": 600,
-                    "withdrawn": 10,
+                    "providerRatePerSecond": 1,
+                    "providerDeposit": 600,
+                    "providerWithdrawn": 10,
+                    "donationBps": 150,
+                    "donationRecipient": "0x94153E31AA476cE30C3AF64C255C623f80920BfF",
+                    "donationDeposit": int(600 * 150 / 10000),
+                    "donationWithdrawn": 0,
                     "leaseId": "0x" + "11" * 32,
                     "termsHash": "0x" + "22" * 32,
                 }
 
-            def verify_stream(self, sid, expected_recipient):
+            def verify_stream(self, sid, expected_recipient, *args):
                 return True, "ok"
 
         app.container.stream_reader.override(providers.Factory(Reader))

@@ -63,6 +63,7 @@ def _settings(tmp_path, **overrides):
         "ACME_PROFILE": "shortlived",
         "ACME_ACCOUNT_EMAIL": "",
         "CERT_DIR": str(tmp_path),
+        "PROXY_STATE_DIR": str(tmp_path / "proxy"),
         "CERT_RENEW_BEFORE_HOURS": 1,
         "NAT_AUTO_MAPPING_ENABLED": False,
         "PORT_CHECK_TLS_URL": "",

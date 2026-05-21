@@ -87,9 +87,13 @@ class StreamPaymentReader:
             recipient,
             startTime,
             stopTime,
-            ratePerSecond,
-            deposit,
-            withdrawn,
+            providerRatePerSecond,
+            providerDeposit,
+            providerWithdrawn,
+            donationBps,
+            donationRecipient,
+            donationDeposit,
+            donationWithdrawn,
             leaseId,
             termsHash,
         ) = self.contract.functions.streams(int(stream_id)).call()
@@ -99,15 +103,21 @@ class StreamPaymentReader:
             "recipient": recipient,
             "startTime": int(startTime),
             "stopTime": int(stopTime),
-            "ratePerSecond": int(ratePerSecond),
-            "deposit": int(deposit),
-            "withdrawn": int(withdrawn),
+            "providerRatePerSecond": int(providerRatePerSecond),
+            "providerDeposit": int(providerDeposit),
+            "providerWithdrawn": int(providerWithdrawn),
+            "donationBps": int(donationBps),
+            "donationRecipient": donationRecipient,
+            "donationDeposit": int(donationDeposit),
+            "donationWithdrawn": int(donationWithdrawn),
             "leaseId": _bytes32_hex(leaseId),
             "termsHash": _bytes32_hex(termsHash),
         }
 
     def verify_stream(
-        self, stream_id: int, expected_recipient: str
+        self,
+        stream_id: int,
+        expected_recipient: str,
     ) -> tuple[bool, str]:
         try:
             s = self.get_stream(stream_id)
@@ -117,7 +127,7 @@ class StreamPaymentReader:
             return False, "stream terminated"
         if s["recipient"].lower() != expected_recipient.lower():
             return False, "recipient mismatch"
-        if s["deposit"] <= 0:
+        if s["providerDeposit"] <= 0:
             return False, "no deposit"
         now = int(self.web3.eth.get_block("latest")["timestamp"])
         if s["startTime"] > now:

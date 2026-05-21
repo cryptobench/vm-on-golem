@@ -1,0 +1,30 @@
+---
+title: Manage VMs
+description: Understand provider side VM lifecycle, resource accounting, and requestor actions.
+---
+
+Providers see VM lifecycle from the host side. A requestor sees a rental, while the provider sees work being queued, provisioned, run, stopped, deleted, or failed on the host machine.
+
+## Lifecycle states
+
+Queued means the provider accepted or recorded work that has not started provisioning. Provisioning means the provider is creating the VM. Running means the VM should be available. Failed means creation or management did not complete. Deleted means the compute should no longer exist.
+
+Provider Desktop should include queued and failed creation jobs where available, not only VMs visible through Multipass.
+
+## Multipass instances
+
+The provider uses Multipass to create and manage VM instances. If Multipass is unhealthy, VM lifecycle operations can fail even when provider API and discovery are online.
+
+Provider troubleshooting should always include Multipass status when VM creation fails.
+
+## Resource accounting
+
+Provider resource availability must reflect already allocated VMs. If the provider restarts, it should account for existing VMs before advertising capacity.
+
+Accurate accounting prevents over commitment and avoids advertising resources that are not really available.
+
+## Requestor actions
+
+Requestor actions can create, stop, delete, and inspect VMs. Providers see those actions as VM lifecycle events and stream related state changes.
+
+Provider operators should avoid manual host changes that leave provider state out of sync unless they are intentionally repairing an incident.

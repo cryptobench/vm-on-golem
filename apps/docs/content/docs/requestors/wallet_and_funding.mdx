@@ -1,0 +1,33 @@
+---
+title: Wallet and Funding
+description: Understand wallet connection, gas funds, GLM or tGLM, and the Funding page.
+---
+
+The requestor wallet is used for identity and payment. VM on Golem does not charge through a normal checkout flow. Instead, the requestor opens an on chain stream that pays the provider over time.
+
+## Wallet role
+
+Your wallet signs transactions and identifies the account that owns the payment stream. The requestor web app uses the connected account when creating streams, reading stream state, and showing stream actions such as top ups or termination.
+
+The wallet must be on the payment network expected by the app and provider. If the wallet is on the wrong network, stream creation or stream reads can fail even when the UI is otherwise reachable.
+
+## Gas and token funds
+
+You need two kinds of funds.
+
+1. Gas token funds pay transaction fees on the payment network.
+2. GLM or tGLM funds are deposited into the stream and paid to the provider over time.
+
+Having only one of these is not enough. A wallet with GLM but no gas cannot submit the transaction. A wallet with gas but no GLM cannot fund useful rental time.
+
+## Funding page
+
+The Funding page helps requestors prepare a wallet for the configured network. In development or testnet profiles it can link to faucets or token minting tools where available.
+
+The page does not replace wallet confirmation. You still approve network changes, token actions, stream creation, top ups, and termination from the wallet.
+
+## Common funding confusion
+
+If a wallet shows a token balance but stream creation fails, check the connected network first. Token balances are network specific.
+
+If the stream transaction opens but the VM is not created, check whether the provider accepted the stream. Providers verify recipient, token, deposit, start state, and stream status before creating a VM.

@@ -1,0 +1,34 @@
+---
+title: Requestor Settings
+description: Understand payment, discovery, endpoint, and SSH key settings in the requestor web app.
+---
+
+Requestor settings control how the web app discovers providers, connects to payment networks, manages provider endpoints, and stores SSH keys.
+
+## Payment settings
+
+Payment settings define the chain, contract address, token address, RPC URL, and explorer URL used by wallet actions and stream reads.
+
+These values must match the providers you want to rent from. If the app creates a stream on a different network from the provider advertisement, the provider will reject the rental.
+
+## Discovery settings
+
+Discovery settings determine which backend the app uses to find providers. Central discovery and Arkiv are discovery backends with different behavior, but the requestor goal is the same: receive usable provider advertisements.
+
+Changing discovery settings can change which providers appear.
+
+## Provider endpoints
+
+The app talks directly to provider advertised endpoints for VM creation, status, access, and stream state. Production endpoints should use secure browser compatible URLs.
+
+If endpoint settings or development flags allow local HTTP behavior, treat that as local development only.
+
+## SSH keys
+
+The app can store SSH public keys in browser storage. Saved keys make rental creation faster and reduce the chance of pasting the wrong key.
+
+Only public keys should be stored in the app. Keep private keys on your machine and protect them like any other credential.
+
+## Development values
+
+Development settings are useful for local stacks and test networks. They should not be copied into production use unless you know the provider and payment network expect them.

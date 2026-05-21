@@ -2,36 +2,39 @@ StreamPayment
 
 This package provides a minimal GLM streaming payments contract.
 
-- Rate-per-second vesting funded up front with GLM
-- Recipient can withdraw vested funds
+- Provider rate-per-second vesting funded up front with GLM
+- Requestor-paid donation can be added on top of the provider price
+- Provider and donation recipient can withdraw vested funds
 - Sender or recipient can terminate and settle the stream
-- Sender can extend runtime with `topUp(streamId, amount)` while the stream is active or inside the 30-second grace period
+- Sender can extend runtime with `topUp(streamId, providerAmount)` while the stream is active or inside the 30-second grace period
 
-The contract is deployed with one GLM ERC20 address and only accepts streams
-for that token.
+The contract is deployed with one GLM ERC20 address and one immutable donation
+recipient. The current donation recipient is
+`0x94153E31AA476cE30C3AF64C255C623f80920BfF`.
 
 Core interfaces
 
-- `createStream(address recipient, uint256 deposit, uint128 ratePerSecond, bytes32 leaseId, bytes32 termsHash, uint128 quoteExpiresAt, bytes providerSignature) -> streamId`
-  - provider signature must authorize the exact lease terms
+- `createStream(address recipient, uint256 providerDeposit, uint128 providerRatePerSecond, uint16 donationBps, bytes32 leaseId, bytes32 termsHash, uint128 quoteExpiresAt, bytes providerSignature) -> streamId`
+  - provider signature authorizes only the V4 provider lease terms: recipient, provider deposit, provider rate, lease id, terms hash, and quote expiry
   - `leaseId` must be unique
-  - caller must approve `deposit` GLM before calling
+  - caller must approve `providerDeposit + donationDeposit` GLM before calling
+  - requestor-supplied `donationBps` must be between `0` and `1000`; `0` opts out
 - `withdraw(uint256 streamId)`
 - `terminate(uint256 streamId)`
 - `streamState(uint256 streamId) -> active|grace|expired|terminated`
-- `topUp(uint256 streamId, uint256 amount)`
-  - caller must approve `amount` GLM before calling
+- `topUp(uint256 streamId, uint256 providerAmount)`
+  - caller must approve `providerAmount + donationAmount` GLM before calling
   - reverts once `streamState` is `expired` or `terminated`
-- `streams(uint256 id) -> (token, sender, recipient, startTime, stopTime, ratePerSecond, deposit, withdrawn, leaseId, termsHash)`
+- `streams(uint256 id) -> (token, sender, recipient, startTime, stopTime, providerRatePerSecond, providerDeposit, providerWithdrawn, donationBps, donationRecipient, donationDeposit, donationWithdrawn, leaseId, termsHash)`
 
 Recommended flow
 
 1. Requestor fetches a provider-signed lease quote from `POST /api/v1/payments/lease-quotes`.
-2. Requestor approves and deposits the quoted GLM coverage.
-3. Requestor calls provider `POST /api/v1/vms` with `stream_id`, `lease_id`, and `terms_hash`.
+2. Requestor applies its own donation setting, then approves and deposits provider GLM coverage plus the computed donation.
+3. Requestor calls provider `POST /api/v1/vms` with `stream_id`, `lease_id`, `terms_hash`, and provider rate.
 4. Requestor can call `topUp` periodically to keep the rental running; late top-ups are accepted for 30 seconds after `stopTime`.
 5. Stopping a VM does not settle payment; billing continues while the stream remains active.
-6. Terminating a rental calls `terminate(streamId)`, paying vested GLM to the provider and refunding unvested deposit to the requestor.
+6. Terminating a rental calls `terminate(streamId)`, paying vested provider and donation GLM and refunding unvested deposits to the requestor.
 7. Provider can withdraw vested GLM during active, grace, or expired rentals and deletes VMs when streams expire or terminate.
 
 Deployment

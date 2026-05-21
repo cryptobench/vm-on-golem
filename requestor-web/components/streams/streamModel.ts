@@ -35,19 +35,30 @@ export function tokenScale(row: StreamRow) {
 }
 
 export function hourlyTokenRate(row: StreamRow) {
-  return (Number(row.chain.ratePerSecond) / tokenScale(row)) * 3600;
+  return (Number(row.chain.providerRatePerSecond) / tokenScale(row)) * 3600;
 }
 
 export function depositedTokenBalance(row: StreamRow) {
-  return Number(row.chain.deposit) / tokenScale(row);
+  return (
+    Number(row.chain.providerDeposit + row.chain.donationDeposit) /
+    tokenScale(row)
+  );
 }
 
 export function remainingTokenBalance(row: StreamRow, nowSec: number) {
-  return (Number(row.chain.ratePerSecond) / tokenScale(row)) * remainingSeconds(row, nowSec);
+  const donationMultiplier = 1 + Number(row.chain.donationBps || 0) / 10_000;
+  return (
+    (Number(row.chain.providerRatePerSecond) / tokenScale(row)) *
+    donationMultiplier *
+    remainingSeconds(row, nowSec)
+  );
 }
 
 export function spentTokenBalance(row: StreamRow, nowSec: number) {
-  const ratePerSecond = Number(row.chain.ratePerSecond) / tokenScale(row);
+  const donationMultiplier = 1 + Number(row.chain.donationBps || 0) / 10_000;
+  const ratePerSecond =
+    (Number(row.chain.providerRatePerSecond) / tokenScale(row)) *
+    donationMultiplier;
   const startTime = Number(row.chain.startTime || 0n);
   const stopTime = Number(row.chain.stopTime || 0n);
   const deposit = depositedTokenBalance(row);
@@ -59,8 +70,8 @@ export function spentTokenBalance(row: StreamRow, nowSec: number) {
 }
 
 export function streamRunwayPercent(row: StreamRow, nowSec: number) {
-  const ratePerSecond = Number(row.chain.ratePerSecond) / tokenScale(row);
-  const deposit = Number(row.chain.deposit) / tokenScale(row);
+  const ratePerSecond = Number(row.chain.providerRatePerSecond) / tokenScale(row);
+  const deposit = Number(row.chain.providerDeposit) / tokenScale(row);
   if (isTerminatedStream(row.chain) || ratePerSecond <= 0 || deposit <= 0) return 0;
   const totalSeconds = Math.max(1, Math.floor(deposit / ratePerSecond));
   return Math.max(0, Math.min(100, (remainingSeconds(row, nowSec) / totalSeconds) * 100));

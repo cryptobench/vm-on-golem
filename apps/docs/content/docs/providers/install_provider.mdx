@@ -1,0 +1,67 @@
+---
+title: Install Provider
+description: Understand provider installation options and how the server relates to Provider Desktop.
+---
+
+Provider installation depends on whether you want a packaged user experience, source development, or automation friendly CLI operation.
+
+## Packaged provider
+
+The packaged provider path is intended for users who want to run the provider without working inside the repository. It installs the provider command surface and lets you start, stop, configure, and inspect the provider from the CLI.
+
+This path is best for normal hosting and scripting. On a server without a GUI, continue with [Provider CLI](/docs/providers/provider_cli) and use `golem-provider start` as the normal production start command.
+
+Install the provider package:
+
+```bash
+python3.11 -m pip install --user golem-vm-provider
+```
+
+If your shell cannot find `golem-provider` after installation, add the Python user script directory to `PATH` and open a new shell:
+
+```bash
+python3.11 -m site --user-base
+```
+
+On most Linux hosts the command is installed under `~/.local/bin`.
+
+Verify that the command is available:
+
+```bash
+golem-provider --help
+golem-provider doctor
+```
+
+## Provider Desktop
+
+Provider Desktop provides the graphical operational interface. It wraps provider workflows such as overview, VMs, streams, monitoring, alerts, webhooks, pricing, resources, and settings.
+
+The desktop app does not replace the provider server. It provides a focused interface for controlling and observing provider behavior.
+
+## Source install
+
+Source install is for contributors or operators who need repository level control. It uses the provider server package directly and is useful when developing features, running tests, or debugging service behavior.
+
+Use source install only when you need that control. Normal providers should prefer the packaged path once available for their environment.
+
+Install from a checkout:
+
+```bash
+cd provider-server
+poetry install
+
+poetry run golem-provider --help
+poetry run golem-provider doctor
+```
+
+Run source commands through Poetry:
+
+```bash
+poetry run golem-provider start
+poetry run golem-provider status
+poetry run golem-provider stop
+```
+
+## Install validation
+
+After installation, validate the provider before advertising capacity. Confirm Multipass is available, `golem-provider doctor` passes, the provider port is reachable, SSH ports are usable, wallet settings are present, and pricing is configured.

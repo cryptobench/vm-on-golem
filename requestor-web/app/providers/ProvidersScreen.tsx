@@ -66,6 +66,7 @@ export default function ProvidersPage() {
               providers={screen.visibleRows}
               spec={screen.spec}
               showTokenPrices={screen.showTokenPrices}
+              donationBps={screen.donationBps}
               onSelect={(provider) => screen.setSelectedProvider(provider)}
             />
             {!screen.visibleRows.length && (

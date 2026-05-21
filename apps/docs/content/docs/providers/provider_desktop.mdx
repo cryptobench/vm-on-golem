@@ -1,0 +1,38 @@
+---
+title: Provider Desktop
+description: Use Provider Desktop as the main operational interface for hosting VMs.
+---
+
+Provider Desktop is the provider facing application for day to day operation. It is designed to show the state of the host, VMs, streams, monitoring, alerts, webhooks, and settings without requiring constant CLI use.
+
+## Overview
+
+The overview gives providers a compact health picture. It should answer whether the provider is running, whether resources are available, whether VMs are active, whether streams are paying, and whether attention is needed.
+
+Use this view first when checking whether the provider is healthy.
+
+## Virtual machines
+
+The VM views show queued, provisioning, running, stopped, failed, and deleted VM state where available. Providers use these views to understand requestor activity and host resource usage.
+
+VM detail pages help diagnose one machine at a time.
+
+## Streams
+
+The streams view explains payment state from the provider side. Providers can inspect accepted streams, runway, withdrawable amounts, expired streams, and earnings signals.
+
+Use this view when payment status does not match VM expectations.
+
+## Monitoring and alerts
+
+Monitoring tracks host health and resource behavior. Alerts turn important health changes into visible action items.
+
+Providers should use these views to catch resource exhaustion, failures, and other conditions that affect hosting reliability.
+
+## Webhooks
+
+Webhooks allow provider events to be delivered to external systems. They are useful for operators who want notifications, automation, or integration with existing monitoring tools.
+
+## Settings
+
+Settings cover pricing, resource controls, provider configuration, and operational preferences. Changes here can affect what requestors see and which rentals the provider can accept.

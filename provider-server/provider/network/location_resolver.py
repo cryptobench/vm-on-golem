@@ -75,6 +75,10 @@ def reject_provider_location_overrides(env: dict[str, str] | None = None) -> Non
 
 async def ensure_provider_location(settings: Any) -> ProviderLocation:
     reject_provider_location_overrides()
+    if str(getattr(settings, "PUBLIC_ENDPOINT_MODE", "") or "") == "disabled":
+        location = ProviderLocation(ip_address="127.0.0.1", country="ZZ")
+        _apply_provider_location(settings, location)
+        return location
     try:
         location = ProviderLocation(
             ip_address=getattr(settings, "PUBLIC_IP", None),

@@ -120,7 +120,8 @@ export function StreamsPage({
               {
                 key: "rate",
                 header: "Rate (GLM / sec)",
-                render: (stream) => formatGlm(weiToToken(stream.chain.ratePerSecond), 6),
+                render: (stream) =>
+                  formatGlm(weiToToken(stream.chain.providerRatePerSecond), 6),
               },
               {
                 key: "remaining",

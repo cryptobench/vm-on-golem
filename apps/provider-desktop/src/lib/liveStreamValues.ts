@@ -54,15 +54,34 @@ function projectStreamComputed(
   const startTime = stream.chain.startTime;
   const stopTime = stream.chain.stopTime;
   const elapsedSeconds = Math.max(Math.min(now, stopTime) - startTime, 0);
-  const vestedWei = elapsedSeconds * stream.chain.ratePerSecond;
-  const withdrawableWei = Math.max(vestedWei - stream.chain.withdrawn, 0);
+  const providerVestedWei = Math.min(
+    elapsedSeconds * stream.chain.providerRatePerSecond,
+    stream.chain.providerDeposit,
+  );
+  const donationVestedWei = Math.min(
+    Math.floor((providerVestedWei * stream.chain.donationBps) / 10_000),
+    stream.chain.donationDeposit,
+  );
+  const providerWithdrawableWei = Math.max(
+    providerVestedWei - stream.chain.providerWithdrawn,
+    0,
+  );
+  const donationWithdrawableWei = Math.max(
+    donationVestedWei - stream.chain.donationWithdrawn,
+    0,
+  );
 
   return {
     ...stream.computed,
     now,
     remaining_seconds: Math.max(stopTime - now, 0),
-    vested_wei: vestedWei,
-    withdrawable_wei: withdrawableWei,
+    vested_wei: providerVestedWei + donationVestedWei,
+    withdrawable_wei: providerWithdrawableWei + donationWithdrawableWei,
+    provider_vested_wei: providerVestedWei,
+    provider_withdrawable_wei: providerWithdrawableWei,
+    donation_vested_wei: donationVestedWei,
+    donation_withdrawable_wei: donationWithdrawableWei,
+    total_deposit_wei: stream.chain.providerDeposit + stream.chain.donationDeposit,
   };
 }
 

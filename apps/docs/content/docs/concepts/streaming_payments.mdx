@@ -1,0 +1,38 @@
+---
+title: Streaming Payments
+description: Understand deposits, stream rates, runway, top ups, termination, and provider withdrawals.
+---
+
+Streaming payments fund VM rentals over time. Instead of paying once for an unknown duration, the requestor deposits funds into a stream that vests to the provider according to a rate per second.
+
+## Deposit
+
+The deposit is the amount of token placed into the stream. It defines how much total value is available to pay the provider.
+
+A deposit that is too small creates little runway and can cause the VM to lose funding quickly.
+
+## Rate per second
+
+The rate per second determines how quickly funds vest to the provider. Larger VMs and higher provider prices require higher rates.
+
+The requestor app calculates or proposes a stream rate based on provider advertised pricing and selected resources.
+
+## Runway
+
+Runway is the estimated time before the stream can no longer pay at its current rate. Requestors monitor runway to decide when to top up.
+
+Providers monitor runway to avoid hosting unpaid compute.
+
+## Top ups
+
+A top up adds more funds to an existing stream. It extends runway without replacing the VM or stream relationship.
+
+Top ups require wallet approval and gas.
+
+## Termination
+
+Termination stops future payment. Requestors should terminate streams when they are finished with a rental. Providers should remove compute when payment is no longer valid.
+
+## Withdrawals
+
+Providers withdraw funds that have vested from streams. Withdrawal requires a transaction, so providers need gas on the payment network.

@@ -18,11 +18,13 @@ export function ProvidersTable({
   providers,
   spec,
   showTokenPrices,
+  donationBps,
   onSelect,
 }: {
   providers: ProviderAd[];
   spec: Required<ProviderSpec>;
   showTokenPrices: boolean;
+  donationBps: number;
   onSelect: (provider: ProviderAd) => void;
 }) {
   return (
@@ -48,7 +50,13 @@ export function ProvidersTable({
             const locationFlag = countryFlagEmoji(location.code);
             const platform = providerPlatform(provider);
             const PlatformIcon = platform === "Windows" ? RiWindowsLine : RiUbuntuLine;
-            const estimate = computeEstimate(provider, spec.cpu, spec.memory, spec.storage);
+            const estimate = computeEstimate(
+              provider,
+              spec.cpu,
+              spec.memory,
+              spec.storage,
+              donationBps,
+            );
             return (
               <tr
                 className="providers-table-row cursor-pointer border-b border-border text-text-primary hover:bg-surface-muted"

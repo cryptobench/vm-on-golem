@@ -226,7 +226,7 @@ export type LeasePaymentDurationSeconds = number | null;
 export interface LeasePayment {
   duration_seconds?: LeasePaymentDurationSeconds;
   lease_id: string;
-  rate_per_second_wei: number;
+  provider_rate_per_second_wei: number;
   stream_id: number;
   terms_hash: string;
 }
@@ -236,11 +236,11 @@ export interface LeaseQuote {
   contract_address: string;
   glm_token_address: string;
   lease_id: string;
-  min_deposit_wei: number;
   min_runway_seconds: number;
   provider_address: string;
+  provider_deposit_wei: number;
+  provider_rate_per_second_wei: number;
   quote_expires_at: number;
-  rate_per_second_wei: number;
   signature: string;
   terms_hash: string;
 }
@@ -466,23 +466,32 @@ export interface ResourceSettings {
 }
 
 export interface StreamComputed {
+  donation_vested_wei: number;
+  donation_withdrawable_wei: number;
   now: number;
+  provider_vested_wei: number;
+  provider_withdrawable_wei: number;
   remaining_seconds: number;
+  total_deposit_wei: number;
   vested_wei: number;
   withdrawable_wei: number;
 }
 
 export interface StreamOnChain {
-  deposit: number;
+  donationBps: number;
+  donationDeposit: number;
+  donationRecipient: string;
+  donationWithdrawn: number;
   leaseId: string;
-  ratePerSecond: number;
+  providerDeposit: number;
+  providerRatePerSecond: number;
+  providerWithdrawn: number;
   recipient: string;
   sender: string;
   startTime: number;
   stopTime: number;
   termsHash: string;
   token: string;
-  withdrawn: number;
 }
 
 export interface StreamStatus {

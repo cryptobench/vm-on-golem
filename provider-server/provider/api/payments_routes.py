@@ -78,8 +78,8 @@ async def create_lease_quote(
             "vm_name": command.vm_name,
             "lease_id": quote.lease_id,
             "chain_id": quote.chain_id,
-            "rate_per_second_wei": quote.rate_per_second_wei,
-            "min_deposit_wei": quote.min_deposit_wei,
+            "provider_rate_per_second_wei": quote.provider_rate_per_second_wei,
+            "provider_deposit_wei": quote.provider_deposit_wei,
         },
     )
     return quote

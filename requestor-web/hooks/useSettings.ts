@@ -1,6 +1,7 @@
 "use client";
 import React from "react";
 import { loadSettings, saveSettings, type Settings } from "../lib/api";
+import { requestorDonationBps } from "../lib/settings";
 
 export function useSettings() {
   const [settings, setSettings] = React.useState<Settings>(() => loadSettings());
@@ -28,8 +29,8 @@ export function useSettings() {
   }, []);
 
   const displayCurrency: 'fiat' | 'token' = settings.display_currency === 'token' ? 'token' : 'fiat';
+  const donationBps = requestorDonationBps(settings);
   const setDisplayCurrency = React.useCallback((v: 'fiat' | 'token') => update({ display_currency: v }), [update]);
 
-  return { settings, setSettings: update, displayCurrency, setDisplayCurrency };
+  return { settings, setSettings: update, displayCurrency, setDisplayCurrency, donationBps };
 }
-

@@ -12,8 +12,8 @@ test("stream accounting reports live spent and remaining balances", () => {
   const row = streamRow({
     startTime: 100n,
     stopTime: 200n,
-    ratePerSecond: 1_000_000n,
-    deposit: 100_000_000n,
+    providerRatePerSecond: 1_000_000n,
+    providerDeposit: 100_000_000n,
   });
 
   assert.equal(spentTokenBalance(row, 130), 30);
@@ -25,8 +25,8 @@ test("stream accounting stops spending at terminated stop time", () => {
     recipient: "0x0000000000000000000000000000000000000000",
     startTime: 100n,
     stopTime: 150n,
-    ratePerSecond: 1_000_000n,
-    deposit: 100_000_000n,
+    providerRatePerSecond: 1_000_000n,
+    providerDeposit: 100_000_000n,
   });
 
   assert.equal(spentTokenBalance(row, 180), 50);
@@ -37,8 +37,8 @@ test("stream status keeps expired streams in grace for 30 seconds", () => {
   const row = streamRow({
     startTime: 100n,
     stopTime: 200n,
-    ratePerSecond: 1_000_000n,
-    deposit: 100_000_000n,
+    providerRatePerSecond: 1_000_000n,
+    providerDeposit: 100_000_000n,
   });
 
   assert.equal(streamStatus(row, 199), "needs-top-up");
@@ -63,9 +63,13 @@ function streamRow(chain: Partial<StreamRow["chain"]>): StreamRow {
       recipient: "0xrecipient",
       startTime: 0n,
       stopTime: 0n,
-      ratePerSecond: 0n,
-      deposit: 0n,
-      withdrawn: 0n,
+      providerRatePerSecond: 0n,
+      providerDeposit: 0n,
+      providerWithdrawn: 0n,
+      donationBps: 0n,
+      donationRecipient: "0xdonation",
+      donationDeposit: 0n,
+      donationWithdrawn: 0n,
       ...chain,
     },
     tokenSymbol: "GLM",

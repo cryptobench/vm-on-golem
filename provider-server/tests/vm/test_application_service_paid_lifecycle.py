@@ -386,7 +386,7 @@ async def test_async_create_rechecks_stream_without_recomputing_terms():
         stream_id=123,
         lease_id="0x" + "11" * 32,
         terms_hash="0x" + "22" * 32,
-        rate_per_second_wei=7,
+        provider_rate_per_second_wei=7,
         duration_seconds=3600,
     )
 
@@ -429,7 +429,7 @@ async def test_duplicate_create_returns_existing_vm_without_launching():
         stream_id=123,
         lease_id="0x" + "11" * 32,
         terms_hash="0x" + "22" * 32,
-        rate_per_second_wei=7,
+        provider_rate_per_second_wei=7,
         duration_seconds=3600,
     )
 
@@ -462,7 +462,7 @@ async def test_duplicate_create_rejects_different_stream():
         stream_id=456,
         lease_id="0x" + "11" * 32,
         terms_hash="0x" + "22" * 32,
-        rate_per_second_wei=7,
+        provider_rate_per_second_wei=7,
         duration_seconds=3600,
     )
 
@@ -494,7 +494,7 @@ async def test_stale_stream_mapping_does_not_block_new_stream_create():
         stream_id=456,
         lease_id="0x" + "11" * 32,
         terms_hash="0x" + "22" * 32,
-        rate_per_second_wei=7,
+        provider_rate_per_second_wei=7,
         duration_seconds=3600,
     )
 
@@ -529,7 +529,7 @@ async def test_failed_create_job_does_not_block_new_stream_create():
         stream_id=456,
         lease_id="0x" + "11" * 32,
         terms_hash="0x" + "22" * 32,
-        rate_per_second_wei=7,
+        provider_rate_per_second_wei=7,
         duration_seconds=3600,
     )
 
@@ -564,7 +564,7 @@ async def test_resize_vm_validates_and_maps_replacement_stream():
         stream_id=123,
         lease_id="0x" + "11" * 32,
         terms_hash="0x" + "22" * 32,
-        rate_per_second_wei=7,
+        provider_rate_per_second_wei=7,
         duration_seconds=3600,
     )
 

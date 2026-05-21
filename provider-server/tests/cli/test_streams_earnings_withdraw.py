@@ -30,7 +30,7 @@ def test_streams_earnings_json(monkeypatch):
             )
 
         def get_stream(self, sid):
-            # token, sender, recipient, startTime, stopTime, ratePerSecond, deposit, withdrawn, halted
+            # token, sender, recipient, startTime, stopTime, provider rate, deposits, withdrawals
             if int(sid) == 1:
                 return {
                     "token": "0x0",
@@ -38,10 +38,13 @@ def test_streams_earnings_json(monkeypatch):
                     "recipient": "0xprov",
                     "startTime": self._now - 2000,
                     "stopTime": self._now + 1000,
-                    "ratePerSecond": 10,
-                    "deposit": 0,
-                    "withdrawn": 5000,
-                    "halted": False,
+                    "providerRatePerSecond": 10,
+                    "providerDeposit": 30_000,
+                    "providerWithdrawn": 5000,
+                    "donationBps": 150,
+                    "donationRecipient": "0x94153E31AA476cE30C3AF64C255C623f80920BfF",
+                    "donationDeposit": 450,
+                    "donationWithdrawn": 0,
                 }
             return {
                 "token": "0x0",
@@ -49,10 +52,13 @@ def test_streams_earnings_json(monkeypatch):
                 "recipient": "0xprov",
                 "startTime": self._now - 500,
                 "stopTime": self._now + 500,
-                "ratePerSecond": 20,
-                "deposit": 0,
-                "withdrawn": 0,
-                "halted": False,
+                "providerRatePerSecond": 20,
+                "providerDeposit": 20_000,
+                "providerWithdrawn": 0,
+                "donationBps": 150,
+                "donationRecipient": "0x94153E31AA476cE30C3AF64C255C623f80920BfF",
+                "donationDeposit": 300,
+                "donationWithdrawn": 0,
             }
 
     # Patch Container and Reader used by implementation

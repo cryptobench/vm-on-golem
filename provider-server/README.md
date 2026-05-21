@@ -298,7 +298,7 @@ uses the `hoodi` payments profile and auto-loads the StreamPayment contract from
 - `PAYMENTS_WS_URL` - EVM WebSocket RPC URL for live StreamPayment events
 - `STREAM_PAYMENT_ADDRESS` - StreamPayment address, defaulted from `contracts/deployments/<profile>.json`
 - `GLM_TOKEN_ADDRESS` - GLM ERC20 token address used by StreamPayment
-  - Optional override of deployments directory: set `GOLEM_DEPLOYMENTS_DIR` to a folder containing the deployment JSON.
+- Optional override of deployments directory: set `GOLEM_DEPLOYMENTS_DIR` to a folder containing the deployment JSON.
 
 Optional background automation (all disabled by default):
 
@@ -320,7 +320,7 @@ Implementation notes:
 When enabled, the provider verifies each VM creation request’s `stream_id` and refuses to start the VM if:
 
 - stream recipient != provider’s Ethereum address
-- deposit is zero, stream not started, or stream halted
+- provider deposit is zero, stream not started, or stream is terminated
 - (Optional) remaining runway < `STREAM_MIN_REMAINING_SECONDS`
 
 ## API Reference (for integrators)
@@ -406,16 +406,24 @@ Response (per stream):
     "recipient": "0xProviderEthereumAddress",
     "startTime": 1700000000,
     "stopTime": 1700007200,
-    "ratePerSecond": 12345,
-    "deposit": 1000000000000000000,
-    "withdrawn": 0,
-    "halted": false
+    "providerRatePerSecond": 12345,
+    "providerDeposit": 1000000000000000000,
+    "providerWithdrawn": 0,
+    "donationBps": 150,
+    "donationRecipient": "0x94153E31AA476cE30C3AF64C255C623f80920BfF",
+    "donationDeposit": 15000000000000000,
+    "donationWithdrawn": 0
   },
   "computed": {
     "now": 1700003600,
     "remaining_seconds": 3600,
-    "vested_wei": 44442000,
-    "withdrawable_wei": 44442000
+    "vested_wei": 45108630,
+    "withdrawable_wei": 45108630,
+    "provider_vested_wei": 44442000,
+    "provider_withdrawable_wei": 44442000,
+    "donation_vested_wei": 666630,
+    "donation_withdrawable_wei": 666630,
+    "total_deposit_wei": 1015000000000000000
   }
 }
 ```
@@ -429,25 +437,20 @@ Notes:
 ### Starting the Provider
 
 ```bash
-# Production mode
+# Start in the current terminal after startup checks
 golem-provider start
 
-# Development mode with extra logs and reload
+# Development mode with extra logs
 # In development, providers advertise on the 'development' network and use local IPs.
 GOLEM_ENVIRONMENT=development golem-provider start
 ```
 
-Run as a background service (no terminal):
+Inspect the running provider:
 
 ```bash
-# Start in background and write a PID file
-golem-provider start --daemon [--network testnet|mainnet]
-
-# Stop the background process
-golem-provider stop
-
-# Check environment and port health (unchanged)
+# Check environment, port, and service health
 golem-provider status [--json]
+golem-provider doctor [--json]
 ```
 
 ### Mode vs. Network
@@ -493,33 +496,33 @@ Notes:
 - List all mapped streams with computed fields:
 
 ```bash
-poetry run golem-provider streams list
+poetry run golem-provider stream list
 # or JSON
-poetry run golem-provider streams list --json
+poetry run golem-provider stream list --json
 ```
 
 - Show one VM’s stream (VM id = `requestor_name`):
 
 ```bash
-poetry run golem-provider streams show <vm_id>
+poetry run golem-provider stream show <vm_id>
 ```
 
 - Summarize earnings and withdrawable amounts:
 
 ```bash
-poetry run golem-provider streams earnings
+poetry run golem-provider stream earnings
 # or JSON
-poetry run golem-provider streams earnings --json
+poetry run golem-provider stream earnings --json
 ```
 
 - Withdraw vested funds:
 
 ```bash
 # One VM by id
-poetry run golem-provider streams withdraw --vm-id <vm_id>
+poetry run golem-provider stream withdraw <vm_id>
 
 # All mapped streams
-poetry run golem-provider streams withdraw --all
+poetry run golem-provider stream withdraw --all
 ```
 
 Note: On testnets, the withdraw command auto-attempts to fund the provider's L2 address via the configured faucet if native gas balance is low.

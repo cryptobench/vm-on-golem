@@ -1,0 +1,30 @@
+---
+title: Publish Capacity
+description: Understand how providers become discoverable to requestors.
+---
+
+Publishing capacity is how a provider becomes visible to requestors. The provider measures available resources, checks endpoint readiness, signs into discovery, and publishes advertisements with resource, pricing, network, and endpoint information.
+
+## What an advertisement means
+
+An advertisement says the provider is currently willing and able to accept rentals that match the advertised capacity and network profile.
+
+It is not a permanent listing. It is live state. If the provider disconnects or stops meeting requirements, requestors should stop seeing it.
+
+## Discovery backends
+
+VM on Golem supports central discovery and Arkiv as discovery backends. Providers select the backend through configuration. Requestors then use compatible discovery settings to find providers.
+
+Central discovery is the packaged default for distributed flows. Arkiv is the decentralized discovery backend and remains a supported product path.
+
+## Why providers disappear
+
+A provider may disappear because the discovery connection closed, endpoint checks failed, available resources dropped below minimums, pricing or payment data is invalid, or the selected network no longer matches requestor filters.
+
+Disappearance is often protective. It prevents requestors from choosing a provider that cannot currently serve a rental.
+
+## Keeping advertisements healthy
+
+Keep the provider service running, maintain network reachability, preserve enough free resources, and check provider status after configuration changes.
+
+Provider Desktop and CLI status checks should be used before assuming requestor discovery is wrong.

@@ -11,6 +11,7 @@ import {
   type VMResources,
 } from "./api";
 import { getRequestorRuntimeConfig } from "./runtimeConfig";
+import { requestorDonationBps } from "./settings";
 import { getPaymentsSigner, getWalletName } from "./walletClient";
 import { walletDebug, walletWarn } from "./walletDebug";
 
@@ -27,6 +28,7 @@ export type OpenPaymentStreamOptions = {
   purpose?: "new" | "replacement";
   ensurePaymentsNetwork: () => Promise<void>;
   onPhase?: (phase: string) => void;
+  onQuoteAmount?: (amount: PaymentQuoteAmount) => void;
 };
 
 export type OpenedPaymentStream = {
@@ -37,9 +39,17 @@ export type OpenedPaymentStream = {
     stream_id: number;
     lease_id: string;
     terms_hash: string;
-    rate_per_second_wei: string;
+    provider_rate_per_second_wei: string;
     duration_seconds: number;
   };
+};
+
+export type PaymentQuoteAmount = {
+  providerDepositWei: string;
+  donationDepositWei: string;
+  totalDepositWei: string;
+  tokenDecimals: number;
+  tokenSymbol: string;
 };
 
 export async function openPaymentStream({
@@ -53,6 +63,7 @@ export async function openPaymentStream({
   purpose = "new",
   ensurePaymentsNetwork,
   onPhase,
+  onQuoteAmount,
 }: OpenPaymentStreamOptions): Promise<OpenedPaymentStream> {
   const walletName = getWalletName();
   onPhase?.(
@@ -89,8 +100,8 @@ export async function openPaymentStream({
     hasGlmTokenAddress: Boolean(quote.glm_token_address),
     hasProviderAddress: Boolean(quote.provider_address),
     hasSignature: Boolean(quote.signature),
-    ratePerSecondWei: quote.rate_per_second_wei,
-    minDepositWei: quote.min_deposit_wei,
+    providerRatePerSecondWei: quote.provider_rate_per_second_wei,
+    providerDepositWei: quote.provider_deposit_wei,
   });
   const cfg = loadSettings();
   const runtimeConfig = getRequestorRuntimeConfig();
@@ -120,24 +131,41 @@ export async function openPaymentStream({
   }
 
   const glm = new Contract(token, (erc20 as any).abi, signer);
-  const ratePerSecondWei = BigInt(quote.rate_per_second_wei);
-  const depositWei = BigInt(quote.min_deposit_wei);
+  const providerRatePerSecondWei = BigInt(quote.provider_rate_per_second_wei);
+  const providerDepositWei = BigInt(quote.provider_deposit_wei);
+  const donationBps = requestorDonationBps(cfg);
+  const donationDepositWei = donationForDeposit(
+    providerDepositWei,
+    donationBps,
+  );
+  const totalDepositWei = totalDepositForProviderDeposit(
+    providerDepositWei,
+    donationBps,
+  );
+  const symbol = await readTokenSymbol(glm);
+  const decimals = await readTokenDecimals(glm);
+  onQuoteAmount?.({
+    providerDepositWei: String(providerDepositWei),
+    donationDepositWei: String(donationDepositWei),
+    totalDepositWei: String(totalDepositWei),
+    tokenDecimals: decimals,
+    tokenSymbol: symbol,
+  });
+  await yieldToBrowser();
 
   onPhase?.("Checking GLM balance");
   const balance = await glm.balanceOf(owner);
   walletDebug("payment-stream:balance:done", {
     token,
     owner,
-    hasEnoughBalance: balance >= depositWei,
+    hasEnoughBalance: balance >= totalDepositWei,
     balance: String(balance),
-    depositWei: String(depositWei),
+    totalDepositWei: String(totalDepositWei),
   });
-  if (balance < depositWei) {
-    const symbol = await readTokenSymbol(glm);
-    const decimals = await readTokenDecimals(glm);
+  if (balance < totalDepositWei) {
     throw new Error(
       `Insufficient ${symbol} balance for this payment stream. Required ${formatTokenAmount(
-        depositWei,
+        totalDepositWei,
         decimals,
       )} ${symbol}; available ${formatTokenAmount(balance, decimals)} ${symbol}.`,
     );
@@ -151,20 +179,20 @@ export async function openPaymentStream({
   });
   const allowance = await glm.allowance(owner, spAddr);
   walletDebug("payment-stream:allowance:done", {
-    hasEnoughAllowance: allowance >= depositWei,
+    hasEnoughAllowance: allowance >= totalDepositWei,
     allowance: String(allowance),
-    depositWei: String(depositWei),
+    totalDepositWei: String(totalDepositWei),
   });
-  if (allowance < depositWei) {
+  if (allowance < totalDepositWei) {
     onPhase?.(
       `Waiting for your approval in ${walletName} to approve GLM spending`,
     );
     walletDebug("payment-stream:approve:start", {
       token,
       streamPayment: spAddr,
-      depositWei: String(depositWei),
+      totalDepositWei: String(totalDepositWei),
     });
-    const approveTx = await glm.approve(spAddr, depositWei);
+    const approveTx = await glm.approve(spAddr, totalDepositWei);
     onPhase?.("Waiting for GLM approval confirmation on the blockchain");
     await approveTx.wait();
     walletDebug("payment-stream:approve:done", { txHash: approveTx.hash });
@@ -173,8 +201,9 @@ export async function openPaymentStream({
   const contract = new Contract(spAddr, (streamPayment as any).abi, signer);
   const createArgs = [
     quote.provider_address,
-    depositWei,
-    ratePerSecondWei,
+    providerDepositWei,
+    providerRatePerSecondWei,
+    donationBps,
     quote.lease_id,
     quote.terms_hash,
     BigInt(quote.quote_expires_at),
@@ -183,8 +212,8 @@ export async function openPaymentStream({
   verifyProviderQuoteSignature({
     quote,
     streamPaymentAddress: spAddr,
-    depositWei,
-    ratePerSecondWei,
+    providerDepositWei,
+    providerRatePerSecondWei,
   });
   onPhase?.(
     `Waiting for your approval in ${walletName} to create ${
@@ -194,8 +223,11 @@ export async function openPaymentStream({
   walletDebug("payment-stream:create:start", {
     streamPayment: spAddr,
     providerAddress: quote.provider_address,
-    depositWei: String(depositWei),
-    ratePerSecondWei: String(ratePerSecondWei),
+    providerDepositWei: String(providerDepositWei),
+    providerRatePerSecondWei: String(providerRatePerSecondWei),
+    donationBps,
+    donationDepositWei: String(donationDepositWei),
+    totalDepositWei: String(totalDepositWei),
   });
   await logCreateStreamDiagnostics({
     signer,
@@ -204,8 +236,11 @@ export async function openPaymentStream({
     tokenAddress: token,
     owner,
     quote,
-    depositWei,
-    ratePerSecondWei,
+    providerDepositWei,
+    providerRatePerSecondWei,
+    donationBps,
+    donationDepositWei,
+    totalDepositWei,
     durationSeconds,
     resources,
     vmName,
@@ -215,7 +250,7 @@ export async function openPaymentStream({
   });
   const populatedTx = await contract.createStream.populateTransaction(
     ...createArgs,
-    { gasLimit: 350000n },
+    { gasLimit: 450000n },
   );
   const txData = String(populatedTx.data || "");
   walletDebug("payment-stream:create:tx-populated", {
@@ -223,7 +258,7 @@ export async function openPaymentStream({
     dataLength: txData.length,
     selector: txData.slice(0, 10),
     hasValue: populatedTx.value != null && populatedTx.value !== 0n,
-    gasLimit: String(populatedTx.gasLimit || 350000n),
+    gasLimit: String(populatedTx.gasLimit || 450000n),
   });
   if (!txData || txData === "0x") {
     throw new Error(
@@ -238,7 +273,7 @@ export async function openPaymentStream({
   });
   const tx = await signer.sendTransaction({
     ...populatedTx,
-    gasLimit: 350000n,
+    gasLimit: 450000n,
   });
   onPhase?.(
     `Waiting for ${
@@ -262,10 +297,24 @@ export async function openPaymentStream({
       stream_id: Number(streamId),
       lease_id: quote.lease_id,
       terms_hash: quote.terms_hash,
-      rate_per_second_wei: String(quote.rate_per_second_wei),
+      provider_rate_per_second_wei: String(quote.provider_rate_per_second_wei),
       duration_seconds: Number(quote.min_runway_seconds || durationSeconds),
     },
   };
+}
+
+export function donationForDeposit(
+  providerAmountWei: bigint,
+  donationBps: number | bigint,
+): bigint {
+  return (providerAmountWei * BigInt(donationBps)) / 10_000n;
+}
+
+export function totalDepositForProviderDeposit(
+  providerAmountWei: bigint,
+  donationBps: number | bigint,
+): bigint {
+  return providerAmountWei + donationForDeposit(providerAmountWei, donationBps);
 }
 
 async function readTokenSymbol(token: Contract): Promise<string> {
@@ -285,17 +334,30 @@ async function readTokenDecimals(token: Contract): Promise<number> {
   }
 }
 
-function formatTokenAmount(value: bigint, decimals: number): string {
+export function formatTokenAmount(value: bigint, decimals: number): string {
   const formatted = formatUnits(value, decimals);
   const [whole, fraction = ""] = formatted.split(".");
   const trimmedFraction = fraction.replace(/0+$/, "").slice(0, 6);
   return trimmedFraction ? `${whole}.${trimmedFraction}` : whole;
 }
 
+async function yieldToBrowser() {
+  if (
+    typeof window === "undefined" ||
+    typeof window.requestAnimationFrame !== "function"
+  ) {
+    return;
+  }
+  await new Promise<void>((resolve) => {
+    window.requestAnimationFrame(() => resolve());
+  });
+}
+
 type CreateStreamArgs = readonly [
   string,
   bigint,
   bigint,
+  number,
   string,
   string,
   bigint,
@@ -305,26 +367,26 @@ type CreateStreamArgs = readonly [
 function verifyProviderQuoteSignature({
   quote,
   streamPaymentAddress,
-  depositWei,
-  ratePerSecondWei,
+  providerDepositWei,
+  providerRatePerSecondWei,
 }: {
   quote: any;
   streamPaymentAddress: string;
-  depositWei: bigint;
-  ratePerSecondWei: bigint;
+  providerDepositWei: bigint;
+  providerRatePerSecondWei: bigint;
 }) {
   const recovered = verifyTypedData(
     {
       name: "GolemStreamPayment",
-      version: "2",
+      version: "4",
       chainId: BigInt(quote.chain_id),
       verifyingContract: streamPaymentAddress,
     },
     {
       LeaseQuote: [
         { name: "recipient", type: "address" },
-        { name: "deposit", type: "uint256" },
-        { name: "ratePerSecond", type: "uint128" },
+        { name: "providerDeposit", type: "uint256" },
+        { name: "providerRatePerSecond", type: "uint128" },
         { name: "leaseId", type: "bytes32" },
         { name: "termsHash", type: "bytes32" },
         { name: "quoteExpiresAt", type: "uint128" },
@@ -332,8 +394,8 @@ function verifyProviderQuoteSignature({
     },
     {
       recipient: quote.provider_address,
-      deposit: depositWei,
-      ratePerSecond: ratePerSecondWei,
+      providerDeposit: providerDepositWei,
+      providerRatePerSecond: providerRatePerSecondWei,
       leaseId: quote.lease_id,
       termsHash: quote.terms_hash,
       quoteExpiresAt: BigInt(quote.quote_expires_at),
@@ -379,8 +441,11 @@ async function logCreateStreamDiagnostics({
   tokenAddress,
   owner,
   quote,
-  depositWei,
-  ratePerSecondWei,
+  providerDepositWei,
+  providerRatePerSecondWei,
+  donationBps,
+  donationDepositWei,
+  totalDepositWei,
   durationSeconds,
   resources,
   vmName,
@@ -394,8 +459,11 @@ async function logCreateStreamDiagnostics({
   tokenAddress: string;
   owner: string;
   quote: any;
-  depositWei: bigint;
-  ratePerSecondWei: bigint;
+  providerDepositWei: bigint;
+  providerRatePerSecondWei: bigint;
+  donationBps: number;
+  donationDepositWei: bigint;
+  totalDepositWei: bigint;
   durationSeconds: number;
   resources: VMResources;
   vmName: string;
@@ -448,8 +516,11 @@ async function logCreateStreamDiagnostics({
     quoteExpiresAt: quote.quote_expires_at,
     signatureLength: String(quote.signature || "").length,
     signaturePrefix: String(quote.signature || "").slice(0, 10),
-    depositWei: String(depositWei),
-    ratePerSecondWei: String(ratePerSecondWei),
+    providerDepositWei: String(providerDepositWei),
+    providerRatePerSecondWei: String(providerRatePerSecondWei),
+    donationBps,
+    donationDepositWei: String(donationDepositWei),
+    totalDepositWei: String(totalDepositWei),
     minRunwaySeconds: quote.min_runway_seconds,
     functionSelector: fragment?.selector || null,
     abiFunctionInputs: fragment?.inputs?.map((input) => input.type) || [],
@@ -482,7 +553,7 @@ function findCreatedStreamId(contract: Contract, logs: readonly unknown[]) {
 export function parseLeaseQuoteBody(body: string) {
   return JSON.parse(
     body.replace(
-      /"(rate_per_second_wei|min_deposit_wei)"\s*:\s*(-?\d+)/g,
+      /"(provider_rate_per_second_wei|provider_deposit_wei)"\s*:\s*(-?\d+)/g,
       '"$1":"$2"',
     ),
   );
@@ -491,11 +562,14 @@ export function parseLeaseQuoteBody(body: string) {
 async function createLeaseQuote(providerEndpointUrl: string, payload: any) {
   let response: Response;
   try {
-    response = await fetch(`${providerEndpointUrl}/api/v1/payments/lease-quotes`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+    response = await fetch(
+      `${providerEndpointUrl}/api/v1/payments/lease-quotes`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      },
+    );
   } catch (error) {
     walletWarn("payment-stream:quote:fetch-failed", error, {
       providerEndpointUrl,
@@ -516,7 +590,9 @@ async function createLeaseQuote(providerEndpointUrl: string, payload: any) {
       status: response.status,
       body: body.slice(0, 500),
     });
-    throw new Error(body || `Lease quote request failed with HTTP ${response.status}`);
+    throw new Error(
+      body || `Lease quote request failed with HTTP ${response.status}`,
+    );
   }
   return parseLeaseQuoteBody(body);
 }

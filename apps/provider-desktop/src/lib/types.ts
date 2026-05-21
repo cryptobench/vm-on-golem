@@ -150,9 +150,13 @@ export type StreamOnChain = {
   recipient: string;
   startTime: number;
   stopTime: number;
-  ratePerSecond: number;
-  deposit: number;
-  withdrawn: number;
+  providerRatePerSecond: number;
+  providerDeposit: number;
+  providerWithdrawn: number;
+  donationBps: number;
+  donationRecipient: string;
+  donationDeposit: number;
+  donationWithdrawn: number;
   leaseId: string;
   termsHash: string;
 };
@@ -162,6 +166,11 @@ export type StreamComputed = {
   remaining_seconds: number;
   vested_wei: number;
   withdrawable_wei: number;
+  provider_vested_wei: number;
+  provider_withdrawable_wei: number;
+  donation_vested_wei: number;
+  donation_withdrawable_wei: number;
+  total_deposit_wei: number;
 };
 
 export type StreamStatus = {

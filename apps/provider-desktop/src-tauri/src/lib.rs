@@ -1,18 +1,18 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::fs::{self, File};
-use std::io::{Read, Seek, SeekFrom, Write};
+use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream};
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    Arc,
+    Arc, Mutex,
 };
 use std::time::{Duration, Instant};
 use tauri::Emitter;
-use tauri_plugin_shell::process::{Command, CommandEvent};
+use tauri_plugin_shell::process::{Command, CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 
 const PROVIDER_HOST: &str = "127.0.0.1";
@@ -21,8 +21,17 @@ const PROVIDER_START_TIMEOUT: Duration = Duration::from_secs(180);
 const PAYMENTS_NETWORK: &str = "hoodi";
 const PAYMENTS_RPC_URL: &str = "https://rpc.hoodi.ethpandaops.io";
 const PAYMENTS_WS_URL: &str = "wss://ethereum-hoodi-rpc.publicnode.com";
-const STREAM_PAYMENT_ADDRESS: &str = "0x479044F8A58276DC15d0d924a6A92Ec663877D00";
+const STREAM_PAYMENT_ADDRESS: &str = "0xb5a225b2f82D3eFe743D95bA7Fe3BbC475C0a12E";
 const GLM_TOKEN_ADDRESS: &str = "0x55555555555556AcFf9C332Ed151758858bd7a26";
+static PROVIDER_FOREGROUND_CHILD: Mutex<Option<CommandChild>> = Mutex::new(None);
+
+#[derive(Default)]
+struct ProviderProcessState {
+    output: String,
+    failure: Option<String>,
+}
+
+type ProviderProcessStateHandle = Arc<Mutex<ProviderProcessState>>;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -107,6 +116,7 @@ fn provider_sidecar_command(app: &tauri::AppHandle) -> Result<Command, String> {
                     "GOLEM_PROVIDER_GLM_TOKEN_ADDRESS",
                     env_or_default("GOLEM_PROVIDER_GLM_TOKEN_ADDRESS", GLM_TOKEN_ADDRESS),
                 ),
+                ("GOLEM_PROVIDER_DISABLE_RELOAD", "1".to_string()),
             ])
         })
 }
@@ -198,6 +208,122 @@ fn merge_output(stdout: &str, stderr: &str) -> String {
     }
 }
 
+fn trim_process_output(output: &str) -> String {
+    const MAX_CHARS: usize = 4000;
+    let trimmed = output.trim();
+    let char_count = trimmed.chars().count();
+    if char_count > MAX_CHARS {
+        trimmed.chars().skip(char_count - MAX_CHARS).collect()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+fn redact_sensitive_process_output(output: &str) -> String {
+    output
+        .lines()
+        .map(redact_sensitive_process_output_line)
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn redact_sensitive_process_output_line(line: &str) -> String {
+    const SECRET_ASSIGNMENTS: [&str; 1] = ["GOLEM_PROVIDER_ADMIN_TOKEN="];
+    for assignment in SECRET_ASSIGNMENTS {
+        if let Some(index) = line.find(assignment) {
+            return format!("{}{}<redacted>", &line[..index], assignment);
+        }
+    }
+    line.to_string()
+}
+
+fn provider_port_conflict_detail(output: &str) -> String {
+    trim_process_output(
+        &redact_sensitive_process_output(output)
+            .lines()
+            .filter(|line| provider_output_has_port_conflict(line) || line.contains("ERROR:"))
+            .collect::<Vec<_>>()
+            .join("\n"),
+    )
+}
+
+fn provider_port_in_use_message() -> String {
+    format!(
+        "Provider API port {PROVIDER_HOST}:{PROVIDER_PORT} is already in use. Stop the process using that port and start Golem Provider again."
+    )
+}
+
+fn provider_process_failure(output: &str, exit_code: Option<i32>) -> String {
+    let sanitized_output = redact_sensitive_process_output(output);
+    if provider_output_has_port_conflict(&sanitized_output) {
+        let detail = provider_port_conflict_detail(&sanitized_output);
+        if detail.is_empty() {
+            return provider_port_in_use_message();
+        }
+        return format!("{}\n{}", provider_port_in_use_message(), detail);
+    }
+    if provider_output_has_cli_option_error(&sanitized_output) {
+        let detail = provider_cli_option_error_detail(&sanitized_output);
+        if detail.is_empty() {
+            return "Provider service failed while parsing startup options.".to_string();
+        }
+        return format!("Provider service failed while parsing startup options.\n{detail}");
+    }
+    let detail = trim_process_output(&sanitized_output);
+    if detail.is_empty() {
+        return format!(
+            "Provider service exited before the API became ready. Exit code: {exit_code:?}"
+        );
+    }
+    format!(
+        "Provider service exited before the API became ready. Exit code: {exit_code:?}\n{detail}"
+    )
+}
+
+fn provider_output_has_port_conflict(output: &str) -> bool {
+    output.contains("Address already in use")
+        || output.contains("address already in use")
+        || output.contains("Errno 48")
+        || output.contains("EADDRINUSE")
+}
+
+fn provider_output_has_cli_option_error(output: &str) -> bool {
+    output.contains("No such option:")
+}
+
+fn provider_cli_option_error_detail(output: &str) -> String {
+    trim_process_output(
+        &redact_sensitive_process_output(output)
+            .lines()
+            .filter(|line| {
+                provider_output_has_cli_option_error(line)
+                    || line.contains("Usage: golem-provider")
+                    || line.contains("Try 'golem-provider --help'")
+                    || line.contains("Error")
+            })
+            .collect::<Vec<_>>()
+            .join("\n"),
+    )
+}
+
+fn record_provider_process_output(process_state: &ProviderProcessStateHandle, text: &str) {
+    if text.trim().is_empty() {
+        return;
+    }
+    if let Ok(mut state) = process_state.lock() {
+        if !state.output.is_empty() {
+            state.output.push('\n');
+        }
+        state.output.push_str(text);
+        if (provider_output_has_port_conflict(&state.output)
+            || provider_output_has_cli_option_error(&state.output))
+            && state.failure.is_none()
+        {
+            state.failure = Some(provider_process_failure(&state.output, None));
+        }
+    }
+}
+
 fn json_stream_unsupported(output: &str) -> bool {
     output.contains("No such option: --json-stream")
 }
@@ -227,17 +353,17 @@ async fn run_secure_setup_once(app: tauri::AppHandle) -> Result<Value, String> {
     })
 }
 
-fn mark_provider_daemon_starting(status: &mut Value) {
+fn mark_provider_service_starting(status: &mut Value) {
     status["message"] = json!("Starting provider service.");
-    set_stage(status, "provider_start", "running", "starting daemon");
+    set_stage(status, "provider_start", "running", "starting service");
 }
 
-fn mark_provider_daemon_started(status: &mut Value) {
+fn mark_provider_service_started(status: &mut Value) {
     status["message"] = json!("Provider service started.");
     set_stage(status, "provider_start", "success", "API listening");
 }
 
-fn mark_provider_daemon_failed(status: &mut Value, detail: &str) {
+fn mark_provider_service_failed(status: &mut Value, detail: &str) {
     status["message"] = json!(detail);
     status["error"] = json!(detail);
     set_stage(status, "provider_start", "failed", detail);
@@ -325,54 +451,37 @@ fn provider_admin_auth_status() -> (bool, Option<String>) {
     )
 }
 
-fn daemon_stdio_log_path() -> Option<PathBuf> {
-    std::env::var("GOLEM_PROVIDER_LOG_DIR")
+fn provider_process_failed(process_state: &ProviderProcessStateHandle) -> Option<String> {
+    process_state
+        .lock()
         .ok()
-        .filter(|value| !value.trim().is_empty())
-        .map(|value| PathBuf::from(value).join("provider-daemon-stdio.log"))
-}
-
-fn file_len(path: &Path) -> u64 {
-    fs::metadata(path)
-        .map(|metadata| metadata.len())
-        .unwrap_or(0)
-}
-
-fn read_daemon_log_since(path: &Path, offset: u64) -> String {
-    let Ok(mut file) = File::open(path) else {
-        return String::new();
-    };
-    if file.seek(SeekFrom::Start(offset)).is_err() {
-        return String::new();
-    }
-    let mut output = String::new();
-    if file.read_to_string(&mut output).is_err() {
-        return String::new();
-    }
-    const MAX_CHARS: usize = 4000;
-    let char_count = output.chars().count();
-    if char_count > MAX_CHARS {
-        output.chars().skip(char_count - MAX_CHARS).collect()
-    } else {
-        output
-    }
-}
-
-fn daemon_log_has_fatal_startup_error(output: &str) -> bool {
-    output.contains("Traceback (most recent call last)")
-        || output.contains("Failed to execute script")
-        || output.contains("[PYI-")
+        .and_then(|state| state.failure.clone())
 }
 
 async fn wait_for_provider_api(
     timeout: Duration,
-    daemon_log_path: Option<&Path>,
-    daemon_log_offset: u64,
+    process_state: &ProviderProcessStateHandle,
+) -> Result<(), String> {
+    let process_state = Arc::clone(process_state);
+    tauri::async_runtime::spawn_blocking(move || {
+        wait_for_provider_api_blocking(timeout, &process_state)
+    })
+    .await
+    .map_err(|err| format!("Provider API readiness wait failed: {err}"))?
+}
+
+fn wait_for_provider_api_blocking(
+    timeout: Duration,
+    process_state: &ProviderProcessStateHandle,
 ) -> Result<(), String> {
     let started_at = Instant::now();
     let mut last_log_at = Instant::now();
 
     loop {
+        if let Some(failure) = provider_process_failed(process_state) {
+            return Err(failure);
+        }
+
         if provider_is_listening() {
             eprintln!(
                 "[provider-sidecar] Provider API is listening on {}:{} after {:.2}s",
@@ -383,33 +492,9 @@ async fn wait_for_provider_api(
             return Ok(());
         }
 
-        if let Some(path) = daemon_log_path {
-            let daemon_log = read_daemon_log_since(path, daemon_log_offset);
-            if daemon_log_has_fatal_startup_error(&daemon_log) {
-                return Err(format!(
-                    "Provider daemon exited before opening API port {}:{}:\n{}",
-                    PROVIDER_HOST,
-                    PROVIDER_PORT,
-                    daemon_log.trim()
-                ));
-            }
-        }
-
         if started_at.elapsed() >= timeout {
-            let daemon_log = daemon_log_path
-                .map(|path| read_daemon_log_since(path, daemon_log_offset))
-                .unwrap_or_default();
-            if !daemon_log.trim().is_empty() {
-                return Err(format!(
-                    "Provider daemon did not open API port {}:{} within {:.0}s. Daemon output:\n{}",
-                    PROVIDER_HOST,
-                    PROVIDER_PORT,
-                    timeout.as_secs_f64(),
-                    daemon_log.trim()
-                ));
-            }
             return Err(format!(
-                "Provider daemon did not open API port {}:{} within {:.0}s",
+                "Provider service did not open API port {}:{} within {:.0}s",
                 PROVIDER_HOST,
                 PROVIDER_PORT,
                 timeout.as_secs_f64()
@@ -430,18 +515,6 @@ async fn wait_for_provider_api(
     }
 }
 
-async fn run_provider_sidecar(app: tauri::AppHandle, args: &[&str]) -> Result<(), String> {
-    let output = run_provider_sidecar_output(app, args).await?;
-
-    if output.status.success() {
-        return Ok(());
-    }
-
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    Err(if stderr.is_empty() { stdout } else { stderr })
-}
-
 async fn run_provider_sidecar_output(
     app: tauri::AppHandle,
     args: &[&str],
@@ -451,6 +524,80 @@ async fn run_provider_sidecar_output(
         .output()
         .await
         .map_err(|err| err.to_string())
+}
+
+fn spawn_provider_service(app: tauri::AppHandle) -> Result<ProviderProcessStateHandle, String> {
+    stop_spawned_provider_child();
+    let process_state = Arc::new(Mutex::new(ProviderProcessState::default()));
+    let (mut rx, child) = provider_sidecar_command(&app)?
+        .args(["start", "--no-verify-port"])
+        .spawn()
+        .map_err(|err| err.to_string())?;
+    let child_pid = child.pid();
+    if let Ok(mut current_child) = PROVIDER_FOREGROUND_CHILD.lock() {
+        *current_child = Some(child);
+    }
+    let process_state_for_events = Arc::clone(&process_state);
+    tauri::async_runtime::spawn(async move {
+        while let Some(event) = rx.recv().await {
+            match event {
+                CommandEvent::Stdout(line) => {
+                    let text = String::from_utf8_lossy(&line).trim().to_string();
+                    if !text.is_empty() {
+                        eprintln!("[provider-sidecar] {}", text);
+                        record_provider_process_output(&process_state_for_events, &text);
+                    }
+                }
+                CommandEvent::Stderr(line) => {
+                    let text = String::from_utf8_lossy(&line).trim().to_string();
+                    if !text.is_empty() {
+                        eprintln!("[provider-sidecar] {}", text);
+                        record_provider_process_output(&process_state_for_events, &text);
+                    }
+                }
+                CommandEvent::Error(err) => {
+                    eprintln!("[provider-sidecar] Provider service stream error: {err}");
+                    if let Ok(mut state) = process_state_for_events.lock() {
+                        state.failure = Some(format!("Provider service stream error: {err}"));
+                    }
+                }
+                CommandEvent::Terminated(payload) => {
+                    eprintln!(
+                        "[provider-sidecar] Provider service exited with code {:?}",
+                        payload.code
+                    );
+                    if payload.code != Some(0) {
+                        if let Ok(mut state) = process_state_for_events.lock() {
+                            state.failure =
+                                Some(provider_process_failure(&state.output, payload.code));
+                        }
+                    }
+                    if let Ok(mut current_child) = PROVIDER_FOREGROUND_CHILD.lock() {
+                        let should_clear = current_child
+                            .as_ref()
+                            .map(|child| child.pid() == child_pid)
+                            .unwrap_or(false);
+                        if should_clear {
+                            *current_child = None;
+                        }
+                    }
+                    break;
+                }
+                _ => {}
+            }
+        }
+    });
+    Ok(process_state)
+}
+
+fn stop_spawned_provider_child() {
+    let child = PROVIDER_FOREGROUND_CHILD
+        .lock()
+        .ok()
+        .and_then(|mut current_child| current_child.take());
+    if let Some(child) = child {
+        let _ = child.kill();
+    }
 }
 
 async fn run_secure_setup_stream(app: tauri::AppHandle) -> Result<Value, String> {
@@ -607,9 +754,17 @@ async fn provider_requirements_stream(
 #[tauri::command]
 async fn start_provider(app: tauri::AppHandle) -> Result<(), String> {
     let (admin_authenticated, _) = provider_admin_auth_status();
-    if provider_is_listening() && !admin_authenticated {
-        eprintln!("[provider-sidecar] Running provider rejected desktop admin token; stopping stale daemon");
-        let _ = run_provider_sidecar(app.clone(), &["stop"]).await;
+    if provider_is_listening() {
+        if admin_authenticated {
+            eprintln!(
+                "[provider-sidecar] Provider API is already listening with the desktop admin token"
+            );
+            return Ok(());
+        }
+        return Err(
+            "Provider API is already listening but rejected the desktop admin token. Stop that provider process and start the desktop app again."
+                .to_string(),
+        );
     }
 
     let mut status = setup_status_starting();
@@ -632,38 +787,46 @@ async fn start_provider(app: tauri::AppHandle) -> Result<(), String> {
     let mut status = run_secure_setup_stream(app.clone()).await?;
     ensure_host_requirements_success(&mut status);
     eprintln!("[provider-sidecar] Secure endpoint setup finished");
-    mark_provider_daemon_starting(&mut status);
+    mark_provider_service_starting(&mut status);
     emit_setup_status(&app, status.clone());
-    eprintln!("[provider-sidecar] Starting provider daemon");
-    let daemon_started_at = Instant::now();
-    let daemon_log_path = daemon_stdio_log_path();
-    let daemon_log_offset = daemon_log_path.as_deref().map(file_len).unwrap_or_default();
-    // Desktop already ran secure setup with live progress; avoid a duplicate
-    // daemon preflight that would be invisible to the startup UI.
-    if let Err(err) =
-        run_provider_sidecar(app.clone(), &["start", "--daemon", "--no-verify-port"]).await
-    {
-        let detail = format!("Provider daemon command failed: {err}");
-        mark_provider_daemon_failed(&mut status, &detail);
+    if provider_is_listening() {
+        let (admin_authenticated, _) = provider_admin_auth_status();
+        if admin_authenticated {
+            mark_provider_service_started(&mut status);
+            emit_setup_status(&app, status);
+            return Ok(());
+        }
+        let detail = format!(
+            "{} The process on that port rejected the desktop admin token.",
+            provider_port_in_use_message()
+        );
+        mark_provider_service_failed(&mut status, &detail);
         emit_setup_status(&app, status);
         return Err(detail);
     }
+    eprintln!("[provider-sidecar] Starting provider service");
+    let service_started_at = Instant::now();
+    // Desktop already ran secure setup with live progress. Keep the provider
+    // process attached here and let the desktop readiness probe drive the UI.
+    let process_state = match spawn_provider_service(app.clone()) {
+        Ok(process_state) => process_state,
+        Err(err) => {
+            let detail = format!("Provider service command failed: {err}");
+            mark_provider_service_failed(&mut status, &detail);
+            emit_setup_status(&app, status);
+            return Err(detail);
+        }
+    };
     eprintln!(
-        "[provider-sidecar] Provider daemon command finished in {:.2}s; waiting for API",
-        daemon_started_at.elapsed().as_secs_f64()
+        "[provider-sidecar] Provider service command spawned in {:.2}s; waiting for API",
+        service_started_at.elapsed().as_secs_f64()
     );
-    if let Err(err) = wait_for_provider_api(
-        PROVIDER_START_TIMEOUT,
-        daemon_log_path.as_deref(),
-        daemon_log_offset,
-    )
-    .await
-    {
-        mark_provider_daemon_failed(&mut status, &err);
+    if let Err(err) = wait_for_provider_api(PROVIDER_START_TIMEOUT, &process_state).await {
+        mark_provider_service_failed(&mut status, &err);
         emit_setup_status(&app, status);
         return Err(err);
     }
-    mark_provider_daemon_started(&mut status);
+    mark_provider_service_started(&mut status);
     emit_setup_status(&app, status);
     Ok(())
 }
@@ -687,8 +850,9 @@ fn ensure_host_requirements_success(status: &mut Value) {
 }
 
 #[tauri::command]
-async fn stop_provider(app: tauri::AppHandle) -> Result<(), String> {
-    run_provider_sidecar(app, &["stop"]).await
+async fn stop_provider(_app: tauri::AppHandle) -> Result<(), String> {
+    stop_spawned_provider_child();
+    Ok(())
 }
 
 #[tauri::command]
@@ -729,6 +893,65 @@ async fn provider_requirements(app: tauri::AppHandle) -> Result<ProviderRequirem
     })
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn provider_process_output_marks_port_conflict_as_failure() {
+        let process_state = Arc::new(Mutex::new(ProviderProcessState::default()));
+
+        record_provider_process_output(
+            &process_state,
+            "ERROR:    [Errno 48] Address already in use",
+        );
+
+        let failure = provider_process_failed(&process_state).expect("failure");
+        assert!(failure.contains("Provider API port 127.0.0.1:7466 is already in use"));
+        assert!(failure.contains("Address already in use"));
+    }
+
+    #[test]
+    fn provider_process_failure_redacts_admin_token() {
+        let output = "\
+GOLEM_PROVIDER_ADMIN_TOKEN=secret-token
+INFO: startup
+ERROR:    [Errno 48] Address already in use";
+
+        let failure = provider_process_failure(output, None);
+
+        assert!(failure.contains("Address already in use"));
+        assert!(!failure.contains("secret-token"));
+        assert!(!failure.contains("GOLEM_PROVIDER_ADMIN_TOKEN=secret-token"));
+    }
+
+    #[test]
+    fn provider_process_output_marks_cli_option_error_as_failure() {
+        let process_state = Arc::new(Mutex::new(ProviderProcessState::default()));
+
+        record_provider_process_output(
+            &process_state,
+            "Usage: golem-provider [OPTIONS] COMMAND [ARGS]...",
+        );
+        record_provider_process_output(
+            &process_state,
+            "│ No such option: --multiprocessing-fork                                       │",
+        );
+
+        let failure = provider_process_failed(&process_state).expect("failure");
+        assert!(failure.contains("Provider service failed while parsing startup options"));
+        assert!(failure.contains("No such option: --multiprocessing-fork"));
+    }
+
+    #[test]
+    fn provider_process_failure_reports_non_port_exit_output() {
+        let failure = provider_process_failure("ERROR: application startup failed", Some(1));
+
+        assert!(failure.contains("Provider service exited before the API became ready"));
+        assert!(failure.contains("ERROR: application startup failed"));
+    }
+}
+
 pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -753,9 +976,7 @@ pub fn run() {
             api.prevent_exit();
             let app_handle = app_handle.clone();
             tauri::async_runtime::spawn(async move {
-                if let Err(err) = run_provider_sidecar(app_handle.clone(), &["stop"]).await {
-                    eprintln!("[provider-sidecar] Failed to stop provider on app exit: {err}");
-                }
+                stop_spawned_provider_child();
                 app_handle.exit(0);
             });
         }

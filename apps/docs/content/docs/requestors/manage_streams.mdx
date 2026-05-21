@@ -1,0 +1,34 @@
+---
+title: Manage Streams
+description: Understand stream runway, top ups, expiration, termination, and VM lifecycle.
+---
+
+Payment streams fund VM rentals over time. The provider verifies the stream before creating a VM and continues to use stream state to decide whether the VM should remain available.
+
+## Stream runway
+
+Runway is the estimated time remaining before the stream deposit can no longer pay at the configured rate. More deposit means more runway. A higher rate spends runway faster.
+
+The app shows runway so you can decide whether to top up before the VM loses funding.
+
+## Top ups
+
+A top up adds more funds to an existing stream. Use it when you want to keep the VM running longer without creating a new rental.
+
+Top ups require a wallet transaction. The wallet needs gas and token funds on the payment network.
+
+## Expiration
+
+When a stream runs out, the provider can stop or remove the VM according to provider policy. The app may show the stream as expired, halted, or without enough remaining time.
+
+If a VM disappears after stream expiration, that is expected behavior. Providers should not continue hosting unpaid compute.
+
+## Termination
+
+Terminating a stream stops future payment. Use it when the rental is done and you no longer want funds to continue vesting to the provider.
+
+Terminate the stream and delete the VM when you are finished with the machine. If you only stop the VM, billing can continue depending on provider behavior.
+
+## Relationship to rentals
+
+A rental is the VM access and lifecycle record. A stream is the payment object that funds it. They are related, but they are not the same object.

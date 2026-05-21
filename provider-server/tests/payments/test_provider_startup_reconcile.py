@@ -109,7 +109,7 @@ class DummyReader:
         # validity_by_stream: {stream_id: (ok, msg)}
         self.validity = validity_by_stream
 
-    def verify_stream(self, sid, expected_recipient):
+    def verify_stream(self, sid, expected_recipient, *args):
         return self.validity.get(int(sid), (False, "not found"))
 
     def get_stream(self, sid):
@@ -460,7 +460,7 @@ async def test_startup_falls_back_when_stream_state_call_reverts(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_startup_surfaces_chain_lookup_failure(monkeypatch):
+async def test_startup_continues_when_existing_stream_lookup_fails(monkeypatch):
     from provider import service as ps
     from provider.config import settings
 
@@ -478,16 +478,18 @@ async def test_startup_surfaces_chain_lookup_failure(monkeypatch):
         port_manager=DummyPortManager(),
     )
 
-    with pytest.raises(RuntimeError, match="stream lookup failed"):
-        await provider_service.setup(  # type: ignore[arg-type]
-            DummyApp(
-                DummyStreamMap({"vm-a": 42}),
-                DummyReader({42: (False, "lookup failed")}),
-            )
+    stream_map = DummyStreamMap({"vm-a": 42})
+
+    await provider_service.setup(  # type: ignore[arg-type]
+        DummyApp(
+            stream_map,
+            DummyReader({42: (False, "lookup failed")}),
         )
+    )
 
     assert vm_service.deleted == []
-    assert adv.started is False
+    assert stream_map.terminated == []
+    assert adv.started is True
 
 
 @pytest.mark.asyncio

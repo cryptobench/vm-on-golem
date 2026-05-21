@@ -1,0 +1,117 @@
+---
+title: CLI Commands
+description: Provider CLI command reference for headless operation and automation.
+---
+
+The `golem-provider` CLI controls provider operation and exposes automation friendly inspection commands. The recommended server workflow is intentionally small: start, stop, restart, status, and feature groups.
+
+## Service control
+
+Use these commands to start, stop, and inspect the provider process.
+
+| Command | Description |
+| --- | --- |
+| `golem-provider start` | Run startup checks, configure the local admin token, start the provider in the background, and wait until the authenticated API is ready. |
+| `golem-provider start --foreground` | Run startup checks and keep the provider in the current terminal. |
+| `golem-provider stop` | Stop the background provider process. |
+| `golem-provider restart` | Stop, then run the full start flow again. |
+| `golem-provider status` | Show running state, API auth, endpoint, version, ports, and key health. |
+| `golem-provider doctor` | Run diagnostics without starting the provider. |
+| `golem-provider logs` | Show recent daemon logs. |
+| `golem-provider logs -f` | Follow daemon logs. |
+
+The status command is the first diagnostic command providers should run. It reports health for prerequisites such as Multipass, provider port reachability, SSH port availability, and overall readiness.
+
+Plain `golem-provider start` should return to the shell only after the background daemon is launched and the local authenticated API is ready. Use `golem-provider start --foreground` when a service manager should keep the provider process attached.
+
+## Provider dashboard
+
+| Command | Description |
+| --- | --- |
+| `golem-provider info` | Show provider ID, endpoint, IP/country/platform, and payment contract addresses. |
+| `golem-provider summary` | Show the provider dashboard summary. |
+| `golem-provider watch` | Refresh the provider summary in the terminal. |
+
+## Virtual machines
+
+| Command | Description |
+| --- | --- |
+| `golem-provider vm list` | List provider-side VMs. |
+| `golem-provider vm show <vm_id>` | Show one VM. |
+| `golem-provider vm access <vm_id>` | Show SSH access details. |
+| `golem-provider vm ssh <vm_id>` | Open an SSH session. |
+| `golem-provider vm terminate <vm_id>` | Terminate a VM lease as the provider. Prompts unless `--yes` is passed. |
+
+## Streams and earnings
+
+| Command | Description |
+| --- | --- |
+| `golem-provider stream list` | List payment streams. |
+| `golem-provider stream show <vm_id>` | Show one VM stream. |
+| `golem-provider stream earnings` | Summarize stream earnings. |
+| `golem-provider stream withdraw <vm_id>` | Withdraw funds for one VM stream. |
+| `golem-provider stream withdraw --all` | Withdraw funds from all streams. |
+
+## Monitoring
+
+| Command | Description |
+| --- | --- |
+| `golem-provider monitor` | Show latest host monitoring data. |
+| `golem-provider monitor --watch` | Refresh monitoring data continuously. |
+| `golem-provider monitor history --range 1h` | Show metric history for the selected range. |
+| `golem-provider monitor vm <vm_id>` | Show latest VM monitoring data. |
+| `golem-provider monitor vm <vm_id> --range 1h` | Show VM metric history. |
+| `golem-provider metrics` | Print Prometheus metrics. |
+
+## Alerts
+
+| Command | Description |
+| --- | --- |
+| `golem-provider alert list` | List active alerts. |
+| `golem-provider alert rules` | List alert rules. |
+| `golem-provider alert add --name "High CPU" --metric cpu_percent --scope vm --source guest_agent --op '>' --threshold 90 --for 300 --severity warning` | Add an alert rule. |
+
+## Webhooks
+
+| Command | Description |
+| --- | --- |
+| `golem-provider webhook list` | List webhooks. |
+| `golem-provider webhook show <id>` | Show one webhook and recent deliveries. |
+| `golem-provider webhook add --name <name> --url <url> --service generic_json --event alert.fired` | Add a webhook. |
+| `golem-provider webhook edit <id> --name <name>` | Edit a webhook. |
+| `golem-provider webhook enable <id>` | Enable a webhook. |
+| `golem-provider webhook disable <id>` | Disable a webhook. |
+| `golem-provider webhook test <id>` | Send a test delivery. |
+| `golem-provider webhook deliveries <id>` | List delivery attempts. |
+| `golem-provider webhook delete <id>` | Delete a webhook. Prompts unless `--yes` is passed. |
+
+## Settings
+
+| Command | Description |
+| --- | --- |
+| `golem-provider settings` | Show provider settings. |
+| `golem-provider settings resources` | Show offered, allocated, and available resources. |
+| `golem-provider settings resources set --cpu 8 --memory 32 --storage 200` | Set offered resources. |
+| `golem-provider settings pricing` | Show pricing settings. |
+| `golem-provider settings pricing set --cpu 12 --memory 4 --storage 0.1` | Set USD monthly pricing for CPU, memory, and storage. |
+| `golem-provider settings pricing calc --cpu 2 --memory 4 --storage 20` | Estimate pricing for a VM shape. |
+
+## JSON output
+
+Read commands support `--json` for automation:
+
+```bash
+golem-provider status --json
+golem-provider info --json
+golem-provider summary --json
+golem-provider vm list --json
+golem-provider stream earnings --json
+golem-provider monitor --json
+golem-provider alert list --json
+golem-provider webhook list --json
+golem-provider settings --json
+```
+
+Commands that read or modify provider state use the local admin API at `http://127.0.0.1:7466/api/v1` by default. Most commands accept `--api` and `--token` for advanced automation.
+
+For task-oriented headless provider operation, see [Provider CLI](/docs/providers/provider_cli).

@@ -352,10 +352,15 @@ export default function VmDetailsClient({ vmId: vmIdProp }: VmDetailsClientProps
         recipient: String(liveStream.chain.recipient),
         startTime: BigInt(liveStream.chain.startTime || 0),
         stopTime: BigInt(liveStream.chain.stopTime || 0),
-        ratePerSecond: BigInt(liveStream.chain.ratePerSecond || 0),
-        deposit: BigInt(liveStream.chain.deposit || 0),
-        withdrawn: BigInt(liveStream.chain.withdrawn || 0),
-        halted: Boolean(liveStream.chain.halted),
+        providerRatePerSecond: BigInt(
+          liveStream.chain.providerRatePerSecond || 0,
+        ),
+        providerDeposit: BigInt(liveStream.chain.providerDeposit || 0),
+        providerWithdrawn: BigInt(liveStream.chain.providerWithdrawn || 0),
+        donationBps: BigInt(liveStream.chain.donationBps || 0),
+        donationRecipient: String(liveStream.chain.donationRecipient || ""),
+        donationDeposit: BigInt(liveStream.chain.donationDeposit || 0),
+        donationWithdrawn: BigInt(liveStream.chain.donationWithdrawn || 0),
       },
       remaining: BigInt(liveStream.computed?.remaining_seconds || 0),
     });
@@ -822,7 +827,8 @@ export default function VmDetailsClient({ vmId: vmIdProp }: VmDetailsClientProps
       await topUpAction(
         BigInt(vm.stream_id),
         stream.chain.token,
-        stream.chain.ratePerSecond,
+        stream.chain.providerRatePerSecond,
+        stream.chain.donationBps,
         seconds,
       );
       show("Top-up sent");

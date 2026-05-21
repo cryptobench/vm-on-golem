@@ -1,0 +1,34 @@
+---
+title: Security Model
+description: Understand wallet identity, requestor access, provider admin access, VM scoped permissions, SSH keys, tokens, and signatures.
+---
+
+VM on Golem separates requestor access, provider administration, payment identity, and VM access. These boundaries keep requestors from managing provider wide state and keep provider admin controls out of public requestor flows.
+
+## Wallet identity
+
+Wallets identify requestors and providers for payment and signed session flows. A wallet signature can prove ownership of an address without exposing the private key.
+
+The private key must never be shared with the app, provider, or docs.
+
+## Requestor VM access
+
+Requestor access is scoped to VMs the requestor is allowed to manage. Protected provider VM endpoints should require requestor authorization before returning VM state or accepting lifecycle actions.
+
+Payment checks do not replace requestor authorization. A valid payment stream and a valid requestor identity are separate requirements.
+
+## Provider admin access
+
+Provider admin routes are for the provider owner or desktop app. They use provider admin authorization and must not accept requestor tokens as admin credentials.
+
+This protects provider wide state such as host monitoring, settings, streams, alert rules, and webhooks.
+
+## SSH keys
+
+SSH keys grant access to the rented VM. Requestors submit public keys during rental. Private keys stay local to the requestor.
+
+Using the wrong public key can create a VM that the requestor cannot access.
+
+## No silent fallback
+
+Security failures should be visible. Missing owner, missing token, expired token, disabled payments, failed stream lookup, or unknown ownership must fail rather than silently falling back to public access.

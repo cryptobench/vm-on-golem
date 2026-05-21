@@ -126,10 +126,17 @@ class ProviderService:
                         try:
                             stream = reader.get_stream(int(stream_id))
                         except Exception as e:
-                            raise RuntimeError(
-                                f"stream lookup failed for VM {vm_id} "
-                                f"(stream_id={stream_id}): {e}"
-                            ) from e
+                            logger.error(
+                                "Startup stream lookup failed; keeping provider "
+                                "online with the VM counted as allocated capacity",
+                                extra={
+                                    "vm_id": vm_id,
+                                    "stream_id": int(stream_id),
+                                    "error": str(e),
+                                },
+                                exc_info=True,
+                            )
+                            continue
 
                         payment_state = self._startup_stream_state(
                             reader, int(stream_id), stream

@@ -22,7 +22,7 @@ def test_terms_hash_returns_0x_prefixed_bytes32():
         cpu=1,
         memory=1,
         storage=10,
-        rate_per_second=1,
+        provider_rate_per_second=1,
         duration_seconds=3600,
         contract_address=CONTRACT,
         glm_token_address=TOKEN,
@@ -69,7 +69,7 @@ def test_create_quote_uses_provider_default_image_when_omitted(monkeypatch):
         cpu=1,
         memory=1,
         storage=10,
-        rate_per_second=quote.rate_per_second_wei,
+        provider_rate_per_second=quote.provider_rate_per_second_wei,
         duration_seconds=3600,
         contract_address=CONTRACT,
         glm_token_address=TOKEN,
@@ -77,6 +77,7 @@ def test_create_quote_uses_provider_default_image_when_omitted(monkeypatch):
         lease_id=quote.lease_id,
     )
     assert quote.terms_hash == expected_terms_hash
+    assert quote.provider_deposit_wei == quote.provider_rate_per_second_wei * 3600
 
 
 def test_sign_quote_accepts_unprefixed_terms_hash_bytes32():
@@ -85,8 +86,8 @@ def test_sign_quote_accepts_unprefixed_terms_hash_bytes32():
         chain_id=31337,
         contract_address=CONTRACT,
         recipient=PROVIDER,
-        deposit=3600,
-        rate_per_second=1,
+        provider_deposit=3600,
+        provider_rate_per_second=1,
         lease_id=LEASE_ID,
         terms_hash="22" * 32,
         quote_expires_at=1_800_000_000,
@@ -113,8 +114,8 @@ def test_sign_quote_rejects_invalid_terms_hash(value):
             chain_id=31337,
             contract_address=CONTRACT,
             recipient=PROVIDER,
-            deposit=3600,
-            rate_per_second=1,
+            provider_deposit=3600,
+            provider_rate_per_second=1,
             lease_id=LEASE_ID,
             terms_hash=value,
             quote_expires_at=1_800_000_000,

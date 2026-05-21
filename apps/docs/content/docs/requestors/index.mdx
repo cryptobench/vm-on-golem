@@ -1,0 +1,33 @@
+---
+title: Requestor Documentation
+description: Rent and manage virtual machines through the VM on Golem requestor web app.
+---
+
+Requestors are users who rent compute. In VM on Golem, the requestor experience starts in the web app: connect a wallet, choose a provider, create a payment stream, rent a VM, and connect to the machine over SSH.
+
+This section is scoped to that workflow. You do not need to understand provider installation, provider publishing internals, or server operations to rent a VM.
+
+## Requestor journey
+
+1. Prepare a browser wallet with the correct network and tokens.
+2. Open the requestor web app and connect the wallet.
+3. Browse available providers and compare capacity, location, endpoint status, and price.
+4. Choose VM resources and provide an SSH public key.
+5. Open a stream payment that funds the rental.
+6. Wait for the provider to provision the VM.
+7. Use the SSH host and port shown in the app to connect.
+8. Monitor rentals and streams, top up when needed, and terminate when finished.
+
+## What requestors should care about
+
+Requestors care about three things most of the time: available providers, active VM access, and payment runway. Provider setup is hidden behind provider advertisements, but the requestor still sees the results: whether a provider is reachable, whether a stream is accepted, and whether SSH access is available.
+
+The pages in this section explain those visible behaviors from the requestor point of view.
+
+## Where to go next
+
+Read [Quickstart](/docs/requestors/quickstart) for the shortest path to renting a VM.
+
+Read [Wallet and Funding](/docs/requestors/wallet_and_funding) if wallet connection, gas, GLM, or tGLM is unclear.
+
+Read [Manage Streams](/docs/requestors/manage_streams) if you already have a rental and need to understand runway, top ups, or termination.

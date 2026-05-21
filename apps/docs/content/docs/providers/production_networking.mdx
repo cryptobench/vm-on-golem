@@ -1,0 +1,36 @@
+---
+title: Production Networking
+description: Configure provider reachability, HTTPS, certificates, port checks, and SSH access.
+---
+
+Provider networking determines whether requestors can create rentals and connect to VMs. A provider can be installed correctly but still unusable if its endpoint or SSH ports are blocked.
+
+## Provider endpoint
+
+The provider endpoint is the browser reachable API surface requestors use for provider info, VM creation, VM status, access details, and stream information.
+
+Production requestor web clients need secure browser compatible endpoints. Local HTTP behavior is for development and should not be treated as public hosting.
+
+## HTTPS and certificates
+
+Public browser clients expect secure connections. Providers can use certificate automation where supported, or deploy behind infrastructure that provides HTTPS correctly.
+
+Certificate renewal should be monitored because an expired certificate can make an otherwise healthy provider unreachable from browsers.
+
+## SSH port range
+
+Providers expose assigned SSH ports that forward to individual VMs. The full configured port range must be considered in firewall and router rules.
+
+Having the provider API reachable is not enough. Requestors also need the assigned SSH port for their VM.
+
+## Port checks
+
+Central discovery includes port check APIs used by providers to verify reachability. These checks help prevent providers from advertising capacity that requestors cannot use.
+
+If checks fail, fix networking before blaming requestor discovery.
+
+## Router and firewall rules
+
+For machines behind NAT, forward public ports to the correct local host and internal ports. Also check host firewall rules, cloud firewall rules, and any security group rules.
+
+Document your own production port mapping so future changes do not silently break requestor access.

@@ -15,6 +15,7 @@ if ("--json" in _sys.argv or "--json-stream" in _sys.argv) and not _show_json_lo
     os.environ["GOLEM_SILENCE_LOGS"] = "1"
 
 from .app import app
+from .cli import register_headless_commands
 from .config import settings  # used by pricing CLI and server commands
 from .utils.logging import setup_logger
 
@@ -66,12 +67,8 @@ async def verify_provider_port(port: int) -> bool:
 # The get_local_ip function has been removed as this logic is now handled in config.py
 
 
-import platform as _platform
-import shutil as _shutil
-import signal as _signal
 import time as _time
 
-import psutil
 import typer
 
 try:
@@ -91,6 +88,8 @@ requirements_app = typer.Typer(help="Check host requirements")
 cli.add_typer(requirements_app, name="requirements")
 secure_setup_app = typer.Typer(help="Prepare the public secure provider endpoint")
 cli.add_typer(secure_setup_app, name="secure-setup")
+
+register_headless_commands(cli)
 
 
 @cli.callback()
@@ -132,43 +131,6 @@ def _multipass_requirement_result(progress=None):
     )
 
 
-# ---------------------------
-# Daemon/PID file management
-# ---------------------------
-
-
-def _pid_dir() -> str:
-    from pathlib import Path
-
-    plat = _platform.system().lower()
-    if plat.startswith("darwin"):
-        base = Path.home() / "Library" / "Application Support" / "Golem Provider"
-    elif plat.startswith("windows"):
-        base = (
-            Path(os.environ.get("APPDATA", str(Path.home() / "AppData" / "Roaming")))
-            / "Golem Provider"
-        )
-    else:
-        base = (
-            Path(
-                os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local" / "state"))
-            )
-            / "golem-provider"
-        )
-    base.mkdir(parents=True, exist_ok=True)
-    return str(base)
-
-
-def _provider_log_dir(env: dict | None = None) -> str:
-    from pathlib import Path
-
-    source = os.environ if env is None else env
-    raw_dir = source.get("GOLEM_PROVIDER_LOG_DIR")
-    base = Path(raw_dir).expanduser() if raw_dir else Path(_pid_dir()) / "logs"
-    base.mkdir(parents=True, exist_ok=True)
-    return str(base)
-
-
 def _provider_log_int(env: dict, key: str, default: int) -> int:
     raw = env.get(key)
     if raw is None or raw == "":
@@ -177,35 +139,6 @@ def _provider_log_int(env: dict, key: str, default: int) -> int:
         return max(0, int(raw))
     except ValueError:
         return default
-
-
-def _rotate_log_file(path, max_bytes: int, backups: int) -> None:
-    from pathlib import Path
-
-    log_path = Path(path)
-    if max_bytes <= 0 or backups <= 0 or not log_path.exists():
-        return
-    if log_path.stat().st_size < max_bytes:
-        return
-    oldest = log_path.with_name(f"{log_path.name}.{backups}")
-    if oldest.exists():
-        oldest.unlink()
-    for index in range(backups - 1, 0, -1):
-        source = log_path.with_name(f"{log_path.name}.{index}")
-        if source.exists():
-            source.rename(log_path.with_name(f"{log_path.name}.{index + 1}"))
-    log_path.rename(log_path.with_name(f"{log_path.name}.1"))
-
-
-def _open_daemon_stdio(env: dict):
-    from pathlib import Path
-
-    log_dir = Path(_provider_log_dir(env))
-    max_bytes = _provider_log_int(env, "GOLEM_PROVIDER_LOG_MAX_BYTES", 10 * 1024 * 1024)
-    backups = _provider_log_int(env, "GOLEM_PROVIDER_LOG_BACKUPS", 5)
-    path = log_dir / "provider-daemon-stdio.log"
-    _rotate_log_file(path, max_bytes, backups)
-    return open(path, "a", buffering=1, encoding="utf-8")
 
 
 def _provider_file_log_handler_config() -> dict | None:
@@ -228,132 +161,19 @@ def _provider_file_log_handler_config() -> dict | None:
     }
 
 
-def _pid_path() -> str:
-    from pathlib import Path
+def _provider_admin_env() -> dict[str, str]:
+    from .cli.admin_client import provider_admin_env
 
-    return str(Path(_pid_dir()) / "provider.pid")
-
-
-def _write_pid(pid: int) -> None:
-    with open(_pid_path(), "w") as fh:
-        fh.write(str(pid))
+    return provider_admin_env()
 
 
-def _read_pid() -> int | None:
-    try:
-        with open(_pid_path(), "r") as fh:
-            c = fh.read().strip()
-            return int(c)
-    except Exception:
-        return None
-
-
-def _remove_pid_file() -> None:
-    try:
-        os.remove(_pid_path())
-    except Exception:
-        pass
-
-
-def _is_running(pid: int) -> bool:
-    try:
-        return psutil.pid_exists(pid) and psutil.Process(pid).is_running()
-    except Exception:
-        return False
-
-
-def _terminate_process_tree(pid: int, timeout: int) -> bool:
-    try:
-        parent = psutil.Process(pid)
-    except Exception as exc:
-        logger.warning(
-            "Failed to inspect provider daemon process",
-            extra={"pid": pid, "error": str(exc)},
-        )
-        return False
-
-    processes = [parent]
-    try:
-        processes.extend(parent.children(recursive=True))
-    except Exception as exc:
-        logger.warning(
-            "Failed to inspect provider daemon child processes",
-            extra={"pid": pid, "error": str(exc)},
-        )
-
-    for process in processes:
-        try:
-            process.terminate()
-        except psutil.NoSuchProcess:
-            continue
-        except Exception as exc:
-            logger.warning(
-                "Failed to terminate provider daemon process",
-                extra={"pid": process.pid, "error": str(exc)},
-            )
-
-    _, alive = psutil.wait_procs(processes, timeout=max(0, int(timeout)))
-    for process in alive:
-        try:
-            process.kill()
-        except psutil.NoSuchProcess:
-            continue
-        except Exception as exc:
-            logger.warning(
-                "Failed to kill provider daemon process",
-                extra={"pid": process.pid, "error": str(exc)},
-            )
-
-    _, alive = psutil.wait_procs(alive, timeout=2) if alive else ([], [])
-    return not alive
-
-
-def _spawn_detached(argv: list[str], env: dict | None = None) -> int:
-    import subprocess
-    import sys
-
-    resolved_env = dict(env or os.environ.copy())
-    if getattr(sys, "frozen", False):
-        resolved_env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
-    resolved_env.setdefault("GOLEM_PROVIDER_LOG_DIR", _provider_log_dir(resolved_env))
-    resolved_env.setdefault("GOLEM_PROVIDER_LOG_MAX_BYTES", str(10 * 1024 * 1024))
-    resolved_env.setdefault("GOLEM_PROVIDER_LOG_BACKUPS", "5")
-    stdio = _open_daemon_stdio(resolved_env)
-    popen_kwargs = {
-        "stdin": subprocess.DEVNULL,
-        "stdout": stdio,
-        "stderr": subprocess.STDOUT,
-        "env": resolved_env,
-    }
-    if _platform.system().lower().startswith("windows"):
-        creationflags = 0
-        for flag in ("CREATE_NEW_PROCESS_GROUP", "DETACHED_PROCESS"):
-            v = getattr(subprocess, flag, 0)
-            if v:
-                creationflags |= v
-        if creationflags:
-            popen_kwargs["creationflags"] = creationflags  # type: ignore[assignment]
-    else:
-        popen_kwargs["preexec_fn"] = os.setsid  # type: ignore[assignment]
-    try:
-        proc = subprocess.Popen(argv, **popen_kwargs)
-    finally:
-        stdio.close()
-    return int(proc.pid)
-
-
-def _self_command(base_args: list[str]) -> list[str]:
-    import sys
-
-    # When frozen (PyInstaller), sys.executable is the CLI binary
-    if getattr(sys, "frozen", False):
-        return [sys.executable] + base_args
-    # Prefer the console_script when available
-    exe = _shutil.which("golem-provider")
-    if exe:
-        return [exe] + base_args
-    # Fallback to module execution
-    return [sys.executable, "-m", "provider.main"] + base_args
+def _run_startup_preflight(no_verify_port: bool) -> None:
+    result = _multipass_requirement_result()
+    if not result.compatible:
+        detail = result.error or "Multipass is not installed or is not responding"
+        raise RuntimeError(detail)
+    if not no_verify_port:
+        asyncio.run(_run_secure_setup_preflight())
 
 
 @requirements_app.command("check")
@@ -434,6 +254,214 @@ async def _run_secure_setup_preflight(status_callback=None) -> dict:
         return status.model_dump(mode="json")
     finally:
         await service.cleanup()
+
+
+def _status_endpoint_url(_settings, startup_status) -> str | None:
+    endpoint_url = getattr(startup_status, "endpoint_url", None)
+    if endpoint_url:
+        return str(endpoint_url)
+
+    public_ip = str(getattr(_settings, "PUBLIC_IP", "") or "").strip()
+    if not public_ip or public_ip == "auto":
+        public_ip = str(getattr(_settings, "PUBLIC_ENDPOINT_IP", "") or "").strip()
+    if not public_ip or public_ip == "auto":
+        return None
+
+    public_port = int(getattr(_settings, "PUBLIC_HTTPS_PORT", 443))
+    if public_port == 443:
+        return f"https://{public_ip}"
+    return f"https://{public_ip}:{public_port}"
+
+
+async def _check_public_https_status(_settings, endpoint_url: str | None) -> dict:
+    from urllib.parse import urlsplit
+
+    verifier_url = str(getattr(_settings, "PORT_CHECK_TLS_URL", "") or "").rstrip("/")
+    public_port = int(getattr(_settings, "PUBLIC_HTTPS_PORT", 443))
+    parsed = urlsplit(endpoint_url or "")
+    host = parsed.hostname or ""
+    result = {
+        "status": "not_verified",
+        "verified_by": None,
+        "error": None,
+        "host": host or None,
+        "port": public_port,
+        "endpoint_url": endpoint_url,
+    }
+    if not host:
+        result["error"] = "public HTTPS endpoint is not known"
+        return result
+    if not verifier_url:
+        result["error"] = "port-check endpoint is not configured"
+        return result
+
+    try:
+        import aiohttp
+
+        from .network_setup.service import _is_expected_staging_tls_trust_error
+
+        timeout = float(getattr(_settings, "PORT_CHECK_REQUEST_TIMEOUT", 8.0))
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{verifier_url}/check-tls",
+                json={"host": host, "port": public_port, "expected_ip": host},
+                timeout=timeout,
+            ) as response:
+                data = await response.json(content_type=None)
+                if response.status == 200 and data.get("valid"):
+                    result["status"] = "reachable"
+                    result["verified_by"] = verifier_url
+                    return result
+                if response.status == 200 and _is_expected_staging_tls_trust_error(
+                    data, _settings
+                ):
+                    result["status"] = "reachable"
+                    result["verified_by"] = verifier_url
+                    result["error"] = data.get("error")
+                    return result
+                result["status"] = "unreachable"
+                result["error"] = data.get("error") or data.get("detail")
+                return result
+    except Exception as exc:
+        result["status"] = "check_failed"
+        result["error"] = str(exc).splitlines()[0]
+        return result
+
+
+def _read_active_proxy_ports(_settings) -> list[int]:
+    import json as _json
+    from pathlib import Path as _Path
+
+    proxy_state_path = _Path(_settings.PROXY_STATE_DIR) / "proxy_state.json"
+    legacy_ports_path = _Path(_settings.PROXY_STATE_DIR) / "ports.json"
+
+    if proxy_state_path.exists():
+        with open(proxy_state_path, "r") as fh:
+            payload = _json.load(fh)
+        return _ports_from_proxy_state(payload)
+
+    if legacy_ports_path.exists():
+        with open(legacy_ports_path, "r") as fh:
+            payload = _json.load(fh)
+        return _ports_from_legacy_port_state(payload)
+
+    return []
+
+
+def _ports_from_proxy_state(payload: dict) -> list[int]:
+    ports = []
+    for pinfo in (payload.get("proxies", {}) or {}).values():
+        if isinstance(pinfo, dict) and isinstance(pinfo.get("port"), int):
+            ports.append(pinfo["port"])
+    return sorted(set(ports))
+
+
+def _ports_from_legacy_port_state(payload: dict) -> list[int]:
+    ports = []
+    if isinstance(payload.get("proxies"), dict):
+        return _ports_from_proxy_state(payload)
+    for value in payload.values():
+        if isinstance(value, int):
+            ports.append(value)
+        elif isinstance(value, dict) and isinstance(value.get("port"), int):
+            ports.append(value["port"])
+    return sorted(set(ports))
+
+
+def _listening_ports(ports: list[int]) -> set[int]:
+    listening = set()
+    for prt in ports:
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(0.5)
+            ok = s.connect_ex(("127.0.0.1", prt)) == 0
+            s.close()
+            if ok:
+                listening.add(prt)
+        except Exception:
+            continue
+    return listening
+
+
+def _startup_verified_ports(startup_status) -> tuple[set[int] | None, str | None]:
+    from .network_setup.domain import SetupStageName, SetupStageState
+
+    if startup_status is None:
+        return None, None
+    try:
+        stage = startup_status.stage(SetupStageName.VM_PORT_RANGE)
+    except KeyError:
+        return None, None
+
+    if stage.state == SetupStageState.FAILED:
+        return set(), str(stage.detail or "failed")
+    if stage.state != SetupStageState.SUCCESS:
+        return None, str(stage.detail or stage.state)
+
+    open_ports = {check.port for check in stage.port_checks if check.state == "open"}
+    if open_ports:
+        return open_ports, str(stage.detail or "verified")
+    return None, str(stage.detail or "verified")
+
+
+def _build_ssh_status(_settings, startup_status) -> dict:
+    start = int(getattr(_settings, "PORT_RANGE_START", 50800))
+    end = int(getattr(_settings, "PORT_RANGE_END", 50900))
+    total = max(0, end - start)
+    active_ports = [
+        port for port in _read_active_proxy_ports(_settings) if start <= port < end
+    ]
+    active = sorted(set(active_ports))
+    listening = _listening_ports(active)
+    not_listening = sorted(set(active) - listening)
+    verified_ports, startup_detail = _startup_verified_ports(startup_status)
+    source = "startup" if startup_status is not None else "none"
+
+    if verified_ports is None:
+        status = "unknown"
+        usable_free = 0
+        unreachable = 0
+    else:
+        verified_in_range = {port for port in verified_ports if start <= port < end}
+        unreachable_ports = set(range(start, end)) - verified_in_range
+        usable_free = len([port for port in verified_in_range if port not in active])
+        unreachable = len(unreachable_ports)
+        if not verified_in_range:
+            status = "blocked"
+        elif not_listening or unreachable:
+            status = "limited"
+        else:
+            status = "ok"
+
+    ports_detail = []
+    for port in range(start, end):
+        if verified_ports is None:
+            port_status = "unknown"
+        else:
+            port_status = "reachable" if port in verified_ports else "unreachable"
+        ports_detail.append(
+            {
+                "port": port,
+                "status": port_status,
+                "listening": port in listening,
+                "in_use": port in active,
+            }
+        )
+
+    return {
+        "range": [start, end],
+        "status": status,
+        "source": source,
+        "startup_detail": startup_detail,
+        "usable_free": int(usable_free),
+        "in_use": len(active),
+        "active_ports": active,
+        "issues": {
+            "unreachable": int(unreachable),
+            "not_listening": len(not_listening),
+        },
+        "ports": ports_detail,
+    }
 
 
 @secure_setup_app.command("check")
@@ -536,7 +564,7 @@ def status(
 
     # Defer config-heavy imports until after log levels are adjusted
     from .config import settings as _settings
-    from .network.port_verifier import PortVerifier
+    from .network_setup.status_store import read_startup_setup_status
 
     # Versions
     pkg = "golem-vm-provider"
@@ -567,10 +595,9 @@ def status(
             local["ok"] = True
             local["detail"] = "service is listening"
         else:
-            # Check that we can bind (port free)
             if asyncio.run(verify_provider_port(port)):
-                local["ok"] = True
-                local["detail"] = "port is free (bindable)"
+                local["ok"] = False
+                local["detail"] = "service is not listening (port is free)"
             else:
                 local["ok"] = False
                 local["detail"] = "port unavailable"
@@ -578,25 +605,18 @@ def status(
         local["ok"] = False
         local["detail"] = str(e)
 
-    # Use the shared central discovery origin for public reachability checks.
-    servers = [str(_settings.PORT_CHECK_TLS_URL).rstrip("/")]
+    startup_status = read_startup_setup_status(_settings)
+    endpoint_url = _status_endpoint_url(_settings, startup_status)
+    external = asyncio.run(_check_public_https_status(_settings, endpoint_url))
+    provider_status = str(external.get("status") or "")
+    if provider_status == "reachable":
+        provider_status_out = "reachable"
+    elif provider_status == "not_verified":
+        provider_status_out = "not_verified"
+    else:
+        provider_status_out = "unreachable"
 
-    external = {"status": "unknown", "verified_by": None, "error": None}
-    try:
-        verifier = PortVerifier(servers, discovery_port=port)
-        results = asyncio.run(verifier.verify_external_access({port}))
-        r = results.get(port)
-        if r and r.accessible:
-            external["status"] = "reachable"
-            external["verified_by"] = r.verified_by
-        elif r:
-            external["status"] = "unreachable"
-            external["error"] = r.error
-        else:
-            external["status"] = "not_verified"
-    except Exception as e:
-        external["status"] = "check_failed"
-        external["error"] = str(e).splitlines()[0]
+    ssh_status = _build_ssh_status(_settings, startup_status)
 
     # Base data structure
     data = {
@@ -613,186 +633,30 @@ def status(
         "multipass": mp,
         "ports": {
             "provider": {
+                "status": provider_status_out,
+                "local_api": {
+                    "host": "127.0.0.1",
+                    "bind_host": host,
+                    "port": port,
+                    "ok": local["ok"],
+                    "detail": local["detail"],
+                },
+                "public_https": {
+                    "endpoint_url": endpoint_url,
+                    "host": external.get("host"),
+                    "port": external.get("port"),
+                    "external": external,
+                },
+                # Compatibility fields retained for existing consumers.
                 "port": port,
                 "host": host,
                 "local_ok": local["ok"],
                 "local_detail": local["detail"],
                 "external": external,
-            }
+            },
+            "ssh": ssh_status,
         },
     }
-
-    # SSH port usage summary from state file + external reachability for full range
-    try:
-        import json as _json
-        from pathlib import Path as _Path
-
-        state_path = _Path(_settings.PROXY_STATE_DIR) / "ports.json"
-        ports_in_use = []
-        if state_path.exists():
-            with open(state_path, "r") as fh:
-                st = _json.load(fh)
-            for _req_name, pinfo in (st.get("proxies", {}) or {}).items():
-                prt = pinfo.get("port")
-                if isinstance(prt, int):
-                    ports_in_use.append(prt)
-        start = int(getattr(_settings, "PORT_RANGE_START", 50800))
-        end = int(getattr(_settings, "PORT_RANGE_END", 50900))
-        total = max(0, end - start)
-        used = sorted(set(prt for prt in ports_in_use if start <= prt < end))
-        # Check if used ports are actually listening
-        used_listening = []
-        used_not_listening = []
-        for prt in used:
-            try:
-                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                s.settimeout(0.5)
-                ok = s.connect_ex(("127.0.0.1", prt)) == 0
-                s.close()
-                (used_listening if ok else used_not_listening).append(prt)
-            except Exception:
-                used_not_listening.append(prt)
-        free_count = total - len(used)
-        # External reachability across entire range
-        external_ok: set[int] = set()
-        ext_results_map: dict[int, bool] = {}
-        external_batch_ok = False
-        external_batch_error: str | None = None
-        try:
-            verifier_all = PortVerifier(servers, discovery_port=port)
-            _ext_results = asyncio.run(
-                verifier_all.verify_external_access(set(range(start, end)))
-            )
-            for prt, res in _ext_results.items():
-                p = int(prt)
-                ok = bool(getattr(res, "accessible", False))
-                ext_results_map[p] = ok
-                if ok:
-                    external_ok.add(p)
-            external_batch_ok = True
-        except Exception:
-            # Leave external_ok empty on failure
-            external_batch_ok = False
-            try:
-                external_batch_error = str(_)  # type: ignore[name-defined]
-            except Exception:
-                external_batch_error = None
-
-        firewall_issues = [p for p in used_listening if p not in external_ok]
-
-        # Build per-port details for JSON consumers
-        details = []
-        for p in range(start, end):
-            details.append(
-                {
-                    "port": p,
-                    "in_use": p in used,
-                    "local_listening": p in used_listening,
-                    "external_reachable": bool(ext_results_map.get(p, False))
-                    if external_batch_ok
-                    else False,
-                }
-            )
-
-        # Compute number of free ports that are actually externally reachable (usable)
-        usable_free_count = None
-        try:
-            if external_batch_ok:
-                usable_free_count = len(
-                    [
-                        p
-                        for p in range(start, end)
-                        if (p not in used) and bool(ext_results_map.get(p, False))
-                    ]
-                )
-        except Exception:
-            usable_free_count = None
-
-        # Legacy detailed metrics (retained under ssh_legacy)
-        _ssh_legacy = {
-            "range": [start, end],
-            "total": total,
-            "in_use": used,
-            "listening_ok": used_listening,
-            "listening_issues": used_not_listening,
-            "free_count": free_count,
-            "external_reachable_count": len(
-                [p for p in range(start, end) if p in external_ok]
-            ),
-            "firewall_issues_count": len(firewall_issues),
-            "external_checked": external_batch_ok,
-            "external_error": external_batch_error,
-            "usable_free_count": usable_free_count,
-            "details": details,
-        }
-
-        # Concise status fields for programmatic checks (mirrors TTY)
-        _ext_reach = int(len(external_ok))
-        _issues_count = len(used_not_listening) + len(firewall_issues)
-        if (not external_batch_ok) or _ext_reach == 0:
-            ssh_status = "blocked"
-        elif _issues_count > 0:
-            ssh_status = "limited"
-        else:
-            ssh_status = "ok"
-
-        # Usable free: default to 0 when external check failed
-        if usable_free_count is None:
-            usable_free_out = 0
-        else:
-            usable_free_out = int(usable_free_count)
-
-        # Issues breakdown matching TTY wording
-        unreachable_count = (
-            total
-            if (not external_batch_ok or _ext_reach == 0)
-            else len(firewall_issues)
-        )
-        not_listening_count = len(used_not_listening)
-
-        # Build minimal per-port status list for JSON consumers
-        # Consistent definition:
-        # - status: reachable | unreachable | unknown (unknown only if external check failed)
-        # - listening: true | false
-        ports_detail: list[dict] = []
-        for p in range(start, end):
-            listening = p in used_listening
-            if external_batch_ok:
-                status_val = (
-                    "reachable"
-                    if bool(ext_results_map.get(p, False))
-                    else "unreachable"
-                )
-            else:
-                status_val = "unknown"
-            ports_detail.append(
-                {
-                    "port": p,
-                    "status": status_val,
-                    "listening": bool(listening),
-                }
-            )
-
-        data["ports"]["ssh"] = {
-            "range": [start, end],
-            "status": ssh_status,
-            "usable_free": usable_free_out,
-            "in_use": len(used),
-            "issues": {
-                "unreachable": int(unreachable_count),
-                "not_listening": int(not_listening_count),
-            },
-            "ports": ports_detail,
-        }
-
-    except Exception:
-        # Non-fatal; omit ssh summary if state not available
-        pass
-
-    # Provider concise status: reachable | unreachable (treat check failures as unreachable)
-    prov_status = external.get("status")
-    provider_status = "reachable" if prov_status == "reachable" else "unreachable"
-    data["ports"]["provider"]["status"] = provider_status
 
     # Compute overall and issues for JSON output (mirrors condensed model)
     json_issues = []
@@ -815,6 +679,8 @@ def status(
             json_ssh_blocked = True
             json_critical_no_ssh = True
             json_issues.append("No externally reachable SSH ports")
+        elif _status == "unknown":
+            json_issues.append("SSH port range has not been verified at startup")
         else:
             if _unreachable > 0:
                 json_issues.append(f"{_unreachable} SSH port(s) unreachable externally")
@@ -823,8 +689,10 @@ def status(
     # Provider external
     json_critical_provider_external = False
     if external.get("status") in ("unreachable", "check_failed"):
-        json_issues.append("Provider API port not reachable externally")
+        json_issues.append("Provider public HTTPS endpoint not reachable externally")
         json_critical_provider_external = True
+    elif external.get("status") == "not_verified":
+        json_issues.append("Provider public HTTPS endpoint not verified")
 
     if (
         json_critical_no_ssh
@@ -880,42 +748,13 @@ def status(
     console = Console()
 
     # Overall status
-    issues = []
-    if not mp["ok"]:
-        issues.append("Multipass not available")
-    if not local["ok"]:
-        issues.append(f"Provider port {port} not ready")
-    ssh_blocked = False
-    critical_no_ssh = False
-    if data["ports"].get("ssh"):
-        ssh = data["ports"]["ssh"]
-        if ssh.get("listening_issues"):
-            issues.append(f"{len(ssh['listening_issues'])} SSH port(s) not listening")
-        if ssh.get("free_count", 0) == 0:
-            issues.append("No free SSH ports available")
-        if ssh.get("external_checked"):
-            if int(ssh.get("external_reachable_count", 0) or 0) == 0:
-                ssh_blocked = True
-                critical_no_ssh = True  # No externally reachable SSH ports is critical
-                issues.append("No externally reachable SSH ports")
-        else:
-            # If we couldn't check, mark as issue but not critical
-            issues.append("SSH external reachability check failed")
-    critical_provider_external = False
-    if external["status"] in ("unreachable", "check_failed"):
-        issues.append("Provider API port not reachable externally")
-        critical_provider_external = True
-
-    # Severity: Error when critical conditions are met; else Issues/Healthy
-    if (
-        critical_no_ssh
-        or (not local["ok"])
-        or (not mp["ok"])
-        or critical_provider_external
-    ):
+    issues = list(data["overall"]["issues"])
+    if data["overall"]["status"] == "error":
         overall = "Error"
+    elif data["overall"]["status"] == "healthy":
+        overall = "Healthy"
     else:
-        overall = "Healthy" if (not issues and not ssh_blocked) else "Issues detected"
+        overall = "Issues detected"
 
     # Build a single compact table
     tbl = Table(box=box.SIMPLE_HEAVY, show_header=False, pad_edge=False)
@@ -963,10 +802,14 @@ def status(
     tbl.add_row("  Version", mp_ver)
     tbl.add_row("", "")
 
-    # Provider port
-    tbl.add_row("Provider Port", f"{host}:{port}")
-    tbl.add_row("  Local", ("✅ " if local["ok"] else "❌ ") + (local["detail"] or ""))
-    # External reachability is foundational; treat unreachable and check failures the same
+    # Provider endpoint
+    tbl.add_row("Provider Endpoint", endpoint_url or "-")
+    tbl.add_row(
+        "  Local API",
+        ("✅ " if local["ok"] else "❌ ")
+        + (local["detail"] or "")
+        + f" (127.0.0.1:{port})",
+    )
     _ext = external.get("status") or "unknown"
     _err = external.get("error")
     if _ext == "reachable":
@@ -974,10 +817,10 @@ def status(
     elif _ext in ("unreachable", "check_failed"):
         ext_row = "❌ unreachable" + (f" — {_err}" if _err else "")
     elif _ext == "not_verified":
-        ext_row = "⚠️ not verified"
+        ext_row = "⚠️ not verified" + (f" — {_err}" if _err else "")
     else:
         ext_row = "⚠️ " + _ext + (f" — {_err}" if _err else "")
-    tbl.add_row("  External", ext_row)
+    tbl.add_row("  Public HTTPS", ext_row)
 
     # SSH ports (condensed, actionable)
     if data["ports"].get("ssh"):
@@ -996,8 +839,10 @@ def status(
             status_txt = "[green]OK[/green]"
         elif status_val == "limited":
             status_txt = f"[yellow]limited — {not_listening_issues + (unreachable_issues or 0)} issue(s)[/yellow]"
-        else:
+        elif status_val == "blocked":
             status_txt = "[red]blocked[/red]"
+        else:
+            status_txt = "[yellow]unknown[/yellow]"
 
         tbl.add_row("SSH Ports", f"{r0}-{r1} — {status_txt}")
 
@@ -1010,6 +855,10 @@ def status(
             total_ports = r1 - r0 + 1
             cnt = unreachable_issues if unreachable_issues else total_ports
             tbl.add_row("  Issues", f"{cnt} not reachable externally")
+        elif status_val == "unknown":
+            detail = ssh.get("startup_detail")
+            if detail:
+                tbl.add_row("  Source", f"startup — {detail}")
         elif not_listening_issues or unreachable_issues:
             parts = []
             if unreachable_issues:
@@ -1105,10 +954,21 @@ def streams_list(json_out: bool = typer.Option(False, "--json", help="Output in 
         for vm_id, stream_id in items.items():
             try:
                 s = reader.get_stream(int(stream_id))
-                vested = max(min(now, int(s["stopTime"])) - int(s["startTime"]), 0) * int(s["ratePerSecond"])  # type: ignore
-                withdrawable = max(int(vested) - int(s["withdrawn"]), 0)
+                provider_vested = max(min(now, int(s["stopTime"])) - int(s["startTime"]), 0) * int(s["providerRatePerSecond"])  # type: ignore
+                provider_vested = min(int(provider_vested), int(s["providerDeposit"]))
+                donation_vested = min(
+                    provider_vested * int(s.get("donationBps", 0)) // 10_000,
+                    int(s.get("donationDeposit", 0)),
+                )
+                vested = provider_vested + donation_vested
+                withdrawable = max(
+                    int(provider_vested) - int(s["providerWithdrawn"]), 0
+                ) + max(int(donation_vested) - int(s.get("donationWithdrawn", 0)), 0)
                 remaining = max(int(s["stopTime"]) - now, 0)
-                ok, reason = reader.verify_stream(int(stream_id), settings.PROVIDER_ID)
+                ok, reason = reader.verify_stream(
+                    int(stream_id),
+                    settings.PROVIDER_ID,
+                )
                 rows.append(
                     {
                         "vm_id": vm_id,
@@ -1117,9 +977,11 @@ def streams_list(json_out: bool = typer.Option(False, "--json", help="Output in 
                         "recipient": s["recipient"],
                         "start": int(s["startTime"]),
                         "stop": int(s["stopTime"]),
-                        "rate": int(s["ratePerSecond"]),
-                        "deposit": int(s["deposit"]),
-                        "withdrawn": int(s["withdrawn"]),
+                        "rate": int(s["providerRatePerSecond"]),
+                        "provider_deposit": int(s["providerDeposit"]),
+                        "donation_deposit": int(s["donationDeposit"]),
+                        "provider_withdrawn": int(s["providerWithdrawn"]),
+                        "donation_withdrawn": int(s["donationWithdrawn"]),
                         "remaining": remaining,
                         "verified": bool(ok),
                         "reason": reason,
@@ -1261,8 +1123,17 @@ def streams_show(
         )
         s = reader.get_stream(int(sid))
         now = int(reader.web3.eth.get_block("latest")["timestamp"])  # type: ignore
-        vested = max(min(now, int(s["stopTime"])) - int(s["startTime"]), 0) * int(s["ratePerSecond"])  # type: ignore
-        withdrawable = max(int(vested) - int(s["withdrawn"]), 0)
+        provider_vested = max(min(now, int(s["stopTime"])) - int(s["startTime"]), 0) * int(s["providerRatePerSecond"])  # type: ignore
+        provider_vested = min(int(provider_vested), int(s["providerDeposit"]))
+        donation_vested = min(
+            provider_vested * int(s.get("donationBps", 0)) // 10_000,
+            int(s.get("donationDeposit", 0)),
+        )
+        vested = provider_vested + donation_vested
+        withdrawable = max(int(provider_vested) - int(s["providerWithdrawn"]), 0) + max(
+            int(donation_vested) - int(s.get("donationWithdrawn", 0)),
+            0,
+        )
         remaining = max(int(s["stopTime"]) - now, 0)
         ok, reason = reader.verify_stream(int(sid), settings.PROVIDER_ID)
         out = {
@@ -1373,10 +1244,21 @@ def streams_earnings(
         for vm_id, stream_id in items.items():
             try:
                 s = reader.get_stream(int(stream_id))
-                vested = max(min(now, int(s["stopTime"])) - int(s["startTime"]), 0) * int(s["ratePerSecond"])  # type: ignore
-                withdrawable = max(int(vested) - int(s["withdrawn"]), 0)
+                provider_vested = max(min(now, int(s["stopTime"])) - int(s["startTime"]), 0) * int(s["providerRatePerSecond"])  # type: ignore
+                provider_vested = min(int(provider_vested), int(s["providerDeposit"]))
+                donation_vested = min(
+                    provider_vested * int(s.get("donationBps", 0)) // 10_000,
+                    int(s.get("donationDeposit", 0)),
+                )
+                vested = provider_vested + donation_vested
+                withdrawn = int(s["providerWithdrawn"]) + int(
+                    s.get("donationWithdrawn", 0)
+                )
+                withdrawable = max(
+                    int(provider_vested) - int(s["providerWithdrawn"]), 0
+                ) + max(int(donation_vested) - int(s.get("donationWithdrawn", 0)), 0)
                 total_vested += int(vested)
-                total_withdrawn += int(s["withdrawn"])  # type: ignore
+                total_withdrawn += withdrawn
                 total_withdrawable += int(withdrawable)
                 sym = "ETH" if (s.get("token") or "").lower() == ZERO.lower() else "GLM"
                 sums_native[sym] += Decimal(
@@ -1388,7 +1270,7 @@ def streams_earnings(
                         "stream_id": int(stream_id),
                         "token": str(s.get("token")),
                         "vested": int(vested),
-                        "withdrawn": int(s["withdrawn"]),
+                        "withdrawn": withdrawn,
                         "withdrawable": int(withdrawable),
                     }
                 )
@@ -1537,87 +1419,116 @@ def start(
         "--network",
         help="Target network: 'development', 'testnet' or 'mainnet' (overrides env)",
     ),
-    daemon: bool = typer.Option(
-        False, "--daemon", help="Start in background and write a PID file"
-    ),
     stop_vms_on_exit: Optional[bool] = typer.Option(
         None,
         "--stop-vms-on-exit/--keep-vms-on-exit",
         help="On shutdown: stop all VMs (default: keep VMs running)",
     ),
 ):
-    """Start the provider server."""
-    if daemon:
-        logger.info("Starting provider daemon")
-        # If a previous daemon is active, do not start another
-        pid = _read_pid()
-        if pid and _is_running(pid):
-            logger.info("Provider daemon already running", extra={"pid": pid})
-            print(f"Provider already running (pid={pid})")
-            raise typer.Exit(code=0)
-        if not no_verify_port:
-            try:
-                asyncio.run(_run_secure_setup_preflight())
-            except Exception as exc:
-                logger.error("Provider daemon preflight failed", exc_info=True)
-                print(f"Secure connection setup failed: {exc}")
-                raise typer.Exit(code=1)
-        # Build child command and detach
-        args = ["start"]
-        if no_verify_port:
-            args.append("--no-verify-port")
-        if network:
-            args += ["--network", network]
-        if stop_vms_on_exit is not None:
-            args.append(
-                "--stop-vms-on-exit" if stop_vms_on_exit else "--keep-vms-on-exit"
-            )
-        cmd = _self_command(args)
-        env = {**os.environ}
-        child_pid = _spawn_detached(cmd, env)
-        _write_pid(child_pid)
-        logger.info("Provider daemon started", extra={"pid": child_pid})
-        print(f"Started provider in background (pid={child_pid})")
-        raise typer.Exit(code=0)
-    else:
-        run_server(
-            dev_mode=False,
-            no_verify_port=no_verify_port,
-            network=network,
-            stop_vms_on_exit=stop_vms_on_exit,
-        )
-
-
-@cli.command()
-def stop(
-    timeout: int = typer.Option(
-        15, "--timeout", help="Seconds to wait for graceful shutdown"
+    """Start the provider server with full startup checks."""
+    try:
+        admin_env = _provider_admin_env()
+        os.environ.update(admin_env)
+        _run_startup_preflight(no_verify_port)
+    except Exception as exc:
+        logger.error("Provider foreground preflight failed", exc_info=True)
+        print(f"Provider startup checks failed: {exc}")
+        raise typer.Exit(code=1)
+    print("Provider startup checks passed.")
+    print("Provider server is starting in the foreground.")
+    print("Press Ctrl+C to stop.")
+    run_server(
+        dev_mode=None,
+        no_verify_port=no_verify_port,
+        network=network,
+        stop_vms_on_exit=stop_vms_on_exit,
     )
+
+
+@cli.command("doctor")
+def doctor(
+    json_out: bool = typer.Option(False, "--json", help="Output machine-readable JSON")
 ):
-    """Stop a background provider started with --daemon."""
-    pid = _read_pid()
-    if not pid:
-        logger.info("No provider PID file found during stop")
-        print("No PID file found; nothing to stop")
-        raise typer.Exit(code=0)
-    if not _is_running(pid):
-        logger.info("Removing stale provider PID file", extra={"pid": pid})
-        print("No running provider process; cleaning up PID file")
-        _remove_pid_file()
-        raise typer.Exit(code=0)
-    logger.info("Stopping provider daemon process tree", extra={"pid": pid})
-    if not _terminate_process_tree(pid, timeout):
-        logger.warning("Provider daemon process tree did not stop", extra={"pid": pid})
-        try:
-            if _platform.system().lower().startswith("windows"):
-                os.system(f"taskkill /PID {pid} /T /F >NUL 2>&1")
-            else:
-                os.kill(pid, _signal.SIGTERM)
-        except Exception:
-            pass
-    _remove_pid_file()
-    logger.info("Provider daemon stopped", extra={"pid": pid})
-    print("Provider stopped")
+    """Run provider diagnostics without starting the provider."""
+    requirements = _multipass_requirement_result().to_dict()
+    try:
+        from .cli.admin_client import ProviderAdminClient
+
+        api_ready, api_error = ProviderAdminClient(timeout=2.0).is_ready()
+    except Exception as exc:
+        api_ready, api_error = False, str(exc)
+    data = {
+        "requirements": requirements,
+        "api": {"ready": api_ready, "error": api_error},
+    }
+    if json_out:
+        import json as _json
+
+        print(_json.dumps(data, indent=2))
+        return
+    from rich.console import Console
+    from rich.table import Table
+
+    table = Table(title="Provider Doctor")
+    table.add_column("Check")
+    table.add_column("Status")
+    table.add_column("Detail")
+    table.add_row(
+        "Multipass",
+        "ok" if requirements.get("compatible") else "failed",
+        requirements.get("error") or requirements.get("version") or "-",
+    )
+    table.add_row("Admin API", "ok" if api_ready else "failed", api_error or "ready")
+    Console().print(table)
+    if not requirements.get("compatible") or not api_ready:
+        raise typer.Exit(code=1)
+
+
+@cli.command("info")
+def provider_info(
+    json_out: bool = typer.Option(False, "--json", help="Output JSON."),
+    api: str = typer.Option("http://127.0.0.1:7466/api/v1", "--api"),
+    token: Optional[str] = typer.Option(None, "--token"),
+):
+    """Show provider identity and endpoint information."""
+    from .cli.commands import root_info
+
+    root_info(json_out=json_out, api=api, token=token)
+
+
+@cli.command("summary")
+def provider_summary(
+    json_out: bool = typer.Option(False, "--json", help="Output JSON."),
+    api: str = typer.Option("http://127.0.0.1:7466/api/v1", "--api"),
+    token: Optional[str] = typer.Option(None, "--token"),
+):
+    """Show the provider dashboard summary."""
+    from .cli.commands import root_summary
+
+    root_summary(json_out=json_out, api=api, token=token)
+
+
+@cli.command("watch")
+def watch(
+    api: str = typer.Option("http://127.0.0.1:7466/api/v1", "--api"),
+    token: Optional[str] = typer.Option(None, "--token"),
+    count: Optional[int] = typer.Option(None, "--count", help="Number of refreshes."),
+):
+    """Watch a live provider summary."""
+    from .cli.commands import root_watch
+
+    root_watch(api=api, token=token, count=count)
+
+
+@cli.command("metrics")
+def metrics(
+    api: str = typer.Option("http://127.0.0.1:7466/api/v1", "--api"),
+    token: Optional[str] = typer.Option(None, "--token"),
+):
+    """Print Prometheus metrics."""
+    from .cli.commands import root_metrics
+
+    root_metrics(api=api, token=token)
 
 
 # Removed separate 'dev' command; use environment GOLEM_ENVIRONMENT=development instead.
@@ -1774,6 +1685,9 @@ def run_server(
     if dev_mode is None:
         env_val = os.environ.get("GOLEM_ENVIRONMENT", "")
         dev_mode = env_val.lower() == "development"
+    reload_enabled = dev_mode and os.environ.get(
+        "GOLEM_PROVIDER_DISABLE_RELOAD", ""
+    ).lower() not in ("1", "true", "yes")
 
     # Load appropriate .env file based on mode (if present)
     env_file = ".env.dev" if dev_mode else ".env"
@@ -1814,7 +1728,7 @@ def run_server(
         logger.info("Environment variables:")
         for key, value in os.environ.items():
             if key.startswith("GOLEM_PROVIDER_"):
-                logger.info(f"{key}={value}")
+                logger.info(f"{key}={_provider_env_log_value(key, value)}")
         if network:
             logger.info(f"Overridden network: {network}")
 
@@ -1850,7 +1764,7 @@ def run_server(
             "provider:app",
             host=settings.HOST,
             port=settings.PORT,
-            reload=dev_mode,
+            reload=reload_enabled,
             log_level="debug" if dev_mode else "info",
             log_config=log_config,
             timeout_keep_alive=60,  # Increase keep-alive timeout
@@ -1859,6 +1773,13 @@ def run_server(
     except Exception as e:
         logger.error(f"Failed to start provider server: {e}")
         sys.exit(1)
+
+
+def _provider_env_log_value(key: str, value: str) -> str:
+    secret_markers = ("ADMIN_TOKEN", "SESSION_SECRET", "PRIVATE_KEY", "SECRET")
+    if any(marker in key for marker in secret_markers):
+        return "<redacted>"
+    return value
 
 
 if __name__ == "__main__":

@@ -623,8 +623,8 @@
             "title": "Lease Id",
             "type": "string"
           },
-          "rate_per_second_wei": {
-            "title": "Rate Per Second Wei",
+          "provider_rate_per_second_wei": {
+            "title": "Provider Rate Per Second Wei",
             "type": "integer"
           },
           "stream_id": {
@@ -640,7 +640,7 @@
           "stream_id",
           "lease_id",
           "terms_hash",
-          "rate_per_second_wei"
+          "provider_rate_per_second_wei"
         ],
         "title": "LeasePayment",
         "type": "object"
@@ -663,10 +663,6 @@
             "title": "Lease Id",
             "type": "string"
           },
-          "min_deposit_wei": {
-            "title": "Min Deposit Wei",
-            "type": "integer"
-          },
           "min_runway_seconds": {
             "title": "Min Runway Seconds",
             "type": "integer"
@@ -675,12 +671,16 @@
             "title": "Provider Address",
             "type": "string"
           },
-          "quote_expires_at": {
-            "title": "Quote Expires At",
+          "provider_deposit_wei": {
+            "title": "Provider Deposit Wei",
             "type": "integer"
           },
-          "rate_per_second_wei": {
-            "title": "Rate Per Second Wei",
+          "provider_rate_per_second_wei": {
+            "title": "Provider Rate Per Second Wei",
+            "type": "integer"
+          },
+          "quote_expires_at": {
+            "title": "Quote Expires At",
             "type": "integer"
           },
           "signature": {
@@ -699,8 +699,8 @@
           "glm_token_address",
           "lease_id",
           "terms_hash",
-          "rate_per_second_wei",
-          "min_deposit_wei",
+          "provider_rate_per_second_wei",
+          "provider_deposit_wei",
           "min_runway_seconds",
           "quote_expires_at",
           "signature"
@@ -1375,12 +1375,32 @@
       },
       "StreamComputed": {
         "properties": {
+          "donation_vested_wei": {
+            "title": "Donation Vested Wei",
+            "type": "integer"
+          },
+          "donation_withdrawable_wei": {
+            "title": "Donation Withdrawable Wei",
+            "type": "integer"
+          },
           "now": {
             "title": "Now",
             "type": "integer"
           },
+          "provider_vested_wei": {
+            "title": "Provider Vested Wei",
+            "type": "integer"
+          },
+          "provider_withdrawable_wei": {
+            "title": "Provider Withdrawable Wei",
+            "type": "integer"
+          },
           "remaining_seconds": {
             "title": "Remaining Seconds",
+            "type": "integer"
+          },
+          "total_deposit_wei": {
+            "title": "Total Deposit Wei",
             "type": "integer"
           },
           "vested_wei": {
@@ -1396,23 +1416,48 @@
           "now",
           "remaining_seconds",
           "vested_wei",
-          "withdrawable_wei"
+          "withdrawable_wei",
+          "provider_vested_wei",
+          "provider_withdrawable_wei",
+          "donation_vested_wei",
+          "donation_withdrawable_wei",
+          "total_deposit_wei"
         ],
         "title": "StreamComputed",
         "type": "object"
       },
       "StreamOnChain": {
         "properties": {
-          "deposit": {
-            "title": "Deposit",
+          "donationBps": {
+            "title": "Donationbps",
+            "type": "integer"
+          },
+          "donationDeposit": {
+            "title": "Donationdeposit",
+            "type": "integer"
+          },
+          "donationRecipient": {
+            "title": "Donationrecipient",
+            "type": "string"
+          },
+          "donationWithdrawn": {
+            "title": "Donationwithdrawn",
             "type": "integer"
           },
           "leaseId": {
             "title": "Leaseid",
             "type": "string"
           },
-          "ratePerSecond": {
-            "title": "Ratepersecond",
+          "providerDeposit": {
+            "title": "Providerdeposit",
+            "type": "integer"
+          },
+          "providerRatePerSecond": {
+            "title": "Providerratepersecond",
+            "type": "integer"
+          },
+          "providerWithdrawn": {
+            "title": "Providerwithdrawn",
             "type": "integer"
           },
           "recipient": {
@@ -1438,10 +1483,6 @@
           "token": {
             "title": "Token",
             "type": "string"
-          },
-          "withdrawn": {
-            "title": "Withdrawn",
-            "type": "integer"
           }
         },
         "required": [
@@ -1450,9 +1491,13 @@
           "recipient",
           "startTime",
           "stopTime",
-          "ratePerSecond",
-          "deposit",
-          "withdrawn",
+          "providerRatePerSecond",
+          "providerDeposit",
+          "providerWithdrawn",
+          "donationBps",
+          "donationRecipient",
+          "donationDeposit",
+          "donationWithdrawn",
           "leaseId",
           "termsHash"
         ],

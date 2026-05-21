@@ -1,0 +1,30 @@
+---
+title: Configure Pricing
+description: Set provider resource prices and understand how requestors see rental cost.
+---
+
+Provider pricing tells requestors what it costs to rent CPU, memory, and storage from your machine. Pricing also determines the payment stream rate needed for a rental.
+
+## Pricing model
+
+Providers advertise prices for resource dimensions such as CPU, memory, and disk. The requestor app uses those prices to estimate cost and create a stream with a matching rate.
+
+The exact stream rate depends on the requested VM size and token price data used by the requestor flow.
+
+## Provider goals
+
+Pricing should reflect resource cost, expected uptime, operational risk, and market competitiveness. Very low prices may attract usage but underpay the host. Very high prices may make the provider less attractive.
+
+Set prices intentionally and revisit them as hardware cost, token price, and demand change.
+
+## Requestor visibility
+
+Requestors compare providers by capacity, endpoint health, and price. Pricing that is clear and current helps requestors choose your provider with fewer surprises.
+
+If pricing is missing or inconsistent, the requestor app may refuse to create a rental or show unclear estimates.
+
+## Changes over time
+
+Pricing changes affect new rental decisions and future advertisements. Existing streams may continue according to the terms created when the requestor opened them.
+
+Avoid frequent unexplained pricing changes if you want predictable requestor behavior.

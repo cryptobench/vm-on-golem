@@ -20,6 +20,7 @@ from .domain import (
 from .edge import HttpsEdgeServer
 from .nat import NatMapper
 from .render import render_startup_panel
+from .status_store import write_startup_setup_status
 
 logger = setup_logger(__name__)
 
@@ -58,6 +59,7 @@ class NetworkSetupService:
             self._succeed(SetupStageName.HTTPS_VERIFICATION, "skipped")
             self._succeed(SetupStageName.VM_PORT_RANGE, "skipped")
             self._succeed(SetupStageName.PROVIDER_START, "local mode")
+            write_startup_setup_status(self.settings, self.status)
             return self.status
 
         try:
@@ -78,9 +80,10 @@ class NetworkSetupService:
             await self._verify_https_endpoint(public_ip)
             await self._verify_vm_port_range(public_ip)
             self._succeed(SetupStageName.PROVIDER_START, "ready")
-            self.status.message = "Starting provider..."
+            self.status.message = "Startup checks passed. Launching provider server..."
             self._emit()
             logger.info("\n%s", render_startup_panel(self.status))
+            write_startup_setup_status(self.settings, self.status)
             return self.status
         except Exception as exc:
             if not self.status.failed:
@@ -92,6 +95,7 @@ class NetworkSetupService:
             self.status.message = _failure_message(self.status) or str(exc)
             self._emit()
             logger.error("\n%s", render_startup_panel(self.status))
+            write_startup_setup_status(self.settings, self.status)
             await self.cleanup()
             raise NetworkSetupError(self.status.message, self.status) from exc
 

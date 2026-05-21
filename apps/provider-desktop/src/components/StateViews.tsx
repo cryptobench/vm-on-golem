@@ -111,6 +111,7 @@ function ProviderStartupScreen({
   );
   const complete =
     visibleStages.length > 0 && visibleStages.every((stage) => stage.state === "success");
+  const startupError = error ?? (failed ? status.error ?? status.message ?? null : null);
   const [showPortForwardingGuide, setShowPortForwardingGuide] = React.useState(false);
 
   React.useEffect(() => {
@@ -143,7 +144,7 @@ function ProviderStartupScreen({
             <ProviderMark />
             <h1 className="mt-8 text-3xl font-semibold tracking-normal text-text-primary">
               {failed
-                ? "SSL setup needs attention"
+                ? startupFailureTitle(visibleStages)
                 : complete
                   ? "SSL setup complete"
                   : "Starting Golem Provider"}
@@ -160,9 +161,9 @@ function ProviderStartupScreen({
             />
           </div>
 
-          {error && !failed ? (
+          {startupError ? (
             <Callout tone="danger" className="mt-5">
-              {setupFailed ? "SSL setup stopped" : "Provider command failed"}: {error}
+              {startupFailureSummary(visibleStages, setupFailed)}: {startupError}
             </Callout>
           ) : null}
 
@@ -588,6 +589,25 @@ function providerStartStageLabel(stage: SetupStage): string {
   }
 
   return "Starting provider service";
+}
+
+function startupFailureTitle(stages: SetupStage[]): string {
+  const failedStage = stages.find((stage) => stage.state === "failed");
+  if (failedStage?.name === "provider_start") {
+    return "Provider service failed to start";
+  }
+  return "SSL setup needs attention";
+}
+
+function startupFailureSummary(
+  stages: SetupStage[],
+  setupFailed: boolean,
+): string {
+  const failedStage = stages.find((stage) => stage.state === "failed");
+  if (failedStage?.name === "provider_start") {
+    return "Provider service failed";
+  }
+  return setupFailed ? "SSL setup stopped" : "Provider command failed";
 }
 
 function findStage(stages: SetupStage[], name: string): SetupStage | undefined {

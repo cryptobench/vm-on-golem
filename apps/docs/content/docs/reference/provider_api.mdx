@@ -1,0 +1,34 @@
+---
+title: Provider API
+description: Practical reference for provider HTTP and websocket surfaces.
+---
+
+The provider API is the requestor and provider desktop boundary to provider behavior. Public endpoints are intentionally limited. VM scoped and provider admin endpoints require authorization.
+
+## Public endpoints
+
+Public provider endpoints are limited to provider information, image listing, lease quotes, and requestor session exchange where supported.
+
+These endpoints are safe for unauthenticated requestor discovery or session creation flows, but they should not expose VM scoped private state.
+
+## Requestor VM endpoints
+
+Requestor VM endpoints expose VM scoped behavior such as creation, status, access, stream state, lifecycle actions, and live VM data.
+
+They must require requestor authorization and verify the requestor owns or is allowed to access the VM.
+
+## Provider admin endpoints
+
+Provider admin endpoints expose provider wide state such as host summary, monitoring, streams, alerts, alert rules, webhooks, settings, and provider desktop data.
+
+They must require provider admin authorization and reject requestor tokens.
+
+## Websockets
+
+Provider live websockets stream provider or VM state. Browser websocket auth should happen before protected data is consumed.
+
+Provider Desktop uses the provider live data model for provider wide dashboard state.
+
+## Generated OpenAPI
+
+Generated OpenAPI and generated clients should be treated as the practical source of truth for request and response shapes. Frontend code should use generated clients or approved thin adapters rather than hand written backend DTOs.

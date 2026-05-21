@@ -57,7 +57,10 @@ class StreamStatusService:
         logger.info("Validating payment stream", extra={"stream_id": stream_id})
         reader = self._reader()
         expected_recipient = str(self._setting("PROVIDER_ID", "") or "")
-        ok, reason = reader.verify_stream(int(stream_id), expected_recipient)
+        ok, reason = reader.verify_stream(
+            int(stream_id),
+            expected_recipient,
+        )
         if not ok:
             logger.warning(
                 "Payment stream validation failed",
@@ -99,7 +102,7 @@ class StreamStatusService:
                 chain_id = int(reader.web3.eth.get_block("latest").get("chainId", 0))
             if not chain_id:
                 raise InvalidStreamError("chain id unavailable")
-            stream_rate = int(stream["ratePerSecond"])
+            stream_rate = int(stream["providerRatePerSecond"])
             expected_terms_hash = LeaseQuoteService._terms_hash(
                 provider_address=expected_recipient,
                 requestor_address=requestor_address,
@@ -108,7 +111,7 @@ class StreamStatusService:
                 cpu=int(resources.cpu),
                 memory=int(resources.memory),
                 storage=int(resources.storage),
-                rate_per_second=stream_rate,
+                provider_rate_per_second=stream_rate,
                 duration_seconds=int(payment.duration_seconds),
                 contract_address=self._stream_contract_address(),
                 glm_token_address=expected_token,
@@ -133,7 +136,8 @@ class StreamStatusService:
                 "stream expired",
             ),
             (
-                int(stream["ratePerSecond"]) == int(payment.rate_per_second_wei),
+                int(stream["providerRatePerSecond"])
+                == int(payment.provider_rate_per_second_wei),
                 "stream rate mismatch",
             ),
             (
@@ -299,7 +303,8 @@ class StreamStatusService:
             stream = reader.get_stream(stream_id)
             now = int(reader.web3.eth.get_block("latest")["timestamp"])
             ok, reason = reader.verify_stream(
-                stream_id, str(self._setting("PROVIDER_ID", "") or "")
+                stream_id,
+                str(self._setting("PROVIDER_ID", "") or ""),
             )
         except Exception as exc:
             logger.error(
@@ -309,10 +314,22 @@ class StreamStatusService:
             )
             raise StreamLookupError(f"stream lookup failed: {exc}") from exc
 
-        vested = max(
+        provider_vested = max(
             min(now, int(stream["stopTime"])) - int(stream["startTime"]), 0
-        ) * int(stream["ratePerSecond"])
-        withdrawable = max(int(vested) - int(stream["withdrawn"]), 0)
+        ) * int(stream["providerRatePerSecond"])
+        provider_vested = min(int(provider_vested), int(stream["providerDeposit"]))
+        donation_vested = min(
+            provider_vested * int(stream["donationBps"]) // 10_000,
+            int(stream["donationDeposit"]),
+        )
+        provider_withdrawable = max(
+            int(provider_vested) - int(stream["providerWithdrawn"]), 0
+        )
+        donation_withdrawable = max(
+            int(donation_vested) - int(stream["donationWithdrawn"]), 0
+        )
+        vested = provider_vested + donation_vested
+        withdrawable = provider_withdrawable + donation_withdrawable
         remaining = max(int(stream["stopTime"]) - now, 0)
 
         payment_state = stream_payment_state(reader, stream_id, stream, now, ok)
@@ -326,6 +343,12 @@ class StreamStatusService:
                 remaining_seconds=remaining,
                 vested_wei=int(vested),
                 withdrawable_wei=int(withdrawable),
+                provider_vested_wei=int(provider_vested),
+                provider_withdrawable_wei=int(provider_withdrawable),
+                donation_vested_wei=int(donation_vested),
+                donation_withdrawable_wei=int(donation_withdrawable),
+                total_deposit_wei=int(stream["providerDeposit"])
+                + int(stream["donationDeposit"]),
             ),
             verified=bool(ok),
             reason=str(reason),

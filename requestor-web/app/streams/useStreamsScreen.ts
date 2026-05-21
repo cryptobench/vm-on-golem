@@ -206,7 +206,8 @@ export function useStreamsScreen() {
       await topUpAction(
         BigInt(streamId),
         row.chain.token,
-        row.chain.ratePerSecond,
+        row.chain.providerRatePerSecond,
+        row.chain.donationBps,
         seconds,
       );
       show("Top-up sent");

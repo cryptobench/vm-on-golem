@@ -17,7 +17,7 @@ export type StreamCardProps = {
   title?: string;
   streamId?: string | number | null;
   chain: {
-    token: string; recipient: string; startTime?: bigint; stopTime?: bigint; ratePerSecond: bigint; deposit: bigint; withdrawn: bigint;
+    token: string; recipient: string; startTime?: bigint; stopTime?: bigint; providerRatePerSecond: bigint; providerDeposit: bigint; providerWithdrawn: bigint; donationBps: bigint | number; donationDeposit: bigint; donationWithdrawn: bigint;
   };
   remaining: number; // seconds
   meta: StreamMeta;
@@ -34,10 +34,12 @@ export function StreamCard({ title, streamId, chain, remaining, meta, displayCur
   const router = useRouter();
   const [localRemaining, setLocalRemaining] = React.useState<number>(remaining);
   const dec = meta.tokenDecimals || 18;
-  const rps = Number(chain.ratePerSecond) / 10 ** dec;
+  const donationMultiplier = 1 + Number(chain.donationBps || 0) / 10_000;
+  const rps = (Number(chain.providerRatePerSecond) / 10 ** dec) * donationMultiplier;
   const rph = rps * 3600;
-  const dep = Number(chain.deposit) / 10 ** dec;
-  const wid = Number(chain.withdrawn) / 10 ** dec;
+  const dep = Number(chain.providerDeposit + chain.donationDeposit) / 10 ** dec;
+  const wid =
+    Number(chain.providerWithdrawn + chain.donationWithdrawn) / 10 ** dec;
   // For requestors, "balance" should reflect remaining budget (tokens left to pay),
   // not the provider's withdrawable amount. Compute from runway: rate * remaining seconds.
   const reqRemainingTok = Math.max(0, rps * localRemaining);

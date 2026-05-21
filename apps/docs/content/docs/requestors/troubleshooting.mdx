@@ -1,0 +1,38 @@
+---
+title: Requestor Troubleshooting
+description: Diagnose wallet, provider discovery, rental, SSH, and stream problems.
+---
+
+Start troubleshooting by locating the failing step. Requestor issues usually fall into wallet setup, provider discovery, VM creation, SSH access, or stream payment state.
+
+## Wallet is not connected
+
+Confirm the browser wallet extension is installed, unlocked, and connected to the requestor web app. If the app asks for a network change, approve it only if the displayed network matches the environment you intend to use.
+
+## Wrong network
+
+If balances, stream reads, or transactions look wrong, check the wallet network. Gas and token balances are network specific. A stream created on one network does not fund a provider expecting another network.
+
+## Not enough gas or token funds
+
+Gas pays transaction fees. GLM or tGLM funds the stream. You need both. If a transaction cannot be submitted, check gas first. If a stream has little or no runway, check token funds and deposit amount.
+
+## No providers found
+
+Loosen filters, confirm discovery settings, and check the selected network profile. Providers can disappear when they disconnect, lose endpoint reachability, or run out of available resources.
+
+## Provider endpoint unavailable
+
+If provider information or VM status cannot be read, the provider endpoint may be offline, blocked, or using a URL the browser cannot reach.
+
+## SSH fails
+
+Check VM status, stream runway, SSH host, SSH port, and private key. SSH requires the VM to be running, the provider proxy to be reachable, and your private key to match the public key submitted during rental.
+
+## Stream expired
+
+Top up the stream before expiration if you need to keep using the VM. After expiration, the provider can remove compute and the rental may no longer be recoverable.
+
+## Rental missing from browser state
+
+The app stores rental records locally. If you changed browser profile or cleared storage, the app may not show an older rental even if provider state still exists.

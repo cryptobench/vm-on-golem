@@ -1,0 +1,11 @@
+{
+  "title": "Concepts",
+  "pages": [
+    "index",
+    "how_vm_on_golem_works",
+    "discovery",
+    "streaming_payments",
+    "networking_and_ssh",
+    "security_model"
+  ]
+}

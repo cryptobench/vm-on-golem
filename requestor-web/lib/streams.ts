@@ -15,10 +15,13 @@ export type ChainStream = {
   recipient: string;
   startTime: bigint;
   stopTime: bigint;
-  ratePerSecond: bigint;
-  deposit: bigint;
-  withdrawn: bigint;
-  halted?: boolean;
+  providerRatePerSecond: bigint;
+  providerDeposit: bigint;
+  providerWithdrawn: bigint;
+  donationBps: bigint | number;
+  donationRecipient: string;
+  donationDeposit: bigint;
+  donationWithdrawn: bigint;
   leaseId?: string;
   termsHash?: string;
 };
@@ -57,8 +60,7 @@ export async function fetchStreamWithMetaFromProvider(
   const chain = (await contract.streams(streamId)) as ChainStream;
   const block = await provider.getBlock("latest");
   const now = BigInt(block?.timestamp || Math.floor(Date.now() / 1000));
-  const remaining =
-    chain.stopTime > now && !chain.halted ? chain.stopTime - now : 0n;
+  const remaining = chain.stopTime > now ? chain.stopTime - now : 0n;
   let tokenSymbol = chain.token.toLowerCase() === ZERO_ADDRESS ? "ETH" : "GLM";
   let tokenDecimals = 18;
   if (chain.token.toLowerCase() !== ZERO_ADDRESS) {

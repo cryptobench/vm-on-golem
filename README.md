@@ -19,6 +19,21 @@ npm run dev
 The web app uses central discovery by default and can use Arkiv when configured
 with `NEXT_PUBLIC_DISCOVERY_MODE=arkiv`.
 
+## Documentation
+
+The public documentation site is a separate Fumadocs/Next.js app in
+`apps/docs/`. It is intended to deploy as its own Vercel project and domain.
+The content directory is intentionally empty until docs are ready.
+
+```bash
+npm install
+npm run dev:docs
+npm run build:docs
+```
+
+For Vercel, create a separate project from this repository and target the docs
+workspace with `npm --workspace @golem/docs run build`.
+
 ## Providers
 
 Providers run the provider server and optional desktop app to publish capacity,
@@ -39,6 +54,7 @@ npm --workspace @golem/provider-desktop run dev
 ## Development
 
 ```bash
+npm install
 make install
 make local
 make test
@@ -61,6 +77,7 @@ Requirements: Go, Poetry, Node/npm, and Multipass.
 ## Project Structure
 
 - `requestor-web/`: requestor web app.
+- `apps/docs/`: Fumadocs documentation site for a separate Vercel domain.
 - `provider-server/`: provider API and provider command surface.
 - `apps/provider-desktop/`: provider desktop shell.
 - `central-discovery-server/`: Go central discovery backend with bundled provider port verification.

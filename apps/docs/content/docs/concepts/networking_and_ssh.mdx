@@ -1,0 +1,34 @@
+---
+title: Networking and SSH
+description: Understand provider endpoints, HTTPS, websockets, SSH proxy ports, and public reachability.
+---
+
+Networking is central to VM on Golem because requestors interact directly with provider endpoints after discovery. A provider can advertise capacity, but the requestor still needs to reach the provider and its assigned SSH port.
+
+## Provider endpoint
+
+The provider endpoint exposes provider information and VM scoped actions. Requestors use it to create VMs, read status, get access details, and inspect stream state.
+
+Production endpoints should be secure and browser compatible.
+
+## Websockets
+
+Websockets are used for live discovery and live provider or VM data where available. Browser websocket URLs must match the security requirements of the page using them.
+
+HTTPS pages generally need secure websocket connections.
+
+## SSH access
+
+Requestors connect to rented VMs over SSH using a host and port returned by the provider. The provider maps that external port to the internal VM.
+
+The requestor public key is installed during provisioning. The matching private key remains with the requestor.
+
+## Public reachability
+
+Provider API ports and SSH port ranges must be reachable from requestor machines. Local reachability from the provider host is not enough.
+
+Firewalls, router forwarding, cloud security rules, and certificates can all affect reachability.
+
+## Failure pattern
+
+When VM creation succeeds but SSH fails, suspect the SSH port, key, proxy, or VM state. When provider info cannot be loaded, suspect the provider endpoint or browser security constraints.

@@ -19,11 +19,14 @@ import {
 import { getPaymentNetworkErrorMessage } from "../../lib/chain";
 import { markCreateFailedSettled } from "../../lib/rentalLifecycle";
 import {
+  formatTokenAmount,
   openPaymentStream,
+  type PaymentQuoteAmount,
   type OpenedPaymentStream,
 } from "../../lib/paymentStreams";
 import { vmDetailsHref } from "../../lib/routes";
 import { getRequestorRuntimeConfig } from "../../lib/runtimeConfig";
+import { requestorDonationBps } from "../../lib/settings";
 import { terminateStreamWithWallet } from "../../lib/streams";
 import { parseHumanDuration } from "../../lib/time";
 import { generateVmName } from "../../lib/vmNames";
@@ -83,8 +86,8 @@ export function RentDialog({
   const [spec, setSpec] = React.useState<RentSpec>(() =>
     clampSpec(defaultSpec, provider),
   );
-  const [name, setName] = React.useState(
-    () => generateVmName(provider.provider_id),
+  const [name, setName] = React.useState(() =>
+    generateVmName(provider.provider_id),
   );
   const [sshKey, setSshKey] = React.useState(
     defaultKey?.value || settings.ssh_public_key || "",
@@ -103,6 +106,8 @@ export function RentDialog({
     React.useState<string>("");
   const [openedPayment, setOpenedPayment] = React.useState<any>(null);
   const [openedImage, setOpenedImage] = React.useState<string | null>(null);
+  const [quoteAmount, setQuoteAmount] =
+    React.useState<PaymentQuoteAmount | null>(null);
   const [step, setStep] = React.useState(0);
   const [preset, setPreset] = React.useState<RentDurationPreset>("30d");
   const [customInput, setCustomInput] = React.useState("");
@@ -114,6 +119,7 @@ export function RentDialog({
     setOpenedStreamPaymentAddress("");
     setOpenedPayment(null);
     setOpenedImage(null);
+    setQuoteAmount(null);
     setError(null);
     setPhase("");
     setStep(0);
@@ -131,9 +137,27 @@ export function RentDialog({
     );
   }, [customSeconds, preset]);
 
+  React.useEffect(() => {
+    setQuoteAmount(null);
+  }, [
+    durationSeconds,
+    name,
+    provider.provider_id,
+    spec.cpu,
+    spec.memory,
+    spec.storage,
+  ]);
+
   const estimate = React.useMemo(
-    () => computeEstimate(provider, spec.cpu, spec.memory, spec.storage),
-    [provider, spec.cpu, spec.memory, spec.storage],
+    () =>
+      computeEstimate(
+        provider,
+        spec.cpu,
+        spec.memory,
+        spec.storage,
+        requestorDonationBps(settings),
+      ),
+    [provider, settings, spec.cpu, spec.memory, spec.storage],
   );
   const hourlyUsd = formatUsd(estimate.usd_per_hour || 0);
   const hourlyGlmLine = `${formatGlm(hourlyGlm(estimate.glm_per_month))} GLM`;
@@ -143,6 +167,12 @@ export function RentDialog({
   const depositGlmLine = `${formatGlm(
     durationTotal(estimate.glm_per_month, durationSeconds),
   )} GLM`;
+  const displayedDepositGlmLine = quoteAmount
+    ? `${formatTokenAmount(
+        BigInt(quoteAmount.totalDepositWei),
+        quoteAmount.tokenDecimals,
+      )} ${quoteAmount.tokenSymbol}`
+    : depositGlmLine;
   const durationLabel = formatDurationLabel(durationSeconds);
   const selectedDurationOption = DURATION_OPTIONS.find(
     (option) => option.preset === preset,
@@ -183,6 +213,7 @@ export function RentDialog({
       vmName: name.trim(),
       ensurePaymentsNetwork,
       onPhase: setPhase,
+      onQuoteAmount: setQuoteAmount,
     });
     setStreamId(opened.id);
     setOpenedStreamPaymentAddress(opened.contractAddress);
@@ -331,7 +362,11 @@ export function RentDialog({
         });
       }
       const message = getPaymentNetworkErrorMessage(createError, expectedChain);
-      setError(message && message !== "[object Object]" ? message : "VM creation failed. Check the browser console for wallet details.");
+      setError(
+        message && message !== "[object Object]"
+          ? message
+          : "VM creation failed. Check the browser console for wallet details.",
+      );
     } finally {
       setCreating(false);
       setPhase("");
@@ -344,7 +379,8 @@ export function RentDialog({
       (rental) =>
         (entry.stream_id != null &&
           String(rental.stream_id || "") === String(entry.stream_id)) ||
-        (rental.name === entry.name && rental.provider_id === entry.provider_id),
+        (rental.name === entry.name &&
+          rental.provider_id === entry.provider_id),
     );
     if (index >= 0) {
       const next = [...current];
@@ -413,7 +449,9 @@ export function RentDialog({
           durationLabel={displayDurationLabel}
           estimateLabel={step === 0 ? "Est. hourly" : "Est. total"}
           estimatePrimary={step === 0 ? hourlyUsd : depositUsd}
-          estimateSecondary={step === 0 ? hourlyGlmLine : depositGlmLine}
+          estimateSecondary={
+            step === 0 ? hourlyGlmLine : displayedDepositGlmLine
+          }
           creating={creating}
           phase={phase}
           disabledReason={currentStepDisabledReason}
@@ -425,56 +463,56 @@ export function RentDialog({
       }
     >
       <div key={step} className="rent-vm-step">
-          {step === 0 ? (
-            <RentSpecsStep
-              provider={provider}
-              spec={spec}
-              onSpecChange={setSpec}
-            />
-          ) : null}
-          {step === 1 ? (
-            <RentDurationStep
-              preset={preset}
-              customInput={customInput}
-              customSeconds={customSeconds}
-              monthlyUsd={estimate.usd_per_month}
-              onPresetChange={setPreset}
-              onCustomInputChange={setCustomInput}
-            />
-          ) : null}
-          {step === 2 ? (
-            <RentAccessStep
-              name={name}
-              keys={sshKeys}
-              selectedKeyId={selectedKeyId}
-              defaultKeyId={defaultKeyId}
-              onNameChange={setName}
-              onSshKeyChange={selectSshKey}
-              onSshKeyAdded={(key) => {
-                const next = [...sshKeys, key];
-                setSshKeys(next);
-                selectSshKey(key.id, key, next);
-              }}
-            />
-          ) : null}
-          {step === 3 ? (
-            <RentReviewStep
-              spec={spec}
-              name={name}
-              keyName={selectedKeyName}
-              keyFingerprint={selectedKeyFingerprint}
-              durationLabel={displayDurationLabel}
-              startsAt={startsAt}
-              endsAt={endsAt}
-              onEdit={setStep}
-            />
-          ) : null}
+        {step === 0 ? (
+          <RentSpecsStep
+            provider={provider}
+            spec={spec}
+            onSpecChange={setSpec}
+          />
+        ) : null}
+        {step === 1 ? (
+          <RentDurationStep
+            preset={preset}
+            customInput={customInput}
+            customSeconds={customSeconds}
+            monthlyUsd={estimate.usd_per_month}
+            onPresetChange={setPreset}
+            onCustomInputChange={setCustomInput}
+          />
+        ) : null}
+        {step === 2 ? (
+          <RentAccessStep
+            name={name}
+            keys={sshKeys}
+            selectedKeyId={selectedKeyId}
+            defaultKeyId={defaultKeyId}
+            onNameChange={setName}
+            onSshKeyChange={selectSshKey}
+            onSshKeyAdded={(key) => {
+              const next = [...sshKeys, key];
+              setSshKeys(next);
+              selectSshKey(key.id, key, next);
+            }}
+          />
+        ) : null}
+        {step === 3 ? (
+          <RentReviewStep
+            spec={spec}
+            name={name}
+            keyName={selectedKeyName}
+            keyFingerprint={selectedKeyFingerprint}
+            durationLabel={displayDurationLabel}
+            startsAt={startsAt}
+            endsAt={endsAt}
+            onEdit={setStep}
+          />
+        ) : null}
 
-          {error ? (
-            <Alert tone="danger" className="mt-5">
-              {error}
-            </Alert>
-          ) : null}
+        {error ? (
+          <Alert tone="danger" className="mt-5">
+            {error}
+          </Alert>
+        ) : null}
       </div>
     </DialogScaffold>
   );

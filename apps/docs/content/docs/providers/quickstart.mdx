@@ -1,0 +1,40 @@
+---
+title: Provider Quickstart
+description: The shortest path to making provider capacity discoverable.
+---
+
+This quickstart is the shortest path from a prepared machine to a visible provider. It focuses on the main setup decisions and avoids deep operational detail.
+
+## Before you start
+
+You need a machine that can run VMs, a reachable provider endpoint, Multipass, a provider wallet, and enough gas funds for provider side payment actions such as withdrawals.
+
+For development, a local stack can be useful. For public hosting, network reachability matters more than local convenience.
+
+## Basic flow
+
+1. Install the provider software.
+2. Confirm Multipass is installed and working.
+3. Configure provider identity and wallet settings.
+4. Configure discovery and payment network settings.
+5. Make sure the provider API port and SSH port range are reachable.
+6. Run `golem-provider doctor`.
+7. Start the provider with `golem-provider start`, or use Provider Desktop.
+8. Set pricing for CPU, memory, and storage.
+9. Run `golem-provider status`.
+10. Check `golem-provider summary`.
+11. Confirm the provider appears in requestor discovery.
+
+## What success looks like
+
+A successful provider is connected to discovery, advertising available resources, reachable at its provider endpoint, able to verify requestor streams, and able to provision VMs.
+
+Provider Desktop should show healthy summary data. On a server without a GUI, `golem-provider status` should report usable provider and SSH ports, and `golem-provider summary` should show the same provider overview data.
+
+## Next steps
+
+Read [Provider CLI](/docs/providers/provider_cli) for headless operation, automation, VM commands, streams, monitoring, alerts, webhooks, and settings.
+
+Read [Host Requirements](/docs/providers/host_requirements) before public operation.
+
+Read [Production Networking](/docs/providers/production_networking) if requestors cannot reach your provider or SSH ports.

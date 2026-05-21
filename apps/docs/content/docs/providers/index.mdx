@@ -1,0 +1,33 @@
+---
+title: Provider Documentation
+description: Host virtual machines, publish capacity, receive payments, and operate a VM on Golem provider.
+---
+
+Providers are users who host compute. A provider runs software that measures available resources, publishes capacity, accepts paid VM creation requests, provisions VMs, exposes SSH access, and receives streaming payments.
+
+This section is scoped to provider operation. It does not explain the requestor web workflow except where provider behavior affects what requestors see.
+
+## Provider journey
+
+1. Prepare a host machine with enough CPU, memory, storage, and network reachability.
+2. Install the provider software and required virtualization support.
+3. Configure wallet identity, discovery, networking, and payments.
+4. Set resource pricing.
+5. Publish available capacity.
+6. Accept valid paid rental requests.
+7. Monitor VMs, streams, resources, alerts, and webhooks.
+8. Withdraw earned funds when available.
+
+## Provider Desktop and CLI
+
+Provider Desktop is the primary operational interface for many providers. It shows overview data, VM state, streams, monitoring, alerts, webhooks, pricing, resources, and settings.
+
+The [provider CLI](/docs/providers/provider_cli) provides the same operational surface for headless servers, SSH sessions, automation, and service managers. Use it when no GUI is available or when terminal operation is preferred.
+
+For normal server operation, `golem-provider start` is the command to use. It runs startup checks, prepares the local admin token, starts the provider in the background, and waits until the authenticated API is ready.
+
+## What providers should care about
+
+Providers care about stable reachability, accurate advertised resources, valid payment verification, successful VM provisioning, and clear operational visibility.
+
+When one of these areas fails, requestors may not see the provider, rentals may fail, or unpaid compute may remain active longer than intended.

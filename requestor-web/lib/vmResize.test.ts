@@ -55,6 +55,40 @@ test("zero GLM pricing is treated as unavailable for payment rate fallback", () 
     25,
   );
 
-  assert.equal(estimate.usd_per_month, 14.5);
+  assert.equal(estimate.lease_usd_per_month, 14.5);
+  assert.equal(estimate.donation_usd_per_month, 0.2175);
+  assert.equal(estimate.usd_per_month, 14.7175);
   assert.equal(estimate.glm_per_month, undefined);
+});
+
+test("zero requestor donation leaves estimate equal to provider lease subtotal", () => {
+  const estimate = computeEstimate(
+    {
+      provider_id: "0xprovider",
+      ip_address: "127.0.0.1",
+      country: "DK",
+      created_at: "",
+      updated_at: "",
+      resources: { cpu: 8, memory: 16, storage: 100 },
+      pricing: {
+        usd_per_core_month: 1,
+        usd_per_gb_ram_month: 1,
+        usd_per_gb_storage_month: 0.1,
+        glm_per_core_month: 10,
+        glm_per_gb_ram_month: 2,
+        glm_per_gb_storage_month: 0.5,
+      },
+    } as ProviderAd,
+    3,
+    9,
+    25,
+    0,
+  );
+
+  assert.equal(estimate.lease_usd_per_month, 14.5);
+  assert.equal(estimate.donation_usd_per_month, 0);
+  assert.equal(estimate.usd_per_month, 14.5);
+  assert.equal(estimate.lease_glm_per_month, 60.5);
+  assert.equal(estimate.donation_glm_per_month, 0);
+  assert.equal(estimate.glm_per_month, 60.5);
 });

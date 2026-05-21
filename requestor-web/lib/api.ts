@@ -26,6 +26,7 @@ import {
   requireProviderEndpoint,
 } from "./providerEndpoint";
 import { getProviderVmSession } from "./providerSession";
+import { DEFAULT_REQUESTOR_DONATION_BPS, normalizeDonationBps } from "./settings";
 
 export type { AdsConfig } from "../context/AdsContext";
 export type ProviderAd = {
@@ -45,8 +46,8 @@ export type ProviderAd = {
 export type { CreateVMRequest, VMResources };
 export { loadSettings, saveSettings, type Settings, type SSHKey } from "./settings";
 
-type LeasePaymentPayload = Omit<LeasePayment, "rate_per_second_wei"> & {
-  rate_per_second_wei: number | string;
+type LeasePaymentPayload = Omit<LeasePayment, "provider_rate_per_second_wei"> & {
+  provider_rate_per_second_wei: number | string;
 };
 
 export type Rental = {
@@ -196,8 +197,10 @@ export function computeEstimate(
   cpu: number,
   memory: number,
   storage: number,
+  donationBps = DEFAULT_REQUESTOR_DONATION_BPS,
 ) {
   const pricing = provider.pricing || {};
+  const donationMultiplier = 1 + normalizeDonationBps(donationBps) / 10_000;
   const usd =
     Number(pricing.usd_per_core_month || 0) * cpu +
     Number(pricing.usd_per_gb_ram_month || 0) * memory +
@@ -215,16 +218,25 @@ export function computeEstimate(
     rawGlm != null && Number.isFinite(rawGlm) && rawGlm > 0
       ? rawGlm
       : undefined;
+  const totalUsd = usd * donationMultiplier;
+  const totalGlm = glm == null ? undefined : glm * donationMultiplier;
+  const donationGlm = glm == null ? undefined : glm * (donationMultiplier - 1);
   return {
-    usd_per_month: Number(usd.toFixed(4)),
-    usd_per_hour: Number((usd / 730).toFixed(6)),
-    glm_per_month: glm == null ? undefined : Number(glm.toFixed(8)),
+    lease_usd_per_month: Number(usd.toFixed(4)),
+    donation_usd_per_month: Number((totalUsd - usd).toFixed(4)),
+    usd_per_month: Number(totalUsd.toFixed(4)),
+    usd_per_hour: Number((totalUsd / 730).toFixed(6)),
+    lease_glm_per_month: glm == null ? undefined : Number(glm.toFixed(8)),
+    donation_glm_per_month:
+      donationGlm == null ? undefined : Number(donationGlm.toFixed(8)),
+    glm_per_month: totalGlm == null ? undefined : Number(totalGlm.toFixed(8)),
   };
 }
 
 export function computePriceRange(
   providers: ProviderAd[],
   spec: { cpu?: number; memory?: number; storage?: number } | undefined,
+  donationBps = DEFAULT_REQUESTOR_DONATION_BPS,
 ) {
   const cpu = spec?.cpu || 0;
   const memory = spec?.memory || 0;
@@ -232,7 +244,7 @@ export function computePriceRange(
   const values = providers
     .map(
       (provider) =>
-        computeEstimate(provider, cpu, memory, storage).usd_per_month,
+        computeEstimate(provider, cpu, memory, storage, donationBps).usd_per_month,
     )
     .filter((value) => Number.isFinite(value) && value > 0);
   if (!values.length) return null;

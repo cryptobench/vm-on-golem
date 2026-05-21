@@ -2,6 +2,7 @@ import pytest
 
 from provider.errors import ExternalServiceError
 from provider.network.location_resolver import (
+    ensure_provider_location,
     LOCATION_ENDPOINTS,
     LocationEndpoint,
     ProviderLocation,
@@ -42,6 +43,25 @@ class FakeSession:
         if isinstance(response, FakeResponse):
             return response
         return FakeResponse(response)
+
+
+class SettingsStub:
+    PUBLIC_ENDPOINT_MODE = "disabled"
+    PUBLIC_IP = None
+    PROVIDER_COUNTRY = None
+    PUBLIC_ENDPOINT_IP = "auto"
+
+
+@pytest.mark.asyncio
+async def test_disabled_public_endpoint_uses_loopback_location():
+    settings = SettingsStub()
+
+    location = await ensure_provider_location(settings)
+
+    assert location == ProviderLocation(ip_address="127.0.0.1", country="ZZ")
+    assert settings.PUBLIC_IP == "127.0.0.1"
+    assert settings.PROVIDER_COUNTRY == "ZZ"
+    assert settings.PUBLIC_ENDPOINT_IP == "127.0.0.1"
 
 
 @pytest.mark.parametrize(

@@ -1,0 +1,34 @@
+---
+title: Host Requirements
+description: Understand the machine, virtualization, wallet, and network requirements for providers.
+---
+
+A provider host must be able to run VMs reliably and expose the required network surfaces to requestors. The most common provider setup problems come from missing virtualization support, blocked ports, insufficient resources, or wallet configuration mistakes.
+
+## Machine requirements
+
+The host needs available CPU, memory, and storage that can be allocated to requestor VMs. The provider should keep enough resources reserved for the host operating system and provider services.
+
+VM on Golem uses Multipass for VM provisioning. Multipass must be installed, working, and allowed to create instances on the host.
+
+## Runtime requirements
+
+The provider server is Python based. Development and source installs use Python and Poetry. Packaged installs hide more of that setup but still depend on the provider runtime and Multipass.
+
+Provider Desktop uses a Tauri shell around the provider experience and expects the provider service to be available through the supported desktop integration.
+
+## Wallet requirements
+
+The provider wallet identifies the provider and receives stream payments. It must match the identity used for discovery authentication and payment verification.
+
+The provider also needs gas funds for withdrawal transactions when moving vested funds from streams.
+
+## Network requirements
+
+Requestors must be able to reach the provider API endpoint and assigned SSH ports. Public hosting usually requires firewall rules, router forwarding, and correct HTTPS configuration.
+
+If the provider cannot prove reachability, it may fail status checks or avoid publishing usable capacity.
+
+## Uptime expectations
+
+Providers earn while they host useful compute. Disconnects, blocked ports, exhausted resources, or payment monitor failures reduce reliability and can cause requestor workloads to fail.

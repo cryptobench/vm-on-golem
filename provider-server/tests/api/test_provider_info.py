@@ -25,6 +25,9 @@ def test_provider_info_endpoint_returns_eth_and_contracts():
         assert data["provider_id"] == "0xProv"
         assert data["stream_payment_address"] == "0xStream"
         assert data["glm_token_address"] == "0xGLM"
+        assert "donation_bps" not in data
+        assert "donation_percent" not in data
+        assert "donation_recipient" not in data
         assert data["ip_address"] == "203.0.113.44"
         assert data["country"] == "DK"
     finally:

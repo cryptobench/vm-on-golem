@@ -1,0 +1,37 @@
+---
+title: Requestor Quickstart
+description: The shortest path from browser wallet to running rented VM.
+---
+
+This quickstart is the shortest path to renting a VM from the requestor web app. It assumes you want to use the product, not operate provider infrastructure.
+
+## Before you start
+
+You need a browser wallet such as MetaMask, network funds for gas, and GLM or test GLM for the payment stream. You also need an SSH public key, because providers use it to create access for your VM.
+
+The requestor web app stores some rental information in the browser. Use the same browser profile when returning to active rentals.
+
+## Basic flow
+
+1. Open the requestor web app.
+2. Connect your wallet.
+3. Confirm the configured payment network.
+4. Use the Funding page if you need gas or token funds.
+5. Open the Providers page and choose a provider with enough available capacity.
+6. Select CPU, memory, storage, image, and SSH key.
+7. Confirm the payment stream in your wallet.
+8. Wait for the provider to create the VM.
+9. Copy the SSH command or host details from the rental view.
+10. Connect from your terminal with the private key that matches the public key you submitted.
+
+## What success looks like
+
+A successful rental has a running VM, visible access details, and an active stream with enough runway. The provider keeps the VM available while the stream remains valid and the provider can verify payment.
+
+If the VM appears but SSH fails, treat that as an access or networking issue. If the VM stops because the stream ran out, treat that as a payment runway issue.
+
+## Next steps
+
+Use [Manage Rentals](/docs/requestors/manage_rentals) to understand status, lifecycle actions, and browser stored rental records.
+
+Use [Manage Streams](/docs/requestors/manage_streams) to understand top ups, expiration, and stream termination.

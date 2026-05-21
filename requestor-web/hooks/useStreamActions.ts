@@ -3,6 +3,7 @@ import { Contract } from "ethers";
 import streamPayment from "../public/abi/StreamPayment.json";
 import erc20 from "../public/abi/ERC20.json";
 import { useWallet } from "../context/WalletContext";
+import { totalDepositForProviderDeposit } from "../lib/paymentStreams";
 import { getPaymentsSigner, getWalletName } from "../lib/walletClient";
 
 export function useStreamActions(spAddr: string | null | undefined) {
@@ -11,22 +12,27 @@ export function useStreamActions(spAddr: string | null | undefined) {
   async function topUp(
     streamId: string | number | bigint,
     tokenAddress: string,
-    ratePerSecond: bigint,
+    providerRatePerSecond: bigint,
+    donationBps: number | bigint,
     seconds: number,
   ) {
     if (!spAddr) throw new Error("StreamPayment address missing");
     const sid = typeof streamId === "bigint" ? streamId : BigInt(streamId);
     const signer = await getPaymentsSigner({ ensurePaymentsNetwork });
     const contract = new Contract(spAddr, (streamPayment as any).abi, signer);
-    const addWei = ratePerSecond * BigInt(seconds);
+    const providerAddWei = providerRatePerSecond * BigInt(seconds);
+    const totalAddWei = totalDepositForProviderDeposit(
+      providerAddWei,
+      donationBps || 0,
+    );
     const token = new Contract(tokenAddress, (erc20 as any).abi, signer);
     const owner = await signer.getAddress();
     const allowance = await token.allowance(owner, spAddr);
-    if (allowance < addWei) {
-      const approveTx = await token.approve(spAddr, addWei);
+    if (allowance < totalAddWei) {
+      const approveTx = await token.approve(spAddr, totalAddWei);
       await approveTx.wait();
     }
-    const tx = await contract.topUp(sid, addWei, { gasLimit: 150000n });
+    const tx = await contract.topUp(sid, providerAddWei, { gasLimit: 180000n });
     await tx.wait();
     return tx.hash as string;
   }

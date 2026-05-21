@@ -1,0 +1,33 @@
+---
+title: How VM on Golem Works
+description: A high level overview of providers, requestors, discovery, payments, VMs, and SSH access.
+---
+
+VM on Golem connects people who need virtual machines with people who can host them. Requestors rent compute. Providers supply compute.
+
+## Main actors
+
+Requestors use the web app. They connect a wallet, browse providers, create payment streams, rent VMs, and connect over SSH.
+
+Providers run provider software. They publish capacity, verify payment streams, create VMs, expose SSH access, monitor operations, and withdraw earned funds.
+
+Discovery connects the two sides by letting requestors find currently available providers.
+
+## Basic system flow
+
+1. A provider starts its service and measures available host resources.
+2. The provider publishes an advertisement through discovery.
+3. A requestor subscribes to discovery and sees matching providers.
+4. The requestor selects resources and opens a payment stream to the provider.
+5. The provider verifies the stream.
+6. The provider provisions a VM and configures SSH access.
+7. The requestor connects over the assigned SSH host and port.
+8. The stream pays the provider while the rental remains funded.
+
+## Why streams matter
+
+Streams make payment continuous instead of a one time checkout. The provider can verify that payment exists before creating compute, and can react if payment expires.
+
+## Why networking matters
+
+VM creation and SSH access require direct provider reachability. Discovery can show that a provider exists, but the requestor still needs to reach the provider endpoint and SSH port to use the VM.

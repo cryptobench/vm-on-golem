@@ -1,0 +1,40 @@
+---
+title: Configuration
+description: Configuration areas for provider, requestor web, discovery, payments, networking, and local development.
+---
+
+Configuration is split by service and capability. Use settings intentionally and avoid copying development values into public deployments.
+
+## Provider settings
+
+Provider settings cover provider identity, host resources, provider API port, SSH port range, Multipass behavior, pricing, monitoring, withdrawals, wallet identity, and payment network selection.
+
+Providers should configure settings once at startup and avoid runtime surprises from ad hoc environment changes.
+
+## Discovery settings
+
+Discovery settings choose how providers publish and how requestors find them. Providers use discovery backend configuration. Requestor web uses its public discovery settings.
+
+Central discovery and Arkiv are separate backends under the discovery capability.
+
+## Payment settings
+
+Payment settings include network profile, RPC URL, websocket RPC URL, StreamPayment contract address, GLM token address, and deployment file location.
+
+Requestors and providers must agree on the payment network and contract used for a rental.
+
+## Network settings
+
+Network settings include provider endpoint ports, public HTTPS behavior, ACME settings where supported, internal port mapping, and SSH port ranges.
+
+For production, validate both local listening state and external reachability.
+
+## Requestor web settings
+
+Requestor web public settings include discovery URL, contract address, token address, chain ID, chain name, RPC URL, explorer URL, faucet or funding URLs, and environment profile.
+
+Because these are public browser values, they should not contain secrets.
+
+## Central discovery settings
+
+Central discovery settings control host, port, debug behavior, rate limits, port check behavior, TLS, public IP detection, ACME behavior, certificate storage, and renewal timing.

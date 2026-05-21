@@ -99,9 +99,13 @@ async def test_monitor_does_not_stop_until_empty_and_withdraws(monkeypatch):
         "recipient": "0xprov",
         "startTime": now - 10_000,
         "stopTime": now + 100,  # only 100s left
-        "ratePerSecond": 10,
-        "deposit": 200_000,
-        "withdrawn": 50_000,
+        "providerRatePerSecond": 10,
+        "providerDeposit": 200_000,
+        "providerWithdrawn": 50_000,
+        "donationBps": 150,
+        "donationRecipient": "0x94153E31AA476cE30C3AF64C255C623f80920BfF",
+        "donationDeposit": int(200_000 * 150 / 10000),
+        "donationWithdrawn": 0,
         "halted": False,
     }
 
@@ -146,9 +150,13 @@ async def test_monitor_respects_withdraw_interval(monkeypatch):
         "recipient": "0xprov",
         "startTime": now - 10_000,
         "stopTime": now + 10_000,
-        "ratePerSecond": 10,
-        "deposit": 200_000,
-        "withdrawn": 0,
+        "providerRatePerSecond": 10,
+        "providerDeposit": 200_000,
+        "providerWithdrawn": 0,
+        "donationBps": 150,
+        "donationRecipient": "0x94153E31AA476cE30C3AF64C255C623f80920BfF",
+        "donationDeposit": int(200_000 * 150 / 10000),
+        "donationWithdrawn": 0,
         "halted": False,
     }
 
@@ -193,9 +201,13 @@ async def test_monitor_accepts_dict_settings_and_does_not_stop_until_empty(monke
         "recipient": "0xprov",
         "startTime": now - 10_000,
         "stopTime": now + 100,  # trigger stop due to low remaining
-        "ratePerSecond": 10,
-        "deposit": 200_000,
-        "withdrawn": 50_000,
+        "providerRatePerSecond": 10,
+        "providerDeposit": 200_000,
+        "providerWithdrawn": 50_000,
+        "donationBps": 150,
+        "donationRecipient": "0x94153E31AA476cE30C3AF64C255C623f80920BfF",
+        "donationDeposit": int(200_000 * 150 / 10000),
+        "donationWithdrawn": 0,
         "halted": False,
     }
 
@@ -247,9 +259,13 @@ async def test_monitor_deletes_when_stream_terminated(monkeypatch):
         "recipient": "0x0000000000000000000000000000000000000000",
         "startTime": now - 10_000,
         "stopTime": now + 10_000,
-        "ratePerSecond": 10,
-        "deposit": 200_000,
-        "withdrawn": 0,
+        "providerRatePerSecond": 10,
+        "providerDeposit": 200_000,
+        "providerWithdrawn": 0,
+        "donationBps": 150,
+        "donationRecipient": "0x94153E31AA476cE30C3AF64C255C623f80920BfF",
+        "donationDeposit": int(200_000 * 150 / 10000),
+        "donationWithdrawn": 0,
         "leaseId": "0x" + "11" * 32,
         "termsHash": "0x" + "22" * 32,
     }
@@ -295,9 +311,13 @@ async def test_monitor_keeps_vm_during_expiry_grace(monkeypatch):
         "recipient": "0xprov",
         "startTime": now - 10_000,
         "stopTime": now,  # ended
-        "ratePerSecond": 10,
-        "deposit": 200_000,
-        "withdrawn": 0,
+        "providerRatePerSecond": 10,
+        "providerDeposit": 200_000,
+        "providerWithdrawn": 0,
+        "donationBps": 150,
+        "donationRecipient": "0x94153E31AA476cE30C3AF64C255C623f80920BfF",
+        "donationDeposit": int(200_000 * 150 / 10000),
+        "donationWithdrawn": 0,
         "halted": False,
     }
     stream_map = DummyStreamMap({"vm-end": 12})
@@ -344,9 +364,13 @@ async def test_monitor_deletes_when_stream_expired_after_grace(monkeypatch):
         "recipient": "0xprov",
         "startTime": now - 10_000,
         "stopTime": now - 30,
-        "ratePerSecond": 10,
-        "deposit": 200_000,
-        "withdrawn": 0,
+        "providerRatePerSecond": 10,
+        "providerDeposit": 200_000,
+        "providerWithdrawn": 0,
+        "donationBps": 150,
+        "donationRecipient": "0x94153E31AA476cE30C3AF64C255C623f80920BfF",
+        "donationDeposit": int(200_000 * 150 / 10000),
+        "donationWithdrawn": 0,
         "halted": False,
     }
     stream_map = DummyStreamMap({"vm-end": 12})

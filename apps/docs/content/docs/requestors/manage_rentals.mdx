@@ -1,0 +1,30 @@
+---
+title: Manage Rentals
+description: Understand rental records, VM status, lifecycle actions, and VM detail views.
+---
+
+The Rentals area shows VMs you created from the current browser profile. It helps you return to running machines, inspect status, copy access details, and perform lifecycle actions.
+
+## Rental records
+
+VM on Golem does not currently provide a global wallet query for every historical rental. The requestor web app keeps local rental records in the browser so it can show the VMs you created.
+
+Use the same browser profile to manage existing rentals. Clearing browser storage can remove local records even if a provider side VM still exists.
+
+## VM status
+
+The app reads VM status from the provider endpoint. Status tells you whether the provider believes the VM is queued, provisioning, running, stopped, failed, or deleted.
+
+A status update can fail if the provider endpoint is unreachable or the requestor no longer has valid access to that VM.
+
+## Lifecycle actions
+
+Common actions include viewing access details, stopping a VM, deleting a VM, or opening the related stream. Stopping a VM changes compute state, but it does not necessarily terminate the payment stream. Deleting a VM removes compute from the provider side.
+
+Treat stream termination as a separate payment action unless the UI explicitly combines the workflow.
+
+## VM detail view
+
+The VM detail view is the best place to inspect a single rental. It can show access, lifecycle state, metrics, stream status, and actions that apply to that VM.
+
+If list and detail views disagree, refresh the latest provider state from the detail view and check whether the provider endpoint is reachable.

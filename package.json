@@ -10,7 +10,9 @@
     "abi:sync": "node scripts/sync_stream_payment_abi.mjs",
     "abi:check": "node scripts/sync_stream_payment_abi.mjs --check",
     "build:requestor-web": "npm --workspace requestor-web run build",
+    "build:docs": "npm --workspace @golem/docs run build",
     "build:provider-desktop": "npm --workspace @golem/provider-desktop run build",
+    "dev:docs": "npm --workspace @golem/docs run dev",
     "dev:provider-desktop": "npm --workspace @golem/provider-desktop run dev",
     "tauri:build:provider-desktop": "npm --workspace @golem/provider-desktop run tauri:build",
     "typecheck": "npm --workspaces --if-present run typecheck"

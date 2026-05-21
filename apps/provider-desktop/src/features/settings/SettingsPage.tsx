@@ -22,7 +22,8 @@ export function SettingsPage({ onRefresh }: { onRefresh: () => Promise<void> }) 
   const [pricingDraft, setPricingDraft] =
     React.useState<UpdateProviderPricing | null>(null);
   const [loadingSettings, setLoadingSettings] = React.useState(true);
-  const [saving, setSaving] = React.useState<"resources" | "pricing" | null>(null);
+  const [saving, setSaving] =
+    React.useState<"resources" | "pricing" | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [notice, setNotice] = React.useState<string | null>(null);
 

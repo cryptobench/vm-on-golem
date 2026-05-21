@@ -87,7 +87,7 @@ class StreamMonitor:
                     remaining = max(int(s["stopTime"]) - int(now), 0)
                     logger.debug(
                         f"stream {stream_id} for VM {vm_id}: start={s['startTime']} stop={s['stopTime']} "
-                        f"rate={s['ratePerSecond']} withdrawn={s['withdrawn']} remaining={remaining}s"
+                        f"rate={s['providerRatePerSecond']} withdrawn={s['providerWithdrawn']} remaining={remaining}s"
                     )
                     # If stream is terminated, delete immediately to free all resources.
                     if (
@@ -154,9 +154,19 @@ class StreamMonitor:
                     if self._get("STREAM_WITHDRAW_ENABLED", False) and self.client:
                         vested = (
                             max(min(now, s["stopTime"]) - s["startTime"], 0)
-                            * s["ratePerSecond"]
+                            * s["providerRatePerSecond"]
                         )
-                        withdrawable = max(vested - s["withdrawn"], 0)
+                        vested = min(vested, s["providerDeposit"])
+                        donation_vested = min(
+                            vested * int(s.get("donationBps", 0)) // 10_000,
+                            int(s.get("donationDeposit", 0)),
+                        )
+                        withdrawable = max(
+                            vested - s["providerWithdrawn"], 0
+                        ) + max(
+                            donation_vested - int(s.get("donationWithdrawn", 0)),
+                            0,
+                        )
                         logger.debug(
                             f"withdraw check stream {stream_id}: vested={vested} withdrawable={withdrawable}"
                         )

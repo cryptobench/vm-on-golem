@@ -73,6 +73,7 @@ PROVIDER_LOCATION_OVERRIDE_ENV_VARS = (
     "GOLEM_PROVIDER_PUBLIC_IP",
     "GOLEM_PROVIDER_PUBLIC_ENDPOINT_IP",
 )
+STACK_MODES = ("local", "prod")
 
 
 class LocalStackError(RuntimeError):
@@ -103,6 +104,35 @@ class LogConfig:
             raise LocalStackError("Log max bytes must be non-negative")
         if self.backups < 0:
             raise LocalStackError("Log backups must be non-negative")
+
+
+@dataclass(frozen=True)
+class StackModeConfig:
+    name: str
+    environment: str
+    provider_network: str
+    public_endpoint_mode: str
+    acme_env: str
+
+
+def stack_mode_config(mode: str) -> StackModeConfig:
+    if mode == "local":
+        return StackModeConfig(
+            name="local",
+            environment="development",
+            provider_network="development",
+            public_endpoint_mode="disabled",
+            acme_env="staging",
+        )
+    if mode == "prod":
+        return StackModeConfig(
+            name="prod",
+            environment="production",
+            provider_network="mainnet",
+            public_endpoint_mode="auto_ip_https",
+            acme_env="production",
+        )
+    raise LocalStackError(f"Unsupported local stack mode: {mode}")
 
 
 class StackLogSink:
@@ -623,24 +653,6 @@ def ensure_provider_sidecar() -> None:
     sync_existing_provider_tauri_sidecars(sidecar)
 
 
-def stop_existing_provider_daemon() -> None:
-    """Best-effort cleanup for a daemon left behind by provider desktop."""
-
-    sidecar = provider_sidecar_path()
-    command: list[str]
-    if sidecar.exists():
-        command = [str(sidecar), "stop", "--timeout", "5"]
-    else:
-        command = ["poetry", "-C", "provider-server", "run", "golem-provider", "stop"]
-
-    log_setup("[setup] stopping any existing provider daemon")
-    result = run_quiet(command)
-    if result.returncode != 0:
-        log_setup("[setup] provider daemon stop command did not complete cleanly")
-        if result.stdout.strip():
-            log_setup(result.stdout.strip())
-
-
 def ensure_deps(skip_install: bool, start_provider_desktop: bool) -> None:
     if skip_install:
         return
@@ -802,14 +814,16 @@ def local_dirs() -> dict[str, Path]:
 def build_services(
     deployment: dict[str, str],
     start_provider_desktop: bool,
+    mode: str = "local",
 ) -> list[Service]:
+    mode_config = stack_mode_config(mode)
     dirs = local_dirs()
     provider_dir = dirs["provider"]
     provider_env = {
         **service_log_env("GOLEM_PROVIDER"),
         "GOLEM_PROVIDER_SKIP_BOOTSTRAP": "1",
-        "GOLEM_ENVIRONMENT": "development",
-        "GOLEM_PROVIDER_NETWORK": "development",
+        "GOLEM_ENVIRONMENT": mode_config.environment,
+        "GOLEM_PROVIDER_NETWORK": mode_config.provider_network,
         "GOLEM_PROVIDER_DISCOVERY_WS_URL": CENTRAL_PROVIDER_WS_URL,
         "GOLEM_PROVIDER_PAYMENTS_NETWORK": PAYMENTS_NETWORK,
         "GOLEM_PROVIDER_PAYMENTS_RPC_URL": deployment.get("rpc_url", PAYMENTS_RPC_URL),
@@ -818,10 +832,12 @@ def build_services(
         "GOLEM_PROVIDER_GLM_TOKEN_ADDRESS": deployment["glm_token_address"],
         "GOLEM_PROVIDER_HOST": PROVIDER_BIND_HOST,
         "GOLEM_PROVIDER_PORT": str(PROVIDER_PORT),
+        "GOLEM_PROVIDER_PUBLIC_ENDPOINT_MODE": mode_config.public_endpoint_mode,
         "GOLEM_PROVIDER_SECURE_SETUP_IN_DEVELOPMENT": "false",
         "GOLEM_PROVIDER_SHOW_JSON_LOGS": "1",
+        "GOLEM_PROVIDER_DISABLE_RELOAD": "1",
         "GOLEM_PROVIDER_PORT_CHECK_REQUEST_TIMEOUT": "5",
-        "GOLEM_PROVIDER_ACME_ENV": "staging",
+        "GOLEM_PROVIDER_ACME_ENV": mode_config.acme_env,
         "GOLEM_PROVIDER_ETHEREUM_KEY_DIR": str(provider_dir / "keys"),
         "GOLEM_PROVIDER_SSH_KEY_DIR": str(provider_dir / "ssh"),
         "GOLEM_PROVIDER_VM_DATA_DIR": str(provider_dir / "vms"),
@@ -859,7 +875,7 @@ def build_services(
                         "golem-provider",
                         "start",
                         "--network",
-                        "development",
+                        mode_config.provider_network,
                         "--no-verify-port",
                         "--keep-vms-on-exit",
                     ],
@@ -872,8 +888,8 @@ def build_services(
 
     requestor_ui_env = {
         **stack_log_env(),
-        "GOLEM_ENVIRONMENT": "development",
-        "NEXT_PUBLIC_GOLEM_ENVIRONMENT": "development",
+        "GOLEM_ENVIRONMENT": mode_config.environment,
+        "NEXT_PUBLIC_GOLEM_ENVIRONMENT": mode_config.environment,
         "NEXT_PUBLIC_DISCOVERY_WS_URL": CENTRAL_REQUESTOR_WS_URL,
         "NEXT_PUBLIC_STREAM_PAYMENT_ADDRESS": deployment["stream_payment_address"],
         "NEXT_PUBLIC_GLM_TOKEN_ADDRESS": deployment["glm_token_address"],
@@ -964,7 +980,6 @@ def build_services(
                 ],
                 env={
                     **provider_env,
-                    "GOLEM_ENVIRONMENT": "development",
                     "TAURI_PROVIDER_API_URL": PROVIDER_API_URL,
                 },
                 unset_env=PROVIDER_LOCATION_OVERRIDE_ENV_VARS,
@@ -987,8 +1002,7 @@ def run_stack(args: argparse.Namespace) -> int:
 
     try:
         start_provider_desktop = not args.no_provider_desktop
-        if start_provider_desktop:
-            stop_existing_provider_daemon()
+        mode_config = stack_mode_config(args.mode)
         preflight(start_provider_desktop)
         deployment = load_l2_deployment()
         if not args.skip_chain_check:
@@ -998,6 +1012,7 @@ def run_stack(args: argparse.Namespace) -> int:
         services = build_services(
             deployment=deployment,
             start_provider_desktop=start_provider_desktop,
+            mode=mode_config.name,
         )
 
         def handle_signal(signum: int, _frame) -> None:
@@ -1012,6 +1027,7 @@ def run_stack(args: argparse.Namespace) -> int:
 
         log("")
         log("Local stack is ready:")
+        log(f"  Mode:               {mode_config.name}")
         log(f"  Requestor web:      {WEB_URL}")
         log(f"  Central discovery:  {CENTRAL_REQUESTOR_WS_URL}")
         if start_provider_desktop:
@@ -1059,6 +1075,15 @@ def run_stack(args: argparse.Namespace) -> int:
 def parse_args(argv: list[str]) -> argparse.Namespace:
     default_logs = default_log_config()
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--mode",
+        choices=STACK_MODES,
+        default="local",
+        help=(
+            "Stack settings profile: local uses loopback provider endpoints; "
+            "prod uses production-style public endpoint setup"
+        ),
+    )
     parser.add_argument("--no-open", action="store_true", help="Do not open the web UI")
     parser.add_argument(
         "--skip-install",

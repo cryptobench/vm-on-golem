@@ -655,7 +655,7 @@ class VMApplicationService:
                 stream_id=int(stream_id),
                 lease_id=status.chain.leaseId,
                 terms_hash=status.chain.termsHash,
-                rate_per_second_wei=status.chain.ratePerSecond,
+                provider_rate_per_second_wei=status.chain.providerRatePerSecond,
             ),
             requestor_address=action_signer,
             current_vm_id=vm_id,

@@ -1,0 +1,188 @@
+---
+title: Provider CLI
+description: Run and operate a provider from a terminal on a headless server.
+---
+
+The provider CLI is the GUI-free operator interface for servers, SSH sessions, automation, and service managers. It exposes the same operational areas as Provider Desktop: startup, status, VMs, streams, monitoring, alerts, webhooks, resources, pricing, and withdrawals.
+
+The main command to remember is `golem-provider start`. It runs startup requirements before the provider is considered ready.
+
+## Install the command
+
+For a normal server install, install the provider package and verify the command:
+
+```bash
+python3.11 -m pip install --user golem-vm-provider
+golem-provider --help
+golem-provider doctor
+```
+
+If `golem-provider` is not found, make sure the Python user script directory is on `PATH`. On most Linux hosts this is `~/.local/bin`.
+
+For a source checkout, run the command through Poetry:
+
+```bash
+cd provider-server
+poetry install
+poetry run golem-provider --help
+poetry run golem-provider doctor
+```
+
+When using the source checkout, prefix the examples on this page with `poetry run` from `provider-server`.
+
+## Start and stop
+
+Use these commands for normal service control:
+
+| Command | Purpose |
+| --- | --- |
+| `golem-provider start` | Run startup checks, prepare the admin token and secure endpoint, start the provider in the background, and wait for authenticated API readiness. |
+| `golem-provider start --foreground` | Run the same startup checks, then keep the provider in the current terminal. Use this for debugging or service managers. |
+| `golem-provider stop` | Stop the background provider process. |
+| `golem-provider restart` | Stop the provider, then run the full `start` flow again. |
+| `golem-provider status` | Show running state, endpoint, version, ports, and key health checks. |
+| `golem-provider doctor` | Run diagnostics without starting the provider. |
+| `golem-provider logs` | Show recent provider daemon logs. |
+| `golem-provider logs -f` | Follow provider daemon logs. |
+
+For a headless machine, the usual startup sequence is:
+
+```bash
+golem-provider doctor
+golem-provider start
+golem-provider status
+```
+
+Plain `golem-provider start` runs in background mode. After secure setup, it should print that startup checks passed, that the daemon was launched, that it is waiting for API readiness, and finally:
+
+```text
+Provider started and ready (pid=<pid>)
+API: http://127.0.0.1:7466/api/v1
+Next: golem-provider status | golem-provider logs -f | golem-provider stop
+```
+
+If it has launched the daemon but has not printed the ready line yet, it is still waiting for the local authenticated API to respond. If readiness fails, the command exits with an error.
+
+If the provider waits for readiness and then reports that the daemon exited, run:
+
+```bash
+golem-provider logs
+```
+
+The daemon log contains the server startup error. A common cause after upgrades is an existing VM stream record that no longer decodes against the configured payment contract or ABI; this should be fixed as a visible startup warning, not a silent hang.
+
+## First setup
+
+After the provider is installed and the host requirements are met, configure resources and pricing from the CLI:
+
+```bash
+golem-provider settings resources set --cpu 8 --memory 32 --storage 200
+golem-provider settings pricing set --cpu 12 --memory 4 --storage 0.1
+golem-provider settings pricing calc --cpu 2 --memory 4 --storage 20
+```
+
+Then inspect the provider identity and dashboard summary:
+
+```bash
+golem-provider info
+golem-provider summary
+golem-provider watch
+```
+
+## Virtual machines
+
+VM commands show and manage provider-side VM state:
+
+```bash
+golem-provider vm list
+golem-provider vm show <vm_id>
+golem-provider vm access <vm_id>
+golem-provider vm ssh <vm_id>
+golem-provider vm terminate <vm_id>
+```
+
+`vm access` prints SSH connection details. `vm ssh` opens an SSH session directly. `vm terminate` is destructive and prompts unless `--yes` is passed.
+
+## Streams and earnings
+
+Stream commands inspect payment state and withdraw earned funds:
+
+```bash
+golem-provider stream list
+golem-provider stream show <vm_id>
+golem-provider stream earnings
+golem-provider stream withdraw <vm_id>
+golem-provider stream withdraw --all
+```
+
+Use `stream earnings` for a provider-wide earnings summary before withdrawing.
+
+## Monitoring
+
+Monitoring commands cover host and VM metrics:
+
+```bash
+golem-provider monitor
+golem-provider monitor --watch
+golem-provider monitor history --range 1h
+golem-provider monitor vm <vm_id>
+golem-provider metrics
+```
+
+`metrics` prints the Prometheus metrics endpoint output for external monitoring systems.
+
+## Alerts and webhooks
+
+Alert commands manage provider alert state and alert rules:
+
+```bash
+golem-provider alert list
+golem-provider alert rules
+golem-provider alert add --name "High CPU" --metric cpu_percent --scope vm --source guest_agent --op '>' --threshold 90 --for 300 --severity warning
+```
+
+Webhook commands manage outbound integrations:
+
+```bash
+golem-provider webhook list
+golem-provider webhook show <id>
+golem-provider webhook add --name <name> --url <url> --service generic_json --event alert.fired
+golem-provider webhook edit <id> --name <name>
+golem-provider webhook enable <id>
+golem-provider webhook disable <id>
+golem-provider webhook test <id>
+golem-provider webhook deliveries <id>
+golem-provider webhook delete <id>
+```
+
+`webhook delete` prompts unless `--yes` is passed.
+
+## Automation output
+
+Read commands support `--json` for scripts:
+
+```bash
+golem-provider status --json
+golem-provider summary --json
+golem-provider vm list --json
+golem-provider stream earnings --json
+golem-provider settings --json
+```
+
+Commands that talk to the provider admin API use `http://127.0.0.1:7466/api/v1` by default. Override that with `--api` when needed, and pass `--token` only when automation cannot use the local admin token file.
+
+## Service managers
+
+For service managers that expect the process to remain in the foreground, use:
+
+```bash
+golem-provider start --foreground
+```
+
+For manual SSH operation, use the default background mode:
+
+```bash
+golem-provider start
+```
+
+Both modes run startup checks before serving provider traffic.

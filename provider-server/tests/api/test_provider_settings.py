@@ -213,3 +213,4 @@ def test_provider_settings_endpoint_returns_contract():
     assert data["detected_resources"]["cpu"] == 16
     assert data["offered_resources"]["memory"] == 48
     assert data["pricing"]["usd_per_core_month"] == 5.0
+    assert "payments" not in data

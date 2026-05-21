@@ -1,0 +1,4 @@
+{
+  "title": "Reference",
+  "pages": ["index", "provider_api", "cli_commands", "configuration", "local_development"]
+}

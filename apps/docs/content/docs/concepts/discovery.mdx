@@ -1,0 +1,30 @@
+---
+title: Discovery
+description: Understand how requestors find providers through central discovery or Arkiv.
+---
+
+Discovery is the capability that lets requestors find providers. It is not the VM itself, and it is not the payment system. It is the live matching layer between provider advertisements and requestor searches.
+
+## Provider publishing
+
+Providers publish advertisements that describe available resources, pricing, network profile, payment details, and endpoint information.
+
+Advertisements should represent current usable capacity. If a provider disconnects or no longer meets requirements, it should stop appearing to requestors.
+
+## Requestor lookup
+
+Requestors subscribe to discovery with filters such as resources, location, platform, and network profile. Discovery returns matching provider advertisements and updates the requestor as provider state changes.
+
+The requestor app then talks directly to the selected provider endpoint for rental actions.
+
+## Central discovery
+
+Central discovery is the centralized websocket backend. It maintains a live in memory provider registry and removes providers when connections close. It also includes provider port check APIs used for reachability validation.
+
+Central discovery is the default backend for packaged and distributed app flows.
+
+## Arkiv
+
+Arkiv is the decentralized discovery backend. It remains a supported product path and should be named Arkiv in new user facing docs and UI.
+
+Arkiv and central discovery are both discovery backends. They serve the same product capability through different infrastructure.

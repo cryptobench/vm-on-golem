@@ -11,12 +11,14 @@ import { RentDialog as RentDialogExt } from "../providers/RentDialog";
 import { KeyPicker } from "../ssh/KeyPicker";
 import { countryFullName, countryFlagEmoji } from "../../lib/intl";
 import { useAds } from "../../context/AdsContext";
+import { requestorDonationBps } from "../../lib/settings";
 
 type Step = 0 | 1 | 2 | 3;
 
 export function CreateWizard({ open, onClose, onComplete }: { open: boolean; onClose: () => void; onComplete: (data: { countries?: string[]; cpu?: number; memory?: number; storage?: number; platform?: string; sshKeyId?: string; max_usd_per_month?: number; provider_id?: string }) => void }) {
   const { ads } = useAds();
   const settings = loadSettings();
+  const donationBps = requestorDonationBps(settings);
   const discovery = useDiscoveryProviders({}, open);
   const initialKeys: SSHKey[] = settings.ssh_keys || (settings.ssh_public_key ? [{ id: 'default', name: 'Default', value: settings.ssh_public_key }] : []);
 
@@ -65,12 +67,12 @@ export function CreateWizard({ open, onClose, onComplete }: { open: boolean; onC
   React.useEffect(() => {
     if (!discovery.rows.length) { setPriceMin(null); setPriceMax(null); setMaxPrice(null); return; }
     const spec = (mode === 'specific') ? { cpu, memory, storage } : undefined;
-    const range = computePriceRange(discovery.rows, spec);
+    const range = computePriceRange(discovery.rows, spec, donationBps);
     if (!range) { setPriceMin(null); setPriceMax(null); setMaxPrice(null); return; }
     setPriceMin(range.min);
     setPriceMax(range.max);
     if (maxPrice == null || maxPrice < range.min || maxPrice > range.max) setMaxPrice(range.max);
-  }, [discovery.rows, cpu, memory, storage, mode]);
+  }, [discovery.rows, cpu, memory, storage, mode, donationBps]);
 
   const headerId = "create-wizard-title";
   const matches = React.useMemo(() => {
@@ -87,13 +89,13 @@ export function CreateWizard({ open, onClose, onComplete }: { open: boolean; onC
         if (memory != null && (p.resources.memory < memory)) return false;
         if (storage != null && (p.resources.storage < storage)) return false;
         if (maxPrice != null && cpu != null && memory != null && storage != null) {
-          const est = computeEstimate(p, cpu, memory, storage);
+          const est = computeEstimate(p, cpu, memory, storage, donationBps);
           if (!est || est.usd_per_month > maxPrice) return false;
         }
       }
       return true;
     });
-  }, [discovery.rows, anyCountry, countries, platform, mode, cpu, memory, storage, maxPrice]);
+  }, [discovery.rows, anyCountry, countries, platform, mode, cpu, memory, storage, maxPrice, donationBps]);
 
   const next = () => setStep((s) => (s < 3 ? ((s + 1) as Step) : s));
   const back = () => setStep((s) => (s > 0 ? ((s - 1) as Step) : s));
@@ -298,7 +300,7 @@ export function CreateWizard({ open, onClose, onComplete }: { open: boolean; onC
           {step === 2 && (
             <div>
               {matches.map((p) => {
-                const estRaw = (mode === 'specific' && cpu != null && memory != null && storage != null) ? computeEstimate(p, cpu!, memory!, storage!) : null;
+                const estRaw = (mode === 'specific' && cpu != null && memory != null && storage != null) ? computeEstimate(p, cpu!, memory!, storage!, donationBps) : null;
                 const estimate = estRaw ? { usd_per_month: estRaw.usd_per_month, usd_per_hour: estRaw.usd_per_hour, glm_per_month: (estRaw.glm_per_month ?? undefined) } : null;
                 return (
                   <div key={p.provider_id} className="mb-3 last:mb-0">

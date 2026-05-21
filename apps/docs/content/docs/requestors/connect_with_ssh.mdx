@@ -1,0 +1,32 @@
+---
+title: Connect with SSH
+description: Use the VM access details shown in the requestor web app.
+---
+
+VM on Golem uses SSH for direct access to rented VMs. The requestor provides a public key during rental, and the provider provisions the VM so the matching private key can log in.
+
+## Access details
+
+The app shows the host and port to use for SSH. The host is the provider endpoint or advertised access host. The port is assigned by the provider and forwarded to the VM.
+
+Use the private key that matches the public key submitted during rental. If your SSH client tries a different key, authentication can fail even when the VM is running.
+
+## Connection model
+
+The provider controls the host network and exposes a proxy port for your VM. You are not connecting to an internal VM address directly. You are connecting through the provider endpoint and assigned SSH port.
+
+That means SSH depends on both VM health and provider network reachability.
+
+## Common checks
+
+1. Confirm the VM status is running.
+2. Confirm the stream still has runway.
+3. Confirm the SSH host and port match the latest rental details.
+4. Confirm your local private key matches the submitted public key.
+5. Confirm your terminal command includes the assigned port.
+
+## When SSH fails
+
+An SSH failure can be caused by the wrong key, a stopped or deleted VM, expired payment, blocked provider port, provider side proxy failure, or a stale rental record in the browser.
+
+Use the rental detail page first. If the VM and stream both look healthy, treat the issue as access or networking related.

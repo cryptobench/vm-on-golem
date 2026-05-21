@@ -1,0 +1,42 @@
+---
+title: Provider Troubleshooting
+description: Diagnose provider installation, networking, discovery, payment, VM, desktop, and visibility problems.
+---
+
+Provider troubleshooting should start with the failing capability: virtualization, provider service, networking, discovery, payments, VM lifecycle, or desktop integration.
+
+## Multipass missing or unhealthy
+
+If Multipass is missing or cannot create instances, VM provisioning will fail. Confirm Multipass is installed, running, and able to launch a small VM outside the provider flow.
+
+## Provider port blocked
+
+If the provider API port is blocked, requestors cannot create VMs or read provider state. Check local listening state, host firewall, router forwarding, and public reachability.
+
+## SSH port range blocked
+
+If SSH ports are blocked, requestors may create VMs but fail to connect. Verify both local proxy listening state and external reachability for the configured range.
+
+## Discovery connection failed
+
+If the provider cannot connect to discovery, requestors will not see it. Check backend URL, network profile, wallet signing, TLS behavior, and outbound connectivity.
+
+## Wallet misconfigured
+
+Wallet problems can prevent discovery authentication, stream verification, or withdrawals. Confirm the provider wallet address, private key configuration, payment network, contract, token, and gas balance.
+
+## Stream verification failed
+
+A requestor stream can fail verification if it pays the wrong recipient, uses the wrong token, targets the wrong contract, has no deposit, is halted, or is not active.
+
+## VM creation failed
+
+Check Multipass, resource availability, cloud init behavior, SSH key provisioning, stream verification, and provider logs. Failed creation should be visible rather than silently ignored.
+
+## Desktop cannot connect to provider service
+
+Provider Desktop depends on the provider service integration. Check whether the sidecar or service started, whether the API base URL is available, and whether provider admin authentication is configured.
+
+## Provider not visible to requestors
+
+Check discovery connection, advertisement state, resource availability, endpoint reachability, payment network compatibility, and requestor filters.
