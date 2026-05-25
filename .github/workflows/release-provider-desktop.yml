@@ -271,7 +271,7 @@ jobs:
           find release-artifacts -type f ! -name checksums.txt -print0 \
             | sort -z \
             | while IFS= read -r -d '' file; do
-                sha256sum "$file" | awk '{print $1 "  " FILENAME}' FILENAME="$(basename "$file")"
+                sha256sum "$file" | awk -v name="$(basename "$file")" '{print $1 "  " name}'
               done > "$checksums"
 
           {

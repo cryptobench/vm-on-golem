@@ -207,6 +207,8 @@ def test_provider_desktop_release_workflow_publishes_cli_assets():
     assert "golem-provider-cli-windows-x86_64.exe" in workflow
     assert "Generate release checksums" in workflow
     assert "checksums=\"release-artifacts/checksums.txt\"" in workflow
+    assert "awk -v name=\"$(basename \"$file\")\" '{print $1 \"  \" name}'" in workflow
+    assert 'FILENAME="$(basename "$file")"' not in workflow
 
 
 def test_posix_installer_rejects_unsupported_target():
