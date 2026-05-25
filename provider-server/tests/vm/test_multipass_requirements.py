@@ -49,18 +49,24 @@ def test_detects_official_macos_multipass_path(monkeypatch):
 
     def exists(path: str) -> bool:
         checked_paths.append(path)
-        return path == "/Library/Application Support/com.canonical.multipass/bin/multipass"
+        return (
+            path == "/Library/Application Support/com.canonical.multipass/bin/multipass"
+        )
 
     monkeypatch.setattr(
         "provider.vm.multipass_requirements.platform.system", lambda: "Darwin"
     )
     monkeypatch.setattr("provider.vm.multipass_requirements.os.path.isfile", exists)
     monkeypatch.setattr("provider.vm.multipass_requirements.os.access", lambda *_: True)
-    monkeypatch.setattr("provider.vm.multipass_requirements.shutil.which", lambda _: None)
+    monkeypatch.setattr(
+        "provider.vm.multipass_requirements.shutil.which", lambda _: None
+    )
 
     result = detect_multipass_binary()
 
-    assert result == "/Library/Application Support/com.canonical.multipass/bin/multipass"
+    assert (
+        result == "/Library/Application Support/com.canonical.multipass/bin/multipass"
+    )
     assert checked_paths[0] == result
 
 
@@ -170,6 +176,71 @@ def test_reports_daemon_not_running(tmp_path):
     assert result.action_required == "repair"
     assert result.daemon_running is False
     assert "daemon" in (result.error or "")
+
+
+def test_rejects_linux_host_without_kvm_device(monkeypatch, tmp_path):
+    multipass = _fake_binary(tmp_path)
+    run = _runner(
+        {
+            ("-c", "test -c /dev/kvm"): subprocess.CompletedProcess(
+                ["sh", "-c", "test -c /dev/kvm"], 1
+            ),
+        }
+    )
+
+    monkeypatch.setattr(
+        "provider.vm.multipass_requirements.platform.system", lambda: "Linux"
+    )
+
+    with pytest.raises(MultipassCompatibilityError, match="/dev/kvm is missing"):
+        check_host_virtualization_compatibility(multipass, run_command=run)
+
+
+def test_accepts_linux_host_with_kvm_device(monkeypatch, tmp_path):
+    multipass = _fake_binary(tmp_path)
+    run = _runner(
+        {
+            ("-c", "test -c /dev/kvm"): subprocess.CompletedProcess(
+                ["sh", "-c", "test -c /dev/kvm"], 0
+            ),
+        }
+    )
+
+    monkeypatch.setattr(
+        "provider.vm.multipass_requirements.platform.system", lambda: "Linux"
+    )
+
+    check_host_virtualization_compatibility(multipass, run_command=run)
+
+
+def test_requirement_check_reports_linux_kvm_failure(monkeypatch, tmp_path):
+    multipass = _fake_binary(tmp_path)
+    run = _runner(
+        {
+            ("version",): subprocess.CompletedProcess(
+                [multipass, "version"], 0, stdout="multipass 1.16.2+linux\n"
+            ),
+            ("get", "local.driver"): subprocess.CompletedProcess(
+                [multipass, "get", "local.driver"], 0, stdout="qemu\n"
+            ),
+            ("list", "--format", "json"): subprocess.CompletedProcess(
+                [multipass, "list", "--format", "json"], 0, stdout='{"list":[]}'
+            ),
+            ("-c", "test -c /dev/kvm"): subprocess.CompletedProcess(
+                ["sh", "-c", "test -c /dev/kvm"], 1
+            ),
+        }
+    )
+
+    monkeypatch.setattr(
+        "provider.vm.multipass_requirements.platform.system", lambda: "Linux"
+    )
+
+    result = check_multipass_requirements(explicit_path=multipass, run_command=run)
+
+    assert result.compatible is False
+    assert result.action_required == "repair"
+    assert "/dev/kvm is missing" in (result.error or "")
 
 
 def test_rejects_known_broken_apple_silicon_qemu(monkeypatch, tmp_path):

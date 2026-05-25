@@ -228,7 +228,12 @@ def check_host_virtualization_compatibility(
     *,
     run_command: RunCommand = run_subprocess,
 ) -> None:
-    if platform.system().lower() != "darwin" or platform.machine().lower() != "arm64":
+    system = platform.system().lower()
+    if system == "linux":
+        _check_linux_kvm_support(run_command)
+        return
+
+    if system != "darwin" or platform.machine().lower() != "arm64":
         return
 
     darwin_major = _safe_int(platform.release().split(".", 1)[0], 0)
@@ -267,6 +272,18 @@ def check_host_virtualization_compatibility(
             "Downgrade to Multipass 1.16.1+mac, upgrade to a build with a "
             "fix, use a supported non-QEMU driver, or run the provider on a "
             "Linux host."
+        )
+
+
+def _check_linux_kvm_support(run_command: RunCommand) -> None:
+    exists_result = _run_checked(
+        run_command, ["sh", "-c", "test -c /dev/kvm"], timeout=5
+    )
+    if exists_result.returncode != 0:
+        raise MultipassCompatibilityError(
+            "KVM support is not enabled on this Linux host: /dev/kvm is missing "
+            "or is not a character device. Ensure the CPU supports virtualization, "
+            "enable virtualization in BIOS/UEFI, and load the KVM kernel modules."
         )
 
 
