@@ -8,6 +8,7 @@ from provider.vm.multipass_requirements import (
     MultipassCompatibilityError,
     check_host_virtualization_compatibility,
     check_multipass_requirements,
+    detect_multipass_binary,
 )
 
 
@@ -41,6 +42,26 @@ def test_reports_missing_multipass(monkeypatch):
     assert result.compatible is False
     assert result.action_required == "install"
     assert result.error
+
+
+def test_detects_official_macos_multipass_path(monkeypatch):
+    checked_paths = []
+
+    def exists(path: str) -> bool:
+        checked_paths.append(path)
+        return path == "/Library/Application Support/com.canonical.multipass/bin/multipass"
+
+    monkeypatch.setattr(
+        "provider.vm.multipass_requirements.platform.system", lambda: "Darwin"
+    )
+    monkeypatch.setattr("provider.vm.multipass_requirements.os.path.isfile", exists)
+    monkeypatch.setattr("provider.vm.multipass_requirements.os.access", lambda *_: True)
+    monkeypatch.setattr("provider.vm.multipass_requirements.shutil.which", lambda _: None)
+
+    result = detect_multipass_binary()
+
+    assert result == "/Library/Application Support/com.canonical.multipass/bin/multipass"
+    assert checked_paths[0] == result
 
 
 def test_accepts_valid_multipass(tmp_path):

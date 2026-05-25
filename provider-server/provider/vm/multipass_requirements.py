@@ -62,7 +62,12 @@ def detect_multipass_binary(explicit_path: str | None = None) -> str | None:
     if system == "linux":
         search_paths = ["/snap/bin", "/usr/local/bin", "/usr/bin"]
     elif system == "darwin":
-        search_paths = ["/opt/homebrew/bin", "/usr/local/bin", "/opt/local/bin"]
+        search_paths = [
+            "/Library/Application Support/com.canonical.multipass/bin",
+            "/opt/homebrew/bin",
+            "/usr/local/bin",
+            "/opt/local/bin",
+        ]
     elif system == "windows":
         search_paths = [
             os.path.join(os.path.expandvars(r"%ProgramFiles%"), "Multipass", "bin"),
