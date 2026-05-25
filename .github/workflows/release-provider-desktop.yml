@@ -87,15 +87,39 @@ jobs:
           python-version: "3.11"
 
       - name: Install Poetry
+        if: ${{ runner.os != 'Linux' }}
         run: python -m pip install --upgrade pip poetry
 
       - name: Install provider dependencies
+        if: ${{ runner.os != 'Linux' }}
         run: poetry -C provider-server install --no-interaction --no-ansi
 
       - name: Install PyInstaller
+        if: ${{ runner.os != 'Linux' }}
         run: poetry -C provider-server run pip install pyinstaller
 
+      - name: Build Linux provider sidecar in manylinux
+        if: ${{ matrix.cli-target == 'linux-x86_64' }}
+        shell: bash
+        run: |
+          docker run --rm \
+            -v "$PWD:/work" \
+            -w /work \
+            quay.io/pypa/manylinux2014_x86_64 \
+            /bin/bash -lc '
+              set -euo pipefail
+              PY=/opt/python/cp311-cp311/bin/python
+              "$PY" -m pip install --upgrade pip poetry
+              "$PY" -m poetry -C provider-server install --no-interaction --no-ansi
+              "$PY" -m poetry -C provider-server run pip install pyinstaller
+              "$PY" -m poetry -C provider-server run python ../scripts/build_provider_cli.py --onefile --release-dir ../provider-cli-release-assets --release-target linux-x86_64 --tauri-target-triple x86_64-unknown-linux-gnu
+            '
+          for path in provider-cli-release-assets apps/provider-desktop/src-tauri/binaries dist build; do
+            [ ! -e "$path" ] || sudo chown -R "$USER:$USER" "$path"
+          done
+
       - name: Build and stage provider sidecar
+        if: ${{ runner.os != 'Linux' }}
         run: poetry -C provider-server run python ../scripts/build_provider_cli.py --onefile --release-dir ../provider-cli-release-assets --release-target "${{ matrix.cli-target }}"
 
       - name: Upload provider CLI artifact

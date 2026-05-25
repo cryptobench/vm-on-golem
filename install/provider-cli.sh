@@ -124,6 +124,19 @@ verify_sha256() {
   [ "$actual" = "$expected" ] || fail "SHA256 mismatch for $path: expected $expected, got $actual"
 }
 
+validate_cli_binary() {
+  path="$1"
+  output="$("$path" --help 2>&1)" && return 0
+  status="$?"
+  case "$output" in
+    *GLIBC_*)
+      fail "Downloaded provider CLI cannot run on this Linux host because it requires a newer glibc. Install a newer provider release built for older Linux compatibility, or use Ubuntu 22.04 or newer."
+      ;;
+  esac
+  printf '%s\n' "$output" >&2
+  fail "Downloaded provider CLI could not run on this host (exit $status)"
+}
+
 detect_target() {
   os="${GOLEM_PROVIDER_INSTALLER_OS:-$(uname -s 2>/dev/null || true)}"
   arch="${GOLEM_PROVIDER_INSTALLER_ARCH:-$(uname -m 2>/dev/null || true)}"
@@ -332,6 +345,8 @@ download "${download_base}/checksums.txt" "$tmp_dir/checksums.txt"
 expected_sha="$(awk -v asset="$asset" '$2 == asset {print $1}' "$tmp_dir/checksums.txt" | head -n 1)"
 [ -n "$expected_sha" ] || fail "checksums.txt does not contain $asset"
 verify_sha256 "$tmp_dir/$asset" "$expected_sha"
+chmod 755 "$tmp_dir/$asset"
+validate_cli_binary "$tmp_dir/$asset"
 copy_executable "$tmp_dir/$asset" "$install_path"
 
 install_or_verify_multipass "$tmp_dir"

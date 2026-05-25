@@ -7,6 +7,7 @@ from ..utils.logging import setup_logger
 from .acme import Http01ChallengeServer, NativeAcmeClient
 from .certs import CertificateValidation, inspect_ip_certificate
 from .domain import CertificateState, CertificateStatus
+from .listen_host import listen_host_for_public_ip
 
 logger = setup_logger(__name__)
 
@@ -203,7 +204,7 @@ class CertificateMaintenanceService:
 
     async def _issue_certificate(self, public_ip: str) -> None:
         challenge_server = Http01ChallengeServer(
-            self.settings.HOST,
+            listen_host_for_public_ip(self.settings.HOST, public_ip),
             int(self.settings.ACME_HTTP_INTERNAL_PORT),
         )
         try:

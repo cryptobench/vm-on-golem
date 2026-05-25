@@ -108,3 +108,22 @@ def test_provider_cli_stage_release_asset(tmp_path):
 
     assert out == tmp_path / "release" / "golem-provider-cli-linux-x86_64"
     assert out.read_text() == "#!/bin/sh\n"
+
+
+def test_provider_cli_stage_accepts_target_triple_override(monkeypatch, tmp_path):
+    build_provider_cli = load_build_provider_cli_module()
+    exe = tmp_path / "dist" / "golem-provider"
+    exe.parent.mkdir()
+    exe.write_text("#!/bin/sh\n")
+
+    monkeypatch.setattr(build_provider_cli, "TAURI_BINARIES", tmp_path / "binaries")
+    monkeypatch.setattr(
+        build_provider_cli,
+        "detect_target_triple",
+        lambda: (_ for _ in ()).throw(AssertionError("should not detect target")),
+    )
+
+    out = build_provider_cli.stage(exe, "x86_64-unknown-linux-gnu")
+
+    assert out == tmp_path / "binaries" / "golem-provider-x86_64-unknown-linux-gnu"
+    assert out.read_text() == "#!/bin/sh\n"

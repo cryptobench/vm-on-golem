@@ -154,6 +154,10 @@ def test_posix_installer_installs_and_runs_verified_cli_asset(tmp_path):
     asset.write_text(
         """#!/bin/sh
 set -eu
+if [ "$1" = "--help" ]; then
+  echo "help"
+  exit 0
+fi
 if [ "$1" = "requirements" ] && [ "$2" = "check" ]; then
   echo "requirements ok"
   exit 0
@@ -196,10 +200,54 @@ exit 2
     assert os.access(installed, os.X_OK)
 
 
+def test_posix_installer_rejects_cli_binary_before_multipass_install(tmp_path):
+    release_dir = tmp_path / "release"
+    install_dir = tmp_path / "install"
+    release_dir.mkdir()
+    asset = release_dir / "golem-provider-cli-linux-x86_64"
+    asset.write_text(
+        """#!/bin/sh
+echo "/tmp/_MEIxxx/libpython3.11.so.1.0: /lib/x86_64-linux-gnu/libm.so.6: version \\`GLIBC_2.38' not found" >&2
+exit 127
+"""
+    )
+    asset.chmod(0o755)
+    checksum = hashlib.sha256(asset.read_bytes()).hexdigest()
+    (release_dir / "checksums.txt").write_text(f"{checksum}  {asset.name}\n")
+    env = {
+        **os.environ,
+        "GOLEM_PROVIDER_INSTALLER_OS": "Linux",
+        "GOLEM_PROVIDER_INSTALLER_ARCH": "x86_64",
+        "GOLEM_PROVIDER_INSTALLER_BASE_URL": release_dir.as_uri(),
+    }
+
+    result = subprocess.run(
+        [
+            "sh",
+            str(ROOT / "install" / "provider-cli.sh"),
+            "--version",
+            "provider-desktop-v0.1.0",
+            "--install-dir",
+            str(install_dir),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    assert result.returncode == 1
+    assert "requires a newer glibc" in result.stderr
+    assert "Installing pinned Multipass snap" not in result.stdout
+    assert not (install_dir / "golem-provider").exists()
+
+
 def test_provider_desktop_release_workflow_publishes_cli_assets():
     workflow = (ROOT / ".github" / "workflows" / "release-provider-desktop.yml").read_text()
 
     assert "--release-dir ../provider-cli-release-assets" in workflow
+    assert "quay.io/pypa/manylinux2014_x86_64" in workflow
+    assert "--tauri-target-triple x86_64-unknown-linux-gnu" in workflow
     assert "Upload provider CLI artifact" in workflow
     assert "pattern: provider-*" in workflow
     assert "golem-provider-cli-linux-x86_64" in workflow

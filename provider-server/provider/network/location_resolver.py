@@ -2,6 +2,7 @@ import ipaddress
 import logging
 import os
 import re
+import socket
 from dataclasses import dataclass
 from typing import Any, Iterable
 
@@ -96,13 +97,29 @@ async def resolve_provider_location(
     endpoints: Iterable[LocationEndpoint] = LOCATION_ENDPOINTS,
     session: aiohttp.ClientSession | None = None,
     timeout_seconds: float = 5.0,
+    address_family: socket.AddressFamily = socket.AF_UNSPEC,
 ) -> ProviderLocation:
     if session is not None:
         return await _resolve_with_session(session, endpoints)
 
     timeout = aiohttp.ClientTimeout(total=timeout_seconds)
-    async with aiohttp.ClientSession(timeout=timeout) as owned_session:
+    connector = aiohttp.TCPConnector(family=address_family)
+    async with aiohttp.ClientSession(
+        timeout=timeout, connector=connector
+    ) as owned_session:
         return await _resolve_with_session(owned_session, endpoints)
+
+
+async def resolve_provider_ipv4_location(
+    *,
+    endpoints: Iterable[LocationEndpoint] = LOCATION_ENDPOINTS,
+    timeout_seconds: float = 5.0,
+) -> ProviderLocation:
+    return await resolve_provider_location(
+        endpoints=endpoints,
+        timeout_seconds=timeout_seconds,
+        address_family=socket.AF_INET,
+    )
 
 
 async def _resolve_with_session(

@@ -14,13 +14,18 @@ from cryptography.x509.oid import NameOID
 import provider.network_setup.certificate_service as certificate_service
 from provider.network_setup.certs import cert_is_valid_for_ip
 from provider.network_setup.edge import HttpsEdgeServer, _is_public_route
+from provider.network_setup.listen_host import listen_host_for_public_ip
 from provider.network_setup.nat import (
     NatMappingResult,
     _mapping_conflict_detail,
     _upnp_error_detail,
 )
 from provider.network_setup.render import render_startup_panel
-from provider.network_setup.service import NetworkSetupService, _format_port_ranges
+from provider.network_setup.service import (
+    NetworkSetupService,
+    _endpoint_url,
+    _format_port_ranges,
+)
 
 
 class FakeNatMapper:
@@ -454,6 +459,52 @@ async def test_network_setup_verifies_public_ports_from_checker(tmp_path):
     assert len(requests) == 2
     _assert_port_progression(events, "network_access", http_port, "open")
     _assert_port_progression(events, "network_access", https_port, "open")
+
+
+@pytest.mark.asyncio
+async def test_network_setup_falls_back_to_ipv4_when_ipv6_port_check_fails(
+    tmp_path, monkeypatch
+):
+    from provider.network.location_resolver import ProviderLocation
+
+    settings = _settings(tmp_path, PUBLIC_IP="2001:db8::10", PUBLIC_HTTPS_PORT=443)
+    service = NetworkSetupService(settings, nat_mapper=FakeNatMapper())
+    checked_ips = []
+
+    async def verify_public_ports(public_ip):
+        checked_ips.append(public_ip)
+        if public_ip == "2001:db8::10":
+            raise RuntimeError("IPv6 ports are unreachable")
+
+    async def resolve_ipv4_location():
+        return ProviderLocation(ip_address="203.0.113.44", country="DK")
+
+    monkeypatch.setattr(service, "_verify_public_ports", verify_public_ports)
+    monkeypatch.setattr(
+        "provider.network_setup.service.resolve_provider_ipv4_location",
+        resolve_ipv4_location,
+    )
+
+    public_ip = await service._verify_public_ports_with_ipv4_fallback("2001:db8::10")
+
+    assert public_ip == "203.0.113.44"
+    assert checked_ips == ["2001:db8::10", "203.0.113.44"]
+    assert settings.PUBLIC_IP == "203.0.113.44"
+    assert settings.PUBLIC_ENDPOINT_IP == "203.0.113.44"
+    assert settings.PROVIDER_COUNTRY == "DK"
+    assert service.status.endpoint_url == "https://203.0.113.44"
+    assert service.status.stage("public_ip").detail == "203.0.113.44"
+
+
+def test_listen_host_uses_ipv6_wildcard_for_ipv6_public_ip():
+    assert listen_host_for_public_ip("0.0.0.0", "2001:db8::10") == "::"
+    assert listen_host_for_public_ip("::", "203.0.113.44") == "0.0.0.0"
+    assert listen_host_for_public_ip("127.0.0.1", "2001:db8::10") == "127.0.0.1"
+
+
+def test_endpoint_url_brackets_ipv6_hosts():
+    assert _endpoint_url("2001:db8::10", 443) == "https://[2001:db8::10]"
+    assert _endpoint_url("2001:db8::10", 8443) == "https://[2001:db8::10]:8443"
 
 
 @pytest.mark.asyncio

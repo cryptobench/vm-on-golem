@@ -5,7 +5,10 @@ from typing import Callable, Literal
 
 import aiohttp
 
-from ..network.location_resolver import ensure_provider_location
+from ..network.location_resolver import (
+    ensure_provider_location,
+    resolve_provider_ipv4_location,
+)
 from ..utils.logging import setup_logger
 from .acme import AcmeRequestError
 from .certificate_service import CertificateMaintenanceService
@@ -18,6 +21,7 @@ from .domain import (
     StartupSetupStatus,
 )
 from .edge import HttpsEdgeServer
+from .listen_host import is_ipv4_address, is_ipv6_address, listen_host_for_public_ip
 from .nat import NatMapper
 from .render import render_startup_panel
 from .status_store import write_startup_setup_status
@@ -64,17 +68,11 @@ class NetworkSetupService:
 
         try:
             public_ip = await self._resolve_public_ip()
-            try:
-                self.settings.PUBLIC_IP = public_ip
-            except Exception:
-                pass
-            endpoint_url = _endpoint_url(public_ip, self.settings.PUBLIC_HTTPS_PORT)
-            self.status.endpoint_url = endpoint_url
-            self._succeed(SetupStageName.PUBLIC_IP, public_ip)
+            self._apply_public_ip(public_ip)
 
             if self.settings.NAT_AUTO_MAPPING_ENABLED:
                 await self._prepare_network_access()
-            await self._verify_public_ports(public_ip)
+            public_ip = await self._verify_public_ports_with_ipv4_fallback(public_ip)
             await self._ensure_certificate(public_ip)
             await self._start_https_edge()
             await self._verify_https_endpoint(public_ip)
@@ -98,6 +96,15 @@ class NetworkSetupService:
             write_startup_setup_status(self.settings, self.status)
             await self.cleanup()
             raise NetworkSetupError(self.status.message, self.status) from exc
+
+    def _apply_public_ip(self, public_ip: str) -> None:
+        self.settings.PUBLIC_IP = public_ip
+        if hasattr(self.settings, "PUBLIC_ENDPOINT_IP"):
+            self.settings.PUBLIC_ENDPOINT_IP = public_ip
+        self.status.endpoint_url = _endpoint_url(
+            public_ip, self.settings.PUBLIC_HTTPS_PORT
+        )
+        self._succeed(SetupStageName.PUBLIC_IP, public_ip)
 
     async def cleanup(self) -> None:
         await self.certificate_service.stop()
@@ -191,21 +198,20 @@ class NetworkSetupService:
         self._set_port_checks(
             SetupStageName.NETWORK_ACCESS, _pending_port_checks(public_ports)
         )
+        listen_host = listen_host_for_public_ip(self.settings.HOST, public_ip)
         servers: list[asyncio.AbstractServer] = []
         started_at = time.perf_counter()
         try:
             logger.info(
                 "Starting temporary listeners for public port verification: "
                 "host=%s internal_ports=%s public_ports=%s checker=%s public_ip=%s",
-                self.settings.HOST,
+                listen_host,
                 internal_ports,
                 public_ports,
                 verifier_url,
                 public_ip,
             )
-            servers = await _start_temporary_tcp_listeners(
-                self.settings.HOST, internal_ports
-            )
+            servers = await _start_temporary_tcp_listeners(listen_host, internal_ports)
             logger.info(
                 "Temporary listeners are ready for public port verification: "
                 "internal_ports=%s elapsed=%.2fs",
@@ -270,6 +276,48 @@ class NetworkSetupService:
                 )
             await _stop_temporary_tcp_listeners(servers)
 
+    async def _verify_public_ports_with_ipv4_fallback(self, public_ip: str) -> str:
+        try:
+            await self._verify_public_ports(public_ip)
+            return public_ip
+        except Exception:
+            fallback_ip = await self._resolve_ipv4_fallback_public_ip(public_ip)
+            if fallback_ip is None:
+                raise
+            logger.warning(
+                "Public port verification failed for IPv6 public IP %s; "
+                "retrying with IPv4 public IP %s",
+                public_ip,
+                fallback_ip,
+            )
+            self._apply_public_ip(fallback_ip)
+            await self._verify_public_ports(fallback_ip)
+            return fallback_ip
+
+    async def _resolve_ipv4_fallback_public_ip(self, public_ip: str) -> str | None:
+        if not is_ipv6_address(public_ip):
+            return None
+        try:
+            fallback_location = await resolve_provider_ipv4_location()
+        except Exception as exc:
+            logger.warning(
+                "IPv4 fallback public IP resolution failed after IPv6 "
+                "verification failure: %s",
+                exc,
+            )
+            return None
+        fallback_ip = str(fallback_location.ip_address or "").strip()
+        if not fallback_ip or fallback_ip == public_ip:
+            return None
+        if not is_ipv4_address(fallback_ip):
+            logger.warning(
+                "IPv4 fallback resolver returned a non-IPv4 address: %s",
+                fallback_ip,
+            )
+            return None
+        self.settings.PROVIDER_COUNTRY = fallback_location.country
+        return fallback_ip
+
     async def _verify_vm_port_range(self, public_ip: str) -> None:
         start = int(self.settings.PORT_RANGE_START)
         end = int(self.settings.PORT_RANGE_END)
@@ -291,18 +339,19 @@ class NetworkSetupService:
             raise RuntimeError(f"VM port range {detail} is empty")
 
         self._set_port_checks(SetupStageName.VM_PORT_RANGE, _pending_port_checks(ports))
+        listen_host = listen_host_for_public_ip(self.settings.HOST, public_ip)
         servers: list[asyncio.AbstractServer] = []
         started_at = time.perf_counter()
         try:
             logger.info(
                 "Starting temporary listeners for VM port verification: "
                 "host=%s ports=%s checker=%s public_ip=%s",
-                self.settings.HOST,
+                listen_host,
                 ports,
                 verifier_url,
                 public_ip,
             )
-            servers = await _start_temporary_tcp_listeners(self.settings.HOST, ports)
+            servers = await _start_temporary_tcp_listeners(listen_host, ports)
             logger.info(
                 "Temporary listeners are ready for VM port verification: "
                 "ports=%s elapsed=%.2fs",
@@ -429,8 +478,9 @@ class NetworkSetupService:
 
     async def _start_https_edge(self) -> None:
         cert_dir = Path(self.settings.CERT_DIR)
+        public_ip = str(getattr(self.settings, "PUBLIC_IP", "") or "")
         self.https_edge = HttpsEdgeServer(
-            host=self.settings.HOST,
+            host=listen_host_for_public_ip(self.settings.HOST, public_ip),
             port=int(self.settings.PUBLIC_HTTPS_INTERNAL_PORT),
             cert_path=cert_dir / "provider-ip.crt",
             key_path=cert_dir / "provider-ip.key",
@@ -563,9 +613,10 @@ def _default_stages(settings) -> list[SetupStage]:
 
 
 def _endpoint_url(host: str, port: int) -> str:
+    url_host = f"[{host}]" if is_ipv6_address(host) else host
     if int(port) == 443:
-        return f"https://{host}"
-    return f"https://{host}:{port}"
+        return f"https://{url_host}"
+    return f"https://{url_host}:{port}"
 
 
 def _network_access_remediation(

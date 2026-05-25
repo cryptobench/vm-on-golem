@@ -164,8 +164,8 @@ def build(onefile: bool) -> Path:
     return exe
 
 
-def stage(exe_path: Path) -> Path:
-    target = detect_target_triple()
+def stage(exe_path: Path, target_triple: str | None = None) -> Path:
+    target = target_triple or detect_target_triple()
     target_dir = TAURI_BINARIES
     target_dir.mkdir(parents=True, exist_ok=True)
     suffix = ".exe" if platform.system().lower().startswith("windows") else ""
@@ -206,9 +206,16 @@ def main():
         "--release-target",
         help="Release target suffix, e.g. linux-x86_64, macos-arm64, windows-x86_64.",
     )
+    ap.add_argument(
+        "--tauri-target-triple",
+        help=(
+            "Override the Tauri sidecar target triple. Useful when building in a "
+            "compatibility container without rustc."
+        ),
+    )
     args = ap.parse_args()
     exe = build(onefile=args.onefile)
-    stage(exe)
+    stage(exe, args.tauri_target_triple)
     if args.release_dir:
         stage_release_asset(exe, args.release_dir, args.release_target)
 
