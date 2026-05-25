@@ -98,21 +98,24 @@ jobs:
         if: ${{ runner.os != 'Linux' }}
         run: poetry -C provider-server run pip install pyinstaller
 
-      - name: Build Linux provider sidecar in manylinux
+      - name: Build Linux provider sidecar on old glibc
         if: ${{ matrix.cli-target == 'linux-x86_64' }}
         shell: bash
         run: |
           docker run --rm \
+            --platform linux/amd64 \
             -v "$PWD:/work" \
             -w /work \
-            quay.io/pypa/manylinux2014_x86_64 \
+            python:3.11-bullseye \
             /bin/bash -lc '
               set -euo pipefail
-              PY=/opt/python/cp311-cp311/bin/python
-              "$PY" -m pip install --upgrade pip poetry
+              PY=/usr/local/bin/python
+              "$PY" -m pip install --root-user-action=ignore --upgrade pip poetry==1.8.5
+              "$PY" -m poetry -C provider-server env use "$PY"
               "$PY" -m poetry -C provider-server install --no-interaction --no-ansi
-              "$PY" -m poetry -C provider-server run pip install pyinstaller
-              "$PY" -m poetry -C provider-server run python ../scripts/build_provider_cli.py --onefile --release-dir ../provider-cli-release-assets --release-target linux-x86_64 --tauri-target-triple x86_64-unknown-linux-gnu
+              "$PY" -m poetry -C provider-server run pip install --root-user-action=ignore pyinstaller
+              cd provider-server
+              "$PY" -m poetry run python ../scripts/build_provider_cli.py --onefile --release-dir ../provider-cli-release-assets --release-target linux-x86_64 --tauri-target-triple x86_64-unknown-linux-gnu
             '
           for path in provider-cli-release-assets apps/provider-desktop/src-tauri/binaries dist build; do
             [ ! -e "$path" ] || sudo chown -R "$USER:$USER" "$path"

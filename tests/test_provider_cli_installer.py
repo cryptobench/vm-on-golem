@@ -246,7 +246,10 @@ def test_provider_desktop_release_workflow_publishes_cli_assets():
     workflow = (ROOT / ".github" / "workflows" / "release-provider-desktop.yml").read_text()
 
     assert "--release-dir ../provider-cli-release-assets" in workflow
-    assert "quay.io/pypa/manylinux2014_x86_64" in workflow
+    assert "--platform linux/amd64" in workflow
+    assert "python:3.11-bullseye" in workflow
+    assert "poetry==1.8.5" in workflow
+    assert 'poetry -C provider-server env use "$PY"' in workflow
     assert "--tauri-target-triple x86_64-unknown-linux-gnu" in workflow
     assert "Upload provider CLI artifact" in workflow
     assert "pattern: provider-*" in workflow
