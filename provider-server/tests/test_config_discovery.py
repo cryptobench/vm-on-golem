@@ -194,6 +194,34 @@ def test_hoodi_payments_profile_defaults_to_l1_rpc_and_ws(monkeypatch, tmp_path)
     assert settings.PAYMENTS_WS_URL == "wss://ethereum-hoodi-rpc.publicnode.com"
 
 
+def test_hoodi_payments_profile_defaults_to_contract_addresses_when_deployment_missing(
+    monkeypatch, tmp_path
+):
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    monkeypatch.delenv("GOLEM_PROVIDER_STREAM_PAYMENT_ADDRESS", raising=False)
+    monkeypatch.delenv("GOLEM_PROVIDER_GLM_TOKEN_ADDRESS", raising=False)
+    monkeypatch.setenv("GOLEM_PROVIDER_PAYMENTS_NETWORK", "hoodi")
+    monkeypatch.setattr(
+        Settings, "_load_deployment", staticmethod(lambda network: (None, None))
+    )
+    _set_settings_paths(monkeypatch, tmp_path)
+
+    settings = Settings()
+
+    assert (
+        settings.STREAM_PAYMENT_ADDRESS == "0xb5a225b2f82D3eFe743D95bA7Fe3BbC475C0a12E"
+    )
+    assert settings.GLM_TOKEN_ADDRESS == "0x55555555555556AcFf9C332Ed151758858bd7a26"
+
+
+def test_multipass_launch_init_timeout_allows_instance_creation(monkeypatch, tmp_path):
+    _set_settings_paths(monkeypatch, tmp_path)
+
+    settings = Settings()
+
+    assert settings.MULTIPASS_LAUNCH_INIT_TIMEOUT_SECONDS >= 60
+
+
 def test_legacy_payment_rpc_aliases_are_ignored(monkeypatch, tmp_path):
     monkeypatch.delenv("GOLEM_PROVIDER_PAYMENTS_RPC_URL", raising=False)
     monkeypatch.setenv("GOLEM_PROVIDER_PAYMENTS_NETWORK", "hoodi")

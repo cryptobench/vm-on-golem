@@ -281,7 +281,7 @@ async def test_create_vm_happy_path(multipass_adapter):
     assert launch_call_args[2] == "--name"
     assert launch_call_args[3].startswith("golem-")
     assert "--timeout" in launch_call_args
-    assert launch_call_args[launch_call_args.index("--timeout") + 1] == "1"
+    assert launch_call_args[launch_call_args.index("--timeout") + 1] == "60"
     multipass_adapter.name_mapper.add_mapping.assert_awaited_once()
     multipass_adapter._get_vm_info.assert_not_called()
     assert vm.status == VMStatus.RUNNING

@@ -18,11 +18,6 @@ use tauri_plugin_shell::ShellExt;
 const PROVIDER_HOST: &str = "127.0.0.1";
 const PROVIDER_PORT: u16 = 7466;
 const PROVIDER_START_TIMEOUT: Duration = Duration::from_secs(180);
-const PAYMENTS_NETWORK: &str = "hoodi";
-const PAYMENTS_RPC_URL: &str = "https://rpc.hoodi.ethpandaops.io";
-const PAYMENTS_WS_URL: &str = "wss://ethereum-hoodi-rpc.publicnode.com";
-const STREAM_PAYMENT_ADDRESS: &str = "0xb5a225b2f82D3eFe743D95bA7Fe3BbC475C0a12E";
-const GLM_TOKEN_ADDRESS: &str = "0x55555555555556AcFf9C332Ed151758858bd7a26";
 static PROVIDER_FOREGROUND_CHILD: Mutex<Option<CommandChild>> = Mutex::new(None);
 static DESKTOP_LOG_LOCK: Mutex<()> = Mutex::new(());
 
@@ -109,14 +104,6 @@ fn provider_vm_data_dir() -> Result<PathBuf, String> {
     Ok(provider_home_dir()?.join(".golem/provider/vms"))
 }
 
-fn env_or_default(key: &str, default: &str) -> String {
-    std::env::var(key)
-        .ok()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| default.to_string())
-}
-
 fn provider_sidecar_command(app: &tauri::AppHandle) -> Result<Command, String> {
     let admin_token = read_or_create_admin_token()?;
     let vm_data_dir = provider_vm_data_dir()?.to_string_lossy().to_string();
@@ -130,29 +117,6 @@ fn provider_sidecar_command(app: &tauri::AppHandle) -> Result<Command, String> {
             command.envs([
                 ("GOLEM_PROVIDER_ADMIN_TOKEN", admin_token),
                 ("GOLEM_PROVIDER_VM_DATA_DIR", vm_data_dir),
-                (
-                    "GOLEM_PROVIDER_PAYMENTS_NETWORK",
-                    env_or_default("GOLEM_PROVIDER_PAYMENTS_NETWORK", PAYMENTS_NETWORK),
-                ),
-                (
-                    "GOLEM_PROVIDER_PAYMENTS_RPC_URL",
-                    env_or_default("GOLEM_PROVIDER_PAYMENTS_RPC_URL", PAYMENTS_RPC_URL),
-                ),
-                (
-                    "GOLEM_PROVIDER_PAYMENTS_WS_URL",
-                    env_or_default("GOLEM_PROVIDER_PAYMENTS_WS_URL", PAYMENTS_WS_URL),
-                ),
-                (
-                    "GOLEM_PROVIDER_STREAM_PAYMENT_ADDRESS",
-                    env_or_default(
-                        "GOLEM_PROVIDER_STREAM_PAYMENT_ADDRESS",
-                        STREAM_PAYMENT_ADDRESS,
-                    ),
-                ),
-                (
-                    "GOLEM_PROVIDER_GLM_TOKEN_ADDRESS",
-                    env_or_default("GOLEM_PROVIDER_GLM_TOKEN_ADDRESS", GLM_TOKEN_ADDRESS),
-                ),
                 ("GOLEM_PROVIDER_DISABLE_RELOAD", "1".to_string()),
             ])
         })

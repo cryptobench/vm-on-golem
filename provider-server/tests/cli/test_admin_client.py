@@ -1,7 +1,13 @@
+from pathlib import Path
+
 import httpx
 import pytest
 
-from provider.cli.admin_client import ProviderAdminClient, ProviderCliError
+from provider.cli.admin_client import (
+    ProviderAdminClient,
+    ProviderCliError,
+    provider_admin_env,
+)
 
 
 def test_admin_client_sends_bearer_token(monkeypatch):
@@ -60,3 +66,15 @@ def test_admin_client_reports_rejected_token(monkeypatch):
 
     with pytest.raises(ProviderCliError, match="admin token was rejected"):
         ProviderAdminClient(token="bad").get("/provider/settings")
+
+
+def test_provider_admin_env_matches_headless_runtime(monkeypatch, tmp_path):
+    monkeypatch.setenv("GOLEM_PROVIDER_VM_DATA_DIR", str(tmp_path))
+    monkeypatch.delenv("GOLEM_PROVIDER_ADMIN_TOKEN", raising=False)
+
+    env = provider_admin_env()
+
+    assert env["GOLEM_PROVIDER_VM_DATA_DIR"] == str(tmp_path)
+    assert env["GOLEM_PROVIDER_DISABLE_RELOAD"] == "1"
+    assert env["GOLEM_PROVIDER_ADMIN_TOKEN"]
+    assert (Path(tmp_path) / "provider-admin.token").exists()

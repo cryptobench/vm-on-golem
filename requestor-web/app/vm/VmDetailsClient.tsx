@@ -59,10 +59,14 @@ import { VmOverviewPanel } from "../../components/vm/details/VmOverviewPanel";
 import { VmMetricsSummary } from "../../components/vm/details/VmMetricsSummary";
 import { VmSnapshotsPanel } from "../../components/vm/details/VmSnapshotsPanel";
 import { VmResizeModal } from "../../components/vm/details/VmResizeModal";
-import { VmPaymentStreamPanel } from "../../components/vm/details/VmPaymentStreamPanel";
+import {
+  VmPaymentStreamPanel,
+  VmPaymentStreamPanelSkeleton,
+} from "../../components/vm/details/VmPaymentStreamPanel";
 import { VmDetailsSkeleton } from "../../components/vm/details/VmDetailsSkeleton";
 import { providerPublicHost } from "../../lib/providerConnection";
 import { deriveVmDisplayLifecycle } from "../../lib/vmLifecycle";
+import { isPaymentStreamPanelLoading } from "../../lib/vmPaymentStreamState";
 
 type VmDetailsClientProps = {
   vmId?: string;
@@ -281,11 +285,12 @@ export default function VmDetailsClient({ vmId: vmIdProp }: VmDetailsClientProps
   React.useEffect(() => {
     if (!vm?.stream_id || !spAddr) {
       setStream(null);
+      setErr(null);
       return;
     }
     const entry = vmPaymentStreams.entries[String(vm.stream_id)];
     if (!entry) {
-      setErr(vmPaymentStreams.error);
+      setErr(vmPaymentStreams.error ?? null);
       return;
     }
     if (!entry.ok) {
@@ -472,6 +477,12 @@ export default function VmDetailsClient({ vmId: vmIdProp }: VmDetailsClientProps
     effectiveStatus === "terminated" || effectiveStatus === "deleted";
   const isTransitioning = lifecycle.transitioning;
   const providerActionDisabled = isOffline;
+  const paymentStreamLoading = isPaymentStreamPanelLoading({
+    streamId: vm.stream_id,
+    hasStream: !!stream,
+    lifecycleStatus: lifecycle.status,
+    lifecycleStage: lifecycle.stage,
+  });
 
   const copyValue = async (value: string) => {
     try {
@@ -1014,6 +1025,8 @@ export default function VmDetailsClient({ vmId: vmIdProp }: VmDetailsClientProps
               onCopy={copyValue}
               onTopUp={topUp}
             />
+          ) : paymentStreamLoading ? (
+            <VmPaymentStreamPanelSkeleton />
           ) : (
             <div className="card vm-page-enter">
               <div className="card-body">

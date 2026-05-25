@@ -9,15 +9,37 @@ The main command to remember is `golem-provider start`. It runs startup requirem
 
 ## Install the command
 
-For a normal server install, install the provider package and verify the command:
+For a normal server install, install the provider CLI:
 
 ```bash
-python3.11 -m pip install --user golem-vm-provider
-golem-provider --help
-golem-provider doctor
+curl -fsSL https://raw.githubusercontent.com/cryptobench/vm-on-golem/main/install/provider-cli.sh | sh
 ```
 
-If `golem-provider` is not found, make sure the Python user script directory is on `PATH`. On most Linux hosts this is `~/.local/bin`.
+On Windows PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/cryptobench/vm-on-golem/main/install/provider-cli.ps1 | iex
+```
+
+Then start the provider:
+
+```bash
+golem-provider start
+```
+
+To install and start in one step:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/cryptobench/vm-on-golem/main/install/provider-cli.sh | sh -s -- --start
+```
+
+On Windows PowerShell:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/cryptobench/vm-on-golem/main/install/provider-cli.ps1))) -Start
+```
+
+The installer downloads a standalone binary from GitHub Releases, verifies the checksum, installs or verifies Multipass, and runs a host requirements check.
 
 For a source checkout, run the command through Poetry:
 
@@ -32,48 +54,31 @@ When using the source checkout, prefix the examples on this page with `poetry ru
 
 ## Start and stop
 
-Use these commands for normal service control:
+Use these commands for normal operation:
 
 | Command | Purpose |
 | --- | --- |
-| `golem-provider start` | Run startup checks, prepare the admin token and secure endpoint, start the provider in the background, and wait for authenticated API readiness. |
-| `golem-provider start --foreground` | Run the same startup checks, then keep the provider in the current terminal. Use this for debugging or service managers. |
-| `golem-provider stop` | Stop the background provider process. |
-| `golem-provider restart` | Stop the provider, then run the full `start` flow again. |
-| `golem-provider status` | Show running state, endpoint, version, ports, and key health checks. |
+| `golem-provider start` | Run startup checks, prepare the admin token and secure endpoint, then keep the provider running in the current terminal. |
+| `golem-provider status` | Show provider environment status and update information. |
 | `golem-provider doctor` | Run diagnostics without starting the provider. |
-| `golem-provider logs` | Show recent provider daemon logs. |
-| `golem-provider logs -f` | Follow provider daemon logs. |
 
 For a headless machine, the usual startup sequence is:
 
 ```bash
-golem-provider doctor
 golem-provider start
-golem-provider status
 ```
 
-Plain `golem-provider start` runs in background mode. After secure setup, it should print that startup checks passed, that the daemon was launched, that it is waiting for API readiness, and finally:
+`golem-provider start` runs in the foreground. Keep that terminal session open, or run it under your preferred service manager. After secure setup, it should print that startup checks passed and that the provider server is starting.
 
 ```text
-Provider started and ready (pid=<pid>)
-API: http://127.0.0.1:7466/api/v1
-Next: golem-provider status | golem-provider logs -f | golem-provider stop
+Provider startup checks passed.
+Provider server is starting in the foreground.
+Press Ctrl+C to stop.
 ```
-
-If it has launched the daemon but has not printed the ready line yet, it is still waiting for the local authenticated API to respond. If readiness fails, the command exits with an error.
-
-If the provider waits for readiness and then reports that the daemon exited, run:
-
-```bash
-golem-provider logs
-```
-
-The daemon log contains the server startup error. A common cause after upgrades is an existing VM stream record that no longer decodes against the configured payment contract or ABI; this should be fixed as a visible startup warning, not a silent hang.
 
 ## First setup
 
-After the provider is installed and the host requirements are met, configure resources and pricing from the CLI:
+The provider defaults to detected host resources and default pricing. You can tune resources and pricing later from another terminal while the provider is running:
 
 ```bash
 golem-provider settings resources set --cpu 8 --memory 32 --storage 200
@@ -173,16 +178,4 @@ Commands that talk to the provider admin API use `http://127.0.0.1:7466/api/v1` 
 
 ## Service managers
 
-For service managers that expect the process to remain in the foreground, use:
-
-```bash
-golem-provider start --foreground
-```
-
-For manual SSH operation, use the default background mode:
-
-```bash
-golem-provider start
-```
-
-Both modes run startup checks before serving provider traffic.
+`golem-provider start` is foreground-first, so it works with service managers that expect the provider process to stay attached.

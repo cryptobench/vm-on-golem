@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 import logging
 from typing import Callable, Dict, List, Optional
 
@@ -179,7 +180,9 @@ class ResourceTracker:
         """Notify all registered callbacks of resource update."""
         for callback in self._update_callbacks:
             try:
-                await callback()
+                result = callback()
+                if inspect.isawaitable(result):
+                    await result
             except Exception as e:
                 logger.error(f"Error in resource update callback: {e}")
 

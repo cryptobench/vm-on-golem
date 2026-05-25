@@ -3,27 +3,51 @@ title: Provider Quickstart
 description: The shortest path to making provider capacity discoverable.
 ---
 
-This quickstart is the shortest path from a prepared machine to a visible provider. It focuses on the main setup decisions and avoids deep operational detail.
+This quickstart is the shortest path from a prepared machine to a visible provider. For most operators, setup is install plus start.
 
 ## Before you start
 
-You need a machine that can run VMs, a reachable provider endpoint, Multipass, a provider wallet, and enough gas funds for provider side payment actions such as withdrawals.
+You need a machine that can run VMs and a reachable provider endpoint. The CLI installer installs or validates Multipass for you.
 
 For development, a local stack can be useful. For public hosting, network reachability matters more than local convenience.
 
-## Basic flow
+## Headless CLI
 
-1. Install the provider software.
-2. Confirm Multipass is installed and working.
-3. Configure provider identity and wallet settings.
-4. Configure discovery and payment network settings.
-5. Make sure the provider API port and SSH port range are reachable.
-6. Run `golem-provider doctor`.
-7. Start the provider with `golem-provider start`, or use Provider Desktop.
-8. Set pricing for CPU, memory, and storage.
-9. Run `golem-provider status`.
-10. Check `golem-provider summary`.
-11. Confirm the provider appears in requestor discovery.
+```bash
+curl -fsSL https://raw.githubusercontent.com/cryptobench/vm-on-golem/main/install/provider-cli.sh | sh
+golem-provider start
+```
+
+Or install and start in one step:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/cryptobench/vm-on-golem/main/install/provider-cli.sh | sh -s -- --start
+```
+
+`golem-provider start` runs startup checks, secure endpoint setup, admin token setup, and then keeps the provider running in the current terminal.
+
+Provider networking heads-up: public providers need inbound ports `80`, `443`, and `50800-50900` forwarded from the router/firewall to the provider machine. `golem-provider start` checks this during startup.
+
+## Provider Desktop
+
+On a machine with a visual desktop, install Provider Desktop from GitHub Releases and start the provider from the app.
+
+## Optional checks
+
+In another terminal, inspect the running provider:
+
+```bash
+golem-provider status
+golem-provider summary
+golem-provider watch
+```
+
+Resource and pricing defaults work without manual setup. Tune them later when needed:
+
+```bash
+golem-provider settings resources set --cpu 8 --memory 32 --storage 200
+golem-provider settings pricing set --cpu 12 --memory 4 --storage 0.1
+```
 
 ## What success looks like
 

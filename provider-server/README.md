@@ -2,26 +2,53 @@
 
 Earn by renting out your machine’s compute — like Airbnb for servers. The Provider service runs VMs for requestors, verifies payments via streaming, and lets you withdraw earnings.
 
-## Quick Start (Host and Earn)
+## Quick Start
 
-1) Install (Python 3.11+ recommended):
-
-```bash
-pip install golem-vm-provider
-```
-
-2) Start the provider (testnet by default is fine):
+For a headless server, install the standalone CLI and start the provider:
 
 ```bash
-golem-provider start --network testnet
+curl -fsSL https://raw.githubusercontent.com/cryptobench/vm-on-golem/main/install/provider-cli.sh | sh
+golem-provider start
 ```
 
-Verify your environment and connectivity anytime:
+On Windows PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/cryptobench/vm-on-golem/main/install/provider-cli.ps1 | iex
+golem-provider start
+```
+
+To install and start in one step:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/cryptobench/vm-on-golem/main/install/provider-cli.sh | sh -s -- --start
+```
+
+`golem-provider start` runs startup checks, prepares the secure endpoint, creates
+or reuses the local provider admin token, and keeps the provider running in the
+current terminal. Keep that terminal open, or run the command under your
+preferred service manager.
+
+Verify the running provider anytime:
 
 ```bash
 golem-provider status
+golem-provider summary
 ```
-This checks Multipass availability, local/external port reachability, and whether an update is available on PyPI.
+
+Provider networking heads-up: public providers need inbound ports `80`, `443`,
+and `50800-50900` forwarded from the router/firewall to the provider machine.
+`golem-provider start` checks this during startup.
+
+Resource and pricing defaults work out of the box. Tune them later if needed:
+
+```bash
+golem-provider settings resources set --cpu 8 --memory 32 --storage 200
+golem-provider settings pricing set --cpu 12 --memory 4 --storage 0.1
+```
+
+Provider Desktop is the graphical option for visual systems. Download the
+desktop installer from the repository GitHub Releases page.
 
 ### Status Command (TTY and JSON)
 
@@ -78,17 +105,6 @@ Notes
 
 - The concept of "free" in JSON is replaced by `usable_free` (free + externally reachable) to avoid misleading counts when ports are blocked.
 - When the external checker is unavailable, per‑port `status` is `"unknown"` and `listening` still reflects local state.
-
-3) Set pricing in USD:
-
-```bash
-golem-provider pricing set --usd-per-core 12 --usd-per-mem 4 --usd-per-disk 0.1
-```
-
-4) Fund the provider wallet with Hoodi ETH for withdrawal gas. Hoodi faucet
-links and tGLM details are documented in `../contracts/README.md`.
-
-You are now discoverable to requestors and will earn as your VMs run.
 
 ## System Architecture
 

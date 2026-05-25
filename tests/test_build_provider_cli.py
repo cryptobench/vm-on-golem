@@ -77,3 +77,34 @@ def test_collect_extension_binaries_preserves_package_paths(monkeypatch, tmp_pat
     assert build_provider_cli.collect_extension_binaries("Crypto") == [
         (binary, "Crypto/Util")
     ]
+
+
+def test_provider_cli_release_asset_names():
+    build_provider_cli = load_build_provider_cli_module()
+
+    assert (
+        build_provider_cli.release_asset_name("linux-x86_64")
+        == "golem-provider-cli-linux-x86_64"
+    )
+    assert (
+        build_provider_cli.release_asset_name("macos-arm64")
+        == "golem-provider-cli-macos-arm64"
+    )
+    assert (
+        build_provider_cli.release_asset_name("windows-x86_64")
+        == "golem-provider-cli-windows-x86_64.exe"
+    )
+
+
+def test_provider_cli_stage_release_asset(tmp_path):
+    build_provider_cli = load_build_provider_cli_module()
+    exe = tmp_path / "dist" / "golem-provider"
+    exe.parent.mkdir()
+    exe.write_text("#!/bin/sh\n")
+
+    out = build_provider_cli.stage_release_asset(
+        exe, tmp_path / "release", "linux-x86_64"
+    )
+
+    assert out == tmp_path / "release" / "golem-provider-cli-linux-x86_64"
+    assert out.read_text() == "#!/bin/sh\n"

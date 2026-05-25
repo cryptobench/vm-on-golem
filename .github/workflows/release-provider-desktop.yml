@@ -8,6 +8,8 @@ on:
       - "packages/ui/**"
       - "packages/prices/**"
       - "provider-server/**"
+      - "install/provider-cli.sh"
+      - "install/provider-cli.ps1"
       - "scripts/build_provider_cli.py"
       - "scripts/vendor_multipass.py"
       - "scripts/package_provider_desktop_macos.py"
@@ -45,14 +47,17 @@ jobs:
         include:
           - os: ubuntu-latest
             target: linux
+            cli-target: linux-x86_64
             multipass-platform: linux
             multipass-arch: x86_64
           - os: macos-14
             target: mac-arm64
+            cli-target: macos-arm64
             multipass-platform: darwin
             multipass-arch: aarch64
           - os: windows-latest
             target: win
+            cli-target: windows-x86_64
             multipass-platform: windows
             multipass-arch: x86_64
 
@@ -91,7 +96,14 @@ jobs:
         run: poetry -C provider-server run pip install pyinstaller
 
       - name: Build and stage provider sidecar
-        run: poetry -C provider-server run python ../scripts/build_provider_cli.py --onefile
+        run: poetry -C provider-server run python ../scripts/build_provider_cli.py --onefile --release-dir ../provider-cli-release-assets --release-target "${{ matrix.cli-target }}"
+
+      - name: Upload provider CLI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: provider-cli-${{ matrix.cli-target }}
+          path: provider-cli-release-assets/*
+          if-no-files-found: error
 
       - name: Vendor Multipass installer
         run: python scripts/vendor_multipass.py --platform "${{ matrix.multipass-platform }}" --arch "${{ matrix.multipass-arch }}"
@@ -210,7 +222,7 @@ jobs:
       - name: Download provider desktop artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: provider-desktop-*
+          pattern: provider-*
           path: release-artifacts
 
       - name: Verify release assets
@@ -231,9 +243,41 @@ jobs:
             exit 1
           fi
 
+          for asset in \
+            golem-provider-cli-linux-x86_64 \
+            golem-provider-cli-macos-arm64 \
+            golem-provider-cli-windows-x86_64.exe
+          do
+            if ! find release-artifacts -type f -name "$asset" -print -quit | grep -q .; then
+              echo "Missing provider CLI release asset: $asset" >&2
+              exit 1
+            fi
+          done
+
+          find release-artifacts -type f -name 'golem-provider-cli-*' -print | sort > /tmp/provider-cli-release-assets.txt
+
           {
             echo "### Provider desktop release assets"
             sed 's#^#- #' /tmp/provider-desktop-release-assets.txt
+            echo
+            echo "### Provider CLI release assets"
+            sed 's#^#- #' /tmp/provider-cli-release-assets.txt
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Generate release checksums
+        shell: bash
+        run: |
+          checksums="release-artifacts/checksums.txt"
+          find release-artifacts -type f ! -name checksums.txt -print0 \
+            | sort -z \
+            | while IFS= read -r -d '' file; do
+                sha256sum "$file" | awk '{print $1 "  " FILENAME}' FILENAME="$(basename "$file")"
+              done > "$checksums"
+
+          {
+            echo
+            echo "### Release checksums"
+            sed 's#^#- #' "$checksums"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Create GitHub Release

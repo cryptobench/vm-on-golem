@@ -17,6 +17,8 @@ on:
       - "packages/ui/**"
       - "packages/prices/**"
       - "provider-server/**"
+      - "install/provider-cli.sh"
+      - "install/provider-cli.ps1"
       - "scripts/build_provider_cli.py"
       - "scripts/vendor_multipass.py"
       - "scripts/package_provider_desktop_macos.py"

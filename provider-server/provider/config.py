@@ -346,6 +346,7 @@ class Settings(BaseSettings):
                 "rpc_url": "https://rpc.hoodi.ethpandaops.io",
                 "ws_url": "wss://ethereum-hoodi-rpc.publicnode.com",
                 "faucet_enabled": False,
+                "stream_payment_address": "0xb5a225b2f82D3eFe743D95bA7Fe3BbC475C0a12E",
                 "glm_token_address": "0x55555555555556AcFf9C332Ed151758858bd7a26",
                 "token_symbol": "GLM",
                 "gas_symbol": "ETH",
@@ -371,7 +372,10 @@ class Settings(BaseSettings):
             return v
         pn = values.data.get("PAYMENTS_NETWORK") or "hoodi"
         addr, _ = Settings._load_deployment(pn)
-        return addr or "0x0000000000000000000000000000000000000000"
+        profile_addr = str(
+            Settings._profile_defaults(pn).get("stream_payment_address", "")
+        )
+        return addr or profile_addr or "0x0000000000000000000000000000000000000000"
 
     @field_validator("GLM_TOKEN_ADDRESS", mode="before")
     @classmethod
@@ -621,7 +625,7 @@ class Settings(BaseSettings):
     RETRY_BACKOFF: float = 2.0
     CREATE_VM_MAX_RETRIES: int = 15
     CREATE_VM_RETRY_DELAY_SECONDS: float = 5.0
-    MULTIPASS_LAUNCH_INIT_TIMEOUT_SECONDS: int = Field(default=1, ge=1)
+    MULTIPASS_LAUNCH_INIT_TIMEOUT_SECONDS: int = Field(default=60, ge=1)
     LAUNCH_TIMEOUT_SECONDS: int = 300
 
     # Multipass Settings

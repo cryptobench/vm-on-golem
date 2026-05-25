@@ -8,6 +8,7 @@ Requires: Python 3.11, pyinstaller installed in the active env.
 
 Usage:
   python scripts/build_provider_cli.py [--onefile]
+  python scripts/build_provider_cli.py --onefile --release-dir provider-cli-assets
 """
 
 import argparse
@@ -39,6 +40,36 @@ EXTENSION_BINARY_MODULES = [
     # files as binaries on macOS/Linux because they do not match lib*.so.
     "Crypto",
 ]
+
+
+def normalize_release_platform(value: str | None = None) -> str:
+    raw = (value or platform.system()).lower()
+    if raw in {"linux"}:
+        return "linux"
+    if raw in {"darwin", "mac", "macos"}:
+        return "macos"
+    if raw in {"win32", "windows"}:
+        return "windows"
+    raise SystemExit(f"Unsupported provider CLI release platform: {value or raw}")
+
+
+def normalize_release_arch(value: str | None = None) -> str:
+    raw = (value or platform.machine()).lower()
+    if raw in {"amd64", "x64", "x86_64"}:
+        return "x86_64"
+    if raw in {"arm64", "aarch64"}:
+        return "arm64"
+    raise SystemExit(f"Unsupported provider CLI release architecture: {value or raw}")
+
+
+def current_release_target() -> str:
+    return f"{normalize_release_platform()}-{normalize_release_arch()}"
+
+
+def release_asset_name(target: str | None = None) -> str:
+    resolved = target or current_release_target()
+    suffix = ".exe" if resolved.startswith("windows-") else ""
+    return f"golem-provider-cli-{resolved}{suffix}"
 
 
 def detect_target_triple() -> str:
@@ -149,12 +180,37 @@ def stage(exe_path: Path) -> Path:
     return out
 
 
+def stage_release_asset(
+    exe_path: Path, release_dir: Path, release_target: str | None = None
+) -> Path:
+    release_dir.mkdir(parents=True, exist_ok=True)
+    out = release_dir / release_asset_name(release_target)
+    shutil.copy2(exe_path, out)
+    try:
+        os.chmod(out, 0o755)
+    except Exception:
+        pass
+    print(f"Staged release CLI -> {out}")
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--onefile", action="store_true", help="Build single-file binary")
+    ap.add_argument(
+        "--release-dir",
+        type=Path,
+        help="Also stage a GitHub release CLI asset in this directory.",
+    )
+    ap.add_argument(
+        "--release-target",
+        help="Release target suffix, e.g. linux-x86_64, macos-arm64, windows-x86_64.",
+    )
     args = ap.parse_args()
     exe = build(onefile=args.onefile)
     stage(exe)
+    if args.release_dir:
+        stage_release_asset(exe, args.release_dir, args.release_target)
 
 
 if __name__ == "__main__":

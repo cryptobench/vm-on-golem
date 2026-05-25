@@ -61,6 +61,7 @@ def provider_admin_env() -> dict[str, str]:
     return {
         "GOLEM_PROVIDER_ADMIN_TOKEN": read_or_create_admin_token(),
         "GOLEM_PROVIDER_VM_DATA_DIR": str(provider_vm_data_dir()),
+        "GOLEM_PROVIDER_DISABLE_RELOAD": "1",
     }
 
 

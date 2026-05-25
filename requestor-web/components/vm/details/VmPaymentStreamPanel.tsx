@@ -5,7 +5,7 @@ import { RiArrowDownSLine, RiExternalLinkLine } from "@remixicon/react";
 import type { ChainStream } from "../../../lib/streams";
 import { humanDuration, isTerminatedStream } from "../../../lib/streams";
 import { formatUnixSecondsDateTime } from "../../../lib/time";
-import { Button } from "@golem/ui";
+import { Button, Skeleton } from "@golem/ui";
 import {
   CopyInline,
   DetailPanel,
@@ -168,6 +168,50 @@ export function VmPaymentStreamPanel({
             <Row label="Stop time" value={formatStopTime(stream.stopTime)} />
           </dl>
         </details>
+      </div>
+    </DetailPanel>
+  );
+}
+
+export function VmPaymentStreamPanelSkeleton() {
+  return (
+    <DetailPanel className="vm-page-enter">
+      <PanelTitle
+        title="Payment stream"
+        trailing={<Skeleton className="h-6 w-16" />}
+      />
+
+      <div className="mt-5 space-y-5">
+        <div>
+          <Skeleton className="h-3 w-16" />
+          <Skeleton className="mt-3 h-5 w-28" />
+        </div>
+
+        <div className="grid grid-cols-2 gap-x-4 gap-y-5 border-y border-border py-4">
+          {Array.from({ length: 4 }).map((_, index) => (
+            <div key={index} className="min-w-0">
+              <Skeleton className="h-3 w-24" />
+              <Skeleton className="mt-3 h-5 w-20" />
+            </div>
+          ))}
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+        </div>
+
+        <div className="border-t border-border pt-4">
+          <Skeleton className="h-5 w-36" />
+          <div className="mt-3 space-y-3">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <div key={index} className="flex justify-between gap-4">
+                <Skeleton className="h-4 w-24" />
+                <Skeleton className="h-4 w-28" />
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </DetailPanel>
   );
