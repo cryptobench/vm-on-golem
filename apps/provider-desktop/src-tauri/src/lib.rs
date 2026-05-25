@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::fs::{self, File};
+use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream};
 #[cfg(unix)]
@@ -10,7 +10,7 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, Mutex,
 };
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::Emitter;
 use tauri_plugin_shell::process::{Command, CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
@@ -24,6 +24,7 @@ const PAYMENTS_WS_URL: &str = "wss://ethereum-hoodi-rpc.publicnode.com";
 const STREAM_PAYMENT_ADDRESS: &str = "0xb5a225b2f82D3eFe743D95bA7Fe3BbC475C0a12E";
 const GLM_TOKEN_ADDRESS: &str = "0x55555555555556AcFf9C332Ed151758858bd7a26";
 static PROVIDER_FOREGROUND_CHILD: Mutex<Option<CommandChild>> = Mutex::new(None);
+static DESKTOP_LOG_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Default)]
 struct ProviderProcessState {
@@ -60,6 +61,39 @@ fn provider_api_base_url_value() -> String {
     format!("http://{PROVIDER_HOST}:{PROVIDER_PORT}/api/v1")
 }
 
+fn provider_desktop_log(message: impl AsRef<str>) {
+    let message = redact_sensitive_process_output(message.as_ref());
+    eprintln!("{message}");
+
+    let Ok(_guard) = DESKTOP_LOG_LOCK.lock() else {
+        return;
+    };
+    let Ok(log_path) = provider_desktop_log_path() else {
+        return;
+    };
+    if let Some(parent) = log_path.parent() {
+        if fs::create_dir_all(parent).is_err() {
+            return;
+        }
+    }
+    let Ok(mut file) = OpenOptions::new().create(true).append(true).open(log_path) else {
+        return;
+    };
+    let _ = writeln!(file, "{} {}", unix_timestamp_seconds(), message);
+}
+
+fn unix_timestamp_seconds() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0)
+}
+
+fn provider_desktop_log_path() -> Result<PathBuf, String> {
+    Ok(provider_home_dir()?
+        .join("Library/Application Support/Golem Provider/logs/provider-desktop.log"))
+}
+
 fn provider_vm_data_dir() -> Result<PathBuf, String> {
     if let Ok(value) = std::env::var("GOLEM_PROVIDER_VM_DATA_DIR") {
         let trimmed = value.trim();
@@ -86,6 +120,9 @@ fn env_or_default(key: &str, default: &str) -> String {
 fn provider_sidecar_command(app: &tauri::AppHandle) -> Result<Command, String> {
     let admin_token = read_or_create_admin_token()?;
     let vm_data_dir = provider_vm_data_dir()?.to_string_lossy().to_string();
+    provider_desktop_log(format!(
+        "[provider-sidecar] Preparing sidecar command vm_data_dir={vm_data_dir}"
+    ));
     app.shell()
         .sidecar("golem-provider")
         .map_err(|err| err.to_string())
@@ -483,12 +520,12 @@ fn wait_for_provider_api_blocking(
         }
 
         if provider_is_listening() {
-            eprintln!(
+            provider_desktop_log(format!(
                 "[provider-sidecar] Provider API is listening on {}:{} after {:.2}s",
                 PROVIDER_HOST,
                 PROVIDER_PORT,
                 started_at.elapsed().as_secs_f64()
-            );
+            ));
             return Ok(());
         }
 
@@ -502,12 +539,12 @@ fn wait_for_provider_api_blocking(
         }
 
         if last_log_at.elapsed() >= Duration::from_secs(5) {
-            eprintln!(
+            provider_desktop_log(format!(
                 "[provider-sidecar] Waiting for provider API on {}:{} elapsed={:.2}s",
                 PROVIDER_HOST,
                 PROVIDER_PORT,
                 started_at.elapsed().as_secs_f64()
-            );
+            ));
             last_log_at = Instant::now();
         }
 
@@ -519,21 +556,39 @@ async fn run_provider_sidecar_output(
     app: tauri::AppHandle,
     args: &[&str],
 ) -> Result<tauri_plugin_shell::process::Output, String> {
+    provider_desktop_log(format!(
+        "[provider-sidecar] Running sidecar output command args={args:?}"
+    ));
     provider_sidecar_command(&app)?
         .args(args)
         .output()
         .await
-        .map_err(|err| err.to_string())
+        .map_err(|err| {
+            provider_desktop_log(format!(
+                "[provider-sidecar] Sidecar output command failed args={args:?} error={err}"
+            ));
+            err.to_string()
+        })
 }
 
 fn spawn_provider_service(app: tauri::AppHandle) -> Result<ProviderProcessStateHandle, String> {
+    provider_desktop_log("[provider-sidecar] Stopping any previously spawned provider child");
     stop_spawned_provider_child();
     let process_state = Arc::new(Mutex::new(ProviderProcessState::default()));
+    provider_desktop_log("[provider-sidecar] Spawning provider service command");
     let (mut rx, child) = provider_sidecar_command(&app)?
         .args(["start", "--no-verify-port"])
         .spawn()
-        .map_err(|err| err.to_string())?;
+        .map_err(|err| {
+            provider_desktop_log(format!(
+                "[provider-sidecar] Provider service spawn failed: {err}"
+            ));
+            err.to_string()
+        })?;
     let child_pid = child.pid();
+    provider_desktop_log(format!(
+        "[provider-sidecar] Provider service child spawned pid={child_pid}"
+    ));
     if let Ok(mut current_child) = PROVIDER_FOREGROUND_CHILD.lock() {
         *current_child = Some(child);
     }
@@ -544,29 +599,32 @@ fn spawn_provider_service(app: tauri::AppHandle) -> Result<ProviderProcessStateH
                 CommandEvent::Stdout(line) => {
                     let text = String::from_utf8_lossy(&line).trim().to_string();
                     if !text.is_empty() {
-                        eprintln!("[provider-sidecar] {}", text);
+                        provider_desktop_log(format!("[provider-sidecar] {}", text));
                         record_provider_process_output(&process_state_for_events, &text);
                     }
                 }
                 CommandEvent::Stderr(line) => {
                     let text = String::from_utf8_lossy(&line).trim().to_string();
                     if !text.is_empty() {
-                        eprintln!("[provider-sidecar] {}", text);
+                        provider_desktop_log(format!("[provider-sidecar] {}", text));
                         record_provider_process_output(&process_state_for_events, &text);
                     }
                 }
                 CommandEvent::Error(err) => {
-                    eprintln!("[provider-sidecar] Provider service stream error: {err}");
+                    provider_desktop_log(format!(
+                        "[provider-sidecar] Provider service stream error: {err}"
+                    ));
                     if let Ok(mut state) = process_state_for_events.lock() {
                         state.failure = Some(format!("Provider service stream error: {err}"));
                     }
                 }
                 CommandEvent::Terminated(payload) => {
-                    eprintln!(
+                    provider_desktop_log(format!(
                         "[provider-sidecar] Provider service exited with code {:?}",
                         payload.code
-                    );
-                    if payload.code != Some(0) {
+                    ));
+                    let exited_before_ready = !provider_is_listening();
+                    if exited_before_ready || payload.code != Some(0) {
                         if let Ok(mut state) = process_state_for_events.lock() {
                             state.failure =
                                 Some(provider_process_failure(&state.output, payload.code));
@@ -596,15 +654,25 @@ fn stop_spawned_provider_child() {
         .ok()
         .and_then(|mut current_child| current_child.take());
     if let Some(child) = child {
+        provider_desktop_log(format!(
+            "[provider-sidecar] Killing spawned provider child pid={}",
+            child.pid()
+        ));
         let _ = child.kill();
     }
 }
 
 async fn run_secure_setup_stream(app: tauri::AppHandle) -> Result<Value, String> {
+    provider_desktop_log("[provider-sidecar] Spawning secure setup stream command");
     let (mut rx, _child) = provider_sidecar_command(&app)?
         .args(["secure-setup", "check", "--json-stream"])
         .spawn()
-        .map_err(|err| err.to_string())?;
+        .map_err(|err| {
+            provider_desktop_log(format!(
+                "[provider-sidecar] Secure setup stream spawn failed: {err}"
+            ));
+            err.to_string()
+        })?;
 
     let mut last_status: Option<Value> = None;
     let mut stdout = String::new();
@@ -630,15 +698,24 @@ async fn run_secure_setup_stream(app: tauri::AppHandle) -> Result<Value, String>
             CommandEvent::Stderr(line) => {
                 let text = String::from_utf8_lossy(&line).trim().to_string();
                 if !text.is_empty() {
-                    eprintln!("[provider-sidecar] {}", text);
+                    provider_desktop_log(format!("[provider-sidecar] {}", text));
                     if !stderr.is_empty() {
                         stderr.push('\n');
                     }
                     stderr.push_str(&text);
                 }
             }
-            CommandEvent::Error(err) => return Err(err),
+            CommandEvent::Error(err) => {
+                provider_desktop_log(format!(
+                    "[provider-sidecar] Secure setup stream error: {err}"
+                ));
+                return Err(err);
+            }
             CommandEvent::Terminated(payload) => {
+                provider_desktop_log(format!(
+                    "[provider-sidecar] Secure setup stream exited with code {:?}",
+                    payload.code
+                ));
                 if payload.code == Some(0) {
                     return last_status
                         .ok_or_else(|| "Secure setup produced no status updates".to_string());
@@ -669,10 +746,16 @@ async fn provider_requirements_stream(
     app: tauri::AppHandle,
     status: &mut Value,
 ) -> Result<ProviderRequirements, String> {
+    provider_desktop_log("[provider-sidecar] Spawning requirements stream command");
     let (mut rx, _child) = provider_sidecar_command(&app)?
         .args(["requirements", "check", "--json-stream"])
         .spawn()
-        .map_err(|err| err.to_string())?;
+        .map_err(|err| {
+            provider_desktop_log(format!(
+                "[provider-sidecar] Requirements stream spawn failed: {err}"
+            ));
+            err.to_string()
+        })?;
 
     let mut result: Option<ProviderRequirements> = None;
     let mut stdout = String::new();
@@ -687,7 +770,7 @@ async fn provider_requirements_stream(
                 match serde_json::from_str::<Value>(&text) {
                     Ok(value) if value.get("type").and_then(Value::as_str) == Some("progress") => {
                         if let Some(detail) = value.get("detail").and_then(Value::as_str) {
-                            eprintln!("[provider-sidecar] - {}", detail);
+                            provider_desktop_log(format!("[provider-sidecar] - {}", detail));
                             set_stage(status, "host_requirements", "running", detail);
                             emit_setup_status(&app, status.clone());
                         }
@@ -711,15 +794,24 @@ async fn provider_requirements_stream(
             CommandEvent::Stderr(line) => {
                 let text = String::from_utf8_lossy(&line).trim().to_string();
                 if !text.is_empty() {
-                    eprintln!("[provider-sidecar] {}", text);
+                    provider_desktop_log(format!("[provider-sidecar] {}", text));
                     if !stderr.is_empty() {
                         stderr.push('\n');
                     }
                     stderr.push_str(&text);
                 }
             }
-            CommandEvent::Error(err) => return Err(err),
+            CommandEvent::Error(err) => {
+                provider_desktop_log(format!(
+                    "[provider-sidecar] Requirements stream error: {err}"
+                ));
+                return Err(err);
+            }
             CommandEvent::Terminated(payload) => {
+                provider_desktop_log(format!(
+                    "[provider-sidecar] Requirements stream exited with code {:?}",
+                    payload.code
+                ));
                 if let Some(requirements) = result {
                     if requirements.compatible {
                         set_stage(status, "host_requirements", "success", "ready");
@@ -753,11 +845,12 @@ async fn provider_requirements_stream(
 
 #[tauri::command]
 async fn start_provider(app: tauri::AppHandle) -> Result<(), String> {
+    provider_desktop_log("[provider-sidecar] Start provider requested");
     let (admin_authenticated, _) = provider_admin_auth_status();
     if provider_is_listening() {
         if admin_authenticated {
-            eprintln!(
-                "[provider-sidecar] Provider API is already listening with the desktop admin token"
+            provider_desktop_log(
+                "[provider-sidecar] Provider API is already listening with the desktop admin token",
             );
             return Ok(());
         }
@@ -769,24 +862,24 @@ async fn start_provider(app: tauri::AppHandle) -> Result<(), String> {
 
     let mut status = setup_status_starting();
     emit_setup_status(&app, status.clone());
-    eprintln!("[provider-sidecar] Checking provider host requirements");
+    provider_desktop_log("[provider-sidecar] Checking provider host requirements");
     let requirements_started_at = Instant::now();
     let requirements = provider_requirements_stream(app.clone(), &mut status).await?;
-    eprintln!(
+    provider_desktop_log(format!(
         "[provider-sidecar] Provider host requirements finished in {:.2}s",
         requirements_started_at.elapsed().as_secs_f64()
-    );
+    ));
     if !requirements.compatible {
         return Err(requirements
             .error
             .unwrap_or_else(|| "Multipass is not installed or is not responding".to_string()));
     }
-    eprintln!("[provider-sidecar] Starting secure endpoint setup");
+    provider_desktop_log("[provider-sidecar] Starting secure endpoint setup");
     set_stage(&mut status, "public_ip", "running", "checking");
     emit_setup_status(&app, status);
     let mut status = run_secure_setup_stream(app.clone()).await?;
     ensure_host_requirements_success(&mut status);
-    eprintln!("[provider-sidecar] Secure endpoint setup finished");
+    provider_desktop_log("[provider-sidecar] Secure endpoint setup finished");
     mark_provider_service_starting(&mut status);
     emit_setup_status(&app, status.clone());
     if provider_is_listening() {
@@ -804,7 +897,7 @@ async fn start_provider(app: tauri::AppHandle) -> Result<(), String> {
         emit_setup_status(&app, status);
         return Err(detail);
     }
-    eprintln!("[provider-sidecar] Starting provider service");
+    provider_desktop_log("[provider-sidecar] Starting provider service");
     let service_started_at = Instant::now();
     // Desktop already ran secure setup with live progress. Keep the provider
     // process attached here and let the desktop readiness probe drive the UI.
@@ -817,15 +910,19 @@ async fn start_provider(app: tauri::AppHandle) -> Result<(), String> {
             return Err(detail);
         }
     };
-    eprintln!(
+    provider_desktop_log(format!(
         "[provider-sidecar] Provider service command spawned in {:.2}s; waiting for API",
         service_started_at.elapsed().as_secs_f64()
-    );
+    ));
     if let Err(err) = wait_for_provider_api(PROVIDER_START_TIMEOUT, &process_state).await {
+        provider_desktop_log(format!(
+            "[provider-sidecar] Provider API readiness failed: {err}"
+        ));
         mark_provider_service_failed(&mut status, &err);
         emit_setup_status(&app, status);
         return Err(err);
     }
+    provider_desktop_log("[provider-sidecar] Provider service started");
     mark_provider_service_started(&mut status);
     emit_setup_status(&app, status);
     Ok(())
@@ -950,9 +1047,19 @@ ERROR:    [Errno 48] Address already in use";
         assert!(failure.contains("Provider service exited before the API became ready"));
         assert!(failure.contains("ERROR: application startup failed"));
     }
+
+    #[test]
+    fn provider_process_failure_reports_zero_exit_before_readiness() {
+        let failure =
+            provider_process_failure("ERROR: Application startup failed. Exiting.", Some(0));
+
+        assert!(failure.contains("Provider service exited before the API became ready"));
+        assert!(failure.contains("ERROR: Application startup failed. Exiting."));
+    }
 }
 
 pub fn run() {
+    provider_desktop_log("[provider-desktop] Launching Golem Provider desktop app");
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![
@@ -969,6 +1076,7 @@ pub fn run() {
     let stopping_provider = Arc::new(AtomicBool::new(false));
     app.run(move |app_handle, event| {
         if let tauri::RunEvent::ExitRequested { api, .. } = event {
+            provider_desktop_log("[provider-desktop] Exit requested");
             if stopping_provider.swap(true, Ordering::SeqCst) {
                 return;
             }
@@ -976,7 +1084,9 @@ pub fn run() {
             api.prevent_exit();
             let app_handle = app_handle.clone();
             tauri::async_runtime::spawn(async move {
+                provider_desktop_log("[provider-desktop] Stopping provider child before exit");
                 stop_spawned_provider_child();
+                provider_desktop_log("[provider-desktop] Exiting Golem Provider desktop app");
                 app_handle.exit(0);
             });
         }

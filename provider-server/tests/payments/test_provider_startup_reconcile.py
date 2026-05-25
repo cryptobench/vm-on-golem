@@ -3,7 +3,7 @@ import asyncio
 import pytest
 
 from provider.service import ProviderService
-from provider.vm.models import VMResources
+from provider.vm.models import VMNotFoundError, VMResources
 
 
 class DummyPortManager:
@@ -59,6 +59,12 @@ class DummyVMService:
         self.deleted.append(vm_id)
         # reflect deletion in resources
         self._resources.pop(vm_id, None)
+
+
+class MissingVMOnDeleteService(DummyVMService):
+    async def delete_vm(self, vm_id: str):
+        self.deleted.append(vm_id)
+        raise VMNotFoundError(f"VM {vm_id} not found", vm_id=vm_id)
 
 
 class DummyStreamMap:
@@ -374,6 +380,37 @@ async def test_startup_deletes_vm_with_chain_terminated_stream(monkeypatch):
 
     vm_resources = {"vm-a": VMResources(cpu=2, memory=4, storage=20)}
     vm_service = DummyVMService(vm_resources)
+    adv = DummyDiscoveryPublishingService()
+    provider_service = ProviderService(
+        vm_service=vm_service,
+        advertisement_service=adv,
+        port_manager=DummyPortManager(),
+    )
+    stream_map = DummyStreamMap({"vm-a": 42})
+    app = DummyApp(stream_map, DummyReader({42: (False, "stream terminated")}))
+
+    await provider_service.setup(app)  # type: ignore[arg-type]
+
+    assert vm_service.deleted == ["vm-a"]
+    assert stream_map.terminated[0][0] == "vm-a"
+    assert stream_map.cleanup == [("vm-a", "completed")]
+    assert adv.started is True
+
+
+@pytest.mark.asyncio
+async def test_startup_marks_missing_vm_cleanup_completed(monkeypatch):
+    from provider import service as ps
+    from provider.config import settings
+
+    settings.STREAM_PAYMENT_ADDRESS = "0x1234567890abcdef1234567890abcdef12345678"
+    settings.PAYMENTS_RPC_URL = "http://localhost"
+    settings.STREAM_MONITOR_ENABLED = False
+    settings.STREAM_WITHDRAW_ENABLED = False
+    monkeypatch.setattr(ps, "PricingAutoUpdater", DummyPricingUpdater)
+
+    vm_service = MissingVMOnDeleteService(
+        {"vm-a": VMResources(cpu=2, memory=4, storage=20)}
+    )
     adv = DummyDiscoveryPublishingService()
     provider_service = ProviderService(
         vm_service=vm_service,

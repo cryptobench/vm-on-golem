@@ -11,6 +11,7 @@ from .payments.stream_status_service import (
 )
 from .utils.logging import setup_logger
 from .utils.pricing import PricingAutoUpdater
+from .vm.models import VMNotFoundError
 from .vm.service import VMService
 
 logger = setup_logger(__name__)
@@ -172,6 +173,16 @@ class ProviderService:
                         )
                         try:
                             await self.vm_service.delete_vm(vm_id)
+                        except VMNotFoundError:
+                            logger.warning(
+                                "VM already missing after startup found ended stream; "
+                                "marking cleanup complete",
+                                extra={
+                                    "vm_id": vm_id,
+                                    "stream_id": int(stream_id),
+                                    "payment_state": payment_state,
+                                },
+                            )
                         except Exception as e:
                             await stream_map.set_cleanup_state(vm_id, "failed")
                             raise RuntimeError(
