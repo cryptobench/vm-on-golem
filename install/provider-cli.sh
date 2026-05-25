@@ -95,6 +95,17 @@ download_stdout() {
   fi
 }
 
+remote_file_exists() {
+  url="$1"
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsIL "$url" -o /dev/null
+  elif command -v wget >/dev/null 2>&1; then
+    wget -q --spider "$url"
+  else
+    fail "curl or wget is required"
+  fi
+}
+
 sha256_file() {
   path="$1"
   if command -v sha256sum >/dev/null 2>&1; then
@@ -141,10 +152,22 @@ resolve_tag() {
     printf '%s' "$VERSION"
     return
   fi
-  api_url="https://api.github.com/repos/${REPO}/releases/latest"
-  tag="$(download_stdout "$api_url" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
-  [ -n "$tag" ] || fail "Could not resolve latest GitHub release for $REPO"
-  printf '%s' "$tag"
+
+  # The repository also publishes non-provider releases. Pick the newest
+  # provider release that actually contains the standalone CLI assets.
+  api_url="https://api.github.com/repos/${REPO}/releases?per_page=100"
+  tags="$(download_stdout "$api_url" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\(provider-desktop-v[^"]*\)".*/\1/p')"
+  [ -n "$tags" ] || fail "Could not resolve provider desktop releases for $REPO"
+
+  for candidate in $tags; do
+    candidate_base="https://github.com/${REPO}/releases/download/${candidate}"
+    if remote_file_exists "${candidate_base}/${asset}" && remote_file_exists "${candidate_base}/checksums.txt"; then
+      printf '%s' "$candidate"
+      return
+    fi
+  done
+
+  fail "No provider CLI release found for $asset in $REPO"
 }
 
 default_install_dir() {
@@ -278,8 +301,8 @@ install_or_verify_multipass() {
 }
 
 target="$(detect_target)"
-tag="$(resolve_tag)"
 asset="golem-provider-cli-${target}"
+tag="$(resolve_tag)"
 install_dir="$(default_install_dir)"
 install_path="${install_dir}/golem-provider"
 download_base="${GOLEM_PROVIDER_INSTALLER_BASE_URL:-https://github.com/${REPO}/releases/download/${tag}}"
@@ -298,6 +321,12 @@ tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/golem-provider-cli.XXXXXX")"
 trap 'rm -rf "$tmp_dir"' EXIT
 
 log "Installing Golem Provider CLI ${tag} for ${target}..."
+if ! remote_file_exists "${download_base}/${asset}"; then
+  fail "Release $tag does not contain $asset"
+fi
+if ! remote_file_exists "${download_base}/checksums.txt"; then
+  fail "Release $tag does not contain checksums.txt"
+fi
 download "${download_base}/${asset}" "$tmp_dir/$asset"
 download "${download_base}/checksums.txt" "$tmp_dir/checksums.txt"
 expected_sha="$(awk -v asset="$asset" '$2 == asset {print $1}' "$tmp_dir/checksums.txt" | head -n 1)"

@@ -40,11 +40,31 @@ function Resolve-ReleaseTag {
   if ($Version -ne "latest") {
     return $Version
   }
-  $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases/latest"
-  if (!$release.tag_name) {
-    Fail "Could not resolve latest GitHub release for $Repo"
+
+  # The repository also publishes non-provider releases. Pick the newest
+  # provider release that actually contains the standalone CLI assets.
+  $releases = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases?per_page=100"
+  foreach ($release in $releases) {
+    if (!$release.tag_name -or !([string]$release.tag_name).StartsWith("provider-desktop-v")) {
+      continue
+    }
+    $assetNames = @($release.assets | ForEach-Object { $_.name })
+    if (($assetNames -contains $asset) -and ($assetNames -contains "checksums.txt")) {
+      return [string]$release.tag_name
+    }
   }
-  return [string]$release.tag_name
+
+  Fail "No provider CLI release found for $asset in $Repo"
+}
+
+function Test-RemoteFile {
+  param([Parameter(Mandatory = $true)][string]$Uri)
+  try {
+    Invoke-WebRequest -Method Head -Uri $Uri -UseBasicParsing | Out-Null
+    return $true
+  } catch {
+    return $false
+  }
 }
 
 function Get-DefaultInstallDir {
@@ -199,6 +219,13 @@ New-Item -ItemType Directory -Path $workDir -Force | Out-Null
 
 try {
   Write-Step "Installing Golem Provider CLI $tag for $target..."
+  if (!(Test-RemoteFile "$downloadBase/$asset")) {
+    Fail "Release $tag does not contain $asset"
+  }
+  if (!(Test-RemoteFile "$downloadBase/checksums.txt")) {
+    Fail "Release $tag does not contain checksums.txt"
+  }
+
   $assetPath = Join-Path $workDir $asset
   $checksumsPath = Join-Path $workDir "checksums.txt"
   Invoke-WebRequest -Uri "$downloadBase/$asset" -OutFile $assetPath
