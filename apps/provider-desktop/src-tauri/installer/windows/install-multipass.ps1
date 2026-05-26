@@ -119,24 +119,159 @@ function Invoke-LoggedCommand {
   }
 }
 
-function Get-MultipassPath {
-  $candidates = @(
-    "$env:ProgramFiles\Multipass\bin\multipass.exe",
-    "${env:ProgramFiles(x86)}\Multipass\bin\multipass.exe",
-    "$env:LocalAppData\Multipass\bin\multipass.exe"
+function Add-MultipassPathCandidate {
+  param(
+    [Parameter(Mandatory=$true)]
+    [System.Collections.Generic.List[string]]$Candidates,
+    [string]$Path
   )
+
+  if ([string]::IsNullOrWhiteSpace($Path)) {
+    return
+  }
+
+  $normalized = [System.Environment]::ExpandEnvironmentVariables($Path.Trim().Trim('"'))
+  if (!$Candidates.Contains($normalized)) {
+    [void]$Candidates.Add($normalized)
+  }
+}
+
+function ConvertFrom-ServiceImagePath {
+  param([string]$ImagePath)
+
+  if ([string]::IsNullOrWhiteSpace($ImagePath)) {
+    return $null
+  }
+  if ($ImagePath -match '^\s*"([^"]+)"') {
+    return $Matches[1]
+  }
+  if ($ImagePath -match '^\s*(.+?\.exe)(\s|,|$)') {
+    return $Matches[1].Trim('"')
+  }
+  return $null
+}
+
+function Add-MultipassDirectoryCandidates {
+  param(
+    [Parameter(Mandatory=$true)]
+    [System.Collections.Generic.List[string]]$Candidates,
+    [string]$Directory
+  )
+
+  if ([string]::IsNullOrWhiteSpace($Directory)) {
+    return
+  }
+
+  Add-MultipassPathCandidate $Candidates (Join-Path $Directory "multipass.exe")
+  Add-MultipassPathCandidate $Candidates (Join-Path $Directory "bin\multipass.exe")
+}
+
+function Add-MultipassRegistryCandidates {
+  param([Parameter(Mandatory=$true)][System.Collections.Generic.List[string]]$Candidates)
+
+  $appPathRoots = @(
+    "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\multipass.exe",
+    "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\App Paths\multipass.exe",
+    "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\multipass.exe"
+  )
+
+  foreach ($root in $appPathRoots) {
+    try {
+      $appPath = Get-ItemProperty -Path $root -ErrorAction SilentlyContinue
+      if ($appPath) {
+        Write-InstallerLog "Found Multipass App Paths entry: $root"
+        Add-MultipassPathCandidate $Candidates $appPath."(default)"
+        foreach ($directory in ($appPath.Path -split ";")) {
+          Add-MultipassDirectoryCandidates $Candidates $directory
+        }
+      }
+    } catch {
+      Write-InstallerLog "Unable to inspect Multipass App Paths root ${root}: $($_.Exception.Message)"
+    }
+  }
+
+  $registryRoots = @(
+    "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*",
+    "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*",
+    "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*"
+  )
+
+  foreach ($root in $registryRoots) {
+    try {
+      Get-ItemProperty -Path $root -ErrorAction SilentlyContinue |
+        Where-Object { $_.DisplayName -eq "Multipass" } |
+        ForEach-Object {
+          Write-InstallerLog "Found Multipass registry entry: $($_.PSPath)"
+          Add-MultipassDirectoryCandidates $Candidates $_.InstallLocation
+
+          $displayIcon = ConvertFrom-ServiceImagePath $_.DisplayIcon
+          if ($displayIcon) {
+            Add-MultipassPathCandidate $Candidates $displayIcon
+            Add-MultipassPathCandidate $Candidates (Join-Path (Split-Path -Parent $displayIcon) "multipass.exe")
+          }
+        }
+    } catch {
+      Write-InstallerLog "Unable to inspect Multipass registry root ${root}: $($_.Exception.Message)"
+    }
+  }
+}
+
+function Add-MultipassServiceCandidates {
+  param([Parameter(Mandatory=$true)][System.Collections.Generic.List[string]]$Candidates)
+
+  try {
+    $service = Get-CimInstance Win32_Service -Filter "Name='$MultipassServiceName'" -ErrorAction Stop
+    Write-InstallerLog "Multipass service path: $($service.PathName)"
+    $servicePath = ConvertFrom-ServiceImagePath $service.PathName
+    if ($servicePath) {
+      Add-MultipassPathCandidate $Candidates (Join-Path (Split-Path -Parent $servicePath) "multipass.exe")
+      Add-MultipassPathCandidate $Candidates (Join-Path (Split-Path -Parent (Split-Path -Parent $servicePath)) "bin\multipass.exe")
+    }
+  } catch {
+    Write-InstallerLog "Unable to inspect Multipass service path: $($_.Exception.Message)"
+  }
+}
+
+function Get-MultipassPath {
+  $candidates = [System.Collections.Generic.List[string]]::new()
+  Add-MultipassPathCandidate $candidates "$env:ProgramFiles\Multipass\bin\multipass.exe"
+  Add-MultipassPathCandidate $candidates "$env:ProgramFiles\Multipass\multipass.exe"
+  Add-MultipassPathCandidate $candidates "${env:ProgramFiles(x86)}\Multipass\bin\multipass.exe"
+  Add-MultipassPathCandidate $candidates "${env:ProgramFiles(x86)}\Multipass\multipass.exe"
+  Add-MultipassPathCandidate $candidates "$env:LocalAppData\Multipass\bin\multipass.exe"
+
+  Add-MultipassRegistryCandidates $candidates
+  Add-MultipassServiceCandidates $candidates
+
+  $command = Get-Command multipass.exe -ErrorAction SilentlyContinue
+  if ($command) {
+    Add-MultipassPathCandidate $candidates $command.Source
+  }
+
   foreach ($candidate in $candidates) {
     if ($candidate -and (Test-Path $candidate)) {
       Write-InstallerLog "Found Multipass binary: $candidate"
       return $candidate
     }
-  }
-  $command = Get-Command multipass.exe -ErrorAction SilentlyContinue
-  if ($command) {
-    Write-InstallerLog "Found Multipass on PATH: $($command.Source)"
-    return $command.Source
+    Write-InstallerLog "Multipass binary candidate missing: $candidate"
   }
   Write-InstallerLog "No Multipass binary found"
+  return $null
+}
+
+function Wait-MultipassPath {
+  param([int]$TimeoutSeconds = 30)
+
+  $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+  do {
+    $path = Get-MultipassPath
+    if ($path) {
+      return $path
+    }
+    Write-InstallerLog "Waiting for Multipass binary to become visible"
+    Start-Sleep -Seconds 2
+  } while ([DateTime]::UtcNow -lt $deadline)
+
   return $null
 }
 
@@ -261,6 +396,8 @@ if ($path) {
 $msiArguments = @(
   "/i",
   $InstallerPath,
+  "ADDLOCAL=ALL",
+  "ENVIRONMENT=system",
   "/qn",
   "/norestart",
   "/l*v",
@@ -274,7 +411,7 @@ if ($result.ExitCode -ne 0) {
   throw "Multipass MSI failed with exit code $($result.ExitCode)"
 }
 
-$path = Get-MultipassPath
+$path = Wait-MultipassPath
 if (!$path) {
   Write-Diagnostics
   throw "Multipass install completed but multipass.exe was not found"

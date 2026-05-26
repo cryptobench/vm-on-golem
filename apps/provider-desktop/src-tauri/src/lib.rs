@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::fs::{self, File, OpenOptions};
+use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream};
 #[cfg(unix)]
@@ -131,10 +131,7 @@ fn provider_home_dir() -> Result<PathBuf, String> {
 
 fn generate_admin_token() -> Result<String, String> {
     let mut bytes = [0_u8; 48];
-    File::open("/dev/urandom")
-        .map_err(|err| format!("Failed to open OS random source: {err}"))?
-        .read_exact(&mut bytes)
-        .map_err(|err| format!("Failed to read OS random source: {err}"))?;
+    getrandom::fill(&mut bytes).map_err(|err| format!("Failed to read OS random source: {err}"))?;
     Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
 }
 
@@ -984,6 +981,14 @@ ERROR:    [Errno 48] Address already in use";
         assert!(failure.contains("Address already in use"));
         assert!(!failure.contains("secret-token"));
         assert!(!failure.contains("GOLEM_PROVIDER_ADMIN_TOKEN=secret-token"));
+    }
+
+    #[test]
+    fn generate_admin_token_uses_os_random_source() {
+        let token = generate_admin_token().expect("token");
+
+        assert_eq!(token.len(), 96);
+        assert!(token.chars().all(|character| character.is_ascii_hexdigit()));
     }
 
     #[test]
