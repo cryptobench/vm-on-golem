@@ -121,6 +121,7 @@ function Invoke-LoggedCommand {
 
 function Add-MultipassPathCandidate {
   param(
+    [AllowEmptyCollection()]
     [System.Collections.Generic.List[string]]$Candidates,
     [string]$Path
   )
@@ -152,6 +153,7 @@ function ConvertFrom-ServiceImagePath {
 
 function Add-MultipassDirectoryCandidates {
   param(
+    [AllowEmptyCollection()]
     [System.Collections.Generic.List[string]]$Candidates,
     [string]$Directory
   )
@@ -165,7 +167,7 @@ function Add-MultipassDirectoryCandidates {
 }
 
 function Add-MultipassRegistryCandidates {
-  param([System.Collections.Generic.List[string]]$Candidates)
+  param([AllowEmptyCollection()][System.Collections.Generic.List[string]]$Candidates)
 
   $appPathRoots = @(
     "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\multipass.exe",
@@ -215,7 +217,7 @@ function Add-MultipassRegistryCandidates {
 }
 
 function Add-MultipassServiceCandidates {
-  param([System.Collections.Generic.List[string]]$Candidates)
+  param([AllowEmptyCollection()][System.Collections.Generic.List[string]]$Candidates)
 
   try {
     $service = Get-CimInstance Win32_Service -Filter "Name='$MultipassServiceName'" -ErrorAction Stop
