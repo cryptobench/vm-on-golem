@@ -83,7 +83,7 @@ class PortManager:
 
         # If verification is skipped, mark all ports as verified
         if self.skip_verification:
-            logger.warning("⚠️  Port verification is disabled in development mode")
+            logger.warning("Port verification is disabled in development mode")
             logger.warning("   All ports will be considered available")
             logger.warning("   This should only be used for development/testing")
 

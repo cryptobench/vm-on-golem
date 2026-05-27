@@ -40,7 +40,7 @@ class StreamMonitor:
             "STREAM_WITHDRAW_ENABLED", False
         ):
             logger.info(
-                f"⏱️ Stream monitor enabled (check={self._get('STREAM_MONITOR_ENABLED', False)}, "
+                f"Stream monitor enabled (check={self._get('STREAM_MONITOR_ENABLED', False)}, "
                 f"withdraw={self._get('STREAM_WITHDRAW_ENABLED', False)}) interval={self._get('STREAM_MONITOR_INTERVAL_SECONDS', 60)}s"
             )
             self._task = asyncio.create_task(self._run(), name="stream-monitor")
@@ -161,9 +161,7 @@ class StreamMonitor:
                             vested * int(s.get("donationBps", 0)) // 10_000,
                             int(s.get("donationDeposit", 0)),
                         )
-                        withdrawable = max(
-                            vested - s["providerWithdrawn"], 0
-                        ) + max(
+                        withdrawable = max(vested - s["providerWithdrawn"], 0) + max(
                             donation_vested - int(s.get("donationWithdrawn", 0)),
                             0,
                         )

@@ -185,7 +185,7 @@ class MultipassAdapter(VMProvider):
         """Initialize the VM provider."""
         try:
             result = await self._run_multipass(["version"])
-            logger.info(f"🔧 Using Multipass version: {result.stdout.strip()}")
+            logger.info(f"Using Multipass version: {result.stdout.strip()}")
             self._check_host_virtualization_compatibility()
             if hasattr(self.proxy_manager, "initialize"):
                 await self.proxy_manager.initialize()

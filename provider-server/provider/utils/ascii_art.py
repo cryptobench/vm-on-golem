@@ -24,8 +24,9 @@ LOGO = """
 [bold magenta]\\____/_/ |_/[/bold magenta]   [bold yellow]\\____/[/bold yellow]   [bold green]/_____/_____/_____/_/  /_/   [/bold green]
 """
 
-# Spinner frames (reduced for faster animation)
-SPINNER_FRAMES = ["⠋", "⠙", "⠸", "⠴"]
+# Spinner frames (reduced for faster animation). Keep startup output ASCII-only:
+# Windows services may run with legacy code pages such as cp1252.
+SPINNER_FRAMES = ["-", "\\", "|", "/"]
 
 
 def display_logo():
@@ -38,10 +39,10 @@ async def startup_animation():
     """Display startup animation."""
     display_logo()
 
-    with Live(refresh_per_second=8) as live:
+    with Live(console=console, refresh_per_second=8) as live:
         # Startup message
         live.console.print(
-            "\n[bold yellow]🚀 Initializing VM on Golem Provider...[/bold yellow]"
+            "\n[bold yellow]Initializing VM on Golem Provider...[/bold yellow]"
         )
         await asyncio.sleep(0.1)
 
@@ -57,7 +58,7 @@ async def startup_animation():
                 live.update(f"[bold blue]{frame}[/bold blue] {component}...")
                 await asyncio.sleep(0.1)
             live.console.print(
-                f"[bold green]✓[/bold green] {component} [dim]complete[/dim]"
+                f"[bold green]OK[/bold green] {component} [dim]complete[/dim]"
             )
 
         live.console.print("\n[bold cyan]Provider services are starting...[/bold cyan]")
@@ -65,9 +66,9 @@ async def startup_animation():
 
 async def provider_ready_message(port: int):
     """Display the final provider ready message."""
-    console.print("\n[bold green]✨ VM on Golem Provider is ready![/bold green]")
+    console.print("\n[bold green]VM on Golem Provider is ready![/bold green]")
     console.print(
-        f"[bold cyan]🌐 Listening for incoming requests on port {port}[/bold cyan]"
+        f"[bold cyan]Listening for incoming requests on port {port}[/bold cyan]"
     )
     console.print("[dim]Press Ctrl+C to stop the server[/dim]")
 
@@ -79,7 +80,7 @@ async def vm_creation_animation(vm_name: str):
         vm_name: Name of the VM being created
     """
     console.print(
-        f"[bold green]✨ VM '{vm_name}' is now being rented. Access information has been forwarded to the requestor.[/bold green]"
+        f"[bold green]VM '{vm_name}' is now being rented. Access information has been forwarded to the requestor.[/bold green]"
     )
 
 
@@ -93,4 +94,4 @@ def vm_status_change(vm_id: str, status: str, details: str = ""):
     """
     # Only show final status
     if status.lower() == "running":
-        console.print(f"[green]✓[/green] VM {vm_id} is {status.lower()}")
+        console.print(f"[green]OK[/green] VM {vm_id} is {status.lower()}")

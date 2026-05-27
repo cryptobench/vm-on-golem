@@ -53,10 +53,10 @@ async def verify_provider_port(port: int) -> bool:
         )
         server.close()
         await server.wait_closed()
-        logger.info(f"✅ Provider port {port} is available")
+        logger.info(f"Provider port {port} is available")
         return True
     except Exception as e:
-        logger.error(f"❌ Provider port {port} is not available: {e}")
+        logger.error(f"Provider port {port} is not available: {e}")
         logger.error("Please ensure:")
         logger.error(f"1. Port {port} is not in use by another application")
         logger.error("2. You have permission to bind to this port")
@@ -782,7 +782,7 @@ def status(
             "  Latest",
             f"[bold bright_yellow]{ver_latest}[/bold bright_yellow]  [grey62](pip install -U golem-vm-provider)[/grey62]",
         )
-        tbl.add_row("  Update", "[bold bright_yellow]⬆️  yes[/bold bright_yellow]")
+        tbl.add_row("  Update", "[bold bright_yellow]yes[/bold bright_yellow]")
     else:
         tbl.add_row("  Latest", f"[cyan]{ver_latest}[/cyan]")
         tbl.add_row("  Update", "[green]no[/green]")
@@ -797,7 +797,7 @@ def status(
     # Multipass
     mp_ver = (mp.get("version") or mp.get("error") or "-").replace("\n", ", ")
     tbl.add_row("Multipass", "")
-    tbl.add_row("  Status", "✅ OK" if mp["ok"] else "❌ Missing")
+    tbl.add_row("  Status", "OK" if mp["ok"] else "Missing")
     tbl.add_row("  Path", mp.get("path") or "-")
     tbl.add_row("  Version", mp_ver)
     tbl.add_row("", "")
@@ -806,20 +806,20 @@ def status(
     tbl.add_row("Provider Endpoint", endpoint_url or "-")
     tbl.add_row(
         "  Local API",
-        ("✅ " if local["ok"] else "❌ ")
+        ("OK " if local["ok"] else "FAILED ")
         + (local["detail"] or "")
         + f" (127.0.0.1:{port})",
     )
     _ext = external.get("status") or "unknown"
     _err = external.get("error")
     if _ext == "reachable":
-        ext_row = "✅ reachable"
+        ext_row = "reachable"
     elif _ext in ("unreachable", "check_failed"):
-        ext_row = "❌ unreachable" + (f" — {_err}" if _err else "")
+        ext_row = "unreachable" + (f" — {_err}" if _err else "")
     elif _ext == "not_verified":
-        ext_row = "⚠️ not verified" + (f" — {_err}" if _err else "")
+        ext_row = "not verified" + (f" — {_err}" if _err else "")
     else:
-        ext_row = "⚠️ " + _ext + (f" — {_err}" if _err else "")
+        ext_row = _ext + (f" — {_err}" if _err else "")
     tbl.add_row("  Public HTTPS", ext_row)
 
     # SSH ports (condensed, actionable)
@@ -873,7 +873,7 @@ def status(
     # Only show Notes when there are issues
     if issues:
         tbl.add_row("", "")
-        tbl.add_row("Issues", "\n".join(f"• {t}" for t in issues))
+        tbl.add_row("Issues", "\n".join(f"- {t}" for t in issues))
 
     console.print(Panel(tbl, title="Provider Status"))
 
@@ -1759,7 +1759,7 @@ def run_server(
                     logger_config["handlers"].append("provider_file")
 
         # Run server
-        logger.process(f"🚀 Starting provider server on {settings.HOST}:{settings.PORT}")
+        logger.process(f"Starting provider server on {settings.HOST}:{settings.PORT}")
         uvicorn.run(
             "provider:app",
             host=settings.HOST,

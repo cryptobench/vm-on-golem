@@ -82,7 +82,7 @@ We ensure that every action provides **immediate and useful feedback**, making i
 **Example:**  
 After creating a VM, users get clear, structured feedback:  
 ```bash
-✅ VM 'my-webserver' deployed successfully on Golem Network!  
+VM 'my-webserver' deployed successfully on Golem Network!  
 SSH Access  : ssh root@83.233.10.2  
 Password    : xG8f7Lk3  
 IP Address  : 83.233.10.2  
@@ -120,7 +120,7 @@ The VM **already includes SSH** and is **ready to use immediately**. No SDKs, no
 
 **Example: SSH details appear instantly after deployment**  
 ```bash
-✅ VM 'my-webserver' deployed successfully on Golem Network!  
+VM 'my-webserver' deployed successfully on Golem Network!  
 SSH Access  : ssh root@83.233.10.2  
 Password    : xG8f7Lk3  
 IP Address  : 83.233.10.2  

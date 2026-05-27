@@ -108,12 +108,12 @@ Each Python service is organized as a set of **vertical-slice features**. A feat
 **Cross‑feature communication:** features call each other through services, never by reaching into another feature's repo or models. If two features need the same DB query, the repo that owns the table exposes it; the other feature calls the owning service or repo, never duplicates the query.
 
 ```python
-# ✅ Route delegates to a service; service uses its repo
+# Good: Route delegates to a service; service uses its repo
 @router.post("/vms")
 def create_vm(cmd: CreateVMCommand, svc: VMService = Depends(get_vm_service)) -> VMResult:
     return svc.create(cmd)
 
-# ❌ Route does ORM work directly
+# Bad: Route does ORM work directly
 @router.post("/vms")
 def create_vm(payload: dict, db: Session = Depends(get_db)):
     vm = VM(**payload); db.add(vm); db.commit(); return vm
@@ -129,13 +129,13 @@ def create_vm(payload: dict, db: Session = Depends(get_db)):
 - No utility grab‑bags. A `utils.py` with thirty unrelated helpers is a smell. Helpers live next to their caller until reused twice; only then are they promoted to a shared module — and that module is named for what it does, not for being a utility (`time_format.py`, not `helpers.py`).
 
 ```
-# ✅ Capability-scoped
+# Good: Capability-scoped
 payments/
     capture_service.py
     refund_service.py
     payout_service.py
 
-# ❌ Entity-scoped god service
+# Bad: Entity-scoped god service
 payments/
     payment_service.py   # 900 lines, every payment-related verb
 ```
@@ -211,14 +211,14 @@ def _not_found(_, exc): return JSONResponse({"detail": str(exc)}, status_code=40
 - Settings are read once at startup and injected — not re‑read at call time.
 
 ```python
-# ✅
+# Good:
 class Settings(BaseSettings):
     discovery_url: HttpUrl
     chain_rpc_url: HttpUrl
     db_path: Path
 settings = Settings()
 
-# ❌
+# Bad:
 DISCOVERY_URL = "http://discovery.golem.network:9001"
 ```
 
@@ -326,17 +326,17 @@ Tests must exercise **actual production code paths**. If a test passes but produ
 - **No silent fallbacks in tests.** If a precondition fails (expected data is `None`, a list is empty, an event wasn't created), the test MUST fail with a hard assertion. Never silently skip, log a note, or return early when something expected is missing.
 
 ```python
-# ✅ Real stack
+# Good: Real stack
 svc = VMLifecycleService(repo=VMRepo(session))
 result = svc.create(CreateVMCommand(requestor_id="r1", cpu=2, memory_mb=4096))
 assert session.query(VM).count() == 1
 
-# ✅ Stub at the network boundary
+# Good: Stub at the network boundary
 with patch("provider.network.rpc_client.GolemRPC.send") as send:
     send.return_value = {"ok": True}
     ...
 
-# ❌ Mock an internal repo
+# Bad: Mock an internal repo
 @patch("provider.vm.repo.VMRepo.get")  # defeats the purpose
 ```
 

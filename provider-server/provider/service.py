@@ -45,7 +45,7 @@ class ProviderService:
         from .utils.ascii_art import provider_ready_message, startup_animation
 
         try:
-            logger.process("🔄 Initializing provider...")
+            logger.process("Initializing provider...")
 
             location = await ensure_provider_location(settings)
             self._sync_runtime_settings_to_container(app, settings)
@@ -243,7 +243,7 @@ class ProviderService:
                 logger.info("Provider StreamPayment event service started")
 
             await provider_ready_message(int(settings.PORT))
-            logger.success("✨ Provider setup complete")
+            logger.success("Provider setup complete")
         except Exception as e:
             logger.error(f"Startup failed: {e}", exc_info=True)
             await self.cleanup()
@@ -284,7 +284,7 @@ class ProviderService:
 
     async def cleanup(self):
         """Cleanup provider components."""
-        logger.process("🔄 Cleaning up provider...")
+        logger.process("Cleaning up provider...")
         from .config import settings
 
         # Stop advertising loop
@@ -363,7 +363,7 @@ class ProviderService:
         if self.stream_payment_event_service is not None:
             await self.stream_payment_event_service.stop()
             logger.info("Provider StreamPayment event service stopped")
-        logger.success("✨ Provider cleanup complete")
+        logger.success("Provider cleanup complete")
 
     def _setup_directories(self):
         """Create necessary directories for the provider."""

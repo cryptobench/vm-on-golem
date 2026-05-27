@@ -465,7 +465,7 @@ class Settings(BaseSettings):
                     )
                     success, error = setup_cloud_init_dir(path)
                     if success:
-                        logger.info("✓ Cloud-init directory setup complete")
+                        logger.info("Cloud-init directory setup complete")
                         mark_setup_complete()
                     else:
                         logger.error(f"Failed to set up cloud-init directory: {error}")

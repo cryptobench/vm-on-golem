@@ -59,11 +59,11 @@ TTY output highlights
 ```
 Overall         Error | Issues detected | Healthy
 
-Multipass       ✅ OK | ❌ Missing
+Multipass       OK | Missing
 
 Provider Port   0.0.0.0:7466
-  Local         ✅ service is listening | ❌ port unavailable
-  External      ✅ reachable | ❌ unreachable — <reason>
+  Local         service is listening | port unavailable
+  External      reachable | unreachable — <reason>
 
 SSH Ports       <start>-<end> — OK | limited — N issue(s) | blocked
   Usable free   <count>   # free AND externally reachable
@@ -649,8 +649,8 @@ Example status output:
 Overall         Healthy
 
 Provider Port   {host}:{provider_port}
-  Local         ✅ service is listening
-  External      ✅ reachable
+  Local         service is listening
+  External      reachable
 
 SSH Ports       {start_port}-{end_port_minus_one} — OK
   Usable free   {usable_free}
